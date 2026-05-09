@@ -1,0 +1,9 @@
+import std.buffer as buf
+
+let data: bytes = b"\x01\x02"
+let b = buf.from_bytes(data)
+
+buf.set(b, 0, 255)
+
+print(buf.get(b, 0))
+print(data[0])

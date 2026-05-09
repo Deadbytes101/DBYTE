@@ -267,7 +267,10 @@ impl Interpreter {
                     "from_bytes".into(),
                     ModuleMember::Native(native_buffer_from_bytes),
                 );
-                members.insert("to_bytes".into(), ModuleMember::Native(native_buffer_to_bytes));
+                members.insert(
+                    "to_bytes".into(),
+                    ModuleMember::Native(native_buffer_to_bytes),
+                );
                 members.insert("len".into(), ModuleMember::Native(native_buffer_len));
                 members.insert("get".into(), ModuleMember::Native(native_buffer_get));
                 members.insert("set".into(), ModuleMember::Native(native_buffer_set));
@@ -1164,7 +1167,10 @@ fn native_buffer_new(args: &[Value]) -> Result<Value, String> {
     if size < 0 {
         return Err("buffer size must be non-negative".into());
     }
-    Ok(Value::Buffer(Rc::new(RefCell::new(vec![0u8; size as usize]))))
+    Ok(Value::Buffer(Rc::new(RefCell::new(vec![
+        0u8;
+        size as usize
+    ]))))
 }
 
 fn native_buffer_from_bytes(args: &[Value]) -> Result<Value, String> {
@@ -1227,11 +1233,17 @@ fn native_buffer_slice(args: &[Value]) -> Result<Value, String> {
     let b = expect_buffer(args, 0)?;
     let offset = expect_int(args, 1)?;
     let length = expect_int(args, 2)?;
-    if offset < 0 || length < 0 {
-        return Err("offset and length must be non-negative".into());
+    if offset < 0 {
+        return Err("offset must be non-negative".into());
+    }
+    if length < 0 {
+        return Err("length must be non-negative".into());
     }
     let buf = b.borrow();
-    if offset.checked_add(length).is_none_or(|end| end as usize > buf.len()) {
+    if offset
+        .checked_add(length)
+        .is_none_or(|end| end as usize > buf.len())
+    {
         return Err(format!(
             "buffer slice out of range: need {} bytes at offset {}, but length is {}",
             length,

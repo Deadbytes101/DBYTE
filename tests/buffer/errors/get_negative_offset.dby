@@ -1,0 +1,4 @@
+import std.buffer as buf
+
+let b = buf.new(3)
+print(buf.get(b, -1))

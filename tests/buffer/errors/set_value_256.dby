@@ -1,0 +1,4 @@
+import std.buffer as buf
+
+let b = buf.new(3)
+buf.set(b, 0, 256)

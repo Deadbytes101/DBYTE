@@ -689,7 +689,7 @@ impl TypeChecker {
             }
 
             Stmt::Import { path, alias, span } => {
-                if self.lookup(alias).is_some() {
+                if self.env.last().unwrap().contains_key(alias) {
                     return Err(TypeError {
                         msg: format!("ImportError: duplicate import alias: {}", alias),
                         span: *span,

@@ -1,0 +1,8 @@
+fn outer(b: buffer):
+    import "./mutator.dby" as mutator
+    mutator.mutate(b)
+
+import std.buffer as buf
+let b = buf.new(1)
+outer(b)
+print(buf.get(b, 0))

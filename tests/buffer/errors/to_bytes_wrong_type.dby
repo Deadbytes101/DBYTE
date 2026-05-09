@@ -1,0 +1,4 @@
+import std.buffer as buf
+
+let data = b"\x01\x02\x03"
+print(buf.to_bytes(data))
