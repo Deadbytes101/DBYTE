@@ -6,8 +6,11 @@ members = [
     "crates/dbyte_typeck",
     "crates/dbyte_interp",
     "crates/dbyte_cli",
+    "crates/dbyte_bytecode",
+    "crates/dbyte_compiler",
     "crates/dbyte_module",
     "crates/dbyte_project",
+    "crates/dbyte_vm",
 ]
 resolver = "2"
 
@@ -23,7 +26,10 @@ dbyte_lexer  = { path = "crates/dbyte_lexer" }
 dbyte_parser = { path = "crates/dbyte_parser" }
 dbyte_typeck = { path = "crates/dbyte_typeck" }
 dbyte_interp = { path = "crates/dbyte_interp" }
+dbyte_bytecode = { path = "crates/dbyte_bytecode" }
+dbyte_compiler = { path = "crates/dbyte_compiler" }
 dbyte_module = { path = "crates/dbyte_module" }
 dbyte_project = { path = "crates/dbyte_project" }
+dbyte_vm = { path = "crates/dbyte_vm" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

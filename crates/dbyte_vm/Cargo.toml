@@ -1,19 +1,14 @@
 [package]
-name = "dbyte_cli"
+name = "dbyte_vm"
 version.workspace = true
 edition.workspace = true
-
-[[bin]]
-name = "dbyte"
-path = "src/main.rs"
+authors.workspace = true
+license.workspace = true
 
 [dependencies]
 dbyte_ast.workspace = true
 dbyte_bytecode.workspace = true
 dbyte_compiler.workspace = true
 dbyte_lexer.workspace = true
+dbyte_module.workspace = true
 dbyte_parser.workspace = true
-dbyte_typeck.workspace = true
-dbyte_interp.workspace = true
-dbyte_project.workspace = true
-dbyte_vm.workspace = true

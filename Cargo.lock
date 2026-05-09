@@ -7,15 +7,33 @@ name = "dbyte_ast"
 version = "0.1.0"
 
 [[package]]
+name = "dbyte_bytecode"
+version = "0.1.0"
+dependencies = [
+ "dbyte_ast",
+]
+
+[[package]]
 name = "dbyte_cli"
 version = "0.1.0"
 dependencies = [
  "dbyte_ast",
+ "dbyte_bytecode",
+ "dbyte_compiler",
  "dbyte_interp",
  "dbyte_lexer",
  "dbyte_parser",
  "dbyte_project",
  "dbyte_typeck",
+ "dbyte_vm",
+]
+
+[[package]]
+name = "dbyte_compiler"
+version = "0.1.0"
+dependencies = [
+ "dbyte_ast",
+ "dbyte_bytecode",
 ]
 
 [[package]]
@@ -63,6 +81,18 @@ name = "dbyte_typeck"
 version = "0.1.0"
 dependencies = [
  "dbyte_ast",
+ "dbyte_lexer",
+ "dbyte_module",
+ "dbyte_parser",
+]
+
+[[package]]
+name = "dbyte_vm"
+version = "0.1.0"
+dependencies = [
+ "dbyte_ast",
+ "dbyte_bytecode",
+ "dbyte_compiler",
  "dbyte_lexer",
  "dbyte_module",
  "dbyte_parser",
