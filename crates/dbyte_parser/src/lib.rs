@@ -88,6 +88,10 @@ impl Parser {
                     self.advance();
                     TypeAnnotation::Str
                 }
+                "bytes" => {
+                    self.advance();
+                    TypeAnnotation::Bytes
+                }
                 "list" => {
                     self.advance();
                     if matches!(self.peek_kind(), TokenKind::LBracket) {
@@ -315,6 +319,11 @@ impl Parser {
                 } else {
                     Ok(Expr::FStr(parts, tok.span))
                 }
+            }
+            TokenKind::Bytes(ref b) => {
+                let b = b.clone();
+                self.advance();
+                Ok(Expr::BytesLit(b, tok.span))
             }
             TokenKind::Ident(ref name) => {
                 let name = name.clone();

@@ -1,0 +1,5 @@
+let data: bytes = b"\xDE\xAD\xBE\xEF"
+
+print(len(data))
+print(data[0])
+print(data[3])

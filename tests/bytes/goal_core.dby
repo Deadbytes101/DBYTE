@@ -1,0 +1,9 @@
+import std.encoding as enc
+import std.hash as hash
+
+let data: bytes = b"Sensitive Data"
+
+print(len(data))
+print(data[0])
+print(enc.hex_encode(data))
+print(hash.sha256(data))

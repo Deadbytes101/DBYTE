@@ -33,3 +33,5 @@ dbyte_project = { path = "crates/dbyte_project" }
 dbyte_vm = { path = "crates/dbyte_vm" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+hex = "0.4.3"
+sha2 = "0.10.8"

@@ -1,0 +1,3 @@
+import std.encoding as enc
+print(enc.hex_encode(b"ABC"))
+print(enc.hex_encode(b"\xde\xad\xbe\xef"))

@@ -233,6 +233,10 @@ impl FunctionCompiler {
                 let idx = self.add_const(Value::Str(s.clone()));
                 self.emit(Op::Const(idx));
             }
+            Expr::BytesLit(b, _) => {
+                let idx = self.add_const(Value::Bytes(b.clone()));
+                self.emit(Op::Const(idx));
+            }
             Expr::FStr(parts, _) => {
                 self.emit(Op::FStr(parts.clone()));
             }

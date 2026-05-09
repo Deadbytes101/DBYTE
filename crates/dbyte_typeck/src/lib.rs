@@ -25,6 +25,7 @@ pub enum ResolvedType {
     Float,
     Bool,
     Str,
+    Bytes,
     List(Box<ResolvedType>),
     Module(ModuleType),
     Void,
@@ -49,6 +50,7 @@ impl std::fmt::Display for ResolvedType {
             ResolvedType::Float => write!(f, "float"),
             ResolvedType::Bool => write!(f, "bool"),
             ResolvedType::Str => write!(f, "str"),
+            ResolvedType::Bytes => write!(f, "bytes"),
             ResolvedType::List(inner) => write!(f, "list[{}]", inner),
             ResolvedType::Module(m) => write!(f, "module '{}'", m.alias),
             ResolvedType::Void => write!(f, "void"),
@@ -62,6 +64,7 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         TypeAnnotation::Float => Some(ResolvedType::Float),
         TypeAnnotation::Bool => Some(ResolvedType::Bool),
         TypeAnnotation::Str => Some(ResolvedType::Str),
+        TypeAnnotation::Bytes => Some(ResolvedType::Bytes),
         TypeAnnotation::List(inner) => {
             ann_to_resolved(inner).map(|t| ResolvedType::List(Box::new(t)))
         }
@@ -300,6 +303,7 @@ impl TypeChecker {
             Expr::FloatLit(..) => Ok(ResolvedType::Float),
             Expr::BoolLit(..) => Ok(ResolvedType::Bool),
             Expr::StrLit(..) => Ok(ResolvedType::Str),
+            Expr::BytesLit(..) => Ok(ResolvedType::Bytes),
 
             Expr::FStr(parts, span) => {
                 for part in parts {
@@ -350,6 +354,7 @@ impl TypeChecker {
                 match self.check_expr(target)? {
                     ResolvedType::List(inner) => Ok(*inner),
                     ResolvedType::Str => Ok(ResolvedType::Str),
+                    ResolvedType::Bytes => Ok(ResolvedType::Int),
                     other => Err(TypeError {
                         msg: format!("cannot index {}", other),
                         span: *span,
@@ -417,6 +422,24 @@ impl TypeChecker {
                         self.check_expr(arg)?;
                     }
                     return Ok(ResolvedType::Void);
+                }
+                if name == "len" {
+                    if args.len() != 1 {
+                        return Err(TypeError {
+                            msg: "len() expects 1 argument".into(),
+                            span: *span,
+                        });
+                    }
+                    let ty = self.check_expr(&args[0])?;
+                    return match ty {
+                        ResolvedType::Str | ResolvedType::List(_) | ResolvedType::Bytes => {
+                            Ok(ResolvedType::Int)
+                        }
+                        _ => Err(TypeError {
+                            msg: format!("len() expects str, list, or bytes, found `{}`", ty),
+                            span: *span,
+                        }),
+                    };
                 }
                 match self.fn_sigs.get(name).cloned() {
                     Some((param_tys, ret_ty)) => {

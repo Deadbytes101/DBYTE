@@ -1,0 +1,6 @@
+import std.encoding as enc
+let b = enc.hex_decode("414243")
+print(len(b))
+print(b[0])
+print(b[1])
+print(b[2])

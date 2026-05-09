@@ -48,7 +48,44 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                     ret: TypeAnnotation::Inferred,
                 },
             ),
+            (
+                "read_bytes".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str],
+                    ret: TypeAnnotation::Bytes,
+                },
+            ),
+            (
+                "write_bytes".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str, TypeAnnotation::Bytes],
+                    ret: TypeAnnotation::Inferred,
+                },
+            ),
         ]),
+        "std.encoding" => Some(vec![
+            (
+                "hex_encode".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Bytes],
+                    ret: TypeAnnotation::Str,
+                },
+            ),
+            (
+                "hex_decode".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str],
+                    ret: TypeAnnotation::Bytes,
+                },
+            ),
+        ]),
+        "std.hash" => Some(vec![(
+            "sha256".into(),
+            StdlibExport::Function {
+                params: vec![TypeAnnotation::Bytes],
+                ret: TypeAnnotation::Bytes,
+            },
+        )]),
         "std.env" => Some(vec![(
             "args".into(),
             StdlibExport::Function {

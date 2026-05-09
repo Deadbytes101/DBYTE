@@ -20,6 +20,7 @@ pub enum TokenKind {
     Int(i64),
     Float(f64),
     Str(String),
+    Bytes(Vec<u8>),
 
     Plus,
     Minus,
@@ -69,6 +70,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Int(n) => write!(f, "{}", n),
             TokenKind::Float(n) => write!(f, "{}", n),
             TokenKind::Str(s) => write!(f, "\"{}\"", s),
+            TokenKind::Bytes(_) => write!(f, "b\"...\""),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Star => write!(f, "*"),
@@ -182,6 +184,68 @@ impl<'src> Lexer<'src> {
             }
         }
         toks
+    }
+
+    fn read_bytes(&mut self) -> Result<Token, LexError> {
+        let sp = self.span();
+        let mut bytes = Vec::new();
+        loop {
+            match self.advance() {
+                Some((_, '"')) => break,
+                Some((_, '\\')) => match self.advance() {
+                    Some((_, 'n')) => bytes.push(b'\n'),
+                    Some((_, 'r')) => bytes.push(b'\r'),
+                    Some((_, 't')) => bytes.push(b'\t'),
+                    Some((_, '\\')) => bytes.push(b'\\'),
+                    Some((_, '"')) => bytes.push(b'"'),
+                    Some((_, 'x')) => {
+                        let h1 = self
+                            .advance()
+                            .ok_or_else(|| LexError {
+                                msg: "invalid byte escape".into(),
+                                span: sp,
+                            })?
+                            .1;
+                        let h2 = self
+                            .advance()
+                            .ok_or_else(|| LexError {
+                                msg: "invalid byte escape".into(),
+                                span: sp,
+                            })?
+                            .1;
+                        let hex = format!("{}{}", h1, h2);
+                        let b = u8::from_str_radix(&hex, 16).map_err(|_| LexError {
+                            msg: "invalid byte escape".into(),
+                            span: sp,
+                        })?;
+                        bytes.push(b);
+                    }
+                    _ => {
+                        return Err(LexError {
+                            msg: "invalid byte escape".into(),
+                            span: sp,
+                        });
+                    }
+                },
+                Some((_, c)) => {
+                    if c.is_ascii() {
+                        bytes.push(c as u8);
+                    } else {
+                        return Err(LexError {
+                            msg: "non-ASCII character in byte literal".into(),
+                            span: sp,
+                        });
+                    }
+                }
+                None => {
+                    return Err(LexError {
+                        msg: "unterminated byte literal".into(),
+                        span: sp,
+                    })
+                }
+            }
+        }
+        Ok(Token::new(TokenKind::Bytes(bytes), sp))
     }
 
     fn read_string(&mut self) -> Result<Token, LexError> {
@@ -330,6 +394,11 @@ impl<'src> Lexer<'src> {
                 '"' => {
                     self.advance();
                     tokens.push(self.read_string()?);
+                }
+                'b' if self.peek2_char() == Some('"') => {
+                    self.advance(); // consume 'b'
+                    self.advance(); // consume '"'
+                    tokens.push(self.read_bytes()?);
                 }
                 c if c.is_ascii_digit() => {
                     self.advance();

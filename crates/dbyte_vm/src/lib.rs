@@ -379,6 +379,14 @@ impl Vm {
                 self.push(items[normalized as usize].clone());
                 Ok(())
             }
+            Value::Bytes(bs) => {
+                let normalized = if idx < 0 { bs.len() as i64 + idx } else { idx };
+                if normalized < 0 || normalized as usize >= bs.len() {
+                    return Err(VmError::new("index out of range"));
+                }
+                self.push(Value::Int(bs[normalized as usize] as i64));
+                Ok(())
+            }
             _ => Err(VmError::new("value is not indexable")),
         }
     }
@@ -419,6 +427,18 @@ impl Vm {
             let rendered: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
             println!("{}", rendered.join(" "));
             return Ok(Value::Void);
+        }
+        if name == "len" {
+            if args.len() != 1 {
+                return Err(VmError::new("len() expects 1 argument"));
+            }
+            let length = match &args[0] {
+                Value::Str(s) => s.len(),
+                Value::List(l) => l.len(),
+                Value::Bytes(b) => b.len(),
+                _ => return Err(VmError::new("len() expects str, list, or bytes")),
+            };
+            return Ok(Value::Int(length as i64));
         }
         let function = chunk
             .functions
@@ -500,6 +520,39 @@ impl Vm {
                         VmError::new(format!("fs.write_text failed for `{}`: {}", path, e))
                     })
             }
+            "std.fs.read_bytes" => {
+                let path = expect_str(&args, 0)?;
+                std::fs::read(path).map(Value::Bytes).map_err(|e| {
+                    VmError::new(format!("fs.read_bytes failed for `{}`: {}", path, e))
+                })
+            }
+            "std.fs.write_bytes" => {
+                let path = expect_str(&args, 0)?;
+                let bytes = expect_bytes(&args, 1)?;
+                std::fs::write(path, bytes)
+                    .map(|_| Value::Void)
+                    .map_err(|e| {
+                        VmError::new(format!("fs.write_bytes failed for `{}`: {}", path, e))
+                    })
+            }
+            "std.encoding.hex_encode" => {
+                let bytes = expect_bytes(&args, 0)?;
+                Ok(Value::Str(hex::encode(bytes)))
+            }
+            "std.encoding.hex_decode" => {
+                let s = expect_str(&args, 0)?;
+                hex::decode(s)
+                    .map(Value::Bytes)
+                    .map_err(|e| VmError::new(format!("hex_decode failed: {}", e)))
+            }
+            "std.hash.sha256" => {
+                use sha2::{Digest, Sha256};
+                let bytes = expect_bytes(&args, 0)?;
+                let mut hasher = Sha256::new();
+                hasher.update(bytes);
+                let result = hasher.finalize();
+                Ok(Value::Bytes(result.to_vec()))
+            }
             "std.env.args" => Ok(Value::List(std::env::args().map(Value::Str).collect())),
             _ => Err(VmError::new(format!("unknown native `{}`", name))),
         }
@@ -557,7 +610,9 @@ impl Vm {
     fn load_std_module(&self, name: &str, alias: &str) -> Result<ModuleValue, VmError> {
         let names = match name {
             "std.math" => vec!["abs", "min", "max"],
-            "std.fs" => vec!["read_text", "write_text"],
+            "std.fs" => vec!["read_text", "write_text", "read_bytes", "write_bytes"],
+            "std.encoding" => vec!["hex_encode", "hex_decode"],
+            "std.hash" => vec!["sha256"],
             "std.env" => vec!["args"],
             _ => {
                 return Err(VmError::new(format!(
@@ -658,6 +713,18 @@ fn expect_str(args: &[Value], idx: usize) -> Result<&str, VmError> {
         Some(Value::Str(s)) => Ok(s),
         Some(other) => Err(VmError::new(format!(
             "expected str argument {}, found {}",
+            idx + 1,
+            other
+        ))),
+        None => Err(VmError::new(format!("missing argument {}", idx + 1))),
+    }
+}
+
+fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], VmError> {
+    match args.get(idx) {
+        Some(Value::Bytes(bs)) => Ok(bs),
+        Some(other) => Err(VmError::new(format!(
+            "expected bytes argument {}, found {}",
             idx + 1,
             other
         ))),
