@@ -1,0 +1,16 @@
+import std.binary as bin
+
+let data: bytes = b"\x01\x02\x03\x04"
+
+print(bin.u16_le(data, 0)) # 0x0201 = 513
+print(bin.u16_be(data, 0)) # 0x0102 = 258
+print(bin.u16_le(data, 2)) # 0x0403 = 1027
+print(bin.u16_be(data, 2)) # 0x0304 = 772
+
+let signed: bytes = b"\xff\xff\x00\x80"
+print(bin.u16_le(signed, 0)) # 65535
+print(bin.i16_le(signed, 0)) # -1
+print(bin.u16_be(signed, 2)) # 0x0080 = 128
+print(bin.i16_be(signed, 2)) # 128
+print(bin.u16_be(signed, 0)) # 0xffff = 65535
+print(bin.i16_be(signed, 0)) # -1

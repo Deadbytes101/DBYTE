@@ -1,0 +1,3 @@
+import std.binary as bin
+
+print(bin.pack_u32_le(-1))

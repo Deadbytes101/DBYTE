@@ -1,3 +1,4 @@
+use byteorder::{ByteOrder, BE, LE};
 use dbyte_ast::*;
 use dbyte_lexer::Lexer;
 use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
@@ -254,6 +255,34 @@ impl Interpreter {
             }
             "std.env" => {
                 members.insert("args".into(), ModuleMember::Native(native_env_args));
+            }
+            "std.binary" => {
+                members.insert("u8".into(), ModuleMember::Native(native_binary_u8));
+                members.insert("i8".into(), ModuleMember::Native(native_binary_i8));
+                members.insert("u16_le".into(), ModuleMember::Native(native_binary_u16_le));
+                members.insert("u16_be".into(), ModuleMember::Native(native_binary_u16_be));
+                members.insert("i16_le".into(), ModuleMember::Native(native_binary_i16_le));
+                members.insert("i16_be".into(), ModuleMember::Native(native_binary_i16_be));
+                members.insert("u32_le".into(), ModuleMember::Native(native_binary_u32_le));
+                members.insert("u32_be".into(), ModuleMember::Native(native_binary_u32_be));
+                members.insert("i32_le".into(), ModuleMember::Native(native_binary_i32_le));
+                members.insert("i32_be".into(), ModuleMember::Native(native_binary_i32_be));
+                members.insert(
+                    "pack_u16_le".into(),
+                    ModuleMember::Native(native_binary_pack_u16_le),
+                );
+                members.insert(
+                    "pack_u16_be".into(),
+                    ModuleMember::Native(native_binary_pack_u16_be),
+                );
+                members.insert(
+                    "pack_u32_le".into(),
+                    ModuleMember::Native(native_binary_pack_u32_le),
+                );
+                members.insert(
+                    "pack_u32_be".into(),
+                    ModuleMember::Native(native_binary_pack_u32_be),
+                );
             }
             _ => {
                 return Err(RuntimeError {
@@ -907,6 +936,207 @@ fn native_env_args(args: &[Value]) -> Result<Value, String> {
         ));
     }
     Ok(Value::List(std::env::args().map(Value::Str).collect()))
+}
+
+fn native_binary_read(name: &str, args: &[Value]) -> Result<Value, String> {
+    let bs = expect_bytes(args, 0)?;
+    let offset = expect_int(args, 1)?;
+    if offset < 0 {
+        return Err(format!(
+            "std.binary.{} failed: negative offset {}",
+            name, offset
+        ));
+    }
+    let offset = offset as usize;
+
+    match name {
+        "u8" => {
+            if offset >= bs.len() {
+                return Err(format!(
+                    "std.binary.u8 failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(bs[offset] as i64))
+        }
+        "i8" => {
+            if offset >= bs.len() {
+                return Err(format!(
+                    "std.binary.i8 failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(bs[offset] as i8 as i64))
+        }
+        "u16_le" => {
+            if offset + 2 > bs.len() {
+                return Err(format!(
+                    "std.binary.u16_le failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(LE::read_u16(&bs[offset..]) as i64))
+        }
+        "u16_be" => {
+            if offset + 2 > bs.len() {
+                return Err(format!(
+                    "std.binary.u16_be failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(BE::read_u16(&bs[offset..]) as i64))
+        }
+        "i16_le" => {
+            if offset + 2 > bs.len() {
+                return Err(format!(
+                    "std.binary.i16_le failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(LE::read_i16(&bs[offset..]) as i64))
+        }
+        "i16_be" => {
+            if offset + 2 > bs.len() {
+                return Err(format!(
+                    "std.binary.i16_be failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(BE::read_i16(&bs[offset..]) as i64))
+        }
+        "u32_le" => {
+            if offset + 4 > bs.len() {
+                return Err(format!(
+                    "std.binary.u32_le failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(LE::read_u32(&bs[offset..]) as i64))
+        }
+        "u32_be" => {
+            if offset + 4 > bs.len() {
+                return Err(format!(
+                    "std.binary.u32_be failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(BE::read_u32(&bs[offset..]) as i64))
+        }
+        "i32_le" => {
+            if offset + 4 > bs.len() {
+                return Err(format!(
+                    "std.binary.i32_le failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(LE::read_i32(&bs[offset..]) as i64))
+        }
+        "i32_be" => {
+            if offset + 4 > bs.len() {
+                return Err(format!(
+                    "std.binary.i32_be failed: offset {} out of range",
+                    offset
+                ));
+            }
+            Ok(Value::Int(BE::read_i32(&bs[offset..]) as i64))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn native_binary_pack(name: &str, args: &[Value]) -> Result<Value, String> {
+    let val = expect_int(args, 0)?;
+
+    match name {
+        "pack_u16_le" => {
+            if !(0..=65535).contains(&val) {
+                return Err(format!(
+                    "std.binary.pack_u16_le failed: value {} out of u16 range",
+                    val
+                ));
+            }
+            let mut buf = [0u8; 2];
+            LE::write_u16(&mut buf, val as u16);
+            Ok(Value::Bytes(buf.to_vec()))
+        }
+        "pack_u16_be" => {
+            if !(0..=65535).contains(&val) {
+                return Err(format!(
+                    "std.binary.pack_u16_be failed: value {} out of u16 range",
+                    val
+                ));
+            }
+            let mut buf = [0u8; 2];
+            BE::write_u16(&mut buf, val as u16);
+            Ok(Value::Bytes(buf.to_vec()))
+        }
+        "pack_u32_le" => {
+            if !(0..=4294967295).contains(&val) {
+                return Err(format!(
+                    "std.binary.pack_u32_le failed: value {} out of u32 range",
+                    val
+                ));
+            }
+            let mut buf = [0u8; 4];
+            LE::write_u32(&mut buf, val as u32);
+            Ok(Value::Bytes(buf.to_vec()))
+        }
+        "pack_u32_be" => {
+            if !(0..=4294967295).contains(&val) {
+                return Err(format!(
+                    "std.binary.pack_u32_be failed: value {} out of u32 range",
+                    val
+                ));
+            }
+            let mut buf = [0u8; 4];
+            BE::write_u32(&mut buf, val as u32);
+            Ok(Value::Bytes(buf.to_vec()))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn native_binary_u8(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("u8", args)
+}
+fn native_binary_i8(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("i8", args)
+}
+fn native_binary_u16_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("u16_le", args)
+}
+fn native_binary_u16_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("u16_be", args)
+}
+fn native_binary_i16_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("i16_le", args)
+}
+fn native_binary_i16_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("i16_be", args)
+}
+fn native_binary_u32_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("u32_le", args)
+}
+fn native_binary_u32_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("u32_be", args)
+}
+fn native_binary_i32_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("i32_le", args)
+}
+fn native_binary_i32_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_read("i32_be", args)
+}
+fn native_binary_pack_u16_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_pack("pack_u16_le", args)
+}
+fn native_binary_pack_u16_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_pack("pack_u16_be", args)
+}
+fn native_binary_pack_u32_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_pack("pack_u32_le", args)
+}
+fn native_binary_pack_u32_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_pack("pack_u32_be", args)
 }
 
 fn format_module_error(error: &ModuleError) -> String {

@@ -1,3 +1,4 @@
+use byteorder::{ByteOrder, BE, LE};
 use dbyte_ast::{FStrPart, Span};
 use dbyte_bytecode::{format_op, BytecodeFunction, Chunk, ModuleMember, ModuleValue, Op, Value};
 use dbyte_compiler::{CompileError, Compiler};
@@ -562,6 +563,7 @@ impl Vm {
                 Ok(Value::Bytes(result.to_vec()))
             }
             "std.env.args" => Ok(Value::List(std::env::args().map(Value::Str).collect())),
+            _ if name.starts_with("std.binary.") => self.native_binary_dispatch(name, args),
             _ => Err(VmError::new(format!("unknown native `{}`", name))),
         }
     }
@@ -622,6 +624,22 @@ impl Vm {
             "std.encoding" => vec!["hex_encode", "hex_decode"],
             "std.hash" => vec!["sha256"],
             "std.env" => vec!["args"],
+            "std.binary" => vec![
+                "u8",
+                "i8",
+                "u16_le",
+                "u16_be",
+                "i16_le",
+                "i16_be",
+                "u32_le",
+                "u32_be",
+                "i32_le",
+                "i32_be",
+                "pack_u16_le",
+                "pack_u16_be",
+                "pack_u32_le",
+                "pack_u32_be",
+            ],
             _ => {
                 return Err(VmError::new(format!(
                     "ImportError: standard module not found: {}",
@@ -747,6 +765,178 @@ fn format_module_error(error: &ModuleError) -> String {
         }
         ModuleError::LocalModuleNotFound { requested, .. } => {
             format!("local module not found: {}", requested)
+        }
+    }
+}
+
+impl Vm {
+    fn native_binary_dispatch(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        let op = name.strip_prefix("std.binary.").unwrap_or(name);
+        match op {
+            "u8" | "i8" | "u16_le" | "u16_be" | "i16_le" | "i16_be" | "u32_le" | "u32_be"
+            | "i32_le" | "i32_be" => self.native_binary_read(op, args),
+            "pack_u16_le" | "pack_u16_be" | "pack_u32_le" | "pack_u32_be" => {
+                self.native_binary_pack(op, args)
+            }
+            _ => Err(VmError::new(format!("unknown binary native `{}`", op))),
+        }
+    }
+
+    fn native_binary_read(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        let bs = expect_bytes(&args, 0)?;
+        let offset = expect_int(&args, 1)?;
+        if offset < 0 {
+            return Err(VmError::new(format!(
+                "std.binary.{} failed: negative offset {}",
+                name, offset
+            )));
+        }
+        let offset = offset as usize;
+
+        match name {
+            "u8" => {
+                if offset >= bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.u8 failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(bs[offset] as i64))
+            }
+            "i8" => {
+                if offset >= bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.i8 failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(bs[offset] as i8 as i64))
+            }
+            "u16_le" => {
+                if offset + 2 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.u16_le failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(LE::read_u16(&bs[offset..]) as i64))
+            }
+            "u16_be" => {
+                if offset + 2 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.u16_be failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(BE::read_u16(&bs[offset..]) as i64))
+            }
+            "i16_le" => {
+                if offset + 2 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.i16_le failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(LE::read_i16(&bs[offset..]) as i64))
+            }
+            "i16_be" => {
+                if offset + 2 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.i16_be failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(BE::read_i16(&bs[offset..]) as i64))
+            }
+            "u32_le" => {
+                if offset + 4 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.u32_le failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(LE::read_u32(&bs[offset..]) as i64))
+            }
+            "u32_be" => {
+                if offset + 4 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.u32_be failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(BE::read_u32(&bs[offset..]) as i64))
+            }
+            "i32_le" => {
+                if offset + 4 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.i32_le failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(LE::read_i32(&bs[offset..]) as i64))
+            }
+            "i32_be" => {
+                if offset + 4 > bs.len() {
+                    return Err(VmError::new(format!(
+                        "std.binary.i32_be failed: offset {} out of range",
+                        offset
+                    )));
+                }
+                Ok(Value::Int(BE::read_i32(&bs[offset..]) as i64))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn native_binary_pack(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        let val = expect_int(&args, 0)?;
+
+        match name {
+            "pack_u16_le" => {
+                if !(0..=65535).contains(&val) {
+                    return Err(VmError::new(format!(
+                        "std.binary.pack_u16_le failed: value {} out of u16 range",
+                        val
+                    )));
+                }
+                let mut buf = [0u8; 2];
+                LE::write_u16(&mut buf, val as u16);
+                Ok(Value::Bytes(buf.to_vec()))
+            }
+            "pack_u16_be" => {
+                if !(0..=65535).contains(&val) {
+                    return Err(VmError::new(format!(
+                        "std.binary.pack_u16_be failed: value {} out of u16 range",
+                        val
+                    )));
+                }
+                let mut buf = [0u8; 2];
+                BE::write_u16(&mut buf, val as u16);
+                Ok(Value::Bytes(buf.to_vec()))
+            }
+            "pack_u32_le" => {
+                if !(0..=4294967295).contains(&val) {
+                    return Err(VmError::new(format!(
+                        "std.binary.pack_u32_le failed: value {} out of u32 range",
+                        val
+                    )));
+                }
+                let mut buf = [0u8; 4];
+                LE::write_u32(&mut buf, val as u32);
+                Ok(Value::Bytes(buf.to_vec()))
+            }
+            "pack_u32_be" => {
+                if !(0..=4294967295).contains(&val) {
+                    return Err(VmError::new(format!(
+                        "std.binary.pack_u32_be failed: value {} out of u32 range",
+                        val
+                    )));
+                }
+                let mut buf = [0u8; 4];
+                BE::write_u32(&mut buf, val as u32);
+                Ok(Value::Bytes(buf.to_vec()))
+            }
+            _ => unreachable!(),
         }
     }
 }

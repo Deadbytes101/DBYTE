@@ -93,6 +93,34 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                 ret: TypeAnnotation::List(Box::new(TypeAnnotation::Str)),
             },
         )]),
+        "std.binary" => {
+            let mut exports = Vec::new();
+            let reader_funcs = [
+                "u8", "i8", "u16_le", "u16_be", "i16_le", "i16_be", "u32_le", "u32_be", "i32_le",
+                "i32_be",
+            ];
+            for name in reader_funcs {
+                exports.push((
+                    name.into(),
+                    StdlibExport::Function {
+                        params: vec![TypeAnnotation::Bytes, TypeAnnotation::Int],
+                        ret: TypeAnnotation::Int,
+                    },
+                ));
+            }
+
+            let writer_funcs = ["pack_u16_le", "pack_u16_be", "pack_u32_le", "pack_u32_be"];
+            for name in writer_funcs {
+                exports.push((
+                    name.into(),
+                    StdlibExport::Function {
+                        params: vec![TypeAnnotation::Int],
+                        ret: TypeAnnotation::Bytes,
+                    },
+                ));
+            }
+            Some(exports)
+        }
         _ => None,
     }
 }
