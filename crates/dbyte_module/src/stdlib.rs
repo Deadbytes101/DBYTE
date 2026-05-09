@@ -151,6 +151,38 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                     ret: TypeAnnotation::Bytes,
                 },
             ),
+            (
+                "load".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str],
+                    ret: TypeAnnotation::Buffer,
+                },
+            ),
+            (
+                "save".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str, TypeAnnotation::Buffer],
+                    ret: TypeAnnotation::Inferred,
+                },
+            ),
+            (
+                "find".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Buffer, TypeAnnotation::Bytes],
+                    ret: TypeAnnotation::Int,
+                },
+            ),
+            (
+                "replace".into(),
+                StdlibExport::Function {
+                    params: vec![
+                        TypeAnnotation::Buffer,
+                        TypeAnnotation::Int,
+                        TypeAnnotation::Bytes,
+                    ],
+                    ret: TypeAnnotation::Inferred,
+                },
+            ),
         ]),
         "std.binary" => {
             let mut exports = Vec::new();

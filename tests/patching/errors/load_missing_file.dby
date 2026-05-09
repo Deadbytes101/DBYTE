@@ -1,0 +1,2 @@
+import std.buffer as buf
+let b = buf.load("non_existent_file.bin")

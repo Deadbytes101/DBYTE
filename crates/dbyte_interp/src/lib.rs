@@ -275,6 +275,13 @@ impl Interpreter {
                 members.insert("get".into(), ModuleMember::Native(native_buffer_get));
                 members.insert("set".into(), ModuleMember::Native(native_buffer_set));
                 members.insert("slice".into(), ModuleMember::Native(native_buffer_slice));
+                members.insert("load".into(), ModuleMember::Native(native_buffer_load));
+                members.insert("save".into(), ModuleMember::Native(native_buffer_save));
+                members.insert("find".into(), ModuleMember::Native(native_buffer_find));
+                members.insert(
+                    "replace".into(),
+                    ModuleMember::Native(native_buffer_replace),
+                );
             }
             "std.binary" => {
                 members.insert("u8".into(), ModuleMember::Native(native_binary_u8));
@@ -1254,6 +1261,58 @@ fn native_buffer_slice(args: &[Value]) -> Result<Value, String> {
     let start = offset as usize;
     let end = start + length as usize;
     Ok(Value::Bytes(buf[start..end].to_vec()))
+}
+
+fn native_buffer_load(args: &[Value]) -> Result<Value, String> {
+    let path = expect_str(args, 0)?;
+    let data =
+        std::fs::read(path).map_err(|e| format!("buffer.load failed for `{}`: {}", path, e))?;
+    Ok(Value::Buffer(Rc::new(RefCell::new(data))))
+}
+
+fn native_buffer_save(args: &[Value]) -> Result<Value, String> {
+    let path = expect_str(args, 0)?;
+    let b = expect_buffer(args, 1)?;
+    std::fs::write(path, &*b.borrow())
+        .map_err(|e| format!("buffer.save failed for `{}`: {}", path, e))?;
+    Ok(Value::Void)
+}
+
+fn native_buffer_find(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let pattern = expect_bytes(args, 1)?;
+    if pattern.is_empty() {
+        return Err("buffer.find: pattern cannot be empty".into());
+    }
+    let buf = b.borrow();
+    let pos = buf
+        .windows(pattern.len())
+        .position(|w| w == pattern)
+        .map(|p| p as i64)
+        .unwrap_or(-1);
+    Ok(Value::Int(pos))
+}
+
+fn native_buffer_replace(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let offset = expect_int(args, 1)?;
+    let data = expect_bytes(args, 2)?;
+    if offset < 0 {
+        return Err("offset must be non-negative".into());
+    }
+    let mut buf = b.borrow_mut();
+    let start = offset as usize;
+    let end = start + data.len();
+    if end > buf.len() {
+        return Err(format!(
+            "buffer.replace out of range: need {} bytes at offset {}, but length is {}",
+            data.len(),
+            offset,
+            buf.len()
+        ));
+    }
+    buf[start..end].copy_from_slice(data);
+    Ok(Value::Void)
 }
 
 fn native_binary_write(name: &str, args: &[Value]) -> Result<Value, String> {
