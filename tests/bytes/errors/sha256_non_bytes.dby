@@ -1,0 +1,2 @@
+import std.hash as hash
+print(hash.sha256("Not bytes"))

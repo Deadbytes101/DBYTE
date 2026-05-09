@@ -50,6 +50,21 @@ impl std::fmt::Display for Value {
     }
 }
 
+impl Value {
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Value::Int(_) => "int",
+            Value::Float(_) => "float",
+            Value::Bool(_) => "bool",
+            Value::Str(_) => "str",
+            Value::Bytes(_) => "bytes",
+            Value::List(_) => "list",
+            Value::Module(_) => "module",
+            Value::Void => "void",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Const(usize),

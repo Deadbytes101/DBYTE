@@ -56,6 +56,21 @@ impl std::fmt::Display for Value {
     }
 }
 
+impl Value {
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Value::Int(_) => "int",
+            Value::Float(_) => "float",
+            Value::Bool(_) => "bool",
+            Value::Str(_) => "str",
+            Value::Bytes(_) => "bytes",
+            Value::List(_) => "list",
+            Value::Module(_) => "module",
+            Value::Void => "void",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RuntimeError {
     pub msg: String,
@@ -397,38 +412,41 @@ impl Interpreter {
             } => {
                 let tval = self.eval_expr(target)?;
                 let ival = self.eval_expr(index)?;
-                let i = match ival {
-                    Value::Int(n) => n,
-                    _ => {
-                        return Err(RuntimeError {
-                            msg: "list index must be int".into(),
-                            span: *span,
-                        })
-                    }
-                };
-                match tval {
-                    Value::List(vs) => {
-                        let idx = if i < 0 { vs.len() as i64 + i } else { i };
-                        if idx < 0 || idx as usize >= vs.len() {
+                match (tval, ival) {
+                    (Value::List(vs), Value::Int(idx)) => {
+                        let normalized = if idx < 0 { vs.len() as i64 + idx } else { idx };
+                        if normalized < 0 || normalized as usize >= vs.len() {
                             return Err(RuntimeError {
-                                msg: "index out of range".into(),
+                                msg: format!(
+                                    "index out of range: list length is {}, but index is {}",
+                                    vs.len(),
+                                    idx
+                                ),
                                 span: *span,
                             });
                         }
-                        Ok(vs[idx as usize].clone())
+                        Ok(vs[normalized as usize].clone())
                     }
-                    Value::Bytes(bs) => {
-                        let idx = if i < 0 { bs.len() as i64 + i } else { i };
-                        if idx < 0 || idx as usize >= bs.len() {
+                    (Value::Bytes(bs), Value::Int(idx)) => {
+                        let normalized = if idx < 0 { bs.len() as i64 + idx } else { idx };
+                        if normalized < 0 || normalized as usize >= bs.len() {
                             return Err(RuntimeError {
-                                msg: "index out of range".into(),
+                                msg: format!(
+                                    "index out of range: bytes length is {}, but index is {}",
+                                    bs.len(),
+                                    idx
+                                ),
                                 span: *span,
                             });
                         }
-                        Ok(Value::Int(bs[idx as usize] as i64))
+                        Ok(Value::Int(bs[normalized as usize] as i64))
                     }
-                    _ => Err(RuntimeError {
+                    (_, Value::Int(_)) => Err(RuntimeError {
                         msg: "value is not indexable".into(),
+                        span: *span,
+                    }),
+                    _ => Err(RuntimeError {
+                        msg: "index must be int".into(),
                         span: *span,
                     }),
                 }
@@ -788,7 +806,7 @@ fn expect_int(args: &[Value], idx: usize) -> Result<i64, String> {
         Some(other) => Err(format!(
             "expected int argument {}, found {}",
             idx + 1,
-            other
+            other.kind_name()
         )),
         None => Err(format!("missing argument {}", idx + 1)),
     }
@@ -800,7 +818,7 @@ fn expect_str(args: &[Value], idx: usize) -> Result<&str, String> {
         Some(other) => Err(format!(
             "expected str argument {}, found {}",
             idx + 1,
-            other
+            other.kind_name()
         )),
         None => Err(format!("missing argument {}", idx + 1)),
     }
@@ -812,7 +830,7 @@ fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], String> {
         Some(other) => Err(format!(
             "expected bytes argument {}, found {}",
             idx + 1,
-            other
+            other.kind_name()
         )),
         None => Err(format!("missing argument {}", idx + 1)),
     }
