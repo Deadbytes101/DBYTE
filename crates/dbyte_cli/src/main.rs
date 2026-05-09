@@ -1,10 +1,12 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use std::process;
 
 use dbyte_interp::Interpreter;
 use dbyte_lexer::Lexer;
 use dbyte_parser::Parser;
+use dbyte_project::{create_project, find_project_root, load_project, ProjectError};
 use dbyte_typeck::TypeChecker;
 
 fn print_error(label: &str, msg: &str, span: dbyte_ast::Span, path: &str, src: &str) {
@@ -18,11 +20,20 @@ fn print_error(label: &str, msg: &str, span: dbyte_ast::Span, path: &str, src: &
     eprintln!();
 }
 
-fn cmd_run(path: &str, type_check: bool) {
+fn print_project_error(error: ProjectError) -> ! {
+    eprintln!("ProjectError: {}", error);
+    process::exit(1);
+}
+
+fn cmd_run(path: &Path, type_check: bool) {
+    let path_label = path.display().to_string();
     let src = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("\x1b[1;31merror\x1b[0m: cannot read `{}`: {}", path, e);
+            eprintln!(
+                "\x1b[1;31merror\x1b[0m: cannot read `{}`: {}",
+                path_label, e
+            );
             process::exit(1);
         }
     };
@@ -31,7 +42,7 @@ fn cmd_run(path: &str, type_check: bool) {
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(e) => {
-            print_error("LexError", &e.msg, e.span, path, &src);
+            print_error("LexError", &e.msg, e.span, &path_label, &src);
             process::exit(1);
         }
     };
@@ -40,31 +51,51 @@ fn cmd_run(path: &str, type_check: bool) {
     let program = match parser.parse_program() {
         Ok(p) => p,
         Err(e) => {
-            print_error("ParseError", &e.msg, e.span, path, &src);
+            print_error("ParseError", &e.msg, e.span, &path_label, &src);
             process::exit(1);
         }
     };
 
     if type_check {
-        let mut checker = TypeChecker::with_entry_path(path);
+        let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
         if let Err(e) = checker.check_program(&program) {
-            print_error("TypeError", &e.msg, e.span, path, &src);
+            print_error("TypeError", &e.msg, e.span, &path_label, &src);
             process::exit(1);
         }
     }
 
-    let mut interp = Interpreter::with_entry_path(path);
+    let mut interp = Interpreter::with_entry_path(path.to_path_buf());
     if let Err(e) = interp.run(&program) {
-        print_error("RuntimeError", &e.msg, e.span, path, &src);
+        print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
         process::exit(1);
     }
 }
 
-fn cmd_check(path: &str) {
+fn cmd_run_project(type_check: bool) {
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("ProjectError: failed to read current directory: {}", e);
+        process::exit(1);
+    });
+    let project = match load_project(&cwd) {
+        Ok(project) => project,
+        Err(error) => print_project_error(error),
+    };
+    std::env::set_current_dir(&project.root).unwrap_or_else(|e| {
+        eprintln!("ProjectError: failed to enter project root: {}", e);
+        process::exit(1);
+    });
+    cmd_run(&project.entry_path, type_check);
+}
+
+fn cmd_check(path: &Path) {
+    let path_label = path.display().to_string();
     let src = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("\x1b[1;31merror\x1b[0m: cannot read `{}`: {}", path, e);
+            eprintln!(
+                "\x1b[1;31merror\x1b[0m: cannot read `{}`: {}",
+                path_label, e
+            );
             process::exit(1);
         }
     };
@@ -73,7 +104,7 @@ fn cmd_check(path: &str) {
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
         Err(e) => {
-            print_error("LexError", &e.msg, e.span, path, &src);
+            print_error("LexError", &e.msg, e.span, &path_label, &src);
             process::exit(1);
         }
     };
@@ -82,29 +113,59 @@ fn cmd_check(path: &str) {
     let program = match parser.parse_program() {
         Ok(p) => p,
         Err(e) => {
-            print_error("ParseError", &e.msg, e.span, path, &src);
+            print_error("ParseError", &e.msg, e.span, &path_label, &src);
             process::exit(1);
         }
     };
 
-    let mut checker = TypeChecker::with_entry_path(path);
+    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
     match checker.check_program(&program) {
-        Ok(_) => println!("\x1b[1;32mok\x1b[0m: no type errors found in `{}`", path),
+        Ok(_) => println!(
+            "\x1b[1;32mok\x1b[0m: no type errors found in `{}`",
+            path_label
+        ),
         Err(e) => {
-            print_error("TypeError", &e.msg, e.span, path, &src);
+            print_error("TypeError", &e.msg, e.span, &path_label, &src);
             process::exit(1);
         }
     }
 }
 
+fn cmd_check_project() {
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("ProjectError: failed to read current directory: {}", e);
+        process::exit(1);
+    });
+    let project = match load_project(&cwd) {
+        Ok(project) => project,
+        Err(error) => print_project_error(error),
+    };
+    std::env::set_current_dir(&project.root).unwrap_or_else(|e| {
+        eprintln!("ProjectError: failed to enter project root: {}", e);
+        process::exit(1);
+    });
+    cmd_check(&project.entry_path);
+}
+
+fn cmd_new(name: &str) {
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("ProjectError: failed to read current directory: {}", e);
+        process::exit(1);
+    });
+    if let Err(error) = create_project(&cwd, name) {
+        print_project_error(error);
+    }
+    println!("created DByte project `{}`", name);
+}
+
 fn usage() {
     eprintln!(
-        "\x1b[1mDByte v0.2\x1b[0m\n\
+        "\x1b[1mDByte v0.4\x1b[0m\n\
          Usage:\n\
-         \x1b[1;33m  dbyte run   \x1b[0m<file.dby>           run a DByte program\n\
-         \x1b[1;33m  dbyte check \x1b[0m<file.dby>           type-check only\n\
-         \x1b[1;33m  dbyte test  \x1b[0m                     run all tests\n\
-         \x1b[1;33m  dbyte run   \x1b[0m--no-check <file>    skip type-check\n"
+         \x1b[1;33m  dbyte new   \x1b[0m<name>               create a DByte project\n\
+         \x1b[1;33m  dbyte run   \x1b[0m[--no-check] [file]  run a file or project entry\n\
+         \x1b[1;33m  dbyte check \x1b[0m[file]               type-check a file or project entry\n\
+         \x1b[1;33m  dbyte test  \x1b[0m                     run all tests\n"
     );
 }
 
@@ -124,14 +185,20 @@ fn strip_ansi(s: &str) -> String {
 }
 
 fn cmd_test() {
-    use std::path::Path;
     let mut passed = 0;
     let mut failed = 0;
 
     println!("\x1b[1mRunning DByte Tests...\x1b[0m");
 
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("TestError: failed to read current directory: {}", e);
+        process::exit(1);
+    });
+    let test_root = find_project_root(&cwd).unwrap_or(cwd);
+    let test_dir = test_root.join("tests");
+
     let mut cases = Vec::new();
-    collect_tests(Path::new("tests"), &mut cases);
+    collect_tests(&test_dir, &mut cases);
     cases.sort();
 
     if cases.is_empty() {
@@ -150,6 +217,7 @@ fn cmd_test() {
         let output = process::Command::new(std::env::current_exe().unwrap())
             .arg("run")
             .arg(&path)
+            .current_dir(&test_root)
             .output()
             .unwrap();
 
@@ -235,28 +303,35 @@ fn main() {
     }
 
     match args[1].as_str() {
+        "new" => {
+            let name = args.get(2).map(|s| s.as_str()).unwrap_or_else(|| {
+                usage();
+                process::exit(1);
+            });
+            cmd_new(name);
+        }
         "run" => {
             let mut type_check = true;
-            let mut file: Option<&str> = None;
+            let mut file: Option<PathBuf> = None;
             for arg in &args[2..] {
                 if arg == "--no-check" {
                     type_check = false;
                 } else {
-                    file = Some(arg.as_str());
+                    file = Some(PathBuf::from(arg));
                 }
             }
-            let path = file.unwrap_or_else(|| {
-                usage();
-                process::exit(1);
-            });
-            cmd_run(path, type_check);
+            if let Some(path) = file {
+                cmd_run(&path, type_check);
+            } else {
+                cmd_run_project(type_check);
+            }
         }
         "check" => {
-            let path = args.get(2).map(|s| s.as_str()).unwrap_or_else(|| {
-                usage();
-                process::exit(1);
-            });
-            cmd_check(path);
+            if let Some(path) = args.get(2) {
+                cmd_check(Path::new(path));
+            } else {
+                cmd_check_project();
+            }
         }
         "test" => {
             cmd_test();

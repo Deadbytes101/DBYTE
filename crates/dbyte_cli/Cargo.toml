@@ -13,3 +13,4 @@ dbyte_lexer.workspace = true
 dbyte_parser.workspace = true
 dbyte_typeck.workspace = true
 dbyte_interp.workspace = true
+dbyte_project.workspace = true

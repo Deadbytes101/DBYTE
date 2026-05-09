@@ -1,0 +1,4 @@
+[package]
+name = "nested_run"
+version = "0.1.0"
+entry = "src/main.dby"
