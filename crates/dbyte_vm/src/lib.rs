@@ -861,6 +861,52 @@ impl Vm {
                 let end = start + length as usize;
                 Ok(Value::Bytes(buf[start..end].to_vec()))
             }
+            "load" => {
+                let path = expect_str(&args, 0)?;
+                let data = std::fs::read(path).map_err(|e| {
+                    VmError::new(format!("buffer.load failed for `{}`: {}", path, e))
+                })?;
+                Ok(Value::Buffer(Rc::new(RefCell::new(data))))
+            }
+            "save" => {
+                let path = expect_str(&args, 0)?;
+                let b = expect_buffer(&args, 1)?;
+                std::fs::write(path, &*b.borrow()).map_err(|e| {
+                    VmError::new(format!("buffer.save failed for `{}`: {}", path, e))
+                })?;
+                Ok(Value::Void)
+            }
+            "find" => {
+                let b = expect_buffer(&args, 0)?;
+                let pattern = expect_bytes(&args, 1)?;
+                if pattern.is_empty() {
+                    return Err(VmError::new("buffer.find: pattern cannot be empty"));
+                }
+                let buf = b.borrow();
+                let pos = buf
+                    .windows(pattern.len())
+                    .position(|w| w == pattern)
+                    .map(|p| p as i64)
+                    .unwrap_or(-1);
+                Ok(Value::Int(pos))
+            }
+            "replace" => {
+                let b = expect_buffer(&args, 0)?;
+                let offset = self.checked_offset(expect_int(&args, 1)?)?;
+                let data = expect_bytes(&args, 2)?;
+                let mut buf = b.borrow_mut();
+                let end = offset + data.len();
+                if end > buf.len() {
+                    return Err(VmError::new(format!(
+                        "buffer.replace out of range: need {} bytes at offset {}, but length is {}",
+                        data.len(),
+                        offset,
+                        buf.len()
+                    )));
+                }
+                buf[offset..end].copy_from_slice(data);
+                Ok(Value::Void)
+            }
             _ => Err(VmError::new(format!("unknown buffer native `{}`", op))),
         }
     }
