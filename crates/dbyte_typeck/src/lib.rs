@@ -15,32 +15,32 @@ impl std::fmt::Display for TypeError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResolvedType {
-    Int,
-    Float,
-    Bool,
-    Str,
+    Int, Float, Bool, Str,
+    List(Box<ResolvedType>),
     Void,
 }
 
 impl std::fmt::Display for ResolvedType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResolvedType::Int   => write!(f, "int"),
-            ResolvedType::Float => write!(f, "float"),
-            ResolvedType::Bool  => write!(f, "bool"),
-            ResolvedType::Str   => write!(f, "str"),
-            ResolvedType::Void  => write!(f, "void"),
+            ResolvedType::Int         => write!(f, "int"),
+            ResolvedType::Float       => write!(f, "float"),
+            ResolvedType::Bool        => write!(f, "bool"),
+            ResolvedType::Str         => write!(f, "str"),
+            ResolvedType::List(inner) => write!(f, "list[{}]", inner),
+            ResolvedType::Void        => write!(f, "void"),
         }
     }
 }
 
-fn annotation_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
+fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
     match ann {
-        TypeAnnotation::Int   => Some(ResolvedType::Int),
-        TypeAnnotation::Float => Some(ResolvedType::Float),
-        TypeAnnotation::Bool  => Some(ResolvedType::Bool),
-        TypeAnnotation::Str   => Some(ResolvedType::Str),
-        TypeAnnotation::Inferred => None,
+        TypeAnnotation::Int          => Some(ResolvedType::Int),
+        TypeAnnotation::Float        => Some(ResolvedType::Float),
+        TypeAnnotation::Bool         => Some(ResolvedType::Bool),
+        TypeAnnotation::Str          => Some(ResolvedType::Str),
+        TypeAnnotation::List(inner)  => ann_to_resolved(inner).map(|t| ResolvedType::List(Box::new(t))),
+        TypeAnnotation::Inferred     => None,
     }
 }
 
@@ -51,10 +51,7 @@ pub struct TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
-        Self {
-            env: vec![HashMap::new()],
-            fn_sigs: HashMap::new(),
-        }
+        Self { env: vec![HashMap::new()], fn_sigs: HashMap::new() }
     }
 
     fn push_scope(&mut self) { self.env.push(HashMap::new()); }
@@ -73,16 +70,63 @@ impl TypeChecker {
 
     fn check_expr(&self, expr: &Expr) -> Result<ResolvedType, TypeError> {
         match expr {
-            Expr::IntLit(..)  => Ok(ResolvedType::Int),
+            Expr::IntLit(..)   => Ok(ResolvedType::Int),
             Expr::FloatLit(..) => Ok(ResolvedType::Float),
-            Expr::BoolLit(..) => Ok(ResolvedType::Bool),
-            Expr::StrLit(..)  => Ok(ResolvedType::Str),
+            Expr::BoolLit(..)  => Ok(ResolvedType::Bool),
+            Expr::StrLit(..)   => Ok(ResolvedType::Str),
+
+            Expr::FStr(parts, span) => {
+                for part in parts {
+                    if let FStrPart::Interp(name) = part {
+                        self.lookup(name).ok_or_else(|| TypeError {
+                            msg: format!("undefined variable `{}` in string interpolation", name),
+                            span: *span,
+                        })?;
+                    }
+                }
+                Ok(ResolvedType::Str)
+            }
 
             Expr::Ident(name, span) => {
                 self.lookup(name).cloned().ok_or_else(|| TypeError {
                     msg: format!("undefined variable `{}`", name),
                     span: *span,
                 })
+            }
+
+            Expr::List(elems, _span) => {
+                if elems.is_empty() {
+                    return Ok(ResolvedType::List(Box::new(ResolvedType::Int)));
+                }
+                let first_ty = self.check_expr(&elems[0])?;
+                for elem in elems.iter().skip(1) {
+                    let ty = self.check_expr(elem)?;
+                    if ty != first_ty {
+                        return Err(TypeError {
+                            msg: format!("list element expected `{}`, found `{}`", first_ty, ty),
+                            span: elem.span(),
+                        });
+                    }
+                }
+                Ok(ResolvedType::List(Box::new(first_ty)))
+            }
+
+            Expr::Index { target, index, span } => {
+                let idx_ty = self.check_expr(index)?;
+                if idx_ty != ResolvedType::Int {
+                    return Err(TypeError {
+                        msg: format!("list index must be `int`, found `{}`", idx_ty),
+                        span: *span,
+                    });
+                }
+                match self.check_expr(target)? {
+                    ResolvedType::List(inner) => Ok(*inner),
+                    ResolvedType::Str => Ok(ResolvedType::Str),
+                    other => Err(TypeError {
+                        msg: format!("cannot index into `{}`", other),
+                        span: *span,
+                    }),
+                }
             }
 
             Expr::Binary { left, op, right, span } => {
@@ -92,17 +136,18 @@ impl TypeChecker {
                     BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
                         if lt != rt {
                             return Err(TypeError {
-                                msg: format!("type mismatch: {} {} {}", lt, op, rt),
+                                msg: format!("type mismatch: `{}` {} `{}`", lt, op, rt),
                                 span: *span,
                             });
                         }
-                        if lt != ResolvedType::Int && lt != ResolvedType::Float {
-                            return Err(TypeError {
+                        match &lt {
+                            ResolvedType::Int | ResolvedType::Float => Ok(lt),
+                            ResolvedType::Str if matches!(op, BinOp::Add) => Ok(lt),
+                            _ => Err(TypeError {
                                 msg: format!("operator `{}` not supported for `{}`", op, lt),
                                 span: *span,
-                            });
+                            }),
                         }
-                        Ok(lt)
                     }
                     BinOp::EqEq | BinOp::NotEq | BinOp::Lt | BinOp::Gt
                     | BinOp::LtEq | BinOp::GtEq => Ok(ResolvedType::Bool),
@@ -112,31 +157,19 @@ impl TypeChecker {
             Expr::Unary { op, expr, span } => {
                 let ty = self.check_expr(expr)?;
                 match op {
-                    UnaryOp::Neg => {
-                        if ty != ResolvedType::Int && ty != ResolvedType::Float {
-                            return Err(TypeError {
-                                msg: format!("unary `-` not supported for `{}`", ty),
-                                span: *span,
-                            });
-                        }
-                        Ok(ty)
-                    }
-                    UnaryOp::Not => {
-                        if ty != ResolvedType::Bool {
-                            return Err(TypeError {
-                                msg: format!("unary `!` expects bool, found `{}`", ty),
-                                span: *span,
-                            });
-                        }
-                        Ok(ResolvedType::Bool)
-                    }
+                    UnaryOp::Neg => match &ty {
+                        ResolvedType::Int | ResolvedType::Float => Ok(ty),
+                        _ => Err(TypeError { msg: format!("unary `-` not supported for `{}`", ty), span: *span }),
+                    },
+                    UnaryOp::Not => match &ty {
+                        ResolvedType::Bool => Ok(ResolvedType::Bool),
+                        _ => Err(TypeError { msg: format!("unary `!` expects `bool`, found `{}`", ty), span: *span }),
+                    },
                 }
             }
 
             Expr::Call { name, args, span } => {
-                if name == "print" {
-                    return Ok(ResolvedType::Void);
-                }
+                if name == "print" { return Ok(ResolvedType::Void); }
                 match self.fn_sigs.get(name) {
                     Some((param_tys, ret_ty)) => {
                         if args.len() != param_tys.len() {
@@ -156,19 +189,14 @@ impl TypeChecker {
                         }
                         Ok(ret_ty.clone())
                     }
-                    None => Err(TypeError {
-                        msg: format!("undefined function `{}`", name),
-                        span: *span,
-                    }),
+                    None => Err(TypeError { msg: format!("undefined function `{}`", name), span: *span }),
                 }
             }
         }
     }
 
     fn check_stmts(&mut self, stmts: &[Stmt]) -> Result<(), TypeError> {
-        for stmt in stmts {
-            self.check_stmt(stmt)?;
-        }
+        for s in stmts { self.check_stmt(s)?; }
         Ok(())
     }
 
@@ -176,7 +204,7 @@ impl TypeChecker {
         match stmt {
             Stmt::Let { name, ty, value, span } => {
                 let inferred = self.check_expr(value)?;
-                if let Some(ann) = annotation_to_resolved(ty) {
+                if let Some(ann) = ann_to_resolved(ty) {
                     if ann != inferred {
                         return Err(TypeError {
                             msg: format!("expected `{}`, found `{}`", ann, inferred),
@@ -190,25 +218,23 @@ impl TypeChecker {
             Stmt::Assign { name, value, span } => {
                 let inferred = self.check_expr(value)?;
                 match self.lookup(name).cloned() {
-                    Some(existing) => {
-                        if existing != inferred {
-                            return Err(TypeError {
-                                msg: format!("cannot assign `{}` to variable of type `{}`", inferred, existing),
-                                span: *span,
-                            });
-                        }
+                    Some(existing) if existing != inferred => {
+                        return Err(TypeError {
+                            msg: format!("cannot assign `{}` to variable of type `{}`", inferred, existing),
+                            span: *span,
+                        });
                     }
                     None => { self.define(name, inferred); }
+                    _ => {}
                 }
             }
 
             Stmt::FnDef { name, params, ret_ty, body, .. } => {
                 let param_tys: Vec<ResolvedType> = params.iter()
-                    .map(|p| annotation_to_resolved(&p.ty).unwrap_or(ResolvedType::Int))
+                    .map(|p| ann_to_resolved(&p.ty).unwrap_or(ResolvedType::Int))
                     .collect();
-                let ret = annotation_to_resolved(ret_ty).unwrap_or(ResolvedType::Void);
+                let ret = ann_to_resolved(ret_ty).unwrap_or(ResolvedType::Void);
                 self.fn_sigs.insert(name.clone(), (param_tys.clone(), ret));
-
                 self.push_scope();
                 for (p, ty) in params.iter().zip(param_tys.iter()) {
                     self.define(&p.name, ty.clone());
@@ -225,18 +251,41 @@ impl TypeChecker {
                 let ct = self.check_expr(cond)?;
                 if ct != ResolvedType::Bool {
                     return Err(TypeError {
-                        msg: format!("condition must be bool, found `{}`", ct),
+                        msg: format!("condition must be `bool`, found `{}`", ct),
                         span: *span,
                     });
                 }
-                self.push_scope();
-                self.check_stmts(then_body)?;
-                self.pop_scope();
+                self.push_scope(); self.check_stmts(then_body)?; self.pop_scope();
                 if let Some(eb) = else_body {
-                    self.push_scope();
-                    self.check_stmts(eb)?;
-                    self.pop_scope();
+                    self.push_scope(); self.check_stmts(eb)?; self.pop_scope();
                 }
+            }
+
+            Stmt::While { cond, body, span } => {
+                let ct = self.check_expr(cond)?;
+                if ct != ResolvedType::Bool {
+                    return Err(TypeError {
+                        msg: format!("while condition must be `bool`, found `{}`", ct),
+                        span: *span,
+                    });
+                }
+                self.push_scope(); self.check_stmts(body)?; self.pop_scope();
+            }
+
+            Stmt::For { var, iterable, body, span } => {
+                let iter_ty = self.check_expr(iterable)?;
+                let elem_ty = match iter_ty {
+                    ResolvedType::List(inner) => *inner,
+                    ResolvedType::Str => ResolvedType::Str,
+                    other => return Err(TypeError {
+                        msg: format!("`{}` is not iterable", other),
+                        span: *span,
+                    }),
+                };
+                self.push_scope();
+                self.define(var, elem_ty);
+                self.check_stmts(body)?;
+                self.pop_scope();
             }
 
             Stmt::Expr(e) => { self.check_expr(e)?; }

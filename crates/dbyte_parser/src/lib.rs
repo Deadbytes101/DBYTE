@@ -1,8 +1,6 @@
 use dbyte_ast::*;
 use dbyte_lexer::{Token, TokenKind};
 
-// ─── Parse Error ─────────────────────────────────────────────────────────────
-
 #[derive(Debug)]
 pub struct ParseError {
     pub msg: String,
@@ -15,8 +13,6 @@ impl std::fmt::Display for ParseError {
     }
 }
 
-// ─── Parser ──────────────────────────────────────────────────────────────────
-
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -27,21 +23,16 @@ impl Parser {
         Self { tokens, pos: 0 }
     }
 
-    // ── Token navigation ──────────────────────────────────────────────────
+    fn peek(&self) -> &Token { &self.tokens[self.pos] }
+    fn peek_kind(&self) -> &TokenKind { &self.tokens[self.pos].kind }
 
-    fn peek(&self) -> &Token {
-        &self.tokens[self.pos]
-    }
-
-    fn peek_kind(&self) -> &TokenKind {
-        &self.tokens[self.pos].kind
+    fn peek_at(&self, offset: usize) -> Option<&Token> {
+        self.tokens.get(self.pos + offset)
     }
 
     fn advance(&mut self) -> &Token {
         let t = &self.tokens[self.pos];
-        if self.pos + 1 < self.tokens.len() {
-            self.pos += 1;
-        }
+        if self.pos + 1 < self.tokens.len() { self.pos += 1; }
         t
     }
 
@@ -57,38 +48,40 @@ impl Parser {
     }
 
     fn skip_newlines(&mut self) {
-        while matches!(self.peek_kind(), TokenKind::Newline) {
-            self.advance();
-        }
+        while matches!(self.peek_kind(), TokenKind::Newline) { self.advance(); }
     }
 
-    fn at_eof(&self) -> bool {
-        matches!(self.peek_kind(), TokenKind::Eof)
+    fn at_eof(&self) -> bool { matches!(self.peek_kind(), TokenKind::Eof) }
+
+    fn consume_newline_or_eof(&mut self) {
+        if matches!(self.peek_kind(), TokenKind::Newline) { self.advance(); }
     }
 
-    // ── Type annotation ───────────────────────────────────────────────────
-
-    fn parse_type(&mut self) -> TypeAnnotation {
+    fn parse_type_full(&mut self) -> TypeAnnotation {
         if let TokenKind::Ident(name) = self.peek_kind().clone() {
-            let ty = match name.as_str() {
-                "int"   => TypeAnnotation::Int,
-                "float" => TypeAnnotation::Float,
-                "bool"  => TypeAnnotation::Bool,
-                "str"   => TypeAnnotation::Str,
-                _       => TypeAnnotation::Inferred,
-            };
-            if ty != TypeAnnotation::Inferred {
-                self.advance();
+            match name.as_str() {
+                "int"   => { self.advance(); TypeAnnotation::Int }
+                "float" => { self.advance(); TypeAnnotation::Float }
+                "bool"  => { self.advance(); TypeAnnotation::Bool }
+                "str"   => { self.advance(); TypeAnnotation::Str }
+                "list"  => {
+                    self.advance();
+                    if matches!(self.peek_kind(), TokenKind::LBracket) {
+                        self.advance();
+                        let inner = self.parse_type_full();
+                        let _ = self.expect(&TokenKind::RBracket);
+                        TypeAnnotation::List(Box::new(inner))
+                    } else {
+                        TypeAnnotation::Inferred
+                    }
+                }
+                _ => TypeAnnotation::Inferred,
             }
-            ty
         } else {
             TypeAnnotation::Inferred
         }
     }
 
-    // ── Expressions ───────────────────────────────────────────────────────
-
-    /// entry point — precedence climbing at top level is comparison
     pub fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         self.parse_comparison()
     }
@@ -148,41 +141,45 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         match self.peek_kind() {
             TokenKind::Minus => {
-                let span = self.peek().span;
-                self.advance();
-                let e = self.parse_call()?;
-                Ok(Expr::Unary { op: UnaryOp::Neg, expr: Box::new(e), span })
+                let span = self.peek().span; self.advance();
+                Ok(Expr::Unary { op: UnaryOp::Neg, expr: Box::new(self.parse_postfix()?), span })
             }
             TokenKind::Bang => {
-                let span = self.peek().span;
-                self.advance();
-                let e = self.parse_call()?;
-                Ok(Expr::Unary { op: UnaryOp::Not, expr: Box::new(e), span })
+                let span = self.peek().span; self.advance();
+                Ok(Expr::Unary { op: UnaryOp::Not, expr: Box::new(self.parse_postfix()?), span })
             }
-            _ => self.parse_call(),
+            _ => self.parse_postfix(),
         }
     }
 
-    fn parse_call(&mut self) -> Result<Expr, ParseError> {
-        let base = self.parse_primary()?;
-
-        // if next token is `(` this is a function call
-        if let Expr::Ident(name, span) = &base {
-            if matches!(self.peek_kind(), TokenKind::LParen) {
-                let span = *span;
-                let name = name.clone();
-                self.advance(); // consume `(`
-                let mut args = Vec::new();
-                while !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
-                    args.push(self.parse_expr()?);
-                    if matches!(self.peek_kind(), TokenKind::Comma) {
+    fn parse_postfix(&mut self) -> Result<Expr, ParseError> {
+        let mut base = self.parse_primary()?;
+        loop {
+            match self.peek_kind() {
+                TokenKind::LParen => {
+                    if let Expr::Ident(name, span) = &base {
+                        let name = name.clone();
+                        let span = *span;
                         self.advance();
+                        let mut args = Vec::new();
+                        while !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
+                            args.push(self.parse_expr()?);
+                            if matches!(self.peek_kind(), TokenKind::Comma) { self.advance(); } else { break; }
+                        }
+                        self.expect(&TokenKind::RParen)?;
+                        base = Expr::Call { name, args, span };
                     } else {
                         break;
                     }
                 }
-                self.expect(&TokenKind::RParen)?;
-                return Ok(Expr::Call { name, args, span });
+                TokenKind::LBracket => {
+                    let span = self.peek().span;
+                    self.advance();
+                    let index = self.parse_expr()?;
+                    self.expect(&TokenKind::RBracket)?;
+                    base = Expr::Index { target: Box::new(base), index: Box::new(index), span };
+                }
+                _ => break,
             }
         }
         Ok(base)
@@ -191,26 +188,20 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expr, ParseError> {
         let tok = self.peek().clone();
         match tok.kind {
-            TokenKind::Int(n) => {
-                self.advance();
-                Ok(Expr::IntLit(n, tok.span))
-            }
-            TokenKind::Float(n) => {
-                self.advance();
-                Ok(Expr::FloatLit(n, tok.span))
-            }
-            TokenKind::True => {
-                self.advance();
-                Ok(Expr::BoolLit(true, tok.span))
-            }
-            TokenKind::False => {
-                self.advance();
-                Ok(Expr::BoolLit(false, tok.span))
-            }
+            TokenKind::Int(n)   => { self.advance(); Ok(Expr::IntLit(n, tok.span)) }
+            TokenKind::Float(n) => { self.advance(); Ok(Expr::FloatLit(n, tok.span)) }
+            TokenKind::True     => { self.advance(); Ok(Expr::BoolLit(true, tok.span)) }
+            TokenKind::False    => { self.advance(); Ok(Expr::BoolLit(false, tok.span)) }
             TokenKind::Str(ref s) => {
                 let s = s.clone();
                 self.advance();
-                Ok(Expr::StrLit(s, tok.span))
+                let parts = parse_fstr_parts(&s);
+                let all_literal = parts.len() == 1 && matches!(&parts[0], FStrPart::Literal(_));
+                if all_literal || parts.is_empty() {
+                    Ok(Expr::StrLit(s, tok.span))
+                } else {
+                    Ok(Expr::FStr(parts, tok.span))
+                }
             }
             TokenKind::Ident(ref name) => {
                 let name = name.clone();
@@ -218,10 +209,20 @@ impl Parser {
                 Ok(Expr::Ident(name, tok.span))
             }
             TokenKind::LParen => {
-                self.advance(); // consume `(`
+                self.advance();
                 let e = self.parse_expr()?;
                 self.expect(&TokenKind::RParen)?;
                 Ok(e)
+            }
+            TokenKind::LBracket => {
+                self.advance();
+                let mut elems = Vec::new();
+                while !matches!(self.peek_kind(), TokenKind::RBracket | TokenKind::Eof) {
+                    elems.push(self.parse_expr()?);
+                    if matches!(self.peek_kind(), TokenKind::Comma) { self.advance(); } else { break; }
+                }
+                self.expect(&TokenKind::RBracket)?;
+                Ok(Expr::List(elems, tok.span))
             }
             _ => Err(ParseError {
                 msg: format!("unexpected token `{}`", tok.kind),
@@ -230,8 +231,6 @@ impl Parser {
         }
     }
 
-    // ── Statements ────────────────────────────────────────────────────────
-
     fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
         self.skip_newlines();
         match self.peek_kind().clone() {
@@ -239,38 +238,15 @@ impl Parser {
             TokenKind::Fn     => self.parse_fn(),
             TokenKind::Return => self.parse_return(),
             TokenKind::If     => self.parse_if(),
-            TokenKind::Ident(ref name) => {
-                // could be assignment  `name = expr`  or expression `name(...)...`
-                let name = name.clone();
-                let span = self.peek().span;
-                self.advance();
-                if matches!(self.peek_kind(), TokenKind::Equal) {
-                    // assignment
-                    self.advance(); // consume `=`
-                    let value = self.parse_expr()?;
-                    self.consume_newline_or_eof();
-                    Ok(Stmt::Assign { name, value, span })
+            TokenKind::While  => self.parse_while(),
+            TokenKind::For    => self.parse_for(),
+            TokenKind::Ident(_) => {
+                let next_is_assign = self.peek_at(1)
+                    .map_or(false, |t| matches!(t.kind, TokenKind::Equal));
+                if next_is_assign {
+                    self.parse_assign()
                 } else {
-                    // put the ident back conceptually by building an expr from it
-                    let ident_expr = Expr::Ident(name.clone(), span);
-                    // check for call
-                    let expr = if matches!(self.peek_kind(), TokenKind::LParen) {
-                        self.advance(); // consume `(`
-                        let mut args = Vec::new();
-                        while !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
-                            args.push(self.parse_expr()?);
-                            if matches!(self.peek_kind(), TokenKind::Comma) {
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                        self.expect(&TokenKind::RParen)?;
-                        Expr::Call { name, args, span }
-                    } else {
-                        // binary / comparison starting from ident
-                        self.finish_expr_from(ident_expr)?
-                    };
+                    let expr = self.parse_expr()?;
                     self.consume_newline_or_eof();
                     Ok(Stmt::Expr(expr))
                 }
@@ -283,49 +259,16 @@ impl Parser {
         }
     }
 
-    /// Continue parsing a binary expression when we've already consumed the lhs
-    fn finish_expr_from(&mut self, lhs: Expr) -> Result<Expr, ParseError> {
-        // just try additive/comparison wrapping lhs
-        let mut left = lhs;
-        loop {
-            let op = match self.peek_kind() {
-                TokenKind::Plus          => BinOp::Add,
-                TokenKind::Minus         => BinOp::Sub,
-                TokenKind::Star          => BinOp::Mul,
-                TokenKind::Slash         => BinOp::Div,
-                TokenKind::EqualEqual    => BinOp::EqEq,
-                TokenKind::BangEqual     => BinOp::NotEq,
-                TokenKind::Less          => BinOp::Lt,
-                TokenKind::LessEqual     => BinOp::LtEq,
-                TokenKind::Greater       => BinOp::Gt,
-                TokenKind::GreaterEqual  => BinOp::GtEq,
-                _ => break,
-            };
-            let span = self.peek().span;
-            self.advance();
-            let right = self.parse_multiplicative()?;
-            left = Expr::Binary { left: Box::new(left), op, right: Box::new(right), span };
-        }
-        Ok(left)
-    }
-
-    fn consume_newline_or_eof(&mut self) {
-        if matches!(self.peek_kind(), TokenKind::Newline) {
-            self.advance();
-        }
-    }
-
     fn parse_let(&mut self) -> Result<Stmt, ParseError> {
         let span = self.peek().span;
-        self.advance(); // consume `let`
+        self.advance();
         let name = match self.peek_kind().clone() {
             TokenKind::Ident(n) => { self.advance(); n }
             _ => return Err(ParseError { msg: "expected identifier after `let`".into(), span: self.peek().span }),
         };
-        // optional `: type`
         let ty = if matches!(self.peek_kind(), TokenKind::Colon) {
-            self.advance(); // consume `:`
-            self.parse_type()
+            self.advance();
+            self.parse_type_full()
         } else {
             TypeAnnotation::Inferred
         };
@@ -335,9 +278,21 @@ impl Parser {
         Ok(Stmt::Let { name, ty, value, span })
     }
 
+    fn parse_assign(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        let name = match self.peek_kind().clone() {
+            TokenKind::Ident(n) => { self.advance(); n }
+            _ => return Err(ParseError { msg: "expected identifier".into(), span: self.peek().span }),
+        };
+        self.expect(&TokenKind::Equal)?;
+        let value = self.parse_expr()?;
+        self.consume_newline_or_eof();
+        Ok(Stmt::Assign { name, value, span })
+    }
+
     fn parse_fn(&mut self) -> Result<Stmt, ParseError> {
         let span = self.peek().span;
-        self.advance(); // consume `fn`
+        self.advance();
         let name = match self.peek_kind().clone() {
             TokenKind::Ident(n) => { self.advance(); n }
             _ => return Err(ParseError { msg: "expected function name".into(), span: self.peek().span }),
@@ -351,31 +306,23 @@ impl Parser {
                 _ => return Err(ParseError { msg: "expected parameter name".into(), span: self.peek().span }),
             };
             self.expect(&TokenKind::Colon)?;
-            let ty = self.parse_type();
+            let ty = self.parse_type_full();
             params.push(Param { name: p_name, ty, span: p_span });
             if matches!(self.peek_kind(), TokenKind::Comma) { self.advance(); }
         }
         self.expect(&TokenKind::RParen)?;
-
-        // optional `-> ret_type`
         let ret_ty = if matches!(self.peek_kind(), TokenKind::Arrow) {
-            self.advance();
-            self.parse_type()
-        } else {
-            TypeAnnotation::Inferred
-        };
-
+            self.advance(); self.parse_type_full()
+        } else { TypeAnnotation::Inferred };
         self.expect(&TokenKind::Colon)?;
         self.consume_newline_or_eof();
-
-        // body is an indented block
         let body = self.parse_block()?;
         Ok(Stmt::FnDef { name, params, ret_ty, body, span })
     }
 
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
         let span = self.peek().span;
-        self.advance(); // consume `return`
+        self.advance();
         if matches!(self.peek_kind(), TokenKind::Newline | TokenKind::Eof) {
             self.consume_newline_or_eof();
             return Ok(Stmt::Return { value: None, span });
@@ -387,51 +334,60 @@ impl Parser {
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
         let span = self.peek().span;
-        self.advance(); // consume `if`
+        self.advance();
         let cond = self.parse_expr()?;
         self.expect(&TokenKind::Colon)?;
         self.consume_newline_or_eof();
         let then_body = self.parse_block()?;
-
         let else_body = if matches!(self.peek_kind(), TokenKind::Else) {
-            self.advance(); // consume `else`
+            self.advance();
             self.expect(&TokenKind::Colon)?;
             self.consume_newline_or_eof();
             Some(self.parse_block()?)
-        } else {
-            None
-        };
-
+        } else { None };
         Ok(Stmt::If { cond, then_body, else_body, span })
     }
 
-    /// Parse an indented block: INDENT stmts DEDENT
+    fn parse_while(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.advance();
+        let cond = self.parse_expr()?;
+        self.expect(&TokenKind::Colon)?;
+        self.consume_newline_or_eof();
+        let body = self.parse_block()?;
+        Ok(Stmt::While { cond, body, span })
+    }
+
+    fn parse_for(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.advance();
+        let var = match self.peek_kind().clone() {
+            TokenKind::Ident(n) => { self.advance(); n }
+            _ => return Err(ParseError { msg: "expected variable name after `for`".into(), span: self.peek().span }),
+        };
+        self.expect(&TokenKind::In)?;
+        let iterable = self.parse_expr()?;
+        self.expect(&TokenKind::Colon)?;
+        self.consume_newline_or_eof();
+        let body = self.parse_block()?;
+        Ok(Stmt::For { var, iterable, body, span })
+    }
+
     fn parse_block(&mut self) -> Result<Vec<Stmt>, ParseError> {
         self.skip_newlines();
         if !matches!(self.peek_kind(), TokenKind::Indent) {
-            return Err(ParseError {
-                msg: "expected indented block".into(),
-                span: self.peek().span,
-            });
+            return Err(ParseError { msg: "expected indented block".into(), span: self.peek().span });
         }
-        self.advance(); // consume INDENT
-
+        self.advance();
         let mut stmts = Vec::new();
         loop {
             self.skip_newlines();
-            if matches!(self.peek_kind(), TokenKind::Dedent | TokenKind::Eof) {
-                break;
-            }
+            if matches!(self.peek_kind(), TokenKind::Dedent | TokenKind::Eof) { break; }
             stmts.push(self.parse_stmt()?);
         }
-
-        if matches!(self.peek_kind(), TokenKind::Dedent) {
-            self.advance(); // consume DEDENT
-        }
+        if matches!(self.peek_kind(), TokenKind::Dedent) { self.advance(); }
         Ok(stmts)
     }
-
-    // ── Top-level parse ───────────────────────────────────────────────────
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut stmts = Vec::new();
@@ -442,4 +398,24 @@ impl Parser {
         }
         Ok(Program { stmts })
     }
+}
+
+fn parse_fstr_parts(s: &str) -> Vec<FStrPart> {
+    let mut parts = Vec::new();
+    let mut cur = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            if !cur.is_empty() { parts.push(FStrPart::Literal(std::mem::take(&mut cur))); }
+            let mut var = String::new();
+            while let Some(&nc) = chars.peek() {
+                if nc == '}' { chars.next(); break; }
+                var.push(nc); chars.next();
+            }
+            let var = var.trim().to_string();
+            if !var.is_empty() { parts.push(FStrPart::Interp(var)); }
+        } else { cur.push(c); }
+    }
+    if !cur.is_empty() { parts.push(FStrPart::Literal(cur)); }
+    parts
 }
