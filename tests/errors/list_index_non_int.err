@@ -1,1 +1,1 @@
-TypeError: list index must be `int`, found `str`
+TypeError: index must be int, found str

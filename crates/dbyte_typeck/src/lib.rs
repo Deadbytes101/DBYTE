@@ -347,7 +347,7 @@ impl TypeChecker {
                 let idx_ty = self.check_expr(index)?;
                 if idx_ty != ResolvedType::Int {
                     return Err(TypeError {
-                        msg: format!("list index must be `int`, found `{}`", idx_ty),
+                        msg: format!("index must be int, found {}", idx_ty),
                         span: *span,
                     });
                 }
@@ -528,11 +528,11 @@ impl TypeChecker {
                 span,
             });
         }
-        for (arg, expected) in args.iter().zip(param_tys.iter()) {
+        for (i, (arg, expected)) in args.iter().zip(param_tys.iter()).enumerate() {
             let got = self.check_expr(arg)?;
             if got != *expected {
                 return Err(TypeError {
-                    msg: format!("expected `{}`, found `{}`", expected, got),
+                    msg: format!("expected {}, found {} (argument {})", expected, got, i + 1),
                     span: arg.span(),
                 });
             }

@@ -374,7 +374,11 @@ impl Vm {
                     idx
                 };
                 if normalized < 0 || normalized as usize >= items.len() {
-                    return Err(VmError::new("index out of range"));
+                    return Err(VmError::new(format!(
+                        "index out of range: list length is {}, but index is {}",
+                        items.len(),
+                        idx
+                    )));
                 }
                 self.push(items[normalized as usize].clone());
                 Ok(())
@@ -382,7 +386,11 @@ impl Vm {
             Value::Bytes(bs) => {
                 let normalized = if idx < 0 { bs.len() as i64 + idx } else { idx };
                 if normalized < 0 || normalized as usize >= bs.len() {
-                    return Err(VmError::new("index out of range"));
+                    return Err(VmError::new(format!(
+                        "index out of range: bytes length is {}, but index is {}",
+                        bs.len(),
+                        idx
+                    )));
                 }
                 self.push(Value::Int(bs[normalized as usize] as i64));
                 Ok(())
@@ -702,7 +710,7 @@ fn expect_int(args: &[Value], idx: usize) -> Result<i64, VmError> {
         Some(other) => Err(VmError::new(format!(
             "expected int argument {}, found {}",
             idx + 1,
-            other
+            other.kind_name()
         ))),
         None => Err(VmError::new(format!("missing argument {}", idx + 1))),
     }
@@ -714,7 +722,7 @@ fn expect_str(args: &[Value], idx: usize) -> Result<&str, VmError> {
         Some(other) => Err(VmError::new(format!(
             "expected str argument {}, found {}",
             idx + 1,
-            other
+            other.kind_name()
         ))),
         None => Err(VmError::new(format!("missing argument {}", idx + 1))),
     }
@@ -726,7 +734,7 @@ fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], VmError> {
         Some(other) => Err(VmError::new(format!(
             "expected bytes argument {}, found {}",
             idx + 1,
-            other
+            other.kind_name()
         ))),
         None => Err(VmError::new(format!("missing argument {}", idx + 1))),
     }

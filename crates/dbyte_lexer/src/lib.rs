@@ -192,41 +192,43 @@ impl<'src> Lexer<'src> {
         loop {
             match self.advance() {
                 Some((_, '"')) => break,
-                Some((_, '\\')) => match self.advance() {
-                    Some((_, 'n')) => bytes.push(b'\n'),
-                    Some((_, 'r')) => bytes.push(b'\r'),
-                    Some((_, 't')) => bytes.push(b'\t'),
-                    Some((_, '\\')) => bytes.push(b'\\'),
-                    Some((_, '"')) => bytes.push(b'"'),
-                    Some((_, 'x')) => {
-                        let h1 = self
-                            .advance()
-                            .ok_or_else(|| LexError {
+                Some((_, '\\')) => {
+                    match self.advance() {
+                        Some((_, 'n')) => bytes.push(b'\n'),
+                        Some((_, 'r')) => bytes.push(b'\r'),
+                        Some((_, 't')) => bytes.push(b'\t'),
+                        Some((_, '\\')) => bytes.push(b'\\'),
+                        Some((_, '"')) => bytes.push(b'"'),
+                        Some((_, 'x')) => {
+                            let (_, h1) = self.advance().ok_or_else(|| LexError {
+                                msg: "invalid byte escape: incomplete hex sequence".into(),
+                                span: sp,
+                            })?;
+                            let (_, h2) = self.advance().ok_or_else(|| LexError {
+                                msg: "invalid byte escape: incomplete hex sequence".into(),
+                                span: sp,
+                            })?;
+                            if !h1.is_ascii_hexdigit() || !h2.is_ascii_hexdigit() {
+                                return Err(LexError {
+                                msg: format!("invalid byte escape: '\\x{}{}' is not a valid hex sequence", h1, h2),
+                                span: sp,
+                            });
+                            }
+                            let hex = format!("{}{}", h1, h2);
+                            let b = u8::from_str_radix(&hex, 16).map_err(|_| LexError {
                                 msg: "invalid byte escape".into(),
                                 span: sp,
-                            })?
-                            .1;
-                        let h2 = self
-                            .advance()
-                            .ok_or_else(|| LexError {
+                            })?;
+                            bytes.push(b);
+                        }
+                        _ => {
+                            return Err(LexError {
                                 msg: "invalid byte escape".into(),
                                 span: sp,
-                            })?
-                            .1;
-                        let hex = format!("{}{}", h1, h2);
-                        let b = u8::from_str_radix(&hex, 16).map_err(|_| LexError {
-                            msg: "invalid byte escape".into(),
-                            span: sp,
-                        })?;
-                        bytes.push(b);
+                            });
+                        }
                     }
-                    _ => {
-                        return Err(LexError {
-                            msg: "invalid byte escape".into(),
-                            span: sp,
-                        });
-                    }
-                },
+                }
                 Some((_, c)) => {
                     if c.is_ascii() {
                         bytes.push(c as u8);
