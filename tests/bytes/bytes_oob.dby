@@ -1,0 +1,2 @@
+let b = b"ABC"
+print(b[3])

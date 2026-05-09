@@ -25,6 +25,7 @@ pub enum TypeAnnotation {
     Float,
     Bool,
     Str,
+    Bytes,
     List(Box<TypeAnnotation>),
     Inferred,
 }
@@ -36,6 +37,7 @@ impl std::fmt::Display for TypeAnnotation {
             TypeAnnotation::Float => write!(f, "float"),
             TypeAnnotation::Bool => write!(f, "bool"),
             TypeAnnotation::Str => write!(f, "str"),
+            TypeAnnotation::Bytes => write!(f, "bytes"),
             TypeAnnotation::List(inner) => write!(f, "list[{}]", inner),
             TypeAnnotation::Inferred => write!(f, "<inferred>"),
         }
@@ -92,6 +94,7 @@ pub enum Expr {
     FloatLit(f64, Span),
     BoolLit(bool, Span),
     StrLit(String, Span),
+    BytesLit(Vec<u8>, Span),
     FStr(Vec<FStrPart>, Span),
     Ident(String, Span),
     List(Vec<Expr>, Span),
@@ -136,6 +139,7 @@ impl Expr {
             | Expr::FloatLit(_, s)
             | Expr::BoolLit(_, s)
             | Expr::StrLit(_, s)
+            | Expr::BytesLit(_, s)
             | Expr::FStr(_, s)
             | Expr::Ident(_, s)
             | Expr::List(_, s) => *s,

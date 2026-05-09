@@ -7,6 +7,7 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     Str(String),
+    Bytes(Vec<u8>),
     List(Vec<Value>),
     Module(ModuleValue),
     Void,
@@ -32,6 +33,7 @@ impl std::fmt::Display for Value {
             Value::Float(n) => write!(f, "{}", n),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
+            Value::Bytes(bs) => write!(f, "{}", hex::encode(bs)),
             Value::List(vs) => {
                 write!(f, "[")?;
                 for (i, v) in vs.iter().enumerate() {

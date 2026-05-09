@@ -12,5 +12,5 @@ dbyte_compiler.workspace = true
 dbyte_lexer.workspace = true
 dbyte_module.workspace = true
 dbyte_parser.workspace = true
-hex = "0.4.3"
-sha2 = "0.10.8"
+hex.workspace = true
+sha2.workspace = true

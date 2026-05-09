@@ -1,0 +1,5 @@
+import std.hash as hash
+import std.encoding as enc
+let data = b"DByte"
+let h = hash.sha256(data)
+print(enc.hex_encode(h))

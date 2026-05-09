@@ -13,6 +13,7 @@ pub enum Value {
     Float(f64),
     Bool(bool),
     Str(String),
+    Bytes(Vec<u8>),
     List(Vec<Value>),
     Module(ModuleValue),
     Void,
@@ -38,6 +39,7 @@ impl std::fmt::Display for Value {
             Value::Float(n) => write!(f, "{}", n),
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
+            Value::Bytes(bs) => write!(f, "{}", hex::encode(bs)),
             Value::List(vs) => {
                 write!(f, "[")?;
                 for (i, v) in vs.iter().enumerate() {
@@ -213,6 +215,27 @@ impl Interpreter {
                     "write_text".into(),
                     ModuleMember::Native(native_fs_write_text),
                 );
+                members.insert(
+                    "read_bytes".into(),
+                    ModuleMember::Native(native_fs_read_bytes),
+                );
+                members.insert(
+                    "write_bytes".into(),
+                    ModuleMember::Native(native_fs_write_bytes),
+                );
+            }
+            "std.encoding" => {
+                members.insert(
+                    "hex_encode".into(),
+                    ModuleMember::Native(native_encoding_hex_encode),
+                );
+                members.insert(
+                    "hex_decode".into(),
+                    ModuleMember::Native(native_encoding_hex_decode),
+                );
+            }
+            "std.hash" => {
+                members.insert("sha256".into(), ModuleMember::Native(native_hash_sha256));
             }
             "std.env" => {
                 members.insert("args".into(), ModuleMember::Native(native_env_args));
@@ -336,7 +359,7 @@ impl Interpreter {
             Expr::FloatLit(n, _) => Ok(Value::Float(*n)),
             Expr::BoolLit(b, _) => Ok(Value::Bool(*b)),
             Expr::StrLit(s, _) => Ok(Value::Str(s.clone())),
-
+            Expr::BytesLit(b, _) => Ok(Value::Bytes(b.clone())),
             Expr::FStr(parts, span) => {
                 let mut result = String::new();
                 for part in parts {
@@ -393,6 +416,16 @@ impl Interpreter {
                             });
                         }
                         Ok(vs[idx as usize].clone())
+                    }
+                    Value::Bytes(bs) => {
+                        let idx = if i < 0 { bs.len() as i64 + i } else { i };
+                        if idx < 0 || idx as usize >= bs.len() {
+                            return Err(RuntimeError {
+                                msg: "index out of range".into(),
+                                span: *span,
+                            });
+                        }
+                        Ok(Value::Int(bs[idx as usize] as i64))
                     }
                     _ => Err(RuntimeError {
                         msg: "value is not indexable".into(),
@@ -493,6 +526,27 @@ impl Interpreter {
                     let strs: Vec<String> = vals?.iter().map(|v| format!("{}", v)).collect();
                     println!("{}", strs.join(" "));
                     return Ok(Value::Void);
+                }
+                if name == "len" {
+                    if args.len() != 1 {
+                        return Err(RuntimeError {
+                            msg: "len() expects 1 argument".into(),
+                            span: *span,
+                        });
+                    }
+                    let val = self.eval_expr(&args[0])?;
+                    let length = match val {
+                        Value::Str(s) => s.len(),
+                        Value::List(l) => l.len(),
+                        Value::Bytes(b) => b.len(),
+                        _ => {
+                            return Err(RuntimeError {
+                                msg: "len() expects str, list, or bytes".into(),
+                                span: *span,
+                            })
+                        }
+                    };
+                    return Ok(Value::Int(length as i64));
                 }
 
                 let (params, body) = match self.fns.get(name).cloned() {
@@ -752,6 +806,18 @@ fn expect_str(args: &[Value], idx: usize) -> Result<&str, String> {
     }
 }
 
+fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], String> {
+    match args.get(idx) {
+        Some(Value::Bytes(bs)) => Ok(bs),
+        Some(other) => Err(format!(
+            "expected bytes argument {}, found {}",
+            idx + 1,
+            other
+        )),
+        None => Err(format!("missing argument {}", idx + 1)),
+    }
+}
+
 fn native_math_abs(args: &[Value]) -> Result<Value, String> {
     Ok(Value::Int(expect_int(args, 0)?.abs()))
 }
@@ -777,6 +843,42 @@ fn native_fs_write_text(args: &[Value]) -> Result<Value, String> {
     std::fs::write(path, text)
         .map(|_| Value::Void)
         .map_err(|e| format!("fs.write_text failed for `{}`: {}", path, e))
+}
+
+fn native_fs_read_bytes(args: &[Value]) -> Result<Value, String> {
+    let path = expect_str(args, 0)?;
+    std::fs::read(path)
+        .map(Value::Bytes)
+        .map_err(|e| format!("fs.read_bytes failed for `{}`: {}", path, e))
+}
+
+fn native_fs_write_bytes(args: &[Value]) -> Result<Value, String> {
+    let path = expect_str(args, 0)?;
+    let bytes = expect_bytes(args, 1)?;
+    std::fs::write(path, bytes)
+        .map(|_| Value::Void)
+        .map_err(|e| format!("fs.write_bytes failed for `{}`: {}", path, e))
+}
+
+fn native_encoding_hex_encode(args: &[Value]) -> Result<Value, String> {
+    let bytes = expect_bytes(args, 0)?;
+    Ok(Value::Str(hex::encode(bytes)))
+}
+
+fn native_encoding_hex_decode(args: &[Value]) -> Result<Value, String> {
+    let s = expect_str(args, 0)?;
+    hex::decode(s)
+        .map(Value::Bytes)
+        .map_err(|e| format!("hex_decode failed: {}", e))
+}
+
+fn native_hash_sha256(args: &[Value]) -> Result<Value, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = expect_bytes(args, 0)?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let result = hasher.finalize();
+    Ok(Value::Bytes(result.to_vec()))
 }
 
 fn native_env_args(args: &[Value]) -> Result<Value, String> {

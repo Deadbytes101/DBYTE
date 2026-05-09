@@ -45,6 +45,7 @@ name = "dbyte_bytecode"
 version = "0.1.0"
 dependencies = [
  "dbyte_ast",
+ "hex",
 ]
 
 [[package]]
