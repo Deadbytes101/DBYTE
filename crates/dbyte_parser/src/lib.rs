@@ -92,6 +92,10 @@ impl Parser {
                     self.advance();
                     TypeAnnotation::Bytes
                 }
+                "buffer" => {
+                    self.advance();
+                    TypeAnnotation::Buffer
+                }
                 "list" => {
                     self.advance();
                     if matches!(self.peek_kind(), TokenKind::LBracket) {

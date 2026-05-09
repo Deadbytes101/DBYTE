@@ -1,0 +1,9 @@
+fn patch(b: buffer):
+    import std.buffer as buf
+    buf.set(b, 0, 255)
+
+import std.buffer as buf
+let b = buf.new(2)
+patch(b)
+
+print(buf.get(b, 0))

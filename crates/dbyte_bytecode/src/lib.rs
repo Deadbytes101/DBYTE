@@ -1,5 +1,7 @@
 use dbyte_ast::FStrPart;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -8,6 +10,7 @@ pub enum Value {
     Bool(bool),
     Str(String),
     Bytes(Vec<u8>),
+    Buffer(Rc<RefCell<Vec<u8>>>),
     List(Vec<Value>),
     Module(ModuleValue),
     Void,
@@ -34,6 +37,7 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
             Value::Bytes(bs) => write!(f, "{}", hex::encode(bs)),
+            Value::Buffer(_) => write!(f, "<buffer>"),
             Value::List(vs) => {
                 write!(f, "[")?;
                 for (i, v) in vs.iter().enumerate() {
@@ -58,6 +62,7 @@ impl Value {
             Value::Bool(_) => "bool",
             Value::Str(_) => "str",
             Value::Bytes(_) => "bytes",
+            Value::Buffer(_) => "buffer",
             Value::List(_) => "list",
             Value::Module(_) => "module",
             Value::Void => "void",

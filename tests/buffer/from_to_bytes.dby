@@ -1,0 +1,13 @@
+import std.buffer as buf
+import std.encoding as enc
+
+let data = b"\xde\xad\xbe\xef"
+let b = buf.from_bytes(data)
+print(buf.len(b))
+print(buf.get(b, 0))
+print(buf.get(b, 3))
+
+buf.set(b, 0, 0)
+let data2 = buf.to_bytes(b)
+print(enc.hex_encode(data2))
+print(enc.hex_encode(data))

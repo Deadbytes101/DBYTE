@@ -5,8 +5,10 @@ use dbyte_compiler::{CompileError, Compiler};
 use dbyte_lexer::Lexer;
 use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct VmError {
@@ -563,6 +565,7 @@ impl Vm {
                 Ok(Value::Bytes(result.to_vec()))
             }
             "std.env.args" => Ok(Value::List(std::env::args().map(Value::Str).collect())),
+            _ if name.starts_with("std.buffer.") => self.native_buffer_dispatch(name, args),
             _ if name.starts_with("std.binary.") => self.native_binary_dispatch(name, args),
             _ => Err(VmError::new(format!("unknown native `{}`", name))),
         }
@@ -618,42 +621,19 @@ impl Vm {
     }
 
     fn load_std_module(&self, name: &str, alias: &str) -> Result<ModuleValue, VmError> {
-        let names = match name {
-            "std.math" => vec!["abs", "min", "max"],
-            "std.fs" => vec!["read_text", "write_text", "read_bytes", "write_bytes"],
-            "std.encoding" => vec!["hex_encode", "hex_decode"],
-            "std.hash" => vec!["sha256"],
-            "std.env" => vec!["args"],
-            "std.binary" => vec![
-                "u8",
-                "i8",
-                "u16_le",
-                "u16_be",
-                "i16_le",
-                "i16_be",
-                "u32_le",
-                "u32_be",
-                "i32_le",
-                "i32_be",
-                "pack_u16_le",
-                "pack_u16_be",
-                "pack_u32_le",
-                "pack_u32_be",
-            ],
-            _ => {
-                return Err(VmError::new(format!(
-                    "ImportError: standard module not found: {}",
-                    name
-                )))
-            }
-        };
+        use dbyte_module::stdlib_exports;
+        let exports = stdlib_exports(name).ok_or_else(|| {
+            VmError::new(format!("ImportError: standard module not found: {}", name))
+        })?;
+
         let mut members = HashMap::new();
-        for member in names {
+        for (member_name, _) in exports {
             members.insert(
-                member.to_string(),
-                ModuleMember::Native(format!("{}.{}", name, member)),
+                member_name.clone(),
+                ModuleMember::Native(format!("{}.{}", name, member_name)),
             );
         }
+
         Ok(ModuleValue {
             alias: alias.to_string(),
             members,
@@ -758,6 +738,18 @@ fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], VmError> {
     }
 }
 
+fn expect_buffer(args: &[Value], idx: usize) -> Result<Rc<RefCell<Vec<u8>>>, VmError> {
+    match args.get(idx) {
+        Some(Value::Buffer(b)) => Ok(b.clone()),
+        Some(other) => Err(VmError::new(format!(
+            "expected buffer argument {}, found {}",
+            idx + 1,
+            other.kind_name()
+        ))),
+        None => Err(VmError::new(format!("missing argument {}", idx + 1))),
+    }
+}
+
 fn format_module_error(error: &ModuleError) -> String {
     match error {
         ModuleError::LocalImportWithoutSource { requested } => {
@@ -778,8 +770,157 @@ impl Vm {
             "pack_u16_le" | "pack_u16_be" | "pack_u32_le" | "pack_u32_be" => {
                 self.native_binary_pack(op, args)
             }
+            "write_u16_le" | "write_u16_be" | "write_u32_le" | "write_u32_be" => {
+                self.native_binary_write(op, args)
+            }
             _ => Err(VmError::new(format!("unknown binary native `{}`", op))),
         }
+    }
+
+    fn native_buffer_dispatch(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        let op = name.strip_prefix("std.buffer.").unwrap_or(name);
+        match op {
+            "new" => {
+                let size = expect_int(&args, 0)?;
+                if size < 0 {
+                    return Err(VmError::new("buffer size must be non-negative"));
+                }
+                Ok(Value::Buffer(Rc::new(RefCell::new(vec![
+                    0u8;
+                    size as usize
+                ]))))
+            }
+            "from_bytes" => {
+                let bs = expect_bytes(&args, 0)?;
+                Ok(Value::Buffer(Rc::new(RefCell::new(bs.to_vec()))))
+            }
+            "to_bytes" => {
+                let b = expect_buffer(&args, 0)?;
+                let val = Value::Bytes(b.borrow().clone());
+                Ok(val)
+            }
+            "len" => {
+                let b = expect_buffer(&args, 0)?;
+                let len = b.borrow().len() as i64;
+                Ok(Value::Int(len))
+            }
+            "get" => {
+                let b = expect_buffer(&args, 0)?;
+                let offset = self.checked_offset(expect_int(&args, 1)?)?;
+                let buf = b.borrow();
+                if offset >= buf.len() {
+                    return Err(VmError::new(format!(
+                        "buffer get out of range: offset {}, but length is {}",
+                        offset,
+                        buf.len()
+                    )));
+                }
+                Ok(Value::Int(buf[offset] as i64))
+            }
+            "set" => {
+                let b = expect_buffer(&args, 0)?;
+                let offset = self.checked_offset(expect_int(&args, 1)?)?;
+                let val = expect_int(&args, 2)?;
+                if !(0..=255).contains(&val) {
+                    return Err(VmError::new(format!("buffer set value out of range: {}", val)));
+                }
+                let mut buf = b.borrow_mut();
+                if offset >= buf.len() {
+                    return Err(VmError::new(format!(
+                        "buffer set out of range: offset {}, but length is {}",
+                        offset,
+                        buf.len()
+                    )));
+                }
+                buf[offset] = val as u8;
+                Ok(Value::Void)
+            }
+            "slice" => {
+                let b = expect_buffer(&args, 0)?;
+                let offset = self.checked_offset(expect_int(&args, 1)?)?;
+                let length = expect_int(&args, 2)?;
+                if length < 0 {
+                    return Err(VmError::new("length must be non-negative"));
+                }
+                let buf = b.borrow();
+                if offset.checked_add(length as usize).is_none_or(|end| end > buf.len()) {
+                    return Err(VmError::new(format!(
+                        "buffer slice out of range: need {} bytes at offset {}, but length is {}",
+                        length,
+                        offset,
+                        buf.len()
+                    )));
+                }
+                let start = offset;
+                let end = start + length as usize;
+                Ok(Value::Bytes(buf[start..end].to_vec()))
+            }
+            _ => Err(VmError::new(format!("unknown buffer native `{}`", op))),
+        }
+    }
+
+    fn native_binary_write(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
+        let b = expect_buffer(&args, 0)?;
+        let offset = self.checked_offset(expect_int(&args, 1)?)?;
+        let val = expect_int(&args, 2)?;
+        let mut buf = b.borrow_mut();
+
+        match name {
+            "write_u16_le" => {
+                if !(0..=65535).contains(&val) {
+                    return Err(VmError::new(format!("value {} out of u16 range", val)));
+                }
+                if offset + 2 > buf.len() {
+                    return Err(VmError::new(format!(
+                        "write out of range: need 2 bytes at offset {}, but length is {}",
+                        offset,
+                        buf.len()
+                    )));
+                }
+                LE::write_u16(&mut buf[offset..], val as u16);
+            }
+            "write_u16_be" => {
+                if !(0..=65535).contains(&val) {
+                    return Err(VmError::new(format!("value {} out of u16 range", val)));
+                }
+                if offset + 2 > buf.len() {
+                    return Err(VmError::new(format!(
+                        "write out of range: need 2 bytes at offset {}, but length is {}",
+                        offset,
+                        buf.len()
+                    )));
+                }
+                BE::write_u16(&mut buf[offset..], val as u16);
+            }
+            "write_u32_le" => {
+                if !(0..=4294967295).contains(&val) {
+                    return Err(VmError::new(format!("value {} out of u32 range", val)));
+                }
+                if offset + 4 > buf.len() {
+                    return Err(VmError::new(format!(
+                        "write out of range: need 4 bytes at offset {}, but length is {}",
+                        offset,
+                        buf.len()
+                    )));
+                }
+                LE::write_u32(&mut buf[offset..], val as u32);
+            }
+            "write_u32_be" => {
+                if !(0..=4294967295).contains(&val) {
+                    return Err(VmError::new(format!("value {} out of u32 range", val)));
+                }
+                if offset + 4 > buf.len() {
+                    return Err(VmError::new(format!(
+                        "write out of range: need 4 bytes at offset {}, but length is {}",
+                        offset,
+                        buf.len()
+                    )));
+                }
+                BE::write_u32(&mut buf[offset..], val as u32);
+            }
+            _ => unreachable!(),
+        }
+        Ok(Value::Void)
     }
 
     fn checked_offset(&self, offset: i64) -> Result<usize, VmError> {

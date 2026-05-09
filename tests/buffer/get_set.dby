@@ -1,0 +1,7 @@
+import std.buffer as buf
+
+let b = buf.new(2)
+buf.set(b, 0, 10)
+buf.set(b, 1, 20)
+print(buf.get(b, 0))
+print(buf.get(b, 1))

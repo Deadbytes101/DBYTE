@@ -26,6 +26,7 @@ pub enum ResolvedType {
     Bool,
     Str,
     Bytes,
+    Buffer,
     List(Box<ResolvedType>),
     Module(ModuleType),
     Void,
@@ -51,6 +52,7 @@ impl std::fmt::Display for ResolvedType {
             ResolvedType::Bool => write!(f, "bool"),
             ResolvedType::Str => write!(f, "str"),
             ResolvedType::Bytes => write!(f, "bytes"),
+            ResolvedType::Buffer => write!(f, "buffer"),
             ResolvedType::List(inner) => write!(f, "list[{}]", inner),
             ResolvedType::Module(m) => write!(f, "module '{}'", m.alias),
             ResolvedType::Void => write!(f, "void"),
@@ -65,6 +67,7 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         TypeAnnotation::Bool => Some(ResolvedType::Bool),
         TypeAnnotation::Str => Some(ResolvedType::Str),
         TypeAnnotation::Bytes => Some(ResolvedType::Bytes),
+        TypeAnnotation::Buffer => Some(ResolvedType::Buffer),
         TypeAnnotation::List(inner) => {
             ann_to_resolved(inner).map(|t| ResolvedType::List(Box::new(t)))
         }

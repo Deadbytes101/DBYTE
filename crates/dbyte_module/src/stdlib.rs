@@ -93,6 +93,65 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                 ret: TypeAnnotation::List(Box::new(TypeAnnotation::Str)),
             },
         )]),
+        "std.buffer" => Some(vec![
+            (
+                "new".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Int],
+                    ret: TypeAnnotation::Buffer,
+                },
+            ),
+            (
+                "from_bytes".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Bytes],
+                    ret: TypeAnnotation::Buffer,
+                },
+            ),
+            (
+                "to_bytes".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Buffer],
+                    ret: TypeAnnotation::Bytes,
+                },
+            ),
+            (
+                "len".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Buffer],
+                    ret: TypeAnnotation::Int,
+                },
+            ),
+            (
+                "get".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Buffer, TypeAnnotation::Int],
+                    ret: TypeAnnotation::Int,
+                },
+            ),
+            (
+                "set".into(),
+                StdlibExport::Function {
+                    params: vec![
+                        TypeAnnotation::Buffer,
+                        TypeAnnotation::Int,
+                        TypeAnnotation::Int,
+                    ],
+                    ret: TypeAnnotation::Inferred,
+                },
+            ),
+            (
+                "slice".into(),
+                StdlibExport::Function {
+                    params: vec![
+                        TypeAnnotation::Buffer,
+                        TypeAnnotation::Int,
+                        TypeAnnotation::Int,
+                    ],
+                    ret: TypeAnnotation::Bytes,
+                },
+            ),
+        ]),
         "std.binary" => {
             let mut exports = Vec::new();
             let reader_funcs = [
@@ -116,6 +175,21 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                     StdlibExport::Function {
                         params: vec![TypeAnnotation::Int],
                         ret: TypeAnnotation::Bytes,
+                    },
+                ));
+            }
+
+            let buffer_writer_funcs = ["write_u16_le", "write_u16_be", "write_u32_le", "write_u32_be"];
+            for name in buffer_writer_funcs {
+                exports.push((
+                    name.into(),
+                    StdlibExport::Function {
+                        params: vec![
+                            TypeAnnotation::Buffer,
+                            TypeAnnotation::Int,
+                            TypeAnnotation::Int,
+                        ],
+                        ret: TypeAnnotation::Inferred,
                     },
                 ));
             }

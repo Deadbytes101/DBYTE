@@ -285,6 +285,26 @@ impl<'src> Lexer<'src> {
         let sp = self.span();
         let mut s = String::from(first);
         let mut is_float = false;
+
+        if first == '0' && self.peek_char() == Some('x') {
+            self.advance(); // consume 'x'
+            let mut hex_val = String::new();
+            while let Some(c) = self.peek_char() {
+                if c.is_ascii_hexdigit() {
+                    hex_val.push(c);
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            if hex_val.is_empty() {
+                // Technically an error or just '0', but for now let's treat it as 0
+                return Token::new(TokenKind::Int(0), sp);
+            }
+            let val = i64::from_str_radix(&hex_val, 16).unwrap_or(0);
+            return Token::new(TokenKind::Int(val), sp);
+        }
+
         while let Some(c) = self.peek_char() {
             if c.is_ascii_digit() {
                 s.push(c);

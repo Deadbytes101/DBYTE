@@ -3,8 +3,10 @@ use dbyte_ast::*;
 use dbyte_lexer::Lexer;
 use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 type NativeFn = fn(&[Value]) -> Result<Value, String>;
 
@@ -15,6 +17,7 @@ pub enum Value {
     Bool(bool),
     Str(String),
     Bytes(Vec<u8>),
+    Buffer(Rc<RefCell<Vec<u8>>>),
     List(Vec<Value>),
     Module(ModuleValue),
     Void,
@@ -41,6 +44,7 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Str(s) => write!(f, "{}", s),
             Value::Bytes(bs) => write!(f, "{}", hex::encode(bs)),
+            Value::Buffer(_) => write!(f, "<buffer>"),
             Value::List(vs) => {
                 write!(f, "[")?;
                 for (i, v) in vs.iter().enumerate() {
@@ -65,6 +69,7 @@ impl Value {
             Value::Bool(_) => "bool",
             Value::Str(_) => "str",
             Value::Bytes(_) => "bytes",
+            Value::Buffer(_) => "buffer",
             Value::List(_) => "list",
             Value::Module(_) => "module",
             Value::Void => "void",
@@ -256,6 +261,18 @@ impl Interpreter {
             "std.env" => {
                 members.insert("args".into(), ModuleMember::Native(native_env_args));
             }
+            "std.buffer" => {
+                members.insert("new".into(), ModuleMember::Native(native_buffer_new));
+                members.insert(
+                    "from_bytes".into(),
+                    ModuleMember::Native(native_buffer_from_bytes),
+                );
+                members.insert("to_bytes".into(), ModuleMember::Native(native_buffer_to_bytes));
+                members.insert("len".into(), ModuleMember::Native(native_buffer_len));
+                members.insert("get".into(), ModuleMember::Native(native_buffer_get));
+                members.insert("set".into(), ModuleMember::Native(native_buffer_set));
+                members.insert("slice".into(), ModuleMember::Native(native_buffer_slice));
+            }
             "std.binary" => {
                 members.insert("u8".into(), ModuleMember::Native(native_binary_u8));
                 members.insert("i8".into(), ModuleMember::Native(native_binary_i8));
@@ -282,6 +299,22 @@ impl Interpreter {
                 members.insert(
                     "pack_u32_be".into(),
                     ModuleMember::Native(native_binary_pack_u32_be),
+                );
+                members.insert(
+                    "write_u16_le".into(),
+                    ModuleMember::Native(native_binary_write_u16_le),
+                );
+                members.insert(
+                    "write_u16_be".into(),
+                    ModuleMember::Native(native_binary_write_u16_be),
+                );
+                members.insert(
+                    "write_u32_le".into(),
+                    ModuleMember::Native(native_binary_write_u32_le),
+                );
+                members.insert(
+                    "write_u32_be".into(),
+                    ModuleMember::Native(native_binary_write_u32_be),
                 );
             }
             _ => {
@@ -791,7 +824,7 @@ impl Interpreter {
             }
 
             Stmt::Import { path, alias, span } => {
-                if self.get(alias).is_some() {
+                if self.env.last().unwrap().contains_key(alias) {
                     return Err(Signal::Error(RuntimeError {
                         msg: format!("ImportError: duplicate import alias: {}", alias),
                         span: *span,
@@ -858,6 +891,18 @@ fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], String> {
         Some(Value::Bytes(bs)) => Ok(bs),
         Some(other) => Err(format!(
             "expected bytes argument {}, found {}",
+            idx + 1,
+            other.kind_name()
+        )),
+        None => Err(format!("missing argument {}", idx + 1)),
+    }
+}
+
+fn expect_buffer(args: &[Value], idx: usize) -> Result<Rc<RefCell<Vec<u8>>>, String> {
+    match args.get(idx) {
+        Some(Value::Buffer(b)) => Ok(b.clone()),
+        Some(other) => Err(format!(
+            "expected buffer argument {}, found {}",
             idx + 1,
             other.kind_name()
         )),
@@ -1099,6 +1144,171 @@ fn native_binary_pack_u32_le(args: &[Value]) -> Result<Value, String> {
 }
 fn native_binary_pack_u32_be(args: &[Value]) -> Result<Value, String> {
     native_binary_pack("pack_u32_be", args)
+}
+
+fn native_binary_write_u16_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_write("write_u16_le", args)
+}
+fn native_binary_write_u16_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_write("write_u16_be", args)
+}
+fn native_binary_write_u32_le(args: &[Value]) -> Result<Value, String> {
+    native_binary_write("write_u32_le", args)
+}
+fn native_binary_write_u32_be(args: &[Value]) -> Result<Value, String> {
+    native_binary_write("write_u32_be", args)
+}
+
+fn native_buffer_new(args: &[Value]) -> Result<Value, String> {
+    let size = expect_int(args, 0)?;
+    if size < 0 {
+        return Err("buffer size must be non-negative".into());
+    }
+    Ok(Value::Buffer(Rc::new(RefCell::new(vec![0u8; size as usize]))))
+}
+
+fn native_buffer_from_bytes(args: &[Value]) -> Result<Value, String> {
+    let bs = expect_bytes(args, 0)?;
+    Ok(Value::Buffer(Rc::new(RefCell::new(bs.to_vec()))))
+}
+
+fn native_buffer_to_bytes(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let val = Value::Bytes(b.borrow().clone());
+    Ok(val)
+}
+
+fn native_buffer_len(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let len = b.borrow().len() as i64;
+    Ok(Value::Int(len))
+}
+
+fn native_buffer_get(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let offset = expect_int(args, 1)?;
+    if offset < 0 {
+        return Err("offset must be non-negative".into());
+    }
+    let buf = b.borrow();
+    if offset as usize >= buf.len() {
+        return Err(format!(
+            "buffer get out of range: offset {}, but length is {}",
+            offset,
+            buf.len()
+        ));
+    }
+    Ok(Value::Int(buf[offset as usize] as i64))
+}
+
+fn native_buffer_set(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let offset = expect_int(args, 1)?;
+    let val = expect_int(args, 2)?;
+    if offset < 0 {
+        return Err("offset must be non-negative".into());
+    }
+    if !(0..=255).contains(&val) {
+        return Err(format!("buffer set value out of range: {}", val));
+    }
+    let mut buf = b.borrow_mut();
+    if offset as usize >= buf.len() {
+        return Err(format!(
+            "buffer set out of range: offset {}, but length is {}",
+            offset,
+            buf.len()
+        ));
+    }
+    buf[offset as usize] = val as u8;
+    Ok(Value::Void)
+}
+
+fn native_buffer_slice(args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let offset = expect_int(args, 1)?;
+    let length = expect_int(args, 2)?;
+    if offset < 0 || length < 0 {
+        return Err("offset and length must be non-negative".into());
+    }
+    let buf = b.borrow();
+    if offset.checked_add(length).is_none_or(|end| end as usize > buf.len()) {
+        return Err(format!(
+            "buffer slice out of range: need {} bytes at offset {}, but length is {}",
+            length,
+            offset,
+            buf.len()
+        ));
+    }
+    let start = offset as usize;
+    let end = start + length as usize;
+    Ok(Value::Bytes(buf[start..end].to_vec()))
+}
+
+fn native_binary_write(name: &str, args: &[Value]) -> Result<Value, String> {
+    let b = expect_buffer(args, 0)?;
+    let offset = expect_int(args, 1)?;
+    let val = expect_int(args, 2)?;
+    if offset < 0 {
+        return Err("offset must be non-negative".into());
+    }
+    let mut buf = b.borrow_mut();
+
+    match name {
+        "write_u16_le" => {
+            if !(0..=65535).contains(&val) {
+                return Err(format!("value {} out of u16 range", val));
+            }
+            if offset as usize + 2 > buf.len() {
+                return Err(format!(
+                    "write out of range: need 2 bytes at offset {}, but length is {}",
+                    offset,
+                    buf.len()
+                ));
+            }
+            LE::write_u16(&mut buf[offset as usize..], val as u16);
+        }
+        "write_u16_be" => {
+            if !(0..=65535).contains(&val) {
+                return Err(format!("value {} out of u16 range", val));
+            }
+            if offset as usize + 2 > buf.len() {
+                return Err(format!(
+                    "write out of range: need 2 bytes at offset {}, but length is {}",
+                    offset,
+                    buf.len()
+                ));
+            }
+            BE::write_u16(&mut buf[offset as usize..], val as u16);
+        }
+        "write_u32_le" => {
+            if !(0..=4294967295).contains(&val) {
+                return Err(format!("value {} out of u32 range", val));
+            }
+            if offset as usize + 4 > buf.len() {
+                return Err(format!(
+                    "write out of range: need 4 bytes at offset {}, but length is {}",
+                    offset,
+                    buf.len()
+                ));
+            }
+            LE::write_u32(&mut buf[offset as usize..], val as u32);
+        }
+        "write_u32_be" => {
+            if !(0..=4294967295).contains(&val) {
+                return Err(format!("value {} out of u32 range", val));
+            }
+            if offset as usize + 4 > buf.len() {
+                return Err(format!(
+                    "write out of range: need 4 bytes at offset {}, but length is {}",
+                    offset,
+                    buf.len()
+                ));
+            }
+            BE::write_u32(&mut buf[offset as usize..], val as u32);
+        }
+        _ => unreachable!(),
+    }
+    Ok(Value::Void)
 }
 
 fn format_module_error(error: &ModuleError) -> String {

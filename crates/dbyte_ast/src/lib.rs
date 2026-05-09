@@ -26,6 +26,7 @@ pub enum TypeAnnotation {
     Bool,
     Str,
     Bytes,
+    Buffer,
     List(Box<TypeAnnotation>),
     Inferred,
 }
@@ -38,6 +39,7 @@ impl std::fmt::Display for TypeAnnotation {
             TypeAnnotation::Bool => write!(f, "bool"),
             TypeAnnotation::Str => write!(f, "str"),
             TypeAnnotation::Bytes => write!(f, "bytes"),
+            TypeAnnotation::Buffer => write!(f, "buffer"),
             TypeAnnotation::List(inner) => write!(f, "list[{}]", inner),
             TypeAnnotation::Inferred => write!(f, "<inferred>"),
         }

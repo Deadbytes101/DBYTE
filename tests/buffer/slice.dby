@@ -1,0 +1,6 @@
+import std.buffer as buf
+import std.encoding as enc
+
+let b = buf.from_bytes(b"\xaa\xbb\xcc\xdd")
+let s = buf.slice(b, 1, 2)
+print(enc.hex_encode(s))
