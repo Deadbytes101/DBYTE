@@ -1,6 +1,8 @@
 use byteorder::{ByteOrder, BE, LE};
 use dbyte_ast::{FStrPart, Span};
-use dbyte_bytecode::{format_op, BytecodeFunction, Chunk, ModuleMember, ModuleValue, Op, Value};
+use dbyte_bytecode::{
+    format_op, BytecodeFunction, Chunk, ModuleMember, ModuleValue, NativeFn, Op, Value,
+};
 use dbyte_compiler::{CompileError, Compiler};
 use dbyte_lexer::Lexer;
 use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
@@ -31,14 +33,9 @@ struct IteratorState {
     index: usize,
 }
 
-#[derive(Debug, Clone)]
-enum StackValue {
-    Value(Value),
-    Iter(IteratorState),
-}
-
 pub struct Vm {
-    stack: Vec<StackValue>,
+    stack: Vec<Value>,
+    iter_stack: Vec<IteratorState>,
     frames: Vec<Vec<Value>>,
     trace: bool,
     current_file: Option<PathBuf>,
@@ -50,6 +47,7 @@ impl Vm {
     pub fn new() -> Self {
         Self {
             stack: Vec::new(),
+            iter_stack: Vec::new(),
             frames: Vec::new(),
             trace: false,
             current_file: None,
@@ -132,7 +130,7 @@ impl Vm {
                     if slot >= frame.len() {
                         frame.resize(slot + 1, Value::Void);
                     }
-                    frame[slot] = Value::Module(module);
+                    frame[slot] = Value::Module(Rc::new(module));
                 }
                 Op::Member(property) => {
                     let module = self.pop_module()?;
@@ -153,15 +151,30 @@ impl Vm {
                     }
                 }
                 Op::MemberCall(property, argc) => {
-                    let args = self.pop_args(argc)?;
-                    let module = self.pop_module()?;
+                    let args_start = self.stack.len() - argc;
+                    let module = match self.stack.get(args_start - 1) {
+                        Some(Value::Module(m)) => m.clone(),
+                        _ => return Err(VmError::new("member call requires a module")),
+                    };
                     let member = module.members.get(&property).cloned().ok_or_else(|| {
                         VmError::new(format!(
                             "module '{}' has no public member '{}'",
                             module.alias, property
                         ))
                     })?;
-                    let value = self.call_module_member(&property, member, args)?;
+                    let value = match member {
+                        ModuleMember::Native(id) => {
+                            self.call_native(id, &self.stack[args_start..])?
+                        }
+                        ModuleMember::Function(f) => self.call_function(&f, args_start)?,
+                        ModuleMember::Value(_) => {
+                            return Err(VmError::new(format!(
+                                "module member '{}' is not callable",
+                                property
+                            )))
+                        }
+                    };
+                    self.stack.truncate(args_start - 1);
                     self.push(value);
                 }
                 Op::IterInit => self.iter_init()?,
@@ -178,9 +191,18 @@ impl Vm {
                     }
                 }
                 Op::Call(name, argc) => {
-                    let args = self.pop_args(argc)?;
-                    let value = self.call(&name, args, chunk)?;
-                    self.push(value);
+                    let args_start = self.stack.len() - argc;
+                    if name == "print" || name == "len" {
+                        let value = self.call_builtin(&name, &self.stack[args_start..])?;
+                        self.stack.truncate(args_start);
+                        self.push(value);
+                    } else {
+                        let function = chunk.functions.get(&name).ok_or_else(|| {
+                            VmError::new(format!("undefined function `{}`", name))
+                        })?;
+                        let value = self.call_function(function, args_start)?;
+                        self.push(value);
+                    }
                 }
                 Op::Return => return Ok(Some(self.pop()?)),
                 Op::Pop => {
@@ -205,23 +227,20 @@ impl Vm {
     }
 
     fn push(&mut self, value: Value) {
-        self.stack.push(StackValue::Value(value));
+        self.stack.push(value);
     }
 
     fn pop(&mut self) -> Result<Value, VmError> {
-        match self.stack.pop() {
-            Some(StackValue::Value(value)) => Ok(value),
-            Some(StackValue::Iter(_)) => Err(VmError::new("expected value, found iterator")),
-            None => Err(VmError::new("stack underflow")),
-        }
+        self.stack
+            .pop()
+            .ok_or_else(|| VmError::new("stack underflow"))
     }
 
     fn pop_args(&mut self, argc: usize) -> Result<Vec<Value>, VmError> {
-        let mut args = Vec::with_capacity(argc);
-        for _ in 0..argc {
-            args.push(self.pop()?);
+        if self.stack.len() < argc {
+            return Err(VmError::new("stack underflow"));
         }
-        args.reverse();
+        let args = self.stack.split_off(self.stack.len() - argc);
         Ok(args)
     }
 
@@ -236,13 +255,7 @@ impl Vm {
     }
 
     fn value_stack(&self) -> Vec<String> {
-        self.stack
-            .iter()
-            .filter_map(|v| match v {
-                StackValue::Value(value) => Some(format!("{}", value)),
-                StackValue::Iter(_) => None,
-            })
-            .collect()
+        self.stack.iter().map(|v| format!("{}", v)).collect()
     }
 
     fn eval_fstr(&mut self, parts: &[FStrPart], chunk: &Chunk) -> Result<(), VmError> {
@@ -409,18 +422,17 @@ impl Vm {
             Value::Str(s) => s.chars().map(|c| Value::Str(c.to_string())).collect(),
             _ => return Err(VmError::new("value is not iterable")),
         };
-        self.stack
-            .push(StackValue::Iter(IteratorState { items, index: 0 }));
+        self.iter_stack.push(IteratorState { items, index: 0 });
         Ok(())
     }
 
     fn iter_next(&mut self, slot: usize) -> Result<bool, VmError> {
-        let iter = match self.stack.last_mut() {
-            Some(StackValue::Iter(iter)) => iter,
+        let iter = match self.iter_stack.last_mut() {
+            Some(iter) => iter,
             _ => return Err(VmError::new("expected iterator")),
         };
         if iter.index >= iter.items.len() {
-            self.stack.pop();
+            self.iter_stack.pop();
             return Ok(false);
         }
         let value = iter.items[iter.index].clone();
@@ -433,7 +445,7 @@ impl Vm {
         Ok(true)
     }
 
-    fn call(&mut self, name: &str, args: Vec<Value>, chunk: &Chunk) -> Result<Value, VmError> {
+    fn call_builtin(&self, name: &str, args: &[Value]) -> Result<Value, VmError> {
         if name == "print" {
             let rendered: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
             println!("{}", rendered.join(" "));
@@ -451,31 +463,26 @@ impl Vm {
             };
             return Ok(Value::Int(length as i64));
         }
-        let function = chunk
-            .functions
-            .get(name)
-            .ok_or_else(|| VmError::new(format!("undefined function `{}`", name)))?;
-        self.call_function(function, args)
+        Err(VmError::new(format!("undefined builtin `{}`", name)))
     }
 
     fn call_function(
         &mut self,
         function: &BytecodeFunction,
-        args: Vec<Value>,
+        args_start: usize,
     ) -> Result<Value, VmError> {
-        if args.len() != function.params.len() {
+        let argc = self.stack.len() - args_start;
+        if argc != function.params.len() {
             return Err(VmError::new(format!(
                 "function `{}` expects {} args, got {}",
                 function.name,
                 function.params.len(),
-                args.len()
+                argc
             )));
         }
         let mut frame = vec![Value::Void; function.chunk.local_names.len()];
-        for (idx, arg) in args.into_iter().enumerate() {
-            if idx >= frame.len() {
-                frame.push(arg);
-            } else {
+        for (idx, arg) in self.stack.drain(args_start..).enumerate() {
+            if idx < frame.len() {
                 frame[idx] = arg;
             }
         }
@@ -485,7 +492,7 @@ impl Vm {
         Ok(result.unwrap_or(Value::Void))
     }
 
-    fn pop_module(&mut self) -> Result<ModuleValue, VmError> {
+    fn pop_module(&mut self) -> Result<Rc<ModuleValue>, VmError> {
         match self.pop()? {
             Value::Module(module) => Ok(module),
             other => Err(VmError::new(format!(
@@ -495,79 +502,71 @@ impl Vm {
         }
     }
 
-    fn call_module_member(
-        &mut self,
-        name: &str,
-        member: ModuleMember,
-        args: Vec<Value>,
-    ) -> Result<Value, VmError> {
-        match member {
-            ModuleMember::Function(function) => self.call_function(&function, args),
-            ModuleMember::Native(native) => self.call_native(&native, args),
-            ModuleMember::Value(_) => Err(VmError::new(format!(
-                "module member `{}` is not callable",
-                name
-            ))),
-        }
-    }
-
-    fn call_native(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
-        match name {
-            "std.math.abs" => Ok(Value::Int(expect_int(&args, 0)?.abs())),
-            "std.math.min" => Ok(Value::Int(expect_int(&args, 0)?.min(expect_int(&args, 1)?))),
-            "std.math.max" => Ok(Value::Int(expect_int(&args, 0)?.max(expect_int(&args, 1)?))),
-            "std.fs.read_text" => {
-                let path = expect_str(&args, 0)?;
+    fn call_native(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
+        use dbyte_bytecode::NativeFn::*;
+        match id {
+            MathAbs => Ok(Value::Int(expect_int(args, 0)?.abs())),
+            MathMin => Ok(Value::Int(expect_int(args, 0)?.min(expect_int(args, 1)?))),
+            MathMax => Ok(Value::Int(expect_int(args, 0)?.max(expect_int(args, 1)?))),
+            FsReadText => {
+                let path = expect_str(args, 0)?;
                 std::fs::read_to_string(path)
                     .map(Value::Str)
                     .map_err(|e| VmError::new(format!("fs.read_text failed for `{}`: {}", path, e)))
             }
-            "std.fs.write_text" => {
-                let path = expect_str(&args, 0)?;
-                let text = expect_str(&args, 1)?;
+            FsWriteText => {
+                let path = expect_str(args, 0)?;
+                let text = expect_str(args, 1)?;
                 std::fs::write(path, text)
                     .map(|_| Value::Void)
                     .map_err(|e| {
                         VmError::new(format!("fs.write_text failed for `{}`: {}", path, e))
                     })
             }
-            "std.fs.read_bytes" => {
-                let path = expect_str(&args, 0)?;
+            FsReadBytes => {
+                let path = expect_str(args, 0)?;
                 std::fs::read(path).map(Value::Bytes).map_err(|e| {
                     VmError::new(format!("fs.read_bytes failed for `{}`: {}", path, e))
                 })
             }
-            "std.fs.write_bytes" => {
-                let path = expect_str(&args, 0)?;
-                let bytes = expect_bytes(&args, 1)?;
+            FsWriteBytes => {
+                let path = expect_str(args, 0)?;
+                let bytes = expect_bytes(args, 1)?;
                 std::fs::write(path, bytes)
                     .map(|_| Value::Void)
                     .map_err(|e| {
                         VmError::new(format!("fs.write_bytes failed for `{}`: {}", path, e))
                     })
             }
-            "std.encoding.hex_encode" => {
-                let bytes = expect_bytes(&args, 0)?;
+            EncodingHexEncode => {
+                let bytes = expect_bytes(args, 0)?;
                 Ok(Value::Str(hex::encode(bytes)))
             }
-            "std.encoding.hex_decode" => {
-                let s = expect_str(&args, 0)?;
+            EncodingHexDecode => {
+                let s = expect_str(args, 0)?;
                 hex::decode(s)
                     .map(Value::Bytes)
                     .map_err(|e| VmError::new(format!("hex_decode failed: {}", e)))
             }
-            "std.hash.sha256" => {
+            HashSha256 => {
                 use sha2::{Digest, Sha256};
-                let bytes = expect_bytes(&args, 0)?;
+                let bytes = expect_bytes(args, 0)?;
                 let mut hasher = Sha256::new();
                 hasher.update(bytes);
                 let result = hasher.finalize();
                 Ok(Value::Bytes(result.to_vec()))
             }
-            "std.env.args" => Ok(Value::List(std::env::args().map(Value::Str).collect())),
-            _ if name.starts_with("std.buffer.") => self.native_buffer_dispatch(name, args),
-            _ if name.starts_with("std.binary.") => self.native_binary_dispatch(name, args),
-            _ => Err(VmError::new(format!("unknown native `{}`", name))),
+            EnvArgs => Ok(Value::List(std::env::args().map(Value::Str).collect())),
+            BufferNew | BufferFromBytes | BufferToBytes | BufferLen | BufferGet | BufferSet
+            | BufferSlice | BufferLoad | BufferSave | BufferFind | BufferReplace => {
+                self.native_buffer_dispatch(id, args)
+            }
+            BinaryU8 | BinaryI8 | BinaryU16Le | BinaryU16Be | BinaryI16Le | BinaryI16Be
+            | BinaryU32Le | BinaryU32Be | BinaryI32Le | BinaryI32Be | BinaryPackU16Le
+            | BinaryPackU16Be | BinaryPackU32Le | BinaryPackU32Be | BinaryWriteU16Le
+            | BinaryWriteU16Be | BinaryWriteU32Le | BinaryWriteU32Be => {
+                self.native_binary_dispatch(id, args)
+            }
         }
     }
 
@@ -621,6 +620,7 @@ impl Vm {
     }
 
     fn load_std_module(&self, name: &str, alias: &str) -> Result<ModuleValue, VmError> {
+        use dbyte_bytecode::NativeFn;
         use dbyte_module::stdlib_exports;
         let exports = stdlib_exports(name).ok_or_else(|| {
             VmError::new(format!("ImportError: standard module not found: {}", name))
@@ -628,10 +628,10 @@ impl Vm {
 
         let mut members = HashMap::new();
         for (member_name, _) in exports {
-            members.insert(
-                member_name.clone(),
-                ModuleMember::Native(format!("{}.{}", name, member_name)),
-            );
+            let full_name = format!("{}.{}", name, member_name);
+            let id = NativeFn::from_name(&full_name)
+                .ok_or_else(|| VmError::new(format!("unknown native `{}`", full_name)))?;
+            members.insert(member_name.clone(), ModuleMember::Native(id));
         }
 
         Ok(ModuleValue {
@@ -661,7 +661,7 @@ impl Vm {
         }
         for name in &chunk.public_functions {
             if let Some(function) = chunk.functions.get(name).cloned() {
-                members.insert(name.clone(), ModuleMember::Function(function));
+                members.insert(name.clone(), ModuleMember::Function(Box::new(function)));
             }
         }
         Ok(ModuleValue {
@@ -762,26 +762,28 @@ fn format_module_error(error: &ModuleError) -> String {
 }
 
 impl Vm {
-    fn native_binary_dispatch(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
-        let op = name.strip_prefix("std.binary.").unwrap_or(name);
-        match op {
-            "u8" | "i8" | "u16_le" | "u16_be" | "i16_le" | "i16_be" | "u32_le" | "u32_be"
-            | "i32_le" | "i32_be" => self.native_binary_read(op, args),
-            "pack_u16_le" | "pack_u16_be" | "pack_u32_le" | "pack_u32_be" => {
-                self.native_binary_pack(op, args)
+    fn native_binary_dispatch(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
+        use dbyte_bytecode::NativeFn::*;
+        match id {
+            BinaryU8 | BinaryI8 | BinaryU16Le | BinaryU16Be | BinaryI16Le | BinaryI16Be
+            | BinaryU32Le | BinaryU32Be | BinaryI32Le | BinaryI32Be => {
+                self.native_binary_read(id, args)
             }
-            "write_u16_le" | "write_u16_be" | "write_u32_le" | "write_u32_be" => {
-                self.native_binary_write(op, args)
+            BinaryPackU16Le | BinaryPackU16Be | BinaryPackU32Le | BinaryPackU32Be => {
+                self.native_binary_pack(id, args)
             }
-            _ => Err(VmError::new(format!("unknown binary native `{}`", op))),
+            BinaryWriteU16Le | BinaryWriteU16Be | BinaryWriteU32Le | BinaryWriteU32Be => {
+                self.native_binary_write(id, args)
+            }
+            _ => unreachable!(),
         }
     }
 
-    fn native_buffer_dispatch(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
-        let op = name.strip_prefix("std.buffer.").unwrap_or(name);
-        match op {
-            "new" => {
-                let size = expect_int(&args, 0)?;
+    fn native_buffer_dispatch(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
+        use dbyte_bytecode::NativeFn::*;
+        match id {
+            BufferNew => {
+                let size = expect_int(args, 0)?;
                 if size < 0 {
                     return Err(VmError::new("buffer size must be non-negative"));
                 }
@@ -790,23 +792,23 @@ impl Vm {
                     size as usize
                 ]))))
             }
-            "from_bytes" => {
-                let bs = expect_bytes(&args, 0)?;
+            BufferFromBytes => {
+                let bs = expect_bytes(args, 0)?;
                 Ok(Value::Buffer(Rc::new(RefCell::new(bs.to_vec()))))
             }
-            "to_bytes" => {
-                let b = expect_buffer(&args, 0)?;
+            BufferToBytes => {
+                let b = expect_buffer(args, 0)?;
                 let val = Value::Bytes(b.borrow().clone());
                 Ok(val)
             }
-            "len" => {
-                let b = expect_buffer(&args, 0)?;
+            BufferLen => {
+                let b = expect_buffer(args, 0)?;
                 let len = b.borrow().len() as i64;
                 Ok(Value::Int(len))
             }
-            "get" => {
-                let b = expect_buffer(&args, 0)?;
-                let offset = self.checked_offset(expect_int(&args, 1)?)?;
+            BufferGet => {
+                let b = expect_buffer(args, 0)?;
+                let offset = self.checked_offset(expect_int(args, 1)?)?;
                 let buf = b.borrow();
                 if offset >= buf.len() {
                     return Err(VmError::new(format!(
@@ -817,10 +819,10 @@ impl Vm {
                 }
                 Ok(Value::Int(buf[offset] as i64))
             }
-            "set" => {
-                let b = expect_buffer(&args, 0)?;
-                let offset = self.checked_offset(expect_int(&args, 1)?)?;
-                let val = expect_int(&args, 2)?;
+            BufferSet => {
+                let b = expect_buffer(args, 0)?;
+                let offset = self.checked_offset(expect_int(args, 1)?)?;
+                let val = expect_int(args, 2)?;
                 if !(0..=255).contains(&val) {
                     return Err(VmError::new(format!(
                         "buffer set value out of range: {}",
@@ -838,10 +840,10 @@ impl Vm {
                 buf[offset] = val as u8;
                 Ok(Value::Void)
             }
-            "slice" => {
-                let b = expect_buffer(&args, 0)?;
-                let offset = self.checked_offset(expect_int(&args, 1)?)?;
-                let length = expect_int(&args, 2)?;
+            BufferSlice => {
+                let b = expect_buffer(args, 0)?;
+                let offset = self.checked_offset(expect_int(args, 1)?)?;
+                let length = expect_int(args, 2)?;
                 if length < 0 {
                     return Err(VmError::new("length must be non-negative"));
                 }
@@ -861,24 +863,24 @@ impl Vm {
                 let end = start + length as usize;
                 Ok(Value::Bytes(buf[start..end].to_vec()))
             }
-            "load" => {
-                let path = expect_str(&args, 0)?;
+            BufferLoad => {
+                let path = expect_str(args, 0)?;
                 let data = std::fs::read(path).map_err(|e| {
                     VmError::new(format!("buffer.load failed for `{}`: {}", path, e))
                 })?;
                 Ok(Value::Buffer(Rc::new(RefCell::new(data))))
             }
-            "save" => {
-                let path = expect_str(&args, 0)?;
-                let b = expect_buffer(&args, 1)?;
+            BufferSave => {
+                let path = expect_str(args, 0)?;
+                let b = expect_buffer(args, 1)?;
                 std::fs::write(path, &*b.borrow()).map_err(|e| {
                     VmError::new(format!("buffer.save failed for `{}`: {}", path, e))
                 })?;
                 Ok(Value::Void)
             }
-            "find" => {
-                let b = expect_buffer(&args, 0)?;
-                let pattern = expect_bytes(&args, 1)?;
+            BufferFind => {
+                let b = expect_buffer(args, 0)?;
+                let pattern = expect_bytes(args, 1)?;
                 if pattern.is_empty() {
                     return Err(VmError::new("buffer.find: pattern cannot be empty"));
                 }
@@ -890,10 +892,10 @@ impl Vm {
                     .unwrap_or(-1);
                 Ok(Value::Int(pos))
             }
-            "replace" => {
-                let b = expect_buffer(&args, 0)?;
-                let offset = self.checked_offset(expect_int(&args, 1)?)?;
-                let data = expect_bytes(&args, 2)?;
+            BufferReplace => {
+                let b = expect_buffer(args, 0)?;
+                let offset = self.checked_offset(expect_int(args, 1)?)?;
+                let data = expect_bytes(args, 2)?;
                 let mut buf = b.borrow_mut();
                 let end = offset + data.len();
                 if end > buf.len() {
@@ -907,18 +909,19 @@ impl Vm {
                 buf[offset..end].copy_from_slice(data);
                 Ok(Value::Void)
             }
-            _ => Err(VmError::new(format!("unknown buffer native `{}`", op))),
+            _ => unreachable!(),
         }
     }
 
-    fn native_binary_write(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
-        let b = expect_buffer(&args, 0)?;
-        let offset = self.checked_offset(expect_int(&args, 1)?)?;
-        let val = expect_int(&args, 2)?;
+    fn native_binary_write(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
+        use dbyte_bytecode::NativeFn::*;
+        let b = expect_buffer(args, 0)?;
+        let offset = self.checked_offset(expect_int(args, 1)?)?;
+        let val = expect_int(args, 2)?;
         let mut buf = b.borrow_mut();
 
-        match name {
-            "write_u16_le" => {
+        match id {
+            BinaryWriteU16Le => {
                 if !(0..=65535).contains(&val) {
                     return Err(VmError::new(format!("value {} out of u16 range", val)));
                 }
@@ -931,7 +934,7 @@ impl Vm {
                 }
                 LE::write_u16(&mut buf[offset..], val as u16);
             }
-            "write_u16_be" => {
+            BinaryWriteU16Be => {
                 if !(0..=65535).contains(&val) {
                     return Err(VmError::new(format!("value {} out of u16 range", val)));
                 }
@@ -944,7 +947,7 @@ impl Vm {
                 }
                 BE::write_u16(&mut buf[offset..], val as u16);
             }
-            "write_u32_le" => {
+            BinaryWriteU32Le => {
                 if !(0..=4294967295).contains(&val) {
                     return Err(VmError::new(format!("value {} out of u32 range", val)));
                 }
@@ -957,7 +960,7 @@ impl Vm {
                 }
                 LE::write_u32(&mut buf[offset..], val as u32);
             }
-            "write_u32_be" => {
+            BinaryWriteU32Be => {
                 if !(0..=4294967295).contains(&val) {
                     return Err(VmError::new(format!("value {} out of u32 range", val)));
                 }
@@ -994,48 +997,49 @@ impl Vm {
         Ok(())
     }
 
-    fn native_binary_read(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
-        let bs = expect_bytes(&args, 0)?;
-        let offset = self.checked_offset(expect_int(&args, 1)?)?;
+    fn native_binary_read(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
+        use dbyte_bytecode::NativeFn::*;
+        let bs = expect_bytes(args, 0)?;
+        let offset = self.checked_offset(expect_int(args, 1)?)?;
 
-        match name {
-            "u8" => {
+        match id {
+            BinaryU8 => {
                 self.require_len(bs, offset, 1)?;
                 Ok(Value::Int(bs[offset] as i64))
             }
-            "i8" => {
+            BinaryI8 => {
                 self.require_len(bs, offset, 1)?;
                 Ok(Value::Int(bs[offset] as i8 as i64))
             }
-            "u16_le" => {
+            BinaryU16Le => {
                 self.require_len(bs, offset, 2)?;
                 Ok(Value::Int(LE::read_u16(&bs[offset..]) as i64))
             }
-            "u16_be" => {
+            BinaryU16Be => {
                 self.require_len(bs, offset, 2)?;
                 Ok(Value::Int(BE::read_u16(&bs[offset..]) as i64))
             }
-            "i16_le" => {
+            BinaryI16Le => {
                 self.require_len(bs, offset, 2)?;
                 Ok(Value::Int(LE::read_i16(&bs[offset..]) as i64))
             }
-            "i16_be" => {
+            BinaryI16Be => {
                 self.require_len(bs, offset, 2)?;
                 Ok(Value::Int(BE::read_i16(&bs[offset..]) as i64))
             }
-            "u32_le" => {
+            BinaryU32Le => {
                 self.require_len(bs, offset, 4)?;
                 Ok(Value::Int(LE::read_u32(&bs[offset..]) as i64))
             }
-            "u32_be" => {
+            BinaryU32Be => {
                 self.require_len(bs, offset, 4)?;
                 Ok(Value::Int(BE::read_u32(&bs[offset..]) as i64))
             }
-            "i32_le" => {
+            BinaryI32Le => {
                 self.require_len(bs, offset, 4)?;
                 Ok(Value::Int(LE::read_i32(&bs[offset..]) as i64))
             }
-            "i32_be" => {
+            BinaryI32Be => {
                 self.require_len(bs, offset, 4)?;
                 Ok(Value::Int(BE::read_i32(&bs[offset..]) as i64))
             }
@@ -1043,56 +1047,58 @@ impl Vm {
         }
     }
 
-    fn native_binary_pack(&self, name: &str, args: Vec<Value>) -> Result<Value, VmError> {
-        let val = expect_int(&args, 0)?;
+    fn native_binary_pack(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
+        use dbyte_bytecode::NativeFn::*;
+        let val = expect_int(args, 0)?;
+        let mut buf = vec![
+            0u8;
+            match id {
+                BinaryPackU16Le | BinaryPackU16Be => 2,
+                BinaryPackU32Le | BinaryPackU32Be => 4,
+                _ => unreachable!(),
+            }
+        ];
 
-        match name {
-            "pack_u16_le" => {
+        match id {
+            BinaryPackU16Le => {
                 if !(0..=65535).contains(&val) {
                     return Err(VmError::new(format!(
                         "std.binary.pack_u16_le failed: value {} out of u16 range",
                         val
                     )));
                 }
-                let mut buf = [0u8; 2];
                 LE::write_u16(&mut buf, val as u16);
-                Ok(Value::Bytes(buf.to_vec()))
             }
-            "pack_u16_be" => {
+            BinaryPackU16Be => {
                 if !(0..=65535).contains(&val) {
                     return Err(VmError::new(format!(
                         "std.binary.pack_u16_be failed: value {} out of u16 range",
                         val
                     )));
                 }
-                let mut buf = [0u8; 2];
                 BE::write_u16(&mut buf, val as u16);
-                Ok(Value::Bytes(buf.to_vec()))
             }
-            "pack_u32_le" => {
+            BinaryPackU32Le => {
                 if !(0..=4294967295).contains(&val) {
                     return Err(VmError::new(format!(
                         "std.binary.pack_u32_le failed: value {} out of u32 range",
                         val
                     )));
                 }
-                let mut buf = [0u8; 4];
                 LE::write_u32(&mut buf, val as u32);
-                Ok(Value::Bytes(buf.to_vec()))
             }
-            "pack_u32_be" => {
+            BinaryPackU32Be => {
                 if !(0..=4294967295).contains(&val) {
                     return Err(VmError::new(format!(
                         "std.binary.pack_u32_be failed: value {} out of u32 range",
                         val
                     )));
                 }
-                let mut buf = [0u8; 4];
                 BE::write_u32(&mut buf, val as u32);
-                Ok(Value::Bytes(buf.to_vec()))
             }
             _ => unreachable!(),
         }
+        Ok(Value::Bytes(buf))
     }
 }
 

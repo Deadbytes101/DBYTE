@@ -187,9 +187,16 @@ finally {
     Pop-Location
 }
 
+$releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$version = & $cargo run -q -p dbyte_cli -- --version
-if ($version -notmatch "DByte 1.0.0") { throw "version check failed: got '$version'" }
+$version = & $releaseExe --version
+if ($version -notmatch "DByte 1.1.0") { throw "version check failed: got '$version'" }
+
+Write-Host "Running benchmark smoke tests..."
+& $releaseExe bench --engine tree
+if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine tree failed" }
+& $releaseExe bench --engine vm
+if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 
 Write-Host "verify passed"

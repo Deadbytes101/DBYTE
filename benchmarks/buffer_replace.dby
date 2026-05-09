@@ -1,0 +1,6 @@
+import std.buffer as buf
+let b = buf.new(10000)
+let i = 0
+while i < 100000:
+    buf.replace(b, 5000, b"\xAA\xBB\xCC\xDD")
+    i = i + 1

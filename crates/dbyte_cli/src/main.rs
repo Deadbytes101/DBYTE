@@ -227,6 +227,7 @@ fn usage() {
          dbyte run [--vm] <file>\n  \
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \
+         dbyte bench [--engine tree|vm]\n  \
          dbyte disasm <file>\n  \
          dbyte tokens <file>\n  \
          dbyte ast <file>\n  \
@@ -347,6 +348,57 @@ fn cmd_test(engine: Engine) {
     }
 }
 
+fn cmd_bench(engine_override: Option<Engine>) {
+    let benchmarks_dir = Path::new("benchmarks");
+    if !benchmarks_dir.exists() {
+        eprintln!("BenchError: benchmarks directory not found");
+        process::exit(1);
+    }
+
+    let mut cases = Vec::new();
+    collect_tests(benchmarks_dir, &mut cases);
+    cases.sort();
+
+    println!("{:<20} {:<10} {:>12}", "Benchmark", "Engine", "Time (ms)");
+    println!("{:-<45}", "");
+
+    for path in cases {
+        let name = path.file_stem().unwrap().to_string_lossy();
+        let engines = if let Some(e) = engine_override {
+            vec![e]
+        } else {
+            vec![Engine::Tree, Engine::Vm]
+        };
+
+        for engine in engines {
+            let (_src, program) = parse_file(&path);
+            let start = std::time::Instant::now();
+
+            match engine {
+                Engine::Tree => {
+                    let mut interp = Interpreter::with_entry_path(path.to_path_buf());
+                    let _ = interp.run(&program);
+                }
+                Engine::Vm => {
+                    let compiler = Compiler::with_entry_path(path.to_path_buf());
+                    if let Ok(chunk) = compiler.compile_program(&program) {
+                        let mut vm = Vm::with_entry_path(path.to_path_buf());
+                        let _ = vm.run(&chunk);
+                    }
+                }
+            }
+
+            let duration = start.elapsed();
+            println!(
+                "{:<20} {:<10} {:>12.2} ms",
+                name,
+                engine.label(),
+                duration.as_secs_f64() * 1000.0
+            );
+        }
+    }
+}
+
 fn collect_tests(dir: &std::path::Path, cases: &mut Vec<std::path::PathBuf>) {
     if !dir.exists() {
         return;
@@ -390,7 +442,7 @@ fn main() {
 
     match args[1].as_str() {
         "--version" => {
-            println!("DByte 1.0.0");
+            println!("DByte 1.1.0");
             process::exit(0);
         }
         "--help" | "-h" => {
@@ -434,6 +486,23 @@ fn main() {
             }
         }
         "test" => cmd_test(parse_engine(&args[2..])),
+        "bench" => {
+            let mut engine = None;
+            let mut iter = args.iter().skip(2);
+            while let Some(arg) = iter.next() {
+                if arg == "--engine" {
+                    engine = match iter.next().map(String::as_str) {
+                        Some("tree") => Some(Engine::Tree),
+                        Some("vm") => Some(Engine::Vm),
+                        _ => {
+                            usage();
+                            process::exit(1);
+                        }
+                    };
+                }
+            }
+            cmd_bench(engine);
+        }
         "disasm" => {
             let path = args.get(2).map(PathBuf::from).unwrap_or_else(|| {
                 usage();

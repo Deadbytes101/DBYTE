@@ -1,0 +1,15 @@
+import std.binary as bin
+
+let data: bytes = b"\x78\x56\x34\x12\x78\x56\x34\x12\x78\x56\x34\x12\x78\x56\x34\x12"
+
+let total: int = 0
+let i: int = 0
+
+while i < 200000:
+    total = total + bin.u32_le(data, 0)
+    total = total + bin.u32_le(data, 4)
+    total = total + bin.u32_le(data, 8)
+    total = total + bin.u32_le(data, 12)
+    i = i + 1
+
+# print(total)
