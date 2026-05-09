@@ -13,7 +13,17 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo test
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $cargo run -q -p dbyte_cli -- test
+& $cargo run -q -p dbyte_cli -- test --engine tree
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cargo run -q -p dbyte_cli -- test --engine vm
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cargo run -q -p dbyte_cli -- disasm tests\smoke\let_add.dby | Out-Null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cargo run -q -p dbyte_cli -- tokens tests\smoke\let_add.dby | Out-Null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cargo run -q -p dbyte_cli -- ast tests\smoke\let_add.dby | Out-Null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cargo run -q -p dbyte_cli -- run --vm --trace tests\smoke\let_add.dby | Out-Null
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Running project workflow tests..."
@@ -60,6 +70,9 @@ try {
     if ($result.Code -ne 0) { throw "basic project run failed: $($result.Text)" }
     $expected = (Get-Content "expected.out" -Raw).Trim()
     Assert-Equal $result.Text $expected "basic project run"
+    $vmResult = Invoke-Dbyte -Arguments @("run", "--vm")
+    if ($vmResult.Code -ne 0) { throw "basic project vm run failed: $($vmResult.Text)" }
+    Assert-Equal $vmResult.Text $expected "basic project vm run"
     $checkResult = Invoke-Dbyte -Arguments @("check")
     if ($checkResult.Code -ne 0) { throw "basic project check failed: $($checkResult.Text)" }
     Assert-Contains $checkResult.Text "no type errors found" "basic project check"
@@ -107,6 +120,9 @@ try {
     if ($result.Code -ne 0) { throw "nested project run failed: $($result.Text)" }
     $expected = (Get-Content "..\..\expected.out" -Raw).Trim()
     Assert-Equal $result.Text $expected "nested project run"
+    $vmResult = Invoke-Dbyte -Arguments @("run", "--vm")
+    if ($vmResult.Code -ne 0) { throw "nested project vm run failed: $($vmResult.Text)" }
+    Assert-Equal $vmResult.Text $expected "nested project vm run"
 }
 finally {
     Pop-Location
@@ -126,6 +142,9 @@ try {
         $runResult = Invoke-Dbyte -Arguments @("run")
         if ($runResult.Code -ne 0) { throw "new project run failed: $($runResult.Text)" }
         Assert-Equal $runResult.Text "hello from scanner" "new project run"
+        $vmRunResult = Invoke-Dbyte -Arguments @("run", "--vm")
+        if ($vmRunResult.Code -ne 0) { throw "new project vm run failed: $($vmRunResult.Text)" }
+        Assert-Equal $vmRunResult.Text "hello from scanner" "new project vm run"
         $testResult = Invoke-Dbyte -Arguments @("test")
         if ($testResult.Code -ne 0) { throw "new project test failed: $($testResult.Text)" }
         Assert-Contains $testResult.Text "Test result: 1 passed, 0 failed" "new project test"
