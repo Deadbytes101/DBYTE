@@ -134,6 +134,11 @@ fn cmd_test() {
     collect_tests(Path::new("tests"), &mut cases);
     cases.sort();
 
+    if cases.is_empty() {
+        eprintln!("TestError: no DByte tests found");
+        process::exit(1);
+    }
+
     for path in cases {
         let path_str = path.to_str().unwrap();
         let out_path = path.with_extension("out");
@@ -193,6 +198,11 @@ fn cmd_test() {
             println!("{}", reason);
             failed += 1;
         }
+    }
+
+    if passed + failed == 0 {
+        eprintln!("TestError: no DByte tests found");
+        process::exit(1);
     }
 
     println!("\nTest result: {} passed, {} failed", passed, failed);
