@@ -7,6 +7,7 @@ members = [
     "crates/dbyte_interp",
     "crates/dbyte_cli",
     "crates/dbyte_module",
+    "crates/dbyte_project",
 ]
 resolver = "2"
 
@@ -23,3 +24,6 @@ dbyte_parser = { path = "crates/dbyte_parser" }
 dbyte_typeck = { path = "crates/dbyte_typeck" }
 dbyte_interp = { path = "crates/dbyte_interp" }
 dbyte_module = { path = "crates/dbyte_module" }
+dbyte_project = { path = "crates/dbyte_project" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
