@@ -187,4 +187,9 @@ finally {
     Pop-Location
 }
 
+& $cargo build --release
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$version = & $cargo run -q -p dbyte_cli -- --version
+if ($version -notmatch "DByte 0.9.2") { throw "version check failed: got '$version'" }
+
 Write-Host "verify passed"

@@ -1,0 +1,18 @@
+import std.buffer as buf
+import std.encoding as enc
+import std.fs as fs
+
+# Mock a file
+fs.write_bytes("sample.bin", b"\x00\xDE\xAD\xBE\xEF\x00")
+
+let b = buf.load("sample.bin")
+let pos = buf.find(b, b"\xDE\xAD\xBE\xEF")
+
+if pos >= 0:
+    print("Pattern found at:", pos)
+    buf.replace(b, pos, b"\x90\x90\x90\x90")
+    buf.save("patched.bin", b)
+    print("Patched and saved.")
+
+let patched = fs.read_bytes("patched.bin")
+print("Hex:", enc.hex_encode(patched))

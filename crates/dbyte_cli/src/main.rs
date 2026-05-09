@@ -221,16 +221,17 @@ fn cmd_ast(path: &Path) {
 }
 
 fn usage() {
-    eprintln!(
-        "\x1b[1mDByte v0.5\x1b[0m\n\
-         Usage:\n\
-         \x1b[1;33m  dbyte new   \x1b[0m<name>               create a DByte project\n\
-         \x1b[1;33m  dbyte run   \x1b[0m[--vm] [--trace] [--no-check] [file]\n\
-         \x1b[1;33m  dbyte check \x1b[0m[file]               type-check a file or project entry\n\
-         \x1b[1;33m  dbyte test  \x1b[0m[--engine tree|vm]   run all tests\n\
-         \x1b[1;33m  dbyte disasm\x1b[0m <file>              show bytecode\n\
-         \x1b[1;33m  dbyte tokens\x1b[0m <file>              show tokens\n\
-         \x1b[1;33m  dbyte ast   \x1b[0m <file>              show AST\n"
+    println!(
+        "DByte - low-level scripting language\n\n\
+         Usage:\n  \
+         dbyte run [--vm] <file>\n  \
+         dbyte check <file>\n  \
+         dbyte test [--engine tree|vm]\n  \
+         dbyte disasm <file>\n  \
+         dbyte tokens <file>\n  \
+         dbyte ast <file>\n  \
+         dbyte new <name>\n  \
+         dbyte --version"
     );
 }
 
@@ -388,6 +389,14 @@ fn main() {
     }
 
     match args[1].as_str() {
+        "--version" => {
+            println!("DByte 0.9.2");
+            process::exit(0);
+        }
+        "--help" | "-h" => {
+            usage();
+            process::exit(0);
+        }
         "new" => {
             let name = args.get(2).map(|s| s.as_str()).unwrap_or_else(|| {
                 usage();
