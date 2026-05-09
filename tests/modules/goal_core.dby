@@ -1,0 +1,9 @@
+import std.fs as fs
+import std.math as math
+import "./calc.dby" as calc
+
+let nums: list[int] = [1, 2, 3]
+let total: int = calc.sum(nums)
+
+print(fs.read_text("tests/modules/goal_input.txt"))
+print(math.max(total, 10))

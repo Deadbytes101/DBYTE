@@ -46,14 +46,14 @@ fn cmd_run(path: &str, type_check: bool) {
     };
 
     if type_check {
-        let mut checker = TypeChecker::new();
+        let mut checker = TypeChecker::with_entry_path(path);
         if let Err(e) = checker.check_program(&program) {
             print_error("TypeError", &e.msg, e.span, path, &src);
             process::exit(1);
         }
     }
 
-    let mut interp = Interpreter::new();
+    let mut interp = Interpreter::with_entry_path(path);
     if let Err(e) = interp.run(&program) {
         print_error("RuntimeError", &e.msg, e.span, path, &src);
         process::exit(1);
@@ -72,30 +72,158 @@ fn cmd_check(path: &str) {
     let mut lexer = Lexer::new(&src);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
-        Err(e) => { print_error("LexError", &e.msg, e.span, path, &src); process::exit(1); }
+        Err(e) => {
+            print_error("LexError", &e.msg, e.span, path, &src);
+            process::exit(1);
+        }
     };
 
     let mut parser = Parser::new(tokens);
     let program = match parser.parse_program() {
         Ok(p) => p,
-        Err(e) => { print_error("ParseError", &e.msg, e.span, path, &src); process::exit(1); }
+        Err(e) => {
+            print_error("ParseError", &e.msg, e.span, path, &src);
+            process::exit(1);
+        }
     };
 
-    let mut checker = TypeChecker::new();
+    let mut checker = TypeChecker::with_entry_path(path);
     match checker.check_program(&program) {
         Ok(_) => println!("\x1b[1;32mok\x1b[0m: no type errors found in `{}`", path),
-        Err(e) => { print_error("TypeError", &e.msg, e.span, path, &src); process::exit(1); }
+        Err(e) => {
+            print_error("TypeError", &e.msg, e.span, path, &src);
+            process::exit(1);
+        }
     }
 }
 
 fn usage() {
     eprintln!(
-        "\x1b[1mDByte v0.1\x1b[0m\n\
+        "\x1b[1mDByte v0.2\x1b[0m\n\
          Usage:\n\
          \x1b[1;33m  dbyte run   \x1b[0m<file.dby>           run a DByte program\n\
          \x1b[1;33m  dbyte check \x1b[0m<file.dby>           type-check only\n\
+         \x1b[1;33m  dbyte test  \x1b[0m                     run all tests\n\
          \x1b[1;33m  dbyte run   \x1b[0m--no-check <file>    skip type-check\n"
     );
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::new();
+    let mut in_escape = false;
+    for c in s.chars() {
+        if c == '\x1b' {
+            in_escape = true;
+        } else if in_escape && c == 'm' {
+            in_escape = false;
+        } else if !in_escape {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn cmd_test() {
+    use std::path::Path;
+    let mut passed = 0;
+    let mut failed = 0;
+
+    println!("\x1b[1mRunning DByte Tests...\x1b[0m");
+
+    let mut cases = Vec::new();
+    collect_tests(Path::new("tests"), &mut cases);
+    cases.sort();
+
+    if cases.is_empty() {
+        eprintln!("TestError: no DByte tests found");
+        process::exit(1);
+    }
+
+    for path in cases {
+        let path_str = path.to_str().unwrap();
+        let out_path = path.with_extension("out");
+        let err_path = path.with_extension("err");
+        if !out_path.exists() && !err_path.exists() {
+            continue;
+        }
+
+        let output = process::Command::new(std::env::current_exe().unwrap())
+            .arg("run")
+            .arg(&path)
+            .output()
+            .unwrap();
+
+        let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout))
+            .replace("\r\n", "\n")
+            .trim()
+            .to_string();
+        let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr))
+            .replace("\r\n", "\n")
+            .trim()
+            .to_string();
+
+        let mut ok = true;
+        let mut reason = String::new();
+
+        if out_path.exists() {
+            let expected = fs::read_to_string(&out_path)
+                .unwrap()
+                .replace("\r\n", "\n")
+                .trim()
+                .to_string();
+            if stdout != expected {
+                ok = false;
+                reason = format!("Expected stdout:\n{}\nGot:\n{}", expected, stdout);
+            }
+        } else if err_path.exists() {
+            let expected = fs::read_to_string(&err_path)
+                .unwrap()
+                .replace("\r\n", "\n")
+                .trim()
+                .to_string();
+            if !stderr.contains(&expected) {
+                ok = false;
+                reason = format!(
+                    "Expected stderr to contain:\n{}\nGot:\n{}",
+                    expected, stderr
+                );
+            }
+        }
+
+        if ok {
+            println!("test {} ... \x1b[32mok\x1b[0m", path_str);
+            passed += 1;
+        } else {
+            println!("test {} ... \x1b[31mFAILED\x1b[0m", path_str);
+            println!("{}", reason);
+            failed += 1;
+        }
+    }
+
+    if passed + failed == 0 {
+        eprintln!("TestError: no DByte tests found");
+        process::exit(1);
+    }
+
+    println!("\nTest result: {} passed, {} failed", passed, failed);
+    if failed > 0 {
+        process::exit(1);
+    }
+}
+
+fn collect_tests(dir: &std::path::Path, cases: &mut Vec<std::path::PathBuf>) {
+    if !dir.exists() {
+        return;
+    }
+    for entry in fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            collect_tests(&path, cases);
+        } else if path.extension().and_then(|s| s.to_str()) == Some("dby") {
+            cases.push(path);
+        }
+    }
 }
 
 fn main() {
@@ -117,13 +245,25 @@ fn main() {
                     file = Some(arg.as_str());
                 }
             }
-            let path = file.unwrap_or_else(|| { usage(); process::exit(1); });
+            let path = file.unwrap_or_else(|| {
+                usage();
+                process::exit(1);
+            });
             cmd_run(path, type_check);
         }
         "check" => {
-            let path = args.get(2).map(|s| s.as_str()).unwrap_or_else(|| { usage(); process::exit(1); });
+            let path = args.get(2).map(|s| s.as_str()).unwrap_or_else(|| {
+                usage();
+                process::exit(1);
+            });
             cmd_check(path);
         }
-        _ => { usage(); process::exit(1); }
+        "test" => {
+            cmd_test();
+        }
+        _ => {
+            usage();
+            process::exit(1);
+        }
     }
 }

@@ -1,0 +1,3 @@
+import "./lib/math.dby" as math
+
+print(math.add(20, 22))

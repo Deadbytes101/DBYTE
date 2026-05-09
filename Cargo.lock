@@ -22,10 +22,20 @@ name = "dbyte_interp"
 version = "0.1.0"
 dependencies = [
  "dbyte_ast",
+ "dbyte_lexer",
+ "dbyte_module",
+ "dbyte_parser",
 ]
 
 [[package]]
 name = "dbyte_lexer"
+version = "0.1.0"
+dependencies = [
+ "dbyte_ast",
+]
+
+[[package]]
+name = "dbyte_module"
 version = "0.1.0"
 dependencies = [
  "dbyte_ast",
@@ -44,4 +54,7 @@ name = "dbyte_typeck"
 version = "0.1.0"
 dependencies = [
  "dbyte_ast",
+ "dbyte_lexer",
+ "dbyte_module",
+ "dbyte_parser",
 ]

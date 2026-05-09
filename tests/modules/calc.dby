@@ -1,0 +1,5 @@
+pub fn sum(nums: list[int]) -> int:
+    let total: int = 0
+    for n in nums:
+        total = total + n
+    return total
