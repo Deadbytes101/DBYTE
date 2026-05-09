@@ -313,7 +313,7 @@ impl<'src> Lexer<'src> {
             };
 
             match c {
-                ' ' | '\t' => {
+                ' ' | '\t' | '\r' => {
                     self.advance();
                 }
                 '#' => {
