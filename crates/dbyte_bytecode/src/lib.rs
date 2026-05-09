@@ -3,6 +3,98 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NativeFn {
+    MathAbs,
+    MathMin,
+    MathMax,
+    FsReadText,
+    FsWriteText,
+    FsReadBytes,
+    FsWriteBytes,
+    EncodingHexEncode,
+    EncodingHexDecode,
+    HashSha256,
+    EnvArgs,
+    BufferNew,
+    BufferFromBytes,
+    BufferToBytes,
+    BufferLen,
+    BufferGet,
+    BufferSet,
+    BufferSlice,
+    BufferLoad,
+    BufferSave,
+    BufferFind,
+    BufferReplace,
+    BinaryU8,
+    BinaryI8,
+    BinaryU16Le,
+    BinaryU16Be,
+    BinaryI16Le,
+    BinaryI16Be,
+    BinaryU32Le,
+    BinaryU32Be,
+    BinaryI32Le,
+    BinaryI32Be,
+    BinaryPackU16Le,
+    BinaryPackU16Be,
+    BinaryPackU32Le,
+    BinaryPackU32Be,
+    BinaryWriteU16Le,
+    BinaryWriteU16Be,
+    BinaryWriteU32Le,
+    BinaryWriteU32Be,
+}
+
+impl NativeFn {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "std.math.abs" => Some(Self::MathAbs),
+            "std.math.min" => Some(Self::MathMin),
+            "std.math.max" => Some(Self::MathMax),
+            "std.fs.read_text" => Some(Self::FsReadText),
+            "std.fs.write_text" => Some(Self::FsWriteText),
+            "std.fs.read_bytes" => Some(Self::FsReadBytes),
+            "std.fs.write_bytes" => Some(Self::FsWriteBytes),
+            "std.encoding.hex_encode" => Some(Self::EncodingHexEncode),
+            "std.encoding.hex_decode" => Some(Self::EncodingHexDecode),
+            "std.hash.sha256" => Some(Self::HashSha256),
+            "std.env.args" => Some(Self::EnvArgs),
+            "std.buffer.new" => Some(Self::BufferNew),
+            "std.buffer.from_bytes" => Some(Self::BufferFromBytes),
+            "std.buffer.to_bytes" => Some(Self::BufferToBytes),
+            "std.buffer.len" => Some(Self::BufferLen),
+            "std.buffer.get" => Some(Self::BufferGet),
+            "std.buffer.set" => Some(Self::BufferSet),
+            "std.buffer.slice" => Some(Self::BufferSlice),
+            "std.buffer.load" => Some(Self::BufferLoad),
+            "std.buffer.save" => Some(Self::BufferSave),
+            "std.buffer.find" => Some(Self::BufferFind),
+            "std.buffer.replace" => Some(Self::BufferReplace),
+            "std.binary.u8" => Some(Self::BinaryU8),
+            "std.binary.i8" => Some(Self::BinaryI8),
+            "std.binary.u16_le" => Some(Self::BinaryU16Le),
+            "std.binary.u16_be" => Some(Self::BinaryU16Be),
+            "std.binary.i16_le" => Some(Self::BinaryI16Le),
+            "std.binary.i16_be" => Some(Self::BinaryI16Be),
+            "std.binary.u32_le" => Some(Self::BinaryU32Le),
+            "std.binary.u32_be" => Some(Self::BinaryU32Be),
+            "std.binary.i32_le" => Some(Self::BinaryI32Le),
+            "std.binary.i32_be" => Some(Self::BinaryI32Be),
+            "std.binary.pack_u16_le" => Some(Self::BinaryPackU16Le),
+            "std.binary.pack_u16_be" => Some(Self::BinaryPackU16Be),
+            "std.binary.pack_u32_le" => Some(Self::BinaryPackU32Le),
+            "std.binary.pack_u32_be" => Some(Self::BinaryPackU32Be),
+            "std.binary.write_u16_le" => Some(Self::BinaryWriteU16Le),
+            "std.binary.write_u16_be" => Some(Self::BinaryWriteU16Be),
+            "std.binary.write_u32_le" => Some(Self::BinaryWriteU32Le),
+            "std.binary.write_u32_be" => Some(Self::BinaryWriteU32Be),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Int(i64),
@@ -12,7 +104,7 @@ pub enum Value {
     Bytes(Vec<u8>),
     Buffer(Rc<RefCell<Vec<u8>>>),
     List(Vec<Value>),
-    Module(ModuleValue),
+    Module(Rc<ModuleValue>),
     Void,
 }
 
@@ -25,8 +117,8 @@ pub struct ModuleValue {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModuleMember {
     Value(Value),
-    Function(BytecodeFunction),
-    Native(String),
+    Function(Box<BytecodeFunction>),
+    Native(NativeFn),
 }
 
 impl std::fmt::Display for Value {
