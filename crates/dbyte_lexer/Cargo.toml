@@ -1,0 +1,7 @@
+[package]
+name = "dbyte_lexer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dbyte_ast.workspace = true

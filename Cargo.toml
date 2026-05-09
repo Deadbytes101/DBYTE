@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "crates/dbyte_ast",
+    "crates/dbyte_lexer",
+    "crates/dbyte_parser",
+    "crates/dbyte_typeck",
+    "crates/dbyte_interp",
+    "crates/dbyte_cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Deadbyte"]
+license = "MIT"
+
+[workspace.dependencies]
+dbyte_ast    = { path = "crates/dbyte_ast" }
+dbyte_lexer  = { path = "crates/dbyte_lexer" }
+dbyte_parser = { path = "crates/dbyte_parser" }
+dbyte_typeck = { path = "crates/dbyte_typeck" }
+dbyte_interp = { path = "crates/dbyte_interp" }
