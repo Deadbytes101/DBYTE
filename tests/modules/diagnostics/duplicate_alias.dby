@@ -1,0 +1,4 @@
+import std.math as m
+import std.env as m
+
+print(m.max(1, 2))

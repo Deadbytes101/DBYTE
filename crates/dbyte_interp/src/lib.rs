@@ -1,6 +1,6 @@
 use dbyte_ast::*;
 use dbyte_lexer::Lexer;
-use dbyte_module::{resolve_import, ImportTarget, ModuleState};
+use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -77,6 +77,7 @@ pub struct Interpreter {
     fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
+    loading_stack: Vec<String>,
     in_function: usize,
 }
 
@@ -93,6 +94,7 @@ impl Interpreter {
             fns: HashMap::new(),
             current_file: None,
             module_cache: HashMap::new(),
+            loading_stack: Vec::new(),
             in_function: 0,
         }
     }
@@ -148,7 +150,7 @@ impl Interpreter {
     ) -> Result<ModuleValue, RuntimeError> {
         let target =
             resolve_import(path, self.current_file.as_deref()).map_err(|e| RuntimeError {
-                msg: format!("ImportError: {}", e),
+                msg: format!("ImportError: {}", format_module_error(&e)),
                 span,
             })?;
         let key = Self::module_key(&target);
@@ -160,8 +162,13 @@ impl Interpreter {
                 return Ok(module);
             }
             Some(ModuleState::Loading) => {
+                let mut chain = self.loading_stack.clone();
+                chain.push(key.clone());
                 return Err(RuntimeError {
-                    msg: "ImportError: circular import detected".into(),
+                    msg: format!(
+                        "ImportError: circular import detected: {}",
+                        chain.join(" -> ")
+                    ),
                     span,
                 });
             }
@@ -169,10 +176,12 @@ impl Interpreter {
         }
 
         self.module_cache.insert(key.clone(), ModuleState::Loading);
+        self.loading_stack.push(key.clone());
         let loaded = match target {
             ImportTarget::Std(name) => Self::load_std_module(&name, alias, span),
             ImportTarget::File(path) => self.load_file_module(&path, alias, span),
         };
+        self.loading_stack.pop();
 
         match loaded {
             Ok(module) => {
@@ -210,7 +219,7 @@ impl Interpreter {
             }
             _ => {
                 return Err(RuntimeError {
-                    msg: format!("ImportError: unknown std module `{}`", name),
+                    msg: format!("ImportError: standard module not found: {}", name),
                     span,
                 });
             }
@@ -681,6 +690,12 @@ impl Interpreter {
             }
 
             Stmt::Import { path, alias, span } => {
+                if self.get(alias).is_some() {
+                    return Err(Signal::Error(RuntimeError {
+                        msg: format!("ImportError: duplicate import alias: {}", alias),
+                        span: *span,
+                    }));
+                }
                 let module = self
                     .load_module(path, alias, *span)
                     .map_err(Signal::Error)?;
@@ -772,4 +787,15 @@ fn native_env_args(args: &[Value]) -> Result<Value, String> {
         ));
     }
     Ok(Value::List(std::env::args().map(Value::Str).collect()))
+}
+
+fn format_module_error(error: &ModuleError) -> String {
+    match error {
+        ModuleError::LocalImportWithoutSource { requested } => {
+            format!("local import requires a source file path: {}", requested)
+        }
+        ModuleError::LocalModuleNotFound { requested, .. } => {
+            format!("local module not found: {}", requested)
+        }
+    }
 }

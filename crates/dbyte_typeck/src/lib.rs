@@ -1,6 +1,8 @@
 use dbyte_ast::*;
 use dbyte_lexer::Lexer;
-use dbyte_module::{resolve_import, stdlib_exports, ImportTarget, ModuleState, StdlibExport};
+use dbyte_module::{
+    resolve_import, stdlib_exports, ImportTarget, ModuleError, ModuleState, StdlibExport,
+};
 use dbyte_parser::Parser;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -72,6 +74,7 @@ pub struct TypeChecker {
     fn_sigs: HashMap<String, (Vec<ResolvedType>, ResolvedType)>,
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleType>>,
+    loading_stack: Vec<String>,
     in_function: usize,
 }
 
@@ -88,6 +91,7 @@ impl TypeChecker {
             fn_sigs: HashMap::new(),
             current_file: None,
             module_cache: HashMap::new(),
+            loading_stack: Vec::new(),
             in_function: 0,
         }
     }
@@ -132,7 +136,7 @@ impl TypeChecker {
         span: Span,
     ) -> Result<ModuleType, TypeError> {
         let target = resolve_import(path, self.current_file.as_deref()).map_err(|e| TypeError {
-            msg: format!("ImportError: {}", e),
+            msg: format!("ImportError: {}", format_module_error(&e)),
             span,
         })?;
         let key = Self::module_key(&target);
@@ -144,8 +148,13 @@ impl TypeChecker {
                 return Ok(module);
             }
             Some(ModuleState::Loading) => {
+                let mut chain = self.loading_stack.clone();
+                chain.push(key.clone());
                 return Err(TypeError {
-                    msg: "ImportError: circular import detected".into(),
+                    msg: format!(
+                        "ImportError: circular import detected: {}",
+                        chain.join(" -> ")
+                    ),
                     span,
                 });
             }
@@ -153,10 +162,12 @@ impl TypeChecker {
         }
 
         self.module_cache.insert(key.clone(), ModuleState::Loading);
+        self.loading_stack.push(key.clone());
         let loaded = match target {
             ImportTarget::Std(name) => self.load_std_module(&name, alias, span),
             ImportTarget::File(path) => self.load_file_module(&path, alias, span),
         };
+        self.loading_stack.pop();
 
         match loaded {
             Ok(module) => {
@@ -178,7 +189,7 @@ impl TypeChecker {
         span: Span,
     ) -> Result<ModuleType, TypeError> {
         let exports = stdlib_exports(name).ok_or_else(|| TypeError {
-            msg: format!("ImportError: unknown std module `{}`", name),
+            msg: format!("ImportError: standard module not found: {}", name),
             span,
         })?;
         let mut members = HashMap::new();
@@ -652,6 +663,12 @@ impl TypeChecker {
             }
 
             Stmt::Import { path, alias, span } => {
+                if self.lookup(alias).is_some() {
+                    return Err(TypeError {
+                        msg: format!("ImportError: duplicate import alias: {}", alias),
+                        span: *span,
+                    });
+                }
                 let module = self.load_module(path, alias, *span)?;
                 self.define(alias, ResolvedType::Module(module));
             }
@@ -665,5 +682,16 @@ impl TypeChecker {
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), TypeError> {
         self.check_stmts(&program.stmts)
+    }
+}
+
+fn format_module_error(error: &ModuleError) -> String {
+    match error {
+        ModuleError::LocalImportWithoutSource { requested } => {
+            format!("local import requires a source file path: {}", requested)
+        }
+        ModuleError::LocalModuleNotFound { requested, .. } => {
+            format!("local module not found: {}", requested)
+        }
     }
 }

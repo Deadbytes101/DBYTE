@@ -1,0 +1,3 @@
+import "./does_not_exist.dby" as missing
+
+print(missing.x)
