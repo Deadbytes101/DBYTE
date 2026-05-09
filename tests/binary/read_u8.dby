@@ -1,0 +1,15 @@
+import std.binary as bin
+
+let data: bytes = b"\x01\x02\x03\x04"
+
+print(bin.u8(data, 0))
+print(bin.u8(data, 1))
+print(bin.u8(data, 2))
+print(bin.u8(data, 3))
+print(bin.i8(data, 0))
+
+let signed: bytes = b"\xff\x80"
+print(bin.u8(signed, 0))
+print(bin.i8(signed, 0))
+print(bin.u8(signed, 1))
+print(bin.i8(signed, 1))

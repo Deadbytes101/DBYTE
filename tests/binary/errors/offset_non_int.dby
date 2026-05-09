@@ -1,0 +1,4 @@
+import std.binary as bin
+
+let data: bytes = b"\x01"
+print(bin.u8(data, "0"))

@@ -6,6 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+byteorder = "1.5.0"
 dbyte_ast.workspace = true
 dbyte_bytecode.workspace = true
 dbyte_compiler.workspace = true

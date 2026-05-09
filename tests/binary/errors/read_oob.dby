@@ -1,0 +1,6 @@
+import std.binary as bin
+
+let data: bytes = b"\x01\x02"
+
+# print(bin.u16_le(data, 0)) # OK
+print(bin.u16_le(data, 1)) # OOB (needs 2 bytes at offset 1)
