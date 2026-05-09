@@ -1,6 +1,6 @@
 # DByte Benchmarks
 
-## Baseline: v1.1.0-dev
+## Baseline: v1.1.0
 
 Engine: tree / vm  
 Build: release  
