@@ -1,0 +1,11 @@
+import std.buffer as buf
+let b = buf.new(10004)
+buf.set(b, 10000, 0xDE)
+buf.set(b, 10001, 0xAD)
+buf.set(b, 10002, 0xBE)
+buf.set(b, 10003, 0xEF)
+
+let i = 0
+while i < 1000:
+    buf.find(b, b"\xDE\xAD\xBE\xEF")
+    i = i + 1
