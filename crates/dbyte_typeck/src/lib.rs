@@ -169,7 +169,10 @@ impl TypeChecker {
             }
 
             Expr::Call { name, args, span } => {
-                if name == "print" { return Ok(ResolvedType::Void); }
+                if name == "print" {
+                    for arg in args { self.check_expr(arg)?; }
+                    return Ok(ResolvedType::Void);
+                }
                 match self.fn_sigs.get(name) {
                     Some((param_tys, ret_ty)) => {
                         if args.len() != param_tys.len() {
