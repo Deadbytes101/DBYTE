@@ -69,7 +69,11 @@ impl Vm {
         self.frames.push(vec![Value::Void; chunk.local_names.len()]);
         let result = self.run_chunk(chunk);
         self.frames.pop();
-        result.map(|_| ())
+        match result {
+            Ok(Some(_)) => Err(VmError::new("return outside function")),
+            Ok(None) => Ok(()),
+            Err(err) => Err(err),
+        }
     }
 
     fn run_chunk(&mut self, chunk: &Chunk) -> Result<Option<Value>, VmError> {
@@ -669,5 +673,62 @@ fn format_module_error(error: &ModuleError) -> String {
         ModuleError::LocalModuleNotFound { requested, .. } => {
             format!("local module not found: {}", requested)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dbyte_bytecode::{BytecodeFunction, Chunk, Op, Value};
+
+    #[test]
+    fn reports_stack_underflow() {
+        let mut chunk = Chunk::new("test");
+        chunk.code.push(Op::Pop);
+        chunk.code.push(Op::Halt);
+
+        let mut vm = Vm::new();
+        let err = vm.run(&chunk).unwrap_err();
+
+        assert!(err.msg.contains("stack underflow"));
+    }
+
+    #[test]
+    fn reports_invalid_local_slot() {
+        let mut chunk = Chunk::new("test");
+        chunk.code.push(Op::LoadLocal(99));
+        chunk.code.push(Op::Halt);
+
+        let mut vm = Vm::new();
+        let err = vm.run(&chunk).unwrap_err();
+
+        assert!(err.msg.contains("invalid local slot 99"));
+    }
+
+    #[test]
+    fn reports_function_arity_mismatch() {
+        let mut function_chunk = Chunk::new("add");
+        function_chunk.local_names = vec!["a".into(), "b".into()];
+        let zero = function_chunk.add_const(Value::Int(0));
+        function_chunk.code.push(Op::Const(zero));
+        function_chunk.code.push(Op::Return);
+
+        let function = BytecodeFunction {
+            name: "add".into(),
+            params: vec!["a".into(), "b".into()],
+            chunk: function_chunk,
+        };
+
+        let mut chunk = Chunk::new("test");
+        let one = chunk.add_const(Value::Int(1));
+        chunk.functions.insert("add".into(), function);
+        chunk.code.push(Op::Const(one));
+        chunk.code.push(Op::Call("add".into(), 1));
+        chunk.code.push(Op::Halt);
+
+        let mut vm = Vm::new();
+        let err = vm.run(&chunk).unwrap_err();
+
+        assert!(err.msg.contains("function `add` expects 2 args, got 1"));
     }
 }

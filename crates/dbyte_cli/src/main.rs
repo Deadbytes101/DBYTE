@@ -16,6 +16,15 @@ enum Engine {
     Vm,
 }
 
+impl Engine {
+    fn label(self) -> &'static str {
+        match self {
+            Engine::Tree => "tree",
+            Engine::Vm => "vm",
+        }
+    }
+}
+
 fn print_error(label: &str, msg: &str, span: dbyte_ast::Span, path: &str, src: &str) {
     let line_content = src.lines().nth(span.line - 1).unwrap_or("");
     eprintln!("\x1b[1;31m{}\x1b[0m: {}", label, msg);
@@ -244,7 +253,10 @@ fn cmd_test(engine: Engine) {
     let mut passed = 0;
     let mut failed = 0;
 
-    println!("\x1b[1mRunning DByte Tests...\x1b[0m");
+    println!(
+        "\x1b[1mRunning DByte Tests [engine={}]...\x1b[0m",
+        engine.label()
+    );
 
     let cwd = std::env::current_dir().unwrap_or_else(|e| {
         eprintln!("TestError: failed to read current directory: {}", e);

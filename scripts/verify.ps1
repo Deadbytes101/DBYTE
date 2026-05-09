@@ -26,8 +26,6 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo run -q -p dbyte_cli -- run --vm --trace tests\smoke\let_add.dby | Out-Null
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "Running project workflow tests..."
-
 $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 function Normalize-Output($value) {
@@ -44,6 +42,10 @@ function Assert-Contains($actual, $expected, $name) {
     if (-not $actual.Contains($expected)) {
         throw "$name failed: expected output to contain '$expected', got '$actual'"
     }
+}
+
+function Expected-File($path) {
+    return ((Get-Content $path -Raw) -replace "`r`n", "`n").Trim()
 }
 
 function Invoke-Dbyte {
@@ -63,6 +65,34 @@ function Invoke-Dbyte {
         Text = Normalize-Output $output
     }
 }
+
+Write-Host "Running VM hardening tests..."
+
+$disasmResult = Invoke-Dbyte -Arguments @("disasm", "tests\vm\disasm_smoke.dby")
+if ($disasmResult.Code -ne 0) { throw "disasm smoke failed: $($disasmResult.Text)" }
+Assert-Equal $disasmResult.Text (Expected-File "tests\vm\disasm_smoke.disasm") "disasm smoke"
+
+$traceResult = Invoke-Dbyte -Arguments @("run", "--vm", "--trace", "tests\vm\trace_smoke.dby")
+if ($traceResult.Code -ne 0) { throw "trace smoke failed: $($traceResult.Text)" }
+Assert-Equal $traceResult.Text (Expected-File "tests\vm\trace_smoke.trace") "trace smoke"
+
+$arityResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\arity_mismatch.dby")
+if ($arityResult.Code -eq 0) { throw "vm arity mismatch unexpectedly passed" }
+Assert-Contains $arityResult.Text (Expected-File "tests\vm\arity_mismatch.err") "vm arity mismatch"
+
+$returnResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\return_outside_function.dby")
+if ($returnResult.Code -eq 0) { throw "vm return outside function unexpectedly passed" }
+Assert-Contains $returnResult.Text (Expected-File "tests\vm\return_outside_function.err") "vm return outside function"
+
+$divisionResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\vm_division_by_zero.dby")
+if ($divisionResult.Code -eq 0) { throw "vm division by zero unexpectedly passed" }
+Assert-Contains $divisionResult.Text (Expected-File "tests\vm\vm_division_by_zero.err") "vm division by zero"
+
+$listResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\vm_list_oob.dby")
+if ($listResult.Code -eq 0) { throw "vm list out of bounds unexpectedly passed" }
+Assert-Contains $listResult.Text (Expected-File "tests\vm\vm_list_oob.err") "vm list out of bounds"
+
+Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
 try {
