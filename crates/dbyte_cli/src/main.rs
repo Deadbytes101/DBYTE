@@ -390,7 +390,7 @@ fn main() {
 
     match args[1].as_str() {
         "--version" => {
-            println!("DByte 0.9.2");
+            println!("DByte 1.0.0");
             process::exit(0);
         }
         "--help" | "-h" => {
