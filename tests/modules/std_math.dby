@@ -1,0 +1,3 @@
+import std.math as math
+
+print(math.max(10, 20))

@@ -6,6 +6,7 @@ members = [
     "crates/dbyte_typeck",
     "crates/dbyte_interp",
     "crates/dbyte_cli",
+    "crates/dbyte_module",
 ]
 resolver = "2"
 
@@ -21,3 +22,4 @@ dbyte_lexer  = { path = "crates/dbyte_lexer" }
 dbyte_parser = { path = "crates/dbyte_parser" }
 dbyte_typeck = { path = "crates/dbyte_typeck" }
 dbyte_interp = { path = "crates/dbyte_interp" }
+dbyte_module = { path = "crates/dbyte_module" }
