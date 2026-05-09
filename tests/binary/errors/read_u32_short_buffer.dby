@@ -1,0 +1,4 @@
+import std.binary as bin
+
+let data: bytes = b"\x01\x02\x03"
+print(bin.u32_be(data, 0))

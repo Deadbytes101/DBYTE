@@ -1,0 +1,8 @@
+import std.binary as bin
+
+let data: bytes = b"\xFF\xFF\xFF\xFF\x00\x00\x00\x80"
+
+print(bin.i32_le(data, 0))
+print(bin.i32_be(data, 0))
+print(bin.i32_le(data, 4))
+print(bin.i32_be(data, 4))

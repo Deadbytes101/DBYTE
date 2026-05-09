@@ -1,1 +1,1 @@
-std.binary.u16_le failed: offset 1 out of range
+read out of range: need 2 bytes at offset 1, but length is 2

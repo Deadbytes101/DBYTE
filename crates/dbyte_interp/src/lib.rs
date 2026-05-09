@@ -938,106 +938,68 @@ fn native_env_args(args: &[Value]) -> Result<Value, String> {
     Ok(Value::List(std::env::args().map(Value::Str).collect()))
 }
 
-fn native_binary_read(name: &str, args: &[Value]) -> Result<Value, String> {
-    let bs = expect_bytes(args, 0)?;
-    let offset = expect_int(args, 1)?;
+fn checked_offset(_name: &str, offset: i64) -> Result<usize, String> {
     if offset < 0 {
+        return Err("offset must be non-negative".into());
+    }
+    Ok(offset as usize)
+}
+
+fn require_len(_name: &str, data: &[u8], offset: usize, width: usize) -> Result<(), String> {
+    if offset.checked_add(width).is_none_or(|end| end > data.len()) {
         return Err(format!(
-            "std.binary.{} failed: negative offset {}",
-            name, offset
+            "read out of range: need {} bytes at offset {}, but length is {}",
+            width,
+            offset,
+            data.len()
         ));
     }
-    let offset = offset as usize;
+    Ok(())
+}
+
+fn native_binary_read(name: &str, args: &[Value]) -> Result<Value, String> {
+    let bs = expect_bytes(args, 0)?;
+    let offset = checked_offset(name, expect_int(args, 1)?)?;
 
     match name {
         "u8" => {
-            if offset >= bs.len() {
-                return Err(format!(
-                    "std.binary.u8 failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 1)?;
             Ok(Value::Int(bs[offset] as i64))
         }
         "i8" => {
-            if offset >= bs.len() {
-                return Err(format!(
-                    "std.binary.i8 failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 1)?;
             Ok(Value::Int(bs[offset] as i8 as i64))
         }
         "u16_le" => {
-            if offset + 2 > bs.len() {
-                return Err(format!(
-                    "std.binary.u16_le failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 2)?;
             Ok(Value::Int(LE::read_u16(&bs[offset..]) as i64))
         }
         "u16_be" => {
-            if offset + 2 > bs.len() {
-                return Err(format!(
-                    "std.binary.u16_be failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 2)?;
             Ok(Value::Int(BE::read_u16(&bs[offset..]) as i64))
         }
         "i16_le" => {
-            if offset + 2 > bs.len() {
-                return Err(format!(
-                    "std.binary.i16_le failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 2)?;
             Ok(Value::Int(LE::read_i16(&bs[offset..]) as i64))
         }
         "i16_be" => {
-            if offset + 2 > bs.len() {
-                return Err(format!(
-                    "std.binary.i16_be failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 2)?;
             Ok(Value::Int(BE::read_i16(&bs[offset..]) as i64))
         }
         "u32_le" => {
-            if offset + 4 > bs.len() {
-                return Err(format!(
-                    "std.binary.u32_le failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 4)?;
             Ok(Value::Int(LE::read_u32(&bs[offset..]) as i64))
         }
         "u32_be" => {
-            if offset + 4 > bs.len() {
-                return Err(format!(
-                    "std.binary.u32_be failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 4)?;
             Ok(Value::Int(BE::read_u32(&bs[offset..]) as i64))
         }
         "i32_le" => {
-            if offset + 4 > bs.len() {
-                return Err(format!(
-                    "std.binary.i32_le failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 4)?;
             Ok(Value::Int(LE::read_i32(&bs[offset..]) as i64))
         }
         "i32_be" => {
-            if offset + 4 > bs.len() {
-                return Err(format!(
-                    "std.binary.i32_be failed: offset {} out of range",
-                    offset
-                ));
-            }
+            require_len(name, bs, offset, 4)?;
             Ok(Value::Int(BE::read_i32(&bs[offset..]) as i64))
         }
         _ => unreachable!(),
