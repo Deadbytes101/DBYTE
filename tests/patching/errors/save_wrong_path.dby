@@ -1,0 +1,3 @@
+import std.buffer as buf
+let b = buf.new(1)
+buf.save(123, b)

@@ -1,0 +1,8 @@
+import std.buffer as buf
+
+let b = buf.from_bytes(b"\x00\x00\x00")
+buf.replace(b, 2, b"\xFF")
+print(buf.to_bytes(b))
+
+buf.replace(b, 0, b"")
+print(buf.to_bytes(b))

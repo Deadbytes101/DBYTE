@@ -1,0 +1,2 @@
+import std.buffer as buf
+buf.find(b"\x01", b"\x01")
