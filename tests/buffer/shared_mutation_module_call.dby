@@ -1,0 +1,6 @@
+import std.buffer as buf
+import "./mutator.dby" as mutator
+
+let b = buf.new(1)
+mutator.mutate(b)
+print(buf.get(b, 0))

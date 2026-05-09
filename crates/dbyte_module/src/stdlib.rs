@@ -179,7 +179,12 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                 ));
             }
 
-            let buffer_writer_funcs = ["write_u16_le", "write_u16_be", "write_u32_le", "write_u32_be"];
+            let buffer_writer_funcs = [
+                "write_u16_le",
+                "write_u16_be",
+                "write_u32_le",
+                "write_u32_be",
+            ];
             for name in buffer_writer_funcs {
                 exports.push((
                     name.into(),

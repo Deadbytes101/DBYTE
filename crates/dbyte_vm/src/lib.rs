@@ -822,7 +822,10 @@ impl Vm {
                 let offset = self.checked_offset(expect_int(&args, 1)?)?;
                 let val = expect_int(&args, 2)?;
                 if !(0..=255).contains(&val) {
-                    return Err(VmError::new(format!("buffer set value out of range: {}", val)));
+                    return Err(VmError::new(format!(
+                        "buffer set value out of range: {}",
+                        val
+                    )));
                 }
                 let mut buf = b.borrow_mut();
                 if offset >= buf.len() {
@@ -843,7 +846,10 @@ impl Vm {
                     return Err(VmError::new("length must be non-negative"));
                 }
                 let buf = b.borrow();
-                if offset.checked_add(length as usize).is_none_or(|end| end > buf.len()) {
+                if offset
+                    .checked_add(length as usize)
+                    .is_none_or(|end| end > buf.len())
+                {
                     return Err(VmError::new(format!(
                         "buffer slice out of range: need {} bytes at offset {}, but length is {}",
                         length,

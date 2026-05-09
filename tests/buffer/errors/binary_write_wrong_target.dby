@@ -1,0 +1,4 @@
+import std.binary as bin
+
+let data = b"\x01\x02\x03"
+bin.write_u16_le(data, 0, 0xFFFF)
