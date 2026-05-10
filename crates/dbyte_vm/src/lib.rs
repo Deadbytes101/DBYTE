@@ -162,25 +162,6 @@ impl Frame {
         }
     }
 
-    fn get_i64(&self, chunk: &Chunk, slot: usize) -> Result<i64, VmError> {
-        match i64_local_slot(chunk, slot) {
-            Some(i64_slot) => self
-                .i64s
-                .get(i64_slot)
-                .copied()
-                .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", slot))),
-            None => match self.values.get(slot) {
-                Some(Value::Int(n)) => Ok(*n),
-                Some(other) => Err(VmError::new(format!(
-                    "expected int local {}, found {}",
-                    slot,
-                    other.kind_name()
-                ))),
-                None => Err(VmError::new(format!("invalid local slot {}", slot))),
-            },
-        }
-    }
-
     fn set_i64(&mut self, chunk: &Chunk, slot: usize, value: i64) {
         match i64_local_slot(chunk, slot) {
             Some(i64_slot) => self.i64s[i64_slot] = value,
@@ -189,12 +170,6 @@ impl Frame {
                 self.values[slot] = Value::Int(value);
             }
         }
-    }
-
-    fn add_i64(&mut self, chunk: &Chunk, dst: usize, value: i64) -> Result<(), VmError> {
-        let next = checked_i64(self.get_i64(chunk, dst)?.checked_add(value))?;
-        self.set_i64(chunk, dst, next);
-        Ok(())
     }
 }
 
@@ -211,6 +186,11 @@ fn i64_local_slot(chunk: &Chunk, slot: usize) -> Option<usize> {
             .filter(|kind| **kind == LocalKind::I64)
             .count(),
     )
+}
+
+fn required_i64_slot(chunk: &Chunk, slot: usize) -> Result<usize, VmError> {
+    i64_local_slot(chunk, slot)
+        .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", slot)))
 }
 
 pub struct Vm {
@@ -340,7 +320,14 @@ impl Vm {
                         self.push(value);
                     }
                     Op::LoadLocalI64(slot) => {
-                        let value = self.current_frame()?.get_i64(chunk, slot)?;
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let value = *self
+                            .frames
+                            .last()
+                            .and_then(|frame| frame.locals.i64s.get(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
                         self.push(Value::Int(value));
                     }
                     Op::StoreLocal(slot) => {
@@ -349,29 +336,84 @@ impl Vm {
                     }
                     Op::StoreLocalI64(slot) => {
                         let value = self.pop_i64()?;
-                        self.current_frame_mut()?.set_i64(chunk, slot, value);
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let target = self
+                            .frames
+                            .last_mut()
+                            .and_then(|frame| frame.locals.i64s.get_mut(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
+                        *target = value;
                     }
                     Op::AddLocalI64 { dst, src } => {
-                        let value = self.current_frame()?.get_i64(chunk, src)?;
-                        self.current_frame_mut()?.add_i64(chunk, dst, value)?;
+                        let src_i64_slot = required_i64_slot(chunk, src)?;
+                        let dst_i64_slot = required_i64_slot(chunk, dst)?;
+                        let frame = self
+                            .frames
+                            .last_mut()
+                            .ok_or_else(|| VmError::new("no active VM frame"))?;
+                        let value = *frame.locals.i64s.get(src_i64_slot).ok_or_else(|| {
+                            VmError::new(format!("invalid i64 local slot {}", src))
+                        })?;
+                        let target = frame.locals.i64s.get_mut(dst_i64_slot).ok_or_else(|| {
+                            VmError::new(format!("invalid i64 local slot {}", dst))
+                        })?;
+                        *target = checked_i64(target.checked_add(value))?;
                     }
                     Op::AddLocalConstI64 { slot, value } => {
-                        self.current_frame_mut()?.add_i64(chunk, slot, value)?;
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let target = self
+                            .frames
+                            .last_mut()
+                            .and_then(|frame| frame.locals.i64s.get_mut(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
+                        *target = checked_i64(target.checked_add(value))?;
                     }
                     Op::LtLocalConstI64 { slot, value } => {
-                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let left = *self
+                            .frames
+                            .last()
+                            .and_then(|frame| frame.locals.i64s.get(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
                         self.push(Value::Bool(left < value));
                     }
                     Op::LeLocalConstI64 { slot, value } => {
-                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let left = *self
+                            .frames
+                            .last()
+                            .and_then(|frame| frame.locals.i64s.get(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
                         self.push(Value::Bool(left <= value));
                     }
                     Op::GtLocalConstI64 { slot, value } => {
-                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let left = *self
+                            .frames
+                            .last()
+                            .and_then(|frame| frame.locals.i64s.get(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
                         self.push(Value::Bool(left > value));
                     }
                     Op::GeLocalConstI64 { slot, value } => {
-                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        let i64_slot = required_i64_slot(chunk, slot)?;
+                        let left = *self
+                            .frames
+                            .last()
+                            .and_then(|frame| frame.locals.i64s.get(i64_slot))
+                            .ok_or_else(|| {
+                                VmError::new(format!("invalid i64 local slot {}", slot))
+                            })?;
                         self.push(Value::Bool(left >= value));
                     }
                     Op::Import(path, slot) => {
@@ -447,10 +489,18 @@ impl Vm {
                             self.current_exec_frame_mut()?.ip = jump;
                         }
                     }
-                    Op::Jump(target) => self.current_exec_frame_mut()?.ip = target,
+                    Op::Jump(target) => {
+                        self.frames
+                            .last_mut()
+                            .ok_or_else(|| VmError::new("no active VM frame"))?
+                            .ip = target;
+                    }
                     Op::JumpIfFalse(target) => {
                         if !self.pop_bool("jump condition")? {
-                            self.current_exec_frame_mut()?.ip = target;
+                            self.frames
+                                .last_mut()
+                                .ok_or_else(|| VmError::new("no active VM frame"))?
+                                .ip = target;
                         }
                     }
                     Op::Call(name, argc) => {
@@ -509,7 +559,9 @@ impl Vm {
                         continue 'dispatch;
                     }
                     Op::Pop => {
-                        self.pop()?;
+                        if self.stack.pop().is_none() {
+                            return Err(VmError::new("stack underflow"));
+                        }
                     }
                     Op::Halt => {
                         let frame = self
@@ -1110,7 +1162,16 @@ impl Vm {
     }
 
     fn read_u32_le(&mut self) -> Result<(), VmError> {
-        let offset_value = self.pop_i64()?;
+        let offset_value = match self.stack.pop() {
+            Some(Value::Int(n)) => n,
+            Some(other) => {
+                return Err(VmError::new(format!(
+                    "expected int on stack, found {}",
+                    other.kind_name()
+                )))
+            }
+            None => return Err(VmError::new("stack underflow")),
+        };
         let offset = self.checked_offset(offset_value)?;
         let data = match self.pop()? {
             Value::Bytes(bytes) => bytes,
@@ -1168,7 +1229,16 @@ impl Vm {
                 )))
             }
         };
-        let offset_value = self.pop_i64()?;
+        let offset_value = match self.stack.pop() {
+            Some(Value::Int(n)) => n,
+            Some(other) => {
+                return Err(VmError::new(format!(
+                    "expected int on stack, found {}",
+                    other.kind_name()
+                )))
+            }
+            None => return Err(VmError::new("stack underflow")),
+        };
         let offset = self.checked_offset(offset_value)?;
         let buffer = match self.pop()? {
             Value::Buffer(buffer) => buffer,
