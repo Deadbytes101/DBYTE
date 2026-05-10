@@ -216,6 +216,11 @@ if ($memberFallbackDisasm.Code -ne 0) { throw "member call fallback disasm faile
 Assert-Contains $memberFallbackDisasm.Text "MEMBER_CALL max 2" "member call keeps member dispatch"
 Assert-NotContains $memberFallbackDisasm.Text "CALL_FN" "member call avoids direct function opcode"
 
+$recursionDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\functions\recursion_factorial.dby")
+if ($recursionDisasm.Code -ne 0) { throw "recursion factorial disasm failed: $($recursionDisasm.Text)" }
+Assert-Contains $recursionDisasm.Text "CALL_FN" "recursive function direct call"
+Assert-NotContains $recursionDisasm.Text "CALL fact" "recursive function avoids string call"
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
@@ -315,7 +320,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.4.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.4.2") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree
