@@ -118,3 +118,38 @@ Optimizations: Added direct function-id bytecode (`CALL_FN`), typed int returns 
 - DByte VM is still slower than Python on function-call-heavy workloads; the remaining cost is boxed stack argument passing and recursive `run_chunk` call frame execution.
 - Existing int-loop and low-level binary workloads stayed within the no-regression target in this measurement.
 - Next likely performance work: typed argument stack/return path or a register-style call frame. Function inlining remains deferred.
+
+## Perf Pass 5: Typed Args + Non-Recursive Frame Dispatch
+
+Version: v1.5.0
+Build: release
+Python: 3.12.9
+Date: 2026-05-10
+Optimizations: Replaced recursive VM function execution with a VM-managed call-frame dispatch loop, installed typed int arguments directly into i64 local slots, kept `RETURN_I64` on the typed return path, and added frame-dispatch guards for discard calls, generic returns, wrong arity, nested calls, and recursion depth.
+
+Baseline note: `VM v1.4.2` was re-measured from tag `v1.4.2` in a temporary worktree on the same machine before recording the v1.5.0 results. Timings are noisy on this machine, so claims below are limited to the measured workload results.
+
+| Benchmark | VM v1.4.2 | VM v1.5.0 | Python | Python / DByte VM |
+|---|---:|---:|---:|---:|
+| loop_sum | 26.21 ms | 30.51 ms | 33.79 ms | 1.11x |
+| function_call | 115.35 ms | 112.91 ms | 50.83 ms | 0.45x |
+| function_call_int | 144.40 ms | 136.15 ms | 58.16 ms | 0.43x |
+| function_call_loop_return | 135.61 ms | 135.54 ms | 55.21 ms | 0.41x |
+| function_call_nested | 92.50 ms | 91.06 ms | 34.54 ms | 0.38x |
+| function_call_chain | n/a | 154.96 ms | 77.10 ms | 0.50x |
+| function_call_many_args | n/a | 173.64 ms | 84.24 ms | 0.49x |
+| bytes_find | 11.99 ms | 11.62 ms | 1.48 ms | 0.13x |
+| buffer_replace | 9.52 ms | 8.95 ms | 15.32 ms | 1.71x |
+| binary_read_u32 | 73.86 ms | 71.18 ms | 116.77 ms | 1.64x |
+| patch_workflow | 23.06 ms | 29.28 ms | 41.06 ms | 1.40x |
+| int_compare_loop | 56.26 ms | 66.78 ms | 65.13 ms | 0.98x |
+| loop_sum_large | 51.67 ms | 55.31 ms | 72.56 ms | 1.31x |
+| nested_int_loop | 24.59 ms | 28.50 ms | 36.58 ms | 1.28x |
+
+### Findings
+
+- Non-recursive frame dispatch makes call execution independent from the Rust call stack and keeps the deterministic DByte recursion guard, but it is not a broad speed win yet.
+- `function_call`, `function_call_int`, `function_call_loop_return`, and `function_call_nested` are roughly flat to slightly faster versus the local v1.4.2 baseline in this run.
+- DByte VM still loses to Python on function-heavy workloads. The remaining bottleneck is boxed value-stack return passing and per-instruction dispatch overhead inside small function bodies.
+- Low-level binary workloads still beat Python in this run: `binary_read_u32`, `buffer_replace`, and `patch_workflow`.
+- Next likely performance work: typed return-to-consumer, direct call-to-local opcodes, or a typed stack/register frame for small int functions. Function inlining remains deferred until those lower-risk paths are measured.

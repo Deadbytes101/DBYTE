@@ -1,0 +1,9 @@
+fn sum6(a: int, b: int, c: int, d: int, e: int, f: int) -> int:
+    return a + b + c + d + e + f
+
+let total: int = 0
+let i: int = 0
+
+while i < 500000:
+    total = total + sum6(i, 1, 2, 3, 4, 5)
+    i = i + 1

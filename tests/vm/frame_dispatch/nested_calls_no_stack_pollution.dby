@@ -1,0 +1,5 @@
+fn value(n: int) -> int:
+    return n + 1
+
+value(10)
+print(value(20) + value(1))

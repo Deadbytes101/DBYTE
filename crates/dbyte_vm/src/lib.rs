@@ -43,6 +43,36 @@ struct Frame {
     i64s: Vec<i64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ReturnMode {
+    TopLevel,
+    Push { stack_base: usize },
+    Discard { stack_base: usize },
+}
+
+#[derive(Debug, Clone)]
+enum FrameChunk {
+    TopLevel(Rc<Chunk>),
+    Function(Rc<BytecodeFunction>),
+}
+
+impl FrameChunk {
+    fn chunk(&self) -> &Chunk {
+        match self {
+            Self::TopLevel(chunk) => chunk,
+            Self::Function(function) => &function.chunk,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ExecFrame {
+    chunk: FrameChunk,
+    locals: Frame,
+    ip: usize,
+    return_mode: ReturnMode,
+}
+
 impl Frame {
     fn new(chunk: &Chunk) -> Self {
         let i64_count = if chunk.i64_local_count > 0 {
@@ -186,7 +216,7 @@ fn i64_local_slot(chunk: &Chunk, slot: usize) -> Option<usize> {
 pub struct Vm {
     stack: Vec<Value>,
     iter_stack: Vec<IteratorState>,
-    frames: Vec<Frame>,
+    frames: Vec<ExecFrame>,
     free_frames: Vec<Frame>,
     trace: bool,
     current_file: Option<PathBuf>,
@@ -221,204 +251,286 @@ impl Vm {
     }
 
     pub fn run(&mut self, chunk: &Chunk) -> Result<(), VmError> {
-        self.frames.push(Frame::new(chunk));
+        let chunk = Rc::new(chunk.clone());
         self.active_function_tables
             .push(chunk.functions_by_id.iter().cloned().map(Rc::new).collect());
-        let result = self.run_chunk(chunk);
+        let result = self.run_top_chunk(chunk).map(|_| ());
         self.active_function_tables.pop();
-        self.frames.pop();
-        match result {
-            Ok(Some(_)) => Err(VmError::new("return outside function")),
-            Ok(None) => Ok(()),
-            Err(err) => Err(err),
-        }
+        result
     }
 
-    fn run_chunk(&mut self, chunk: &Chunk) -> Result<Option<Value>, VmError> {
-        let mut ip = 0usize;
-        while ip < chunk.code.len() {
-            let op = chunk.code[ip].clone();
-            if self.trace {
-                println!(
-                    "ip={:04} op={} stack=[{}]",
-                    ip,
-                    format_op(&op, chunk),
-                    self.value_stack().join(", ")
-                );
-            }
-            ip += 1;
-            match op {
-                Op::Const(idx) => self.push(chunk.constants[idx].clone()),
-                Op::ConstI64(n) => self.push(Value::Int(n)),
-                Op::FStr(parts) => self.eval_fstr(&parts, chunk)?,
-                Op::Add => self.binary_add()?,
-                Op::Sub => self.binary_num("sub", |a, b| a.checked_sub(b), |a, b| a - b)?,
-                Op::Mul => self.binary_num("mul", |a, b| a.checked_mul(b), |a, b| a * b)?,
-                Op::Div => self.binary_div()?,
-                Op::AddI64 => self.binary_i64(|a, b| checked_i64(a.checked_add(b)))?,
-                Op::SubI64 => self.binary_i64(|a, b| checked_i64(a.checked_sub(b)))?,
-                Op::MulI64 => self.binary_i64(|a, b| checked_i64(a.checked_mul(b)))?,
-                Op::DivI64 => self.binary_i64(|a, b| {
-                    if b == 0 {
-                        Err(VmError::new("division by zero"))
-                    } else {
-                        checked_i64(a.checked_div(b))
+    fn run_top_chunk(&mut self, chunk: Rc<Chunk>) -> Result<Option<Frame>, VmError> {
+        let locals = Frame::new(&chunk);
+        self.frames.push(ExecFrame {
+            chunk: FrameChunk::TopLevel(chunk),
+            locals,
+            ip: 0,
+            return_mode: ReturnMode::TopLevel,
+        });
+        self.run_loop()
+    }
+
+    fn run_loop(&mut self) -> Result<Option<Frame>, VmError> {
+        'dispatch: while !self.frames.is_empty() {
+            let frame_chunk = self
+                .frames
+                .last()
+                .ok_or_else(|| VmError::new("no active VM frame"))?
+                .chunk
+                .clone();
+            let chunk = frame_chunk.chunk();
+
+            loop {
+                let (op, ip) = {
+                    let frame = self
+                        .frames
+                        .last_mut()
+                        .ok_or_else(|| VmError::new("no active VM frame"))?;
+                    if frame.ip >= chunk.code.len() {
+                        self.finish_frame(Value::Void)?;
+                        continue 'dispatch;
                     }
-                })?,
-                Op::Eq => self.binary_cmp(|a, b| a == b)?,
-                Op::Ne => self.binary_cmp(|a, b| a != b)?,
-                Op::Lt => self.binary_ord("<", |a, b| a < b, |a, b| a < b)?,
-                Op::Le => self.binary_ord("<=", |a, b| a <= b, |a, b| a <= b)?,
-                Op::Gt => self.binary_ord(">", |a, b| a > b, |a, b| a > b)?,
-                Op::Ge => self.binary_ord(">=", |a, b| a >= b, |a, b| a >= b)?,
-                Op::LtI64 => self.binary_i64_cmp(|a, b| a < b)?,
-                Op::LeI64 => self.binary_i64_cmp(|a, b| a <= b)?,
-                Op::GtI64 => self.binary_i64_cmp(|a, b| a > b)?,
-                Op::GeI64 => self.binary_i64_cmp(|a, b| a >= b)?,
-                Op::Neg => self.unary_neg()?,
-                Op::Not => self.unary_not()?,
-                Op::MakeList(count) => self.make_list(count)?,
-                Op::Index => self.index()?,
-                Op::LoadLocal(slot) => {
-                    let value = self.current_frame()?.get_value(chunk, slot)?;
-                    self.push(value);
+                    let ip = frame.ip;
+                    let op = chunk.code[ip].clone();
+                    frame.ip += 1;
+                    (op, ip)
+                };
+                if self.trace {
+                    println!(
+                        "ip={:04} op={} stack=[{}]",
+                        ip,
+                        format_op(&op, chunk),
+                        self.value_stack().join(", ")
+                    );
                 }
-                Op::LoadLocalI64(slot) => {
-                    let value = self.current_frame()?.get_i64(chunk, slot)?;
-                    self.push(Value::Int(value));
-                }
-                Op::StoreLocal(slot) => {
-                    let value = self.pop()?;
-                    self.current_frame_mut()?.set_value(chunk, slot, value)?;
-                }
-                Op::StoreLocalI64(slot) => {
-                    let value = self.pop_i64()?;
-                    self.current_frame_mut()?.set_i64(chunk, slot, value);
-                }
-                Op::AddLocalI64 { dst, src } => {
-                    let value = self.current_frame()?.get_i64(chunk, src)?;
-                    self.current_frame_mut()?.add_i64(chunk, dst, value)?;
-                }
-                Op::AddLocalConstI64 { slot, value } => {
-                    self.current_frame_mut()?.add_i64(chunk, slot, value)?;
-                }
-                Op::LtLocalConstI64 { slot, value } => {
-                    let left = self.current_frame()?.get_i64(chunk, slot)?;
-                    self.push(Value::Bool(left < value));
-                }
-                Op::LeLocalConstI64 { slot, value } => {
-                    let left = self.current_frame()?.get_i64(chunk, slot)?;
-                    self.push(Value::Bool(left <= value));
-                }
-                Op::GtLocalConstI64 { slot, value } => {
-                    let left = self.current_frame()?.get_i64(chunk, slot)?;
-                    self.push(Value::Bool(left > value));
-                }
-                Op::GeLocalConstI64 { slot, value } => {
-                    let left = self.current_frame()?.get_i64(chunk, slot)?;
-                    self.push(Value::Bool(left >= value));
-                }
-                Op::Import(path, slot) => {
-                    let alias = chunk.local_names.get(slot).cloned().unwrap_or_default();
-                    let module = self.load_module(&path, &alias)?;
-                    self.current_frame_mut()?.set_value(
-                        chunk,
-                        slot,
-                        Value::Module(Rc::new(module)),
-                    )?;
-                }
-                Op::Member(property) => {
-                    let module = self.pop_module()?;
-                    let member = module.members.get(&property).cloned().ok_or_else(|| {
-                        VmError::new(format!(
-                            "module '{}' has no public member '{}'",
-                            module.alias, property
-                        ))
-                    })?;
-                    match member {
-                        ModuleMember::Value(value) => self.push(value),
-                        ModuleMember::Function(_) | ModuleMember::Native(_) => {
-                            return Err(VmError::new(format!(
-                                "module member '{}' is callable",
-                                property
-                            )));
+                match op {
+                    Op::Const(idx) => self.push(chunk.constants[idx].clone()),
+                    Op::ConstI64(n) => self.push(Value::Int(n)),
+                    Op::FStr(parts) => self.eval_fstr(&parts, chunk)?,
+                    Op::Add => self.binary_add()?,
+                    Op::Sub => self.binary_num("sub", |a, b| a.checked_sub(b), |a, b| a - b)?,
+                    Op::Mul => self.binary_num("mul", |a, b| a.checked_mul(b), |a, b| a * b)?,
+                    Op::Div => self.binary_div()?,
+                    Op::AddI64 => self.binary_i64(|a, b| checked_i64(a.checked_add(b)))?,
+                    Op::SubI64 => self.binary_i64(|a, b| checked_i64(a.checked_sub(b)))?,
+                    Op::MulI64 => self.binary_i64(|a, b| checked_i64(a.checked_mul(b)))?,
+                    Op::DivI64 => self.binary_i64(|a, b| {
+                        if b == 0 {
+                            Err(VmError::new("division by zero"))
+                        } else {
+                            checked_i64(a.checked_div(b))
                         }
-                    }
-                }
-                Op::MemberCall(property, argc) => {
-                    let args_start = self.stack.len() - argc;
-                    let module = match self.stack.get(args_start - 1) {
-                        Some(Value::Module(m)) => m.clone(),
-                        _ => return Err(VmError::new("member call requires a module")),
-                    };
-                    let member = module.members.get(&property).cloned().ok_or_else(|| {
-                        VmError::new(format!(
-                            "module '{}' has no public member '{}'",
-                            module.alias, property
-                        ))
-                    })?;
-                    let value = match member {
-                        ModuleMember::Native(id) => {
-                            self.call_native(id, &self.stack[args_start..])?
-                        }
-                        ModuleMember::Function(f) => self.call_function(&f, args_start)?,
-                        ModuleMember::Value(_) => {
-                            return Err(VmError::new(format!(
-                                "module member '{}' is not callable",
-                                property
-                            )))
-                        }
-                    };
-                    self.stack.truncate(args_start - 1);
-                    self.push(value);
-                }
-                Op::ReadU32Le => self.read_u32_le()?,
-                Op::BufferFind => self.buffer_find()?,
-                Op::BufferReplace => self.buffer_replace()?,
-                Op::IterInit => self.iter_init()?,
-                Op::IterNext { slot, jump } => {
-                    let should_continue = self.iter_next(chunk, slot)?;
-                    if !should_continue {
-                        ip = jump;
-                    }
-                }
-                Op::Jump(target) => ip = target,
-                Op::JumpIfFalse(target) => {
-                    if !self.pop_bool("jump condition")? {
-                        ip = target;
-                    }
-                }
-                Op::Call(name, argc) => {
-                    let args_start = self.stack.len() - argc;
-                    if name == "print" || name == "len" {
-                        let value = self.call_builtin(&name, &self.stack[args_start..])?;
-                        self.stack.truncate(args_start);
+                    })?,
+                    Op::Eq => self.binary_cmp(|a, b| a == b)?,
+                    Op::Ne => self.binary_cmp(|a, b| a != b)?,
+                    Op::Lt => self.binary_ord("<", |a, b| a < b, |a, b| a < b)?,
+                    Op::Le => self.binary_ord("<=", |a, b| a <= b, |a, b| a <= b)?,
+                    Op::Gt => self.binary_ord(">", |a, b| a > b, |a, b| a > b)?,
+                    Op::Ge => self.binary_ord(">=", |a, b| a >= b, |a, b| a >= b)?,
+                    Op::LtI64 => self.binary_i64_cmp(|a, b| a < b)?,
+                    Op::LeI64 => self.binary_i64_cmp(|a, b| a <= b)?,
+                    Op::GtI64 => self.binary_i64_cmp(|a, b| a > b)?,
+                    Op::GeI64 => self.binary_i64_cmp(|a, b| a >= b)?,
+                    Op::Neg => self.unary_neg()?,
+                    Op::Not => self.unary_not()?,
+                    Op::MakeList(count) => self.make_list(count)?,
+                    Op::Index => self.index()?,
+                    Op::LoadLocal(slot) => {
+                        let value = self.current_frame()?.get_value(chunk, slot)?;
                         self.push(value);
-                    } else {
-                        let function = chunk.functions.get(&name).ok_or_else(|| {
-                            VmError::new(format!("undefined function `{}`", name))
+                    }
+                    Op::LoadLocalI64(slot) => {
+                        let value = self.current_frame()?.get_i64(chunk, slot)?;
+                        self.push(Value::Int(value));
+                    }
+                    Op::StoreLocal(slot) => {
+                        let value = self.pop()?;
+                        self.current_frame_mut()?.set_value(chunk, slot, value)?;
+                    }
+                    Op::StoreLocalI64(slot) => {
+                        let value = self.pop_i64()?;
+                        self.current_frame_mut()?.set_i64(chunk, slot, value);
+                    }
+                    Op::AddLocalI64 { dst, src } => {
+                        let value = self.current_frame()?.get_i64(chunk, src)?;
+                        self.current_frame_mut()?.add_i64(chunk, dst, value)?;
+                    }
+                    Op::AddLocalConstI64 { slot, value } => {
+                        self.current_frame_mut()?.add_i64(chunk, slot, value)?;
+                    }
+                    Op::LtLocalConstI64 { slot, value } => {
+                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        self.push(Value::Bool(left < value));
+                    }
+                    Op::LeLocalConstI64 { slot, value } => {
+                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        self.push(Value::Bool(left <= value));
+                    }
+                    Op::GtLocalConstI64 { slot, value } => {
+                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        self.push(Value::Bool(left > value));
+                    }
+                    Op::GeLocalConstI64 { slot, value } => {
+                        let left = self.current_frame()?.get_i64(chunk, slot)?;
+                        self.push(Value::Bool(left >= value));
+                    }
+                    Op::Import(path, slot) => {
+                        let alias = chunk.local_names.get(slot).cloned().unwrap_or_default();
+                        let module = self.load_module(&path, &alias)?;
+                        self.current_frame_mut()?.set_value(
+                            chunk,
+                            slot,
+                            Value::Module(Rc::new(module)),
+                        )?;
+                    }
+                    Op::Member(property) => {
+                        let module = self.pop_module()?;
+                        let member = module.members.get(&property).cloned().ok_or_else(|| {
+                            VmError::new(format!(
+                                "module '{}' has no public member '{}'",
+                                module.alias, property
+                            ))
                         })?;
-                        let value = self.call_function(function, args_start)?;
+                        match member {
+                            ModuleMember::Value(value) => self.push(value),
+                            ModuleMember::Function(_) | ModuleMember::Native(_) => {
+                                return Err(VmError::new(format!(
+                                    "module member '{}' is callable",
+                                    property
+                                )));
+                            }
+                        }
+                    }
+                    Op::MemberCall(property, argc) => {
+                        let args_start = self.stack.len() - argc;
+                        let module = match self.stack.get(args_start - 1) {
+                            Some(Value::Module(m)) => m.clone(),
+                            _ => return Err(VmError::new("member call requires a module")),
+                        };
+                        let member = module.members.get(&property).cloned().ok_or_else(|| {
+                            VmError::new(format!(
+                                "module '{}' has no public member '{}'",
+                                module.alias, property
+                            ))
+                        })?;
+                        let value = match member {
+                            ModuleMember::Native(id) => {
+                                self.call_native(id, &self.stack[args_start..])?
+                            }
+                            ModuleMember::Function(f) => {
+                                self.push_call_frame(
+                                    Rc::new(*f),
+                                    args_start,
+                                    ReturnMode::Push {
+                                        stack_base: args_start - 1,
+                                    },
+                                )?;
+                                continue 'dispatch;
+                            }
+                            ModuleMember::Value(_) => {
+                                return Err(VmError::new(format!(
+                                    "module member '{}' is not callable",
+                                    property
+                                )))
+                            }
+                        };
+                        self.stack.truncate(args_start - 1);
                         self.push(value);
                     }
+                    Op::ReadU32Le => self.read_u32_le()?,
+                    Op::BufferFind => self.buffer_find()?,
+                    Op::BufferReplace => self.buffer_replace()?,
+                    Op::IterInit => self.iter_init()?,
+                    Op::IterNext { slot, jump } => {
+                        let should_continue = self.iter_next(chunk, slot)?;
+                        if !should_continue {
+                            self.current_exec_frame_mut()?.ip = jump;
+                        }
+                    }
+                    Op::Jump(target) => self.current_exec_frame_mut()?.ip = target,
+                    Op::JumpIfFalse(target) => {
+                        if !self.pop_bool("jump condition")? {
+                            self.current_exec_frame_mut()?.ip = target;
+                        }
+                    }
+                    Op::Call(name, argc) => {
+                        let args_start = self.stack.len() - argc;
+                        if name == "print" || name == "len" {
+                            let value = self.call_builtin(&name, &self.stack[args_start..])?;
+                            self.stack.truncate(args_start);
+                            self.push(value);
+                        } else {
+                            let function =
+                                chunk.functions.get(&name).cloned().ok_or_else(|| {
+                                    VmError::new(format!("undefined function `{}`", name))
+                                })?;
+                            self.push_call_frame(
+                                Rc::new(function),
+                                args_start,
+                                ReturnMode::Push {
+                                    stack_base: args_start,
+                                },
+                            )?;
+                            continue 'dispatch;
+                        }
+                    }
+                    Op::CallFn { id, argc } => {
+                        let args_start = self.stack.len() - argc;
+                        let function = self.resolve_function(chunk, id)?;
+                        self.push_call_frame(
+                            function,
+                            args_start,
+                            ReturnMode::Push {
+                                stack_base: args_start,
+                            },
+                        )?;
+                        continue 'dispatch;
+                    }
+                    Op::CallFnDiscard { id, argc } => {
+                        let args_start = self.stack.len() - argc;
+                        let function = self.resolve_function(chunk, id)?;
+                        self.push_call_frame(
+                            function,
+                            args_start,
+                            ReturnMode::Discard {
+                                stack_base: args_start,
+                            },
+                        )?;
+                        continue 'dispatch;
+                    }
+                    Op::Return => {
+                        let value = self.pop()?;
+                        self.finish_frame(value)?;
+                        continue 'dispatch;
+                    }
+                    Op::ReturnI64 => {
+                        let value = self.pop_i64()?;
+                        self.finish_frame_i64(value)?;
+                        continue 'dispatch;
+                    }
+                    Op::Pop => {
+                        self.pop()?;
+                    }
+                    Op::Halt => {
+                        let frame = self
+                            .frames
+                            .pop()
+                            .ok_or_else(|| VmError::new("no active VM frame"))?;
+                        match frame.return_mode {
+                            ReturnMode::TopLevel => return Ok(Some(frame.locals)),
+                            ReturnMode::Push { stack_base } => {
+                                self.release_frame(frame.locals);
+                                self.stack.truncate(stack_base);
+                                self.push(Value::Void);
+                            }
+                            ReturnMode::Discard { stack_base } => {
+                                self.release_frame(frame.locals);
+                                self.stack.truncate(stack_base);
+                            }
+                        }
+                        continue 'dispatch;
+                    }
                 }
-                Op::CallFn { id, argc } => {
-                    let args_start = self.stack.len() - argc;
-                    let function = self.resolve_function(chunk, id)?;
-                    let value = self.call_function(function.as_ref(), args_start)?;
-                    self.push(value);
-                }
-                Op::CallFnDiscard { id, argc } => {
-                    let args_start = self.stack.len() - argc;
-                    let function = self.resolve_function(chunk, id)?;
-                    let _ = self.call_function(function.as_ref(), args_start)?;
-                }
-                Op::Return => return Ok(Some(self.pop()?)),
-                Op::ReturnI64 => return Ok(Some(Value::Int(self.pop_i64()?))),
-                Op::Pop => {
-                    self.pop()?;
-                }
-                Op::Halt => break,
             }
         }
         Ok(None)
@@ -427,10 +539,18 @@ impl Vm {
     fn current_frame(&self) -> Result<&Frame, VmError> {
         self.frames
             .last()
+            .map(|frame| &frame.locals)
             .ok_or_else(|| VmError::new("no active VM frame"))
     }
 
     fn current_frame_mut(&mut self) -> Result<&mut Frame, VmError> {
+        self.frames
+            .last_mut()
+            .map(|frame| &mut frame.locals)
+            .ok_or_else(|| VmError::new("no active VM frame"))
+    }
+
+    fn current_exec_frame_mut(&mut self) -> Result<&mut ExecFrame, VmError> {
         self.frames
             .last_mut()
             .ok_or_else(|| VmError::new("no active VM frame"))
@@ -448,6 +568,86 @@ impl Vm {
 
     fn release_frame(&mut self, frame: Frame) {
         self.free_frames.push(frame);
+    }
+
+    fn finish_frame(&mut self, value: Value) -> Result<(), VmError> {
+        let frame = self
+            .frames
+            .pop()
+            .ok_or_else(|| VmError::new("no active VM frame"))?;
+        let return_mode = frame.return_mode;
+        self.release_frame(frame.locals);
+        match return_mode {
+            ReturnMode::TopLevel => Err(VmError::new("return outside function")),
+            ReturnMode::Push { stack_base } => {
+                self.stack.truncate(stack_base);
+                self.push(value);
+                Ok(())
+            }
+            ReturnMode::Discard { stack_base } => {
+                self.stack.truncate(stack_base);
+                Ok(())
+            }
+        }
+    }
+
+    fn finish_frame_i64(&mut self, value: i64) -> Result<(), VmError> {
+        let frame = self
+            .frames
+            .pop()
+            .ok_or_else(|| VmError::new("no active VM frame"))?;
+        let return_mode = frame.return_mode;
+        self.release_frame(frame.locals);
+        match return_mode {
+            ReturnMode::TopLevel => Err(VmError::new("return outside function")),
+            ReturnMode::Push { stack_base } => {
+                self.stack.truncate(stack_base);
+                self.push(Value::Int(value));
+                Ok(())
+            }
+            ReturnMode::Discard { stack_base } => {
+                self.stack.truncate(stack_base);
+                Ok(())
+            }
+        }
+    }
+
+    fn push_call_frame(
+        &mut self,
+        function: Rc<BytecodeFunction>,
+        args_start: usize,
+        return_mode: ReturnMode,
+    ) -> Result<(), VmError> {
+        let argc = self.stack.len() - args_start;
+        if argc != function.params.len() {
+            return Err(VmError::new(format!(
+                "function `{}` expects {} args, got {}",
+                function.name,
+                function.params.len(),
+                argc
+            )));
+        }
+        if self.frames.len() >= MAX_CALL_DEPTH {
+            return Err(VmError::new("maximum call depth exceeded"));
+        }
+
+        let mut locals = self.acquire_frame(&function.chunk);
+        for idx in (0..argc).rev() {
+            let arg = self.pop()?;
+            if idx < function.chunk.local_names.len() {
+                match (i64_local_slot(&function.chunk, idx), arg) {
+                    (Some(_), Value::Int(n)) => locals.set_i64(&function.chunk, idx, n),
+                    (_, value) => locals.set_value(&function.chunk, idx, value)?,
+                }
+            }
+        }
+        self.frames.push(ExecFrame {
+            chunk: FrameChunk::Function(function),
+            locals,
+            ip: 0,
+            return_mode,
+        });
+        Ok(())
     }
 
     fn resolve_function(&self, chunk: &Chunk, id: usize) -> Result<Rc<BytecodeFunction>, VmError> {
@@ -729,39 +929,6 @@ impl Vm {
         Err(VmError::new(format!("undefined builtin `{}`", name)))
     }
 
-    fn call_function(
-        &mut self,
-        function: &BytecodeFunction,
-        args_start: usize,
-    ) -> Result<Value, VmError> {
-        let argc = self.stack.len() - args_start;
-        if argc != function.params.len() {
-            return Err(VmError::new(format!(
-                "function `{}` expects {} args, got {}",
-                function.name,
-                function.params.len(),
-                argc
-            )));
-        }
-        if self.frames.len() >= MAX_CALL_DEPTH {
-            return Err(VmError::new("maximum call depth exceeded"));
-        }
-        let mut frame = self.acquire_frame(&function.chunk);
-        for (idx, arg) in self.stack.drain(args_start..).enumerate() {
-            if idx < function.chunk.local_names.len() {
-                frame.set_value(&function.chunk, idx, arg)?;
-            }
-        }
-        self.frames.push(frame);
-        let result = self.run_chunk(&function.chunk);
-        let frame = self
-            .frames
-            .pop()
-            .ok_or_else(|| VmError::new("no active VM frame"))?;
-        self.release_frame(frame);
-        Ok(result?.unwrap_or(Value::Void))
-    }
-
     fn pop_module(&mut self) -> Result<Rc<ModuleValue>, VmError> {
         match self.pop()? {
             Value::Module(module) => Ok(module),
@@ -917,11 +1084,13 @@ impl Vm {
             .map_err(compile_error_to_vm)?;
 
         let saved_file = self.current_file.replace(path.to_path_buf());
-        self.frames.push(Frame::new(&chunk));
-        let executed = self.run_chunk(&chunk);
-        let frame = self.frames.pop();
+        let chunk = Rc::new(chunk);
+        self.active_function_tables
+            .push(chunk.functions_by_id.iter().cloned().map(Rc::new).collect());
+        let executed = self.run_top_chunk(chunk.clone());
+        self.active_function_tables.pop();
         self.current_file = saved_file;
-        executed?;
+        let frame = executed?;
 
         let mut members = HashMap::new();
         let frame = frame.ok_or_else(|| VmError::new("no module VM frame"))?;
