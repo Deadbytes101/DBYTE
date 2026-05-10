@@ -1,6 +1,6 @@
-ip=0000 op=CONST 0        ; 1 stack=[]
-ip=0001 op=CONST 1        ; 2 stack=[1]
-ip=0002 op=ADD stack=[1, 2]
+ip=0000 op=CONST_I64 1 stack=[]
+ip=0001 op=CONST_I64 2 stack=[1]
+ip=0002 op=ADD_I64 stack=[1, 2]
 ip=0003 op=CALL print 1 stack=[3]
 3
 ip=0004 op=POP stack=[]

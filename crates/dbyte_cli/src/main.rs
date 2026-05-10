@@ -227,7 +227,7 @@ fn usage() {
          dbyte run [--vm] <file>\n  \
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \
-         dbyte bench [--engine tree|vm]\n  \
+         dbyte bench [--engine tree|vm] [--compare-python]\n  \
          dbyte disasm <file>\n  \
          dbyte tokens <file>\n  \
          dbyte ast <file>\n  \
@@ -348,7 +348,56 @@ fn cmd_test(engine: Engine) {
     }
 }
 
-fn cmd_bench(engine_override: Option<Engine>) {
+fn run_benchmark(path: &Path, engine: Engine) -> f64 {
+    let (_src, program) = parse_file(path);
+    let start = std::time::Instant::now();
+
+    match engine {
+        Engine::Tree => {
+            let mut interp = Interpreter::with_entry_path(path.to_path_buf());
+            let _ = interp.run(&program);
+        }
+        Engine::Vm => {
+            let compiler = Compiler::with_entry_path(path.to_path_buf());
+            if let Ok(chunk) = compiler.compile_program(&program) {
+                let mut vm = Vm::with_entry_path(path.to_path_buf());
+                let _ = vm.run(&chunk);
+            }
+        }
+    }
+
+    start.elapsed().as_secs_f64() * 1000.0
+}
+
+fn python_executable() -> Option<&'static str> {
+    ["python", "py"].into_iter().find(|candidate| {
+        process::Command::new(candidate)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    })
+}
+
+fn run_python_benchmark(python: &str, path: &Path) -> Result<f64, String> {
+    let output = process::Command::new(python)
+        .arg(path)
+        .output()
+        .map_err(|e| format!("failed to run python benchmark `{}`: {}", path.display(), e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "python benchmark `{}` failed: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .trim()
+        .parse::<f64>()
+        .map_err(|e| format!("invalid python benchmark output `{}`: {}", stdout.trim(), e))
+}
+
+fn cmd_bench(engine_override: Option<Engine>, compare_python: bool) {
     let benchmarks_dir = Path::new("benchmarks");
     if !benchmarks_dir.exists() {
         eprintln!("BenchError: benchmarks directory not found");
@@ -358,6 +407,44 @@ fn cmd_bench(engine_override: Option<Engine>) {
     let mut cases = Vec::new();
     collect_tests(benchmarks_dir, &mut cases);
     cases.sort();
+
+    if compare_python {
+        let Some(python) = python_executable() else {
+            eprintln!("BenchError: python executable not found");
+            process::exit(1);
+        };
+        println!(
+            "{:<20} {:>12} {:>12} {:>10}",
+            "Benchmark", "Python", "DByte VM", "Ratio"
+        );
+        println!("{:-<60}", "");
+        for path in cases {
+            let name = path.file_stem().unwrap().to_string_lossy();
+            let py_path = benchmarks_dir.join("python").join(format!("{}.py", name));
+            if !py_path.exists() {
+                eprintln!(
+                    "BenchError: python benchmark not found: {}",
+                    py_path.display()
+                );
+                process::exit(1);
+            }
+            let python_ms = run_python_benchmark(python, &py_path).unwrap_or_else(|e| {
+                eprintln!("BenchError: {}", e);
+                process::exit(1);
+            });
+            let dbyte_ms = run_benchmark(&path, Engine::Vm);
+            let ratio = if dbyte_ms > 0.0 {
+                python_ms / dbyte_ms
+            } else {
+                0.0
+            };
+            println!(
+                "{:<20} {:>9.2} ms {:>9.2} ms {:>9.2}x",
+                name, python_ms, dbyte_ms, ratio
+            );
+        }
+        return;
+    }
 
     println!("{:<20} {:<10} {:>12}", "Benchmark", "Engine", "Time (ms)");
     println!("{:-<45}", "");
@@ -371,29 +458,11 @@ fn cmd_bench(engine_override: Option<Engine>) {
         };
 
         for engine in engines {
-            let (_src, program) = parse_file(&path);
-            let start = std::time::Instant::now();
-
-            match engine {
-                Engine::Tree => {
-                    let mut interp = Interpreter::with_entry_path(path.to_path_buf());
-                    let _ = interp.run(&program);
-                }
-                Engine::Vm => {
-                    let compiler = Compiler::with_entry_path(path.to_path_buf());
-                    if let Ok(chunk) = compiler.compile_program(&program) {
-                        let mut vm = Vm::with_entry_path(path.to_path_buf());
-                        let _ = vm.run(&chunk);
-                    }
-                }
-            }
-
-            let duration = start.elapsed();
             println!(
                 "{:<20} {:<10} {:>12.2} ms",
                 name,
                 engine.label(),
-                duration.as_secs_f64() * 1000.0
+                run_benchmark(&path, engine)
             );
         }
     }
@@ -442,7 +511,7 @@ fn main() {
 
     match args[1].as_str() {
         "--version" => {
-            println!("DByte 1.1.0");
+            println!("DByte 1.2.0");
             process::exit(0);
         }
         "--help" | "-h" => {
@@ -488,20 +557,28 @@ fn main() {
         "test" => cmd_test(parse_engine(&args[2..])),
         "bench" => {
             let mut engine = None;
+            let mut compare_python = false;
             let mut iter = args.iter().skip(2);
             while let Some(arg) = iter.next() {
-                if arg == "--engine" {
-                    engine = match iter.next().map(String::as_str) {
-                        Some("tree") => Some(Engine::Tree),
-                        Some("vm") => Some(Engine::Vm),
-                        _ => {
-                            usage();
-                            process::exit(1);
-                        }
-                    };
+                match arg.as_str() {
+                    "--engine" => {
+                        engine = match iter.next().map(String::as_str) {
+                            Some("tree") => Some(Engine::Tree),
+                            Some("vm") => Some(Engine::Vm),
+                            _ => {
+                                usage();
+                                process::exit(1);
+                            }
+                        };
+                    }
+                    "--compare-python" => compare_python = true,
+                    _ => {
+                        usage();
+                        process::exit(1);
+                    }
                 }
             }
-            cmd_bench(engine);
+            cmd_bench(engine, compare_python);
         }
         "disasm" => {
             let path = args.get(2).map(PathBuf::from).unwrap_or_else(|| {

@@ -92,17 +92,32 @@ impl Vm {
             ip += 1;
             match op {
                 Op::Const(idx) => self.push(chunk.constants[idx].clone()),
+                Op::ConstI64(n) => self.push(Value::Int(n)),
                 Op::FStr(parts) => self.eval_fstr(&parts, chunk)?,
                 Op::Add => self.binary_add()?,
                 Op::Sub => self.binary_num("sub", |a, b| a - b, |a, b| a - b)?,
                 Op::Mul => self.binary_num("mul", |a, b| a * b, |a, b| a * b)?,
                 Op::Div => self.binary_div()?,
+                Op::AddI64 => self.binary_i64(|a, b| Ok(a + b))?,
+                Op::SubI64 => self.binary_i64(|a, b| Ok(a - b))?,
+                Op::MulI64 => self.binary_i64(|a, b| Ok(a * b))?,
+                Op::DivI64 => self.binary_i64(|a, b| {
+                    if b == 0 {
+                        Err(VmError::new("division by zero"))
+                    } else {
+                        Ok(a / b)
+                    }
+                })?,
                 Op::Eq => self.binary_cmp(|a, b| a == b)?,
                 Op::Ne => self.binary_cmp(|a, b| a != b)?,
                 Op::Lt => self.binary_ord("<", |a, b| a < b, |a, b| a < b)?,
                 Op::Le => self.binary_ord("<=", |a, b| a <= b, |a, b| a <= b)?,
                 Op::Gt => self.binary_ord(">", |a, b| a > b, |a, b| a > b)?,
                 Op::Ge => self.binary_ord(">=", |a, b| a >= b, |a, b| a >= b)?,
+                Op::LtI64 => self.binary_i64_cmp(|a, b| a < b)?,
+                Op::LeI64 => self.binary_i64_cmp(|a, b| a <= b)?,
+                Op::GtI64 => self.binary_i64_cmp(|a, b| a > b)?,
+                Op::GeI64 => self.binary_i64_cmp(|a, b| a >= b)?,
                 Op::Neg => self.unary_neg()?,
                 Op::Not => self.unary_not()?,
                 Op::MakeList(count) => self.make_list(count)?,
@@ -115,8 +130,32 @@ impl Vm {
                         .ok_or_else(|| VmError::new(format!("invalid local slot {}", slot)))?;
                     self.push(value);
                 }
+                Op::LoadLocalI64(slot) => {
+                    let value = self
+                        .current_frame()?
+                        .get(slot)
+                        .ok_or_else(|| VmError::new(format!("invalid local slot {}", slot)))?;
+                    match value {
+                        Value::Int(n) => self.push(Value::Int(*n)),
+                        other => {
+                            return Err(VmError::new(format!(
+                                "expected int local {}, found {}",
+                                slot,
+                                other.kind_name()
+                            )))
+                        }
+                    }
+                }
                 Op::StoreLocal(slot) => {
                     let value = self.pop()?;
+                    let frame = self.current_frame_mut()?;
+                    if slot >= frame.len() {
+                        frame.resize(slot + 1, Value::Void);
+                    }
+                    frame[slot] = value;
+                }
+                Op::StoreLocalI64(slot) => {
+                    let value = Value::Int(self.pop_i64()?);
                     let frame = self.current_frame_mut()?;
                     if slot >= frame.len() {
                         frame.resize(slot + 1, Value::Void);
@@ -177,6 +216,9 @@ impl Vm {
                     self.stack.truncate(args_start - 1);
                     self.push(value);
                 }
+                Op::ReadU32Le => self.read_u32_le()?,
+                Op::BufferFind => self.buffer_find()?,
+                Op::BufferReplace => self.buffer_replace()?,
                 Op::IterInit => self.iter_init()?,
                 Op::IterNext { slot, jump } => {
                     let should_continue = self.iter_next(slot)?;
@@ -236,6 +278,16 @@ impl Vm {
             .ok_or_else(|| VmError::new("stack underflow"))
     }
 
+    fn pop_i64(&mut self) -> Result<i64, VmError> {
+        match self.pop()? {
+            Value::Int(n) => Ok(n),
+            other => Err(VmError::new(format!(
+                "expected int on stack, found {}",
+                other.kind_name()
+            ))),
+        }
+    }
+
     fn pop_args(&mut self, argc: usize) -> Result<Vec<Value>, VmError> {
         if self.stack.len() < argc {
             return Err(VmError::new("stack underflow"));
@@ -292,6 +344,20 @@ impl Vm {
             _ => return Err(VmError::new("type mismatch in binary expression")),
         };
         self.push(value);
+        Ok(())
+    }
+
+    fn binary_i64(&mut self, op: fn(i64, i64) -> Result<i64, VmError>) -> Result<(), VmError> {
+        let b = self.pop_i64()?;
+        let a = self.pop_i64()?;
+        self.push(Value::Int(op(a, b)?));
+        Ok(())
+    }
+
+    fn binary_i64_cmp(&mut self, op: fn(i64, i64) -> bool) -> Result<(), VmError> {
+        let b = self.pop_i64()?;
+        let a = self.pop_i64()?;
+        self.push(Value::Bool(op(a, b)));
         Ok(())
     }
 
@@ -668,6 +734,91 @@ impl Vm {
             alias: alias.to_string(),
             members,
         })
+    }
+
+    fn read_u32_le(&mut self) -> Result<(), VmError> {
+        let offset_value = self.pop_i64()?;
+        let offset = self.checked_offset(offset_value)?;
+        let data = match self.pop()? {
+            Value::Bytes(bytes) => bytes,
+            other => {
+                return Err(VmError::new(format!(
+                    "expected bytes argument 1, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        self.require_len(&data, offset, 4)?;
+        self.push(Value::Int(LE::read_u32(&data[offset..]) as i64));
+        Ok(())
+    }
+
+    fn buffer_find(&mut self) -> Result<(), VmError> {
+        let pattern = match self.pop()? {
+            Value::Bytes(bytes) => bytes,
+            other => {
+                return Err(VmError::new(format!(
+                    "expected bytes argument 2, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        if pattern.is_empty() {
+            return Err(VmError::new("buffer.find: pattern cannot be empty"));
+        }
+        let buffer = match self.pop()? {
+            Value::Buffer(buffer) => buffer,
+            other => {
+                return Err(VmError::new(format!(
+                    "expected buffer argument 1, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        let buf = buffer.borrow();
+        let pos = buf
+            .windows(pattern.len())
+            .position(|w| w == pattern)
+            .map(|p| p as i64)
+            .unwrap_or(-1);
+        self.push(Value::Int(pos));
+        Ok(())
+    }
+
+    fn buffer_replace(&mut self) -> Result<(), VmError> {
+        let data = match self.pop()? {
+            Value::Bytes(bytes) => bytes,
+            other => {
+                return Err(VmError::new(format!(
+                    "expected bytes argument 3, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        let offset_value = self.pop_i64()?;
+        let offset = self.checked_offset(offset_value)?;
+        let buffer = match self.pop()? {
+            Value::Buffer(buffer) => buffer,
+            other => {
+                return Err(VmError::new(format!(
+                    "expected buffer argument 1, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        let mut buf = buffer.borrow_mut();
+        let end = offset + data.len();
+        if end > buf.len() {
+            return Err(VmError::new(format!(
+                "buffer.replace out of range: need {} bytes at offset {}, but length is {}",
+                data.len(),
+                offset,
+                buf.len()
+            )));
+        }
+        buf[offset..end].copy_from_slice(&data);
+        self.push(Value::Void);
+        Ok(())
     }
 }
 
