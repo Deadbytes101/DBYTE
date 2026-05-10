@@ -102,9 +102,28 @@ Write-Host "Running VM fast path disasm checks..."
 
 $loopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum.dby")
 if ($loopDisasm.Code -ne 0) { throw "loop_sum disasm failed: $($loopDisasm.Text)" }
-Assert-Contains $loopDisasm.Text "ADD_I64" "loop_sum typed add"
-Assert-Contains $loopDisasm.Text "LT_I64" "loop_sum typed less-than"
 Assert-Contains $loopDisasm.Text "STORE_LOCAL_I64" "loop_sum typed store"
+Assert-Contains $loopDisasm.Text "ADD_LOCAL_I64" "loop_sum direct local add"
+Assert-Contains $loopDisasm.Text "ADD_LOCAL_CONST_I64" "loop_sum direct const increment"
+Assert-Contains $loopDisasm.Text "LT_LOCAL_CONST_I64" "loop_sum direct local less-than"
+
+$largeLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum_large.dby")
+if ($largeLoopDisasm.Code -ne 0) { throw "loop_sum_large disasm failed: $($largeLoopDisasm.Text)" }
+Assert-Contains $largeLoopDisasm.Text "STORE_LOCAL_I64" "loop_sum_large typed store"
+Assert-Contains $largeLoopDisasm.Text "ADD_LOCAL_I64" "loop_sum_large direct local add"
+Assert-Contains $largeLoopDisasm.Text "ADD_LOCAL_CONST_I64" "loop_sum_large direct const increment"
+Assert-Contains $largeLoopDisasm.Text "LT_LOCAL_CONST_I64" "loop_sum_large direct local less-than"
+
+$compareLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\int_compare_loop.dby")
+if ($compareLoopDisasm.Code -ne 0) { throw "int_compare_loop disasm failed: $($compareLoopDisasm.Text)" }
+Assert-Contains $compareLoopDisasm.Text "GE_LOCAL_CONST_I64" "int_compare_loop direct greater-equal"
+Assert-Contains $compareLoopDisasm.Text "LE_LOCAL_CONST_I64" "int_compare_loop direct less-equal"
+Assert-Contains $compareLoopDisasm.Text "LT_LOCAL_CONST_I64" "int_compare_loop direct loop condition"
+
+$fallbackLocalDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\generic_local_fallback.dby")
+if ($fallbackLocalDisasm.Code -ne 0) { throw "generic local fallback disasm failed: $($fallbackLocalDisasm.Text)" }
+Assert-Contains $fallbackLocalDisasm.Text "STORE_LOCAL 0 ; nums" "generic list local fallback store"
+Assert-Contains $fallbackLocalDisasm.Text "LOAD_LOCAL 0 ; nums" "generic list local fallback load"
 
 $binaryDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\binary_read_u32.dby")
 if ($binaryDisasm.Code -ne 0) { throw "binary_read_u32 disasm failed: $($binaryDisasm.Text)" }
@@ -227,7 +246,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.2.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.3.0") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree

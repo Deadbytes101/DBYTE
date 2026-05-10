@@ -1,5 +1,5 @@
 use dbyte_ast::*;
-use dbyte_bytecode::{BytecodeFunction, Chunk, Op, Value};
+use dbyte_bytecode::{BytecodeFunction, Chunk, LocalKind, Op, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -97,12 +97,35 @@ impl FunctionCompiler {
         let slot = self.chunk.local_names.len();
         self.locals.insert(name.to_string(), slot);
         self.chunk.local_names.push(name.to_string());
+        self.chunk.local_kinds.push(LocalKind::Value);
+        self.chunk.local_i64_slots.push(None);
         slot
     }
 
     fn set_local_type(&mut self, name: &str, ty: ExprType) {
         if ty != ExprType::Unknown {
             self.local_types.insert(name.to_string(), ty);
+            if let Some(slot) = self.locals.get(name).copied() {
+                if self.chunk.local_kinds.len() <= slot {
+                    self.chunk.local_kinds.resize(slot + 1, LocalKind::Value);
+                }
+                if self.chunk.local_i64_slots.len() <= slot {
+                    self.chunk.local_i64_slots.resize(slot + 1, None);
+                }
+                match ty {
+                    ExprType::Int => {
+                        if self.chunk.local_kinds[slot] != LocalKind::I64 {
+                            self.chunk.local_i64_slots[slot] = Some(self.chunk.i64_local_count);
+                            self.chunk.i64_local_count += 1;
+                        }
+                        self.chunk.local_kinds[slot] = LocalKind::I64;
+                    }
+                    _ => {
+                        self.chunk.local_kinds[slot] = LocalKind::Value;
+                        self.chunk.local_i64_slots[slot] = None;
+                    }
+                }
+            }
         }
     }
 
@@ -154,6 +177,9 @@ impl FunctionCompiler {
                 }
             }
             Stmt::Assign { name, value, span } => {
+                if self.compile_i64_assign_fast_path(name, value, *span)? {
+                    return Ok(());
+                }
                 self.compile_expr(value)?;
                 let slot = self.existing_slot(name, *span)?;
                 if self.local_type(name) == ExprType::Int {
@@ -203,7 +229,9 @@ impl FunctionCompiler {
                 else_body,
                 ..
             } => {
-                self.compile_expr(cond)?;
+                if !self.compile_i64_compare_fast_path(cond)? {
+                    self.compile_expr(cond)?;
+                }
                 let jf = self.emit(Op::JumpIfFalse(usize::MAX));
                 self.compile_stmts(then_body)?;
                 let jend = self.emit(Op::Jump(usize::MAX));
@@ -217,7 +245,9 @@ impl FunctionCompiler {
             }
             Stmt::While { cond, body, .. } => {
                 let loop_start = self.chunk.code.len();
-                self.compile_expr(cond)?;
+                if !self.compile_i64_compare_fast_path(cond)? {
+                    self.compile_expr(cond)?;
+                }
                 let exit = self.emit(Op::JumpIfFalse(usize::MAX));
                 self.compile_stmts(body)?;
                 self.emit(Op::Jump(loop_start));
@@ -365,6 +395,94 @@ impl FunctionCompiler {
             }
         }
         Ok(())
+    }
+
+    fn compile_i64_assign_fast_path(
+        &mut self,
+        name: &str,
+        value: &Expr,
+        span: Span,
+    ) -> Result<bool, CompileError> {
+        if self.local_type(name) != ExprType::Int {
+            return Ok(false);
+        }
+        let dst = self.existing_slot(name, span)?;
+        let Expr::Binary {
+            left, op, right, ..
+        } = value
+        else {
+            return Ok(false);
+        };
+        let Expr::Ident(left_name, _) = &**left else {
+            return Ok(false);
+        };
+        if left_name != name {
+            return Ok(false);
+        }
+        match (&**right, op) {
+            (Expr::Ident(src_name, src_span), BinOp::Add)
+                if self.local_type(src_name) == ExprType::Int =>
+            {
+                let src = self.existing_slot(src_name, *src_span)?;
+                self.emit(Op::AddLocalI64 { dst, src });
+                Ok(true)
+            }
+            (Expr::IntLit(n, _), BinOp::Add) => {
+                self.emit(Op::AddLocalConstI64 {
+                    slot: dst,
+                    value: *n,
+                });
+                Ok(true)
+            }
+            (Expr::IntLit(n, _), BinOp::Sub) => {
+                self.emit(Op::AddLocalConstI64 {
+                    slot: dst,
+                    value: -*n,
+                });
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn compile_i64_compare_fast_path(&mut self, expr: &Expr) -> Result<bool, CompileError> {
+        let Expr::Binary {
+            left, op, right, ..
+        } = expr
+        else {
+            return Ok(false);
+        };
+        let Expr::Ident(name, span) = &**left else {
+            return Ok(false);
+        };
+        if self.local_type(name) != ExprType::Int {
+            return Ok(false);
+        }
+        let Expr::IntLit(value, _) = &**right else {
+            return Ok(false);
+        };
+        let slot = self.existing_slot(name, *span)?;
+        let op = match op {
+            BinOp::Lt => Op::LtLocalConstI64 {
+                slot,
+                value: *value,
+            },
+            BinOp::LtEq => Op::LeLocalConstI64 {
+                slot,
+                value: *value,
+            },
+            BinOp::Gt => Op::GtLocalConstI64 {
+                slot,
+                value: *value,
+            },
+            BinOp::GtEq => Op::GeLocalConstI64 {
+                slot,
+                value: *value,
+            },
+            _ => return Ok(false),
+        };
+        self.emit(op);
+        Ok(true)
     }
 
     fn declared_or_expr_type(&self, ty: &TypeAnnotation, value: &Expr) -> ExprType {

@@ -61,3 +61,30 @@ Optimizations: Added typed int bytecode (`CONST_I64`, `LOAD_LOCAL_I64`, `STORE_L
 - DByte VM beats Python on the low-level binary workloads measured here: `binary_read_u32`, `buffer_replace`, and `patch_workflow`.
 - Python is still faster on pure numeric loops, function call overhead, and `bytes.find`.
 - Next likely performance work: avoid cloning `Value::Bytes` in VM locals and move more hot paths away from boxed stack values.
+
+## Perf Pass 3: Typed Locals + Direct Int Loop Fast Path
+
+Version: v1.3.0  
+Build: release  
+Python: 3.12.9  
+Date: 2026-05-10  
+Optimizations: Added typed local metadata, separate i64 frame storage, and direct local int opcodes for common loop patterns (`ADD_LOCAL_I64`, `ADD_LOCAL_CONST_I64`, and local-vs-constant comparisons).
+
+| Benchmark | VM v1.2.0 | VM v1.3.0 | Python | Python / DByte VM |
+|---|---:|---:|---:|---:|
+| loop_sum | 107.07 ms | 26.52 ms | 36.53 ms | 1.38x |
+| function_call | 226.93 ms | 190.06 ms | 47.31 ms | 0.25x |
+| bytes_find | 11.69 ms | 12.37 ms | 1.04 ms | 0.08x |
+| buffer_replace | 13.42 ms | 8.07 ms | 13.01 ms | 1.61x |
+| binary_read_u32 | 73.59 ms | 67.85 ms | 104.53 ms | 1.54x |
+| patch_workflow | 28.73 ms | 22.91 ms | 34.02 ms | 1.48x |
+| int_compare_loop | n/a | 59.56 ms | 67.10 ms | 1.13x |
+| loop_sum_large | n/a | 57.51 ms | 72.97 ms | 1.27x |
+| nested_int_loop | n/a | 27.60 ms | 37.01 ms | 1.34x |
+
+### Findings
+
+- DByte VM now beats Python on the measured int loop workloads that compile to direct local int opcodes.
+- Function-call overhead improved modestly but still loses to Python; the remaining bottleneck is call frame setup and boxed stack argument passing.
+- `bytes_find` still loses heavily because Python delegates the core search to optimized native code.
+- Binary workloads stayed within the no-regression target and improved in this run.
