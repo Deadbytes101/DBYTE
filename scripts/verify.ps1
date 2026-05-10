@@ -44,6 +44,12 @@ function Assert-Contains($actual, $expected, $name) {
     }
 }
 
+function Assert-NotContains($actual, $unexpected, $name) {
+    if ($actual.Contains($unexpected)) {
+        throw "$name failed: expected output not to contain '$unexpected', got '$actual'"
+    }
+}
+
 function Expected-File($path) {
     return ((Get-Content $path -Raw) -replace "`r`n", "`n").Trim()
 }
@@ -107,6 +113,20 @@ Assert-Contains $binaryDisasm.Text "READ_U32_LE" "binary_read_u32 intrinsic"
 $bufferDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\buffer_replace.dby")
 if ($bufferDisasm.Code -ne 0) { throw "buffer_replace disasm failed: $($bufferDisasm.Text)" }
 Assert-Contains $bufferDisasm.Text "BUFFER_REPLACE" "buffer_replace intrinsic"
+
+$binaryAliasDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\binary_alias_u32.dby")
+if ($binaryAliasDisasm.Code -ne 0) { throw "binary alias disasm failed: $($binaryAliasDisasm.Text)" }
+Assert-Contains $binaryAliasDisasm.Text "READ_U32_LE" "binary alias intrinsic"
+
+$bufferAliasDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\buffer_alias_ops.dby")
+if ($bufferAliasDisasm.Code -ne 0) { throw "buffer alias disasm failed: $($bufferAliasDisasm.Text)" }
+Assert-Contains $bufferAliasDisasm.Text "BUFFER_FIND" "buffer alias find intrinsic"
+Assert-Contains $bufferAliasDisasm.Text "BUFFER_REPLACE" "buffer alias replace intrinsic"
+
+$fallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_member_call.dby")
+if ($fallbackDisasm.Code -ne 0) { throw "fallback member call disasm failed: $($fallbackDisasm.Text)" }
+Assert-Contains $fallbackDisasm.Text "MEMBER_CALL u32_le 2" "non-std fallback member call"
+Assert-NotContains $fallbackDisasm.Text "READ_U32_LE" "non-std fallback avoids binary intrinsic"
 
 Write-Host "Running project workflow tests..."
 
@@ -207,7 +227,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.2.0") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.2.1") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree

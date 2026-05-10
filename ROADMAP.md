@@ -1,7 +1,7 @@
 # DByte Notes
 
 ## Current
-- v1.2.0
+- v1.2.1
 - modules/import working
 - std.math/std.fs/std.env/std.encoding/std.hash/std.binary/std.buffer working
 - Dbyte.toml project workflow working
@@ -10,7 +10,8 @@
 - Python benchmark baseline working
 - typed VM int fast path working
 - binary/buffer intrinsic opcodes working
-- dbyte test: 107 passed
+- typed VM/intrinsic hardening working
+- dbyte test: 118 passed
 
 ## Next
 - reduce bytes/local cloning in VM hot paths
