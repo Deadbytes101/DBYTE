@@ -1,0 +1,11 @@
+fn value(n: int) -> int:
+    return n + 1
+
+let i: int = 0
+
+while i < 5:
+    value(i)
+    i = i + 1
+
+print(i)
+

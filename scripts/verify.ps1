@@ -190,6 +190,32 @@ if ($discardCallDisasm.Code -ne 0) { throw "function_call disasm failed: $($disc
 Assert-Contains $discardCallDisasm.Text "CALL_FN_DISCARD" "discarded function call avoids return stack traffic"
 Assert-NotContains $discardCallDisasm.Text "CALL work 1" "discarded function avoids string call"
 
+$callFnHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\call_fn_disasm.dby")
+if ($callFnHardeningDisasm.Code -ne 0) { throw "call_fn hardening disasm failed: $($callFnHardeningDisasm.Text)" }
+Assert-Contains $callFnHardeningDisasm.Text "CALL_FN" "call_fn hardening direct call"
+Assert-Contains $callFnHardeningDisasm.Text "RETURN_I64" "call_fn hardening typed return"
+Assert-NotContains $callFnHardeningDisasm.Text "CALL add 2" "call_fn hardening avoids string lookup"
+
+$returnI64Disasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\return_i64_correctness.dby")
+if ($returnI64Disasm.Code -ne 0) { throw "return_i64 disasm failed: $($returnI64Disasm.Text)" }
+Assert-Contains $returnI64Disasm.Text "RETURN_I64" "int function uses return_i64"
+
+$discardHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\discard_call_stack_clean.dby")
+if ($discardHardeningDisasm.Code -ne 0) { throw "discard call hardening disasm failed: $($discardHardeningDisasm.Text)" }
+Assert-Contains $discardHardeningDisasm.Text "CALL_FN_DISCARD" "discarded call hardening fast path"
+Assert-NotContains $discardHardeningDisasm.Text "CALL value 1" "discarded call hardening avoids string lookup"
+
+$genericFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\generic_call_fallback.dby")
+if ($genericFallbackDisasm.Code -ne 0) { throw "generic call fallback disasm failed: $($genericFallbackDisasm.Text)" }
+Assert-Contains $genericFallbackDisasm.Text "CALL_FN" "generic user function uses direct id"
+Assert-Contains $genericFallbackDisasm.Text "RETURN" "generic function keeps generic return"
+Assert-NotContains $genericFallbackDisasm.Text "RETURN_I64" "generic function avoids return_i64"
+
+$memberFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\member_call_not_call_fn.dby")
+if ($memberFallbackDisasm.Code -ne 0) { throw "member call fallback disasm failed: $($memberFallbackDisasm.Text)" }
+Assert-Contains $memberFallbackDisasm.Text "MEMBER_CALL max 2" "member call keeps member dispatch"
+Assert-NotContains $memberFallbackDisasm.Text "CALL_FN" "member call avoids direct function opcode"
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
@@ -289,7 +315,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.4.0") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.4.1") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree
