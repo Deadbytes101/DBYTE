@@ -1,0 +1,15 @@
+fn a(n: int) -> int:
+    return n + 1
+
+fn b(n: int) -> int:
+    return a(n) + 1
+
+fn c(n: int) -> int:
+    return b(n) + 1
+
+let total: int = 0
+let i: int = 0
+
+while i < 500000:
+    total = total + c(i)
+    i = i + 1

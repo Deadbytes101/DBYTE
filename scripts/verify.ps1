@@ -221,6 +221,22 @@ if ($recursionDisasm.Code -ne 0) { throw "recursion factorial disasm failed: $($
 Assert-Contains $recursionDisasm.Text "CALL_FN" "recursive function direct call"
 Assert-NotContains $recursionDisasm.Text "CALL fact" "recursive function avoids string call"
 
+$frameDispatchTypedArgs = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\typed_args_correctness.dby")
+if ($frameDispatchTypedArgs.Code -ne 0) { throw "frame dispatch typed args disasm failed: $($frameDispatchTypedArgs.Text)" }
+Assert-Contains $frameDispatchTypedArgs.Text "CALL_FN" "frame dispatch direct user call"
+Assert-Contains $frameDispatchTypedArgs.Text "RETURN_I64" "frame dispatch typed int return"
+Assert-NotContains $frameDispatchTypedArgs.Text "CALL add 2" "frame dispatch avoids string call"
+
+$frameDispatchDiscard = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\discard_call_stack_clean.dby")
+if ($frameDispatchDiscard.Code -ne 0) { throw "frame dispatch discard disasm failed: $($frameDispatchDiscard.Text)" }
+Assert-Contains $frameDispatchDiscard.Text "CALL_FN_DISCARD" "frame dispatch discarded call"
+
+$frameDispatchGeneric = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\generic_return_fallback.dby")
+if ($frameDispatchGeneric.Code -ne 0) { throw "frame dispatch generic return disasm failed: $($frameDispatchGeneric.Text)" }
+Assert-Contains $frameDispatchGeneric.Text "CALL_FN" "frame dispatch generic function uses direct id"
+Assert-Contains $frameDispatchGeneric.Text "RETURN" "frame dispatch generic return path"
+Assert-NotContains $frameDispatchGeneric.Text "RETURN_I64" "frame dispatch generic return avoids return_i64"
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
@@ -320,7 +336,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.4.2") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.5.0") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree

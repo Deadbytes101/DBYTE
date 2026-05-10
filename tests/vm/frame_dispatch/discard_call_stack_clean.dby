@@ -1,0 +1,5 @@
+fn bump(n: int) -> int:
+    return n + 1
+
+bump(1)
+print(bump(2))

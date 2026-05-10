@@ -1,0 +1,4 @@
+fn label(n: int) -> str:
+    return "ok"
+
+print(label(1))
