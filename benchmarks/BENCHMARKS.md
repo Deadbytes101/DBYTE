@@ -88,3 +88,33 @@ Optimizations: Added typed local metadata, separate i64 frame storage, and direc
 - Function-call overhead improved modestly but still loses to Python; the remaining bottleneck is call frame setup and boxed stack argument passing.
 - `bytes_find` still loses heavily because Python delegates the core search to optimized native code.
 - Binary workloads stayed within the no-regression target and improved in this run.
+
+## Perf Pass 4: Function Call Fast Path
+
+Version: v1.4.0  
+Build: release  
+Python: 3.12.9  
+Date: 2026-05-10  
+Optimizations: Added direct function-id bytecode (`CALL_FN`), typed int returns (`RETURN_I64`), frame capacity reuse, and a discard fast path for user function calls used as statements.
+
+| Benchmark | VM v1.3.0 | VM v1.4.0 | Python | Python / DByte VM |
+|---|---:|---:|---:|---:|
+| loop_sum | 26.52 ms | 26.86 ms | 41.27 ms | 1.54x |
+| function_call | 190.06 ms | 110.60 ms | 73.09 ms | 0.66x |
+| function_call_int | n/a | 135.73 ms | 54.81 ms | 0.40x |
+| function_call_loop_return | n/a | 127.76 ms | 62.30 ms | 0.49x |
+| function_call_nested | n/a | 87.53 ms | 31.80 ms | 0.36x |
+| bytes_find | 12.37 ms | 10.66 ms | 1.05 ms | 0.10x |
+| buffer_replace | 8.07 ms | 8.41 ms | 15.16 ms | 1.80x |
+| binary_read_u32 | 67.85 ms | 62.70 ms | 101.85 ms | 1.62x |
+| patch_workflow | 22.91 ms | 24.70 ms | 38.18 ms | 1.55x |
+| int_compare_loop | 59.56 ms | 59.46 ms | 69.30 ms | 1.17x |
+| loop_sum_large | 57.51 ms | 52.22 ms | 74.64 ms | 1.43x |
+| nested_int_loop | 27.60 ms | 27.94 ms | 35.21 ms | 1.26x |
+
+### Findings
+
+- Direct function ids remove runtime string lookup and cut `function_call` from roughly 190 ms to roughly 111 ms in this run.
+- DByte VM is still slower than Python on function-call-heavy workloads; the remaining cost is boxed stack argument passing and recursive `run_chunk` call frame execution.
+- Existing int-loop and low-level binary workloads stayed within the no-regression target in this measurement.
+- Next likely performance work: typed argument stack/return path or a register-style call frame. Function inlining remains deferred.

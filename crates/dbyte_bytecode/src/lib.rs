@@ -210,7 +210,10 @@ pub enum Op {
     Jump(usize),
     JumpIfFalse(usize),
     Call(String, usize),
+    CallFn { id: usize, argc: usize },
+    CallFnDiscard { id: usize, argc: usize },
     Return,
+    ReturnI64,
     Pop,
     Halt,
 }
@@ -225,6 +228,8 @@ pub struct Chunk {
     pub local_i64_slots: Vec<Option<usize>>,
     pub i64_local_count: usize,
     pub functions: HashMap<String, BytecodeFunction>,
+    pub function_ids: HashMap<String, usize>,
+    pub functions_by_id: Vec<BytecodeFunction>,
     pub public_values: Vec<(String, usize)>,
     pub public_functions: Vec<String>,
 }
@@ -253,6 +258,8 @@ impl Chunk {
             local_i64_slots: Vec::new(),
             i64_local_count: 0,
             functions: HashMap::new(),
+            function_ids: HashMap::new(),
+            functions_by_id: Vec::new(),
             public_values: Vec::new(),
             public_functions: Vec::new(),
         }
@@ -364,7 +371,26 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         Op::Jump(target) => format!("JUMP {}", target),
         Op::JumpIfFalse(target) => format!("JUMP_IF_FALSE {}", target),
         Op::Call(name, argc) => format!("CALL {} {}", name, argc),
+        Op::CallFn { id, argc } => format!(
+            "CALL_FN {} {} ; {}",
+            id,
+            argc,
+            chunk
+                .functions_by_id
+                .get(*id)
+                .map_or("<unknown>", |function| function.name.as_str())
+        ),
+        Op::CallFnDiscard { id, argc } => format!(
+            "CALL_FN_DISCARD {} {} ; {}",
+            id,
+            argc,
+            chunk
+                .functions_by_id
+                .get(*id)
+                .map_or("<unknown>", |function| function.name.as_str())
+        ),
         Op::Return => "RETURN".into(),
+        Op::ReturnI64 => "RETURN_I64".into(),
         Op::Pop => "POP".into(),
         Op::Halt => "HALT".into(),
     }
