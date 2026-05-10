@@ -1,0 +1,8 @@
+let i: int = 0
+let total: int = 0
+
+while i < 10:
+    total = total + i
+    i = i + 1
+
+print(total)

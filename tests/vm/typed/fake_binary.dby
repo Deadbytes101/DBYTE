@@ -1,0 +1,2 @@
+pub fn u32_le(data: bytes, offset: int) -> int:
+    return 1234
