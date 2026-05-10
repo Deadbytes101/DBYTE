@@ -153,3 +153,32 @@ Baseline note: `VM v1.4.2` was re-measured from tag `v1.4.2` in a temporary work
 - DByte VM still loses to Python on function-heavy workloads. The remaining bottleneck is boxed value-stack return passing and per-instruction dispatch overhead inside small function bodies.
 - Low-level binary workloads still beat Python in this run: `binary_read_u32`, `buffer_replace`, and `patch_workflow`.
 - Next likely performance work: typed return-to-consumer, direct call-to-local opcodes, or a typed stack/register frame for small int functions. Function inlining remains deferred until those lower-risk paths are measured.
+
+## Perf Pass 6: Frame Dispatch Regression Cleanup
+
+Version: v1.5.1
+Build: release
+Date: 2026-05-10
+Optimizations: Reduced hot-path frame-dispatch overhead for typed local i64 opcodes and jump handling by avoiding repeated frame helper lookups in tight loops. Also kept the native intrinsic stack cleanup path lightweight without adding new bytecode or changing semantics.
+
+Baseline note: `VM v1.5.0` and `VM v1.5.1` were measured as local release-build medians from five runs each. This machine shows meaningful timing noise, so the table is used as a regression gate rather than a broad performance claim.
+
+| Benchmark | VM v1.5.0 median | VM v1.5.1 median | Change |
+|---|---:|---:|---:|
+| loop_sum | 32.87 ms | 23.86 ms | 1.38x faster |
+| loop_sum_large | 69.26 ms | 47.86 ms | 1.45x faster |
+| int_compare_loop | 78.66 ms | 61.96 ms | 1.27x faster |
+| nested_int_loop | 33.20 ms | 25.14 ms | 1.32x faster |
+| binary_read_u32 | 80.29 ms | 80.82 ms | 0.99x |
+| buffer_replace | 10.58 ms | 10.08 ms | 1.05x faster |
+| patch_workflow | 29.75 ms | 27.15 ms | 1.10x faster |
+| function_call | 126.65 ms | 118.79 ms | 1.07x faster |
+| function_call_int | 159.45 ms | 150.27 ms | 1.06x faster |
+| function_call_loop_return | 155.76 ms | 150.03 ms | 1.04x faster |
+| function_call_nested | 105.70 ms | 104.19 ms | 1.01x |
+
+### Findings
+
+- v1.5.1 recovers the int-loop regressions introduced by the v1.5 frame-dispatch structure without adding new language features or opcodes.
+- Binary and patching workloads remain within the regression gate in the local median run.
+- Function-call-heavy workloads improve slightly but still need the planned v1.6 direct typed return-to-local path to materially close the gap with Python.
