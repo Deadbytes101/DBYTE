@@ -1,0 +1,11 @@
+fn inc(n: int) -> int:
+    return n + 1
+
+fn add_two(n: int) -> int:
+    return inc(inc(n))
+
+fn add_four(n: int) -> int:
+    return add_two(add_two(n))
+
+print(add_four(38))
+

@@ -1,0 +1,6 @@
+fn join(a: str, b: str) -> str:
+    return a + b
+
+let text: str = join("DB", "yte")
+print(text)
+
