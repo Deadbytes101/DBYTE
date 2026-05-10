@@ -1,0 +1,3 @@
+let total: int = 42
+
+print("total = {total}")
