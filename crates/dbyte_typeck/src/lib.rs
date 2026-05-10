@@ -82,6 +82,7 @@ pub struct TypeChecker {
     module_cache: HashMap<String, ModuleState<ModuleType>>,
     loading_stack: Vec<String>,
     in_function: usize,
+    return_types: Vec<Option<ResolvedType>>,
 }
 
 impl Default for TypeChecker {
@@ -99,6 +100,7 @@ impl TypeChecker {
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
             in_function: 0,
+            return_types: Vec::new(),
         }
     }
 
@@ -543,7 +545,36 @@ impl TypeChecker {
         Ok(())
     }
 
+    fn function_signature(
+        params: &[Param],
+        ret_ty: &TypeAnnotation,
+    ) -> (Vec<ResolvedType>, ResolvedType, Option<ResolvedType>) {
+        let param_tys: Vec<ResolvedType> = params
+            .iter()
+            .map(|p| ann_to_resolved(&p.ty).unwrap_or(ResolvedType::Int))
+            .collect();
+        let explicit_ret = ann_to_resolved(ret_ty);
+        let ret = explicit_ret.clone().unwrap_or(ResolvedType::Void);
+        (param_tys, ret, explicit_ret)
+    }
+
+    fn predeclare_function_sigs(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if let Stmt::FnDef {
+                name,
+                params,
+                ret_ty,
+                ..
+            } = stmt
+            {
+                let (param_tys, ret, _) = Self::function_signature(params, ret_ty);
+                self.fn_sigs.insert(name.clone(), (param_tys, ret));
+            }
+        }
+    }
+
     fn check_stmts(&mut self, stmts: &[Stmt]) -> Result<(), TypeError> {
+        self.predeclare_function_sigs(stmts);
         for s in stmts {
             self.check_stmt(s)?;
         }
@@ -600,18 +631,16 @@ impl TypeChecker {
                 body,
                 ..
             } => {
-                let param_tys: Vec<ResolvedType> = params
-                    .iter()
-                    .map(|p| ann_to_resolved(&p.ty).unwrap_or(ResolvedType::Int))
-                    .collect();
-                let ret = ann_to_resolved(ret_ty).unwrap_or(ResolvedType::Void);
+                let (param_tys, ret, explicit_ret) = Self::function_signature(params, ret_ty);
                 self.fn_sigs.insert(name.clone(), (param_tys.clone(), ret));
                 self.push_scope();
                 self.in_function += 1;
+                self.return_types.push(explicit_ret);
                 for (p, ty) in params.iter().zip(param_tys.iter()) {
                     self.define(&p.name, ty.clone());
                 }
                 let checked = self.check_stmts(body);
+                self.return_types.pop();
                 self.in_function -= 1;
                 self.pop_scope();
                 checked?;
@@ -624,8 +653,18 @@ impl TypeChecker {
                         span: *span,
                     });
                 }
-                if let Some(v) = value {
-                    self.check_expr(v)?;
+                let got = if let Some(v) = value {
+                    self.check_expr(v)?
+                } else {
+                    ResolvedType::Void
+                };
+                if let Some(Some(expected)) = self.return_types.last() {
+                    if got != *expected {
+                        return Err(TypeError {
+                            msg: format!("return expected {}, found {}", expected, got),
+                            span: *span,
+                        });
+                    }
                 }
             }
 

@@ -12,6 +12,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+// Keep this below the host thread stack ceiling so recursion fails as a DByte
+// RuntimeError instead of aborting the Rust process.
+const MAX_CALL_DEPTH: usize = 32;
+
 #[derive(Debug)]
 pub struct VmError {
     pub msg: String,
@@ -188,6 +192,7 @@ pub struct Vm {
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
     loading_stack: Vec<String>,
+    active_function_tables: Vec<Vec<Rc<BytecodeFunction>>>,
 }
 
 impl Vm {
@@ -201,6 +206,7 @@ impl Vm {
             current_file: None,
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
+            active_function_tables: Vec::new(),
         }
     }
 
@@ -216,7 +222,10 @@ impl Vm {
 
     pub fn run(&mut self, chunk: &Chunk) -> Result<(), VmError> {
         self.frames.push(Frame::new(chunk));
+        self.active_function_tables
+            .push(chunk.functions_by_id.iter().cloned().map(Rc::new).collect());
         let result = self.run_chunk(chunk);
+        self.active_function_tables.pop();
         self.frames.pop();
         match result {
             Ok(Some(_)) => Err(VmError::new("return outside function")),
@@ -395,20 +404,14 @@ impl Vm {
                 }
                 Op::CallFn { id, argc } => {
                     let args_start = self.stack.len() - argc;
-                    let function = chunk
-                        .functions_by_id
-                        .get(id)
-                        .ok_or_else(|| VmError::new(format!("invalid function id {}", id)))?;
-                    let value = self.call_function(function, args_start)?;
+                    let function = self.resolve_function(chunk, id)?;
+                    let value = self.call_function(function.as_ref(), args_start)?;
                     self.push(value);
                 }
                 Op::CallFnDiscard { id, argc } => {
                     let args_start = self.stack.len() - argc;
-                    let function = chunk
-                        .functions_by_id
-                        .get(id)
-                        .ok_or_else(|| VmError::new(format!("invalid function id {}", id)))?;
-                    let _ = self.call_function(function, args_start)?;
+                    let function = self.resolve_function(chunk, id)?;
+                    let _ = self.call_function(function.as_ref(), args_start)?;
                 }
                 Op::Return => return Ok(Some(self.pop()?)),
                 Op::ReturnI64 => return Ok(Some(Value::Int(self.pop_i64()?))),
@@ -445,6 +448,22 @@ impl Vm {
 
     fn release_frame(&mut self, frame: Frame) {
         self.free_frames.push(frame);
+    }
+
+    fn resolve_function(&self, chunk: &Chunk, id: usize) -> Result<Rc<BytecodeFunction>, VmError> {
+        if let Some(function) = self
+            .active_function_tables
+            .last()
+            .and_then(|functions| functions.get(id))
+        {
+            return Ok(function.clone());
+        }
+        chunk
+            .functions_by_id
+            .get(id)
+            .cloned()
+            .map(Rc::new)
+            .ok_or_else(|| VmError::new(format!("invalid function id {}", id)))
     }
 
     fn push(&mut self, value: Value) {
@@ -723,6 +742,9 @@ impl Vm {
                 function.params.len(),
                 argc
             )));
+        }
+        if self.frames.len() >= MAX_CALL_DEPTH {
+            return Err(VmError::new("maximum call depth exceeded"));
         }
         let mut frame = self.acquire_frame(&function.chunk);
         for (idx, arg) in self.stack.drain(args_start..).enumerate() {

@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 type NativeFn = fn(&[Value]) -> Result<Value, String>;
+// Keep this below the host thread stack ceiling so recursion fails as a DByte
+// RuntimeError instead of aborting the Rust process.
+const MAX_CALL_DEPTH: usize = 32;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -102,6 +105,7 @@ pub struct Interpreter {
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
     loading_stack: Vec<String>,
     in_function: usize,
+    call_depth: usize,
 }
 
 impl Default for Interpreter {
@@ -119,6 +123,7 @@ impl Interpreter {
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
             in_function: 0,
+            call_depth: 0,
         }
     }
 
@@ -369,7 +374,9 @@ impl Interpreter {
         let saved_fns = std::mem::take(&mut self.fns);
         let saved_file = self.current_file.replace(path.to_path_buf());
         let saved_in_function = self.in_function;
+        let saved_call_depth = self.call_depth;
         self.in_function = 0;
+        self.call_depth = 0;
 
         let executed = self.exec_stmts(&program.stmts);
         let mut members = HashMap::new();
@@ -399,6 +406,7 @@ impl Interpreter {
         self.fns = saved_fns;
         self.current_file = saved_file;
         self.in_function = saved_in_function;
+        self.call_depth = saved_call_depth;
 
         match executed {
             Ok(()) => Ok(ModuleValue {
@@ -703,15 +711,23 @@ impl Interpreter {
                 span,
             });
         }
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(RuntimeError {
+                msg: "maximum call depth exceeded".into(),
+                span,
+            });
+        }
 
         let arg_vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_expr(a)).collect();
         let arg_vals = arg_vals?;
         self.push_scope();
         self.in_function += 1;
+        self.call_depth += 1;
         for (p, v) in params.iter().zip(arg_vals) {
             self.define(&p.name, v);
         }
         let result = self.exec_stmts(body);
+        self.call_depth -= 1;
         self.in_function -= 1;
         self.pop_scope();
         match result {

@@ -1,0 +1,4 @@
+fn count(n: int) -> int:
+    return count()
+
+print(count(1))

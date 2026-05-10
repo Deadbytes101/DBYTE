@@ -154,14 +154,46 @@ impl FunctionCompiler {
     }
 
     fn insert_function(&mut self, function: BytecodeFunction) -> usize {
-        let id = self.chunk.functions_by_id.len();
-        self.chunk.function_ids.insert(function.name.clone(), id);
-        self.chunk.functions_by_id.push(function.clone());
+        let id = match self.chunk.function_ids.get(&function.name).copied() {
+            Some(id) => {
+                self.chunk.functions_by_id[id] = function.clone();
+                id
+            }
+            None => {
+                let id = self.chunk.functions_by_id.len();
+                self.chunk.function_ids.insert(function.name.clone(), id);
+                self.chunk.functions_by_id.push(function.clone());
+                id
+            }
+        };
         self.chunk.functions.insert(function.name.clone(), function);
         id
     }
 
+    fn reserve_function(&mut self, name: &str, params: &[Param]) -> usize {
+        if let Some(id) = self.chunk.function_ids.get(name).copied() {
+            return id;
+        }
+        let id = self.chunk.functions_by_id.len();
+        self.chunk.function_ids.insert(name.to_string(), id);
+        self.chunk.functions_by_id.push(BytecodeFunction {
+            name: name.to_string(),
+            params: params.iter().map(|p| p.name.clone()).collect(),
+            chunk: Chunk::new(name),
+        });
+        id
+    }
+
+    fn reserve_functions(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if let Stmt::FnDef { name, params, .. } = stmt {
+                self.reserve_function(name, params);
+            }
+        }
+    }
+
     fn compile_stmts(&mut self, stmts: &[Stmt]) -> Result<(), CompileError> {
+        self.reserve_functions(stmts);
         for stmt in stmts {
             self.compile_stmt(stmt)?;
         }
