@@ -92,6 +92,22 @@ $listResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\v
 if ($listResult.Code -eq 0) { throw "vm list out of bounds unexpectedly passed" }
 Assert-Contains $listResult.Text (Expected-File "tests\vm\vm_list_oob.err") "vm list out of bounds"
 
+Write-Host "Running VM fast path disasm checks..."
+
+$loopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum.dby")
+if ($loopDisasm.Code -ne 0) { throw "loop_sum disasm failed: $($loopDisasm.Text)" }
+Assert-Contains $loopDisasm.Text "ADD_I64" "loop_sum typed add"
+Assert-Contains $loopDisasm.Text "LT_I64" "loop_sum typed less-than"
+Assert-Contains $loopDisasm.Text "STORE_LOCAL_I64" "loop_sum typed store"
+
+$binaryDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\binary_read_u32.dby")
+if ($binaryDisasm.Code -ne 0) { throw "binary_read_u32 disasm failed: $($binaryDisasm.Text)" }
+Assert-Contains $binaryDisasm.Text "READ_U32_LE" "binary_read_u32 intrinsic"
+
+$bufferDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\buffer_replace.dby")
+if ($bufferDisasm.Code -ne 0) { throw "buffer_replace disasm failed: $($bufferDisasm.Text)" }
+Assert-Contains $bufferDisasm.Text "BUFFER_REPLACE" "buffer_replace intrinsic"
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
@@ -191,12 +207,14 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.1.0") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.2.0") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine tree failed" }
 & $releaseExe bench --engine vm
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
+& $releaseExe bench --compare-python
+if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
 Write-Host "verify passed"

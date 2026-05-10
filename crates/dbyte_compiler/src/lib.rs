@@ -48,6 +48,19 @@ impl Default for Compiler {
 struct FunctionCompiler {
     chunk: Chunk,
     locals: HashMap<String, usize>,
+    local_types: HashMap<String, ExprType>,
+    imports: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExprType {
+    Int,
+    Bool,
+    Str,
+    Bytes,
+    Buffer,
+    Module,
+    Unknown,
 }
 
 impl FunctionCompiler {
@@ -55,6 +68,8 @@ impl FunctionCompiler {
         Self {
             chunk: Chunk::new(name),
             locals: HashMap::new(),
+            local_types: HashMap::new(),
+            imports: HashMap::new(),
         }
     }
 
@@ -85,6 +100,19 @@ impl FunctionCompiler {
         slot
     }
 
+    fn set_local_type(&mut self, name: &str, ty: ExprType) {
+        if ty != ExprType::Unknown {
+            self.local_types.insert(name.to_string(), ty);
+        }
+    }
+
+    fn local_type(&self, name: &str) -> ExprType {
+        self.local_types
+            .get(name)
+            .copied()
+            .unwrap_or(ExprType::Unknown)
+    }
+
     fn existing_slot(&self, name: &str, span: Span) -> Result<usize, CompileError> {
         self.locals.get(name).copied().ok_or_else(|| CompileError {
             msg: format!("undefined variable `{}`", name),
@@ -108,12 +136,19 @@ impl FunctionCompiler {
             Stmt::Let {
                 is_pub,
                 name,
+                ty,
                 value,
                 ..
             } => {
+                let value_type = self.declared_or_expr_type(ty, value);
                 self.compile_expr(value)?;
                 let slot = self.local_slot(name);
-                self.emit(Op::StoreLocal(slot));
+                self.set_local_type(name, value_type);
+                if value_type == ExprType::Int {
+                    self.emit(Op::StoreLocalI64(slot));
+                } else {
+                    self.emit(Op::StoreLocal(slot));
+                }
                 if *is_pub {
                     self.chunk.public_values.push((name.clone(), slot));
                 }
@@ -121,7 +156,11 @@ impl FunctionCompiler {
             Stmt::Assign { name, value, span } => {
                 self.compile_expr(value)?;
                 let slot = self.existing_slot(name, *span)?;
-                self.emit(Op::StoreLocal(slot));
+                if self.local_type(name) == ExprType::Int {
+                    self.emit(Op::StoreLocalI64(slot));
+                } else {
+                    self.emit(Op::StoreLocal(slot));
+                }
             }
             Stmt::FnDef {
                 is_pub,
@@ -133,6 +172,7 @@ impl FunctionCompiler {
                 let mut child = FunctionCompiler::new(name.clone());
                 for param in params {
                     child.local_slot(&param.name);
+                    child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
                 }
                 child.compile_stmts(body)?;
                 let void_idx = child.add_const(Value::Void);
@@ -205,6 +245,8 @@ impl FunctionCompiler {
             }
             Stmt::Import { path, alias, .. } => {
                 let slot = self.local_slot(alias);
+                self.imports.insert(alias.clone(), path.clone());
+                self.set_local_type(alias, ExprType::Module);
                 self.emit(Op::Import(path.clone(), slot));
             }
             Stmt::Expr(expr) => {
@@ -218,8 +260,7 @@ impl FunctionCompiler {
     fn compile_expr(&mut self, expr: &Expr) -> Result<(), CompileError> {
         match expr {
             Expr::IntLit(n, _) => {
-                let idx = self.add_const(Value::Int(*n));
-                self.emit(Op::Const(idx));
+                self.emit(Op::ConstI64(*n));
             }
             Expr::FloatLit(n, _) => {
                 let idx = self.add_const(Value::Float(*n));
@@ -242,7 +283,11 @@ impl FunctionCompiler {
             }
             Expr::Ident(name, span) => {
                 let slot = self.existing_slot(name, *span)?;
-                self.emit(Op::LoadLocal(slot));
+                if self.local_type(name) == ExprType::Int {
+                    self.emit(Op::LoadLocalI64(slot));
+                } else {
+                    self.emit(Op::LoadLocal(slot));
+                }
             }
             Expr::List(elems, _) => {
                 for elem in elems {
@@ -253,19 +298,30 @@ impl FunctionCompiler {
             Expr::Binary {
                 left, op, right, ..
             } => {
+                let left_is_int = self.expr_type(left) == ExprType::Int;
+                let right_is_int = self.expr_type(right) == ExprType::Int;
                 self.compile_expr(left)?;
                 self.compile_expr(right)?;
-                self.emit(match op {
-                    BinOp::Add => Op::Add,
-                    BinOp::Sub => Op::Sub,
-                    BinOp::Mul => Op::Mul,
-                    BinOp::Div => Op::Div,
-                    BinOp::EqEq => Op::Eq,
-                    BinOp::NotEq => Op::Ne,
-                    BinOp::Lt => Op::Lt,
-                    BinOp::LtEq => Op::Le,
-                    BinOp::Gt => Op::Gt,
-                    BinOp::GtEq => Op::Ge,
+                let typed = left_is_int && right_is_int;
+                self.emit(match (typed, op) {
+                    (true, BinOp::Add) => Op::AddI64,
+                    (true, BinOp::Sub) => Op::SubI64,
+                    (true, BinOp::Mul) => Op::MulI64,
+                    (true, BinOp::Div) => Op::DivI64,
+                    (true, BinOp::Lt) => Op::LtI64,
+                    (true, BinOp::LtEq) => Op::LeI64,
+                    (true, BinOp::Gt) => Op::GtI64,
+                    (true, BinOp::GtEq) => Op::GeI64,
+                    (_, BinOp::Add) => Op::Add,
+                    (_, BinOp::Sub) => Op::Sub,
+                    (_, BinOp::Mul) => Op::Mul,
+                    (_, BinOp::Div) => Op::Div,
+                    (_, BinOp::EqEq) => Op::Eq,
+                    (_, BinOp::NotEq) => Op::Ne,
+                    (_, BinOp::Lt) => Op::Lt,
+                    (_, BinOp::LtEq) => Op::Le,
+                    (_, BinOp::Gt) => Op::Gt,
+                    (_, BinOp::GtEq) => Op::Ge,
                 });
             }
             Expr::Unary { op, expr, .. } => {
@@ -298,6 +354,9 @@ impl FunctionCompiler {
                 args,
                 ..
             } => {
+                if self.compile_intrinsic_member_call(object, property, args)? {
+                    return Ok(());
+                }
                 self.compile_expr(object)?;
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -306,5 +365,109 @@ impl FunctionCompiler {
             }
         }
         Ok(())
+    }
+
+    fn declared_or_expr_type(&self, ty: &TypeAnnotation, value: &Expr) -> ExprType {
+        let declared = expr_type_from_annotation(ty);
+        if declared != ExprType::Unknown {
+            declared
+        } else {
+            self.expr_type(value)
+        }
+    }
+
+    fn expr_type(&self, expr: &Expr) -> ExprType {
+        match expr {
+            Expr::IntLit(_, _) => ExprType::Int,
+            Expr::BoolLit(_, _) => ExprType::Bool,
+            Expr::StrLit(_, _) | Expr::FStr(_, _) => ExprType::Str,
+            Expr::BytesLit(_, _) => ExprType::Bytes,
+            Expr::Ident(name, _) => self.local_type(name),
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                let left = self.expr_type(left);
+                let right = self.expr_type(right);
+                if left == ExprType::Int && right == ExprType::Int {
+                    match op {
+                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => ExprType::Int,
+                        BinOp::EqEq
+                        | BinOp::NotEq
+                        | BinOp::Lt
+                        | BinOp::Gt
+                        | BinOp::LtEq
+                        | BinOp::GtEq => ExprType::Bool,
+                    }
+                } else {
+                    ExprType::Unknown
+                }
+            }
+            Expr::Unary { expr, .. } => self.expr_type(expr),
+            Expr::Call { name, .. } if name == "len" => ExprType::Int,
+            Expr::MemberCall {
+                object, property, ..
+            } => self.intrinsic_return_type(object, property),
+            _ => ExprType::Unknown,
+        }
+    }
+
+    fn intrinsic_return_type(&self, object: &Expr, property: &str) -> ExprType {
+        match self.std_import_path(object) {
+            Some("std.binary") if property == "u32_le" => ExprType::Int,
+            Some("std.buffer") if property == "find" => ExprType::Int,
+            Some("std.buffer") if property == "replace" => ExprType::Unknown,
+            _ => ExprType::Unknown,
+        }
+    }
+
+    fn compile_intrinsic_member_call(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        args: &[Expr],
+    ) -> Result<bool, CompileError> {
+        let Some(path) = self.std_import_path(object) else {
+            return Ok(false);
+        };
+        match (path, property, args.len()) {
+            ("std.binary", "u32_le", 2) => {
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                self.emit(Op::ReadU32Le);
+                Ok(true)
+            }
+            ("std.buffer", "find", 2) => {
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                self.emit(Op::BufferFind);
+                Ok(true)
+            }
+            ("std.buffer", "replace", 3) => {
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                self.compile_expr(&args[2])?;
+                self.emit(Op::BufferReplace);
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn std_import_path(&self, expr: &Expr) -> Option<&str> {
+        let Expr::Ident(alias, _) = expr else {
+            return None;
+        };
+        self.imports.get(alias).map(String::as_str)
+    }
+}
+
+fn expr_type_from_annotation(ty: &TypeAnnotation) -> ExprType {
+    match ty {
+        TypeAnnotation::Int => ExprType::Int,
+        TypeAnnotation::Bool => ExprType::Bool,
+        TypeAnnotation::Str => ExprType::Str,
+        TypeAnnotation::Bytes => ExprType::Bytes,
+        TypeAnnotation::Buffer => ExprType::Buffer,
+        _ => ExprType::Unknown,
     }
 }

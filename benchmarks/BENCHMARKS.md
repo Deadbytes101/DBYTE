@@ -38,3 +38,26 @@ Optimizations: Replaced string-based module member lookups with `NativeFnId` enu
 | buffer_replace | 136.28 ms | 22.93 ms | 5.9x faster |
 | binary_read_u32 | 1491.92 ms | 155.40 ms | 9.6x faster |
 | patch_workflow | 386.10 ms | 59.19 ms | 6.5x faster |
+
+## Perf Pass 2: Python Baseline + Typed VM Fast Path
+
+Version: v1.2.0  
+Build: release  
+Python: 3.12.9  
+Date: 2026-05-10  
+Optimizations: Added typed int bytecode (`CONST_I64`, `LOAD_LOCAL_I64`, `STORE_LOCAL_I64`, `ADD_I64`, comparisons) and VM intrinsic opcodes for `std.binary.u32_le`, `std.buffer.find`, and `std.buffer.replace`.
+
+| Benchmark | Tree | VM v1.2.0 | Python | Python / DByte VM |
+|---|---:|---:|---:|---:|
+| loop_sum | 252.69 ms | 107.07 ms | 34.12 ms | 0.32x |
+| function_call | 642.62 ms | 226.93 ms | 53.73 ms | 0.23x |
+| bytes_find | 14.18 ms | 11.69 ms | 1.04 ms | 0.10x |
+| buffer_replace | 88.26 ms | 13.42 ms | 16.54 ms | 1.24x |
+| binary_read_u32 | 1303.70 ms | 73.59 ms | 114.61 ms | 1.53x |
+| patch_workflow | 249.37 ms | 28.73 ms | 40.51 ms | 1.14x |
+
+### Findings
+
+- DByte VM beats Python on the low-level binary workloads measured here: `binary_read_u32`, `buffer_replace`, and `patch_workflow`.
+- Python is still faster on pure numeric loops, function call overhead, and `bytes.find`.
+- Next likely performance work: avoid cloning `Value::Bytes` in VM locals and move more hot paths away from boxed stack values.
