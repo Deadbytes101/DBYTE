@@ -1,0 +1,7 @@
+let i: int = 0
+let step: int = 1
+
+while i < 10:
+    i = step + i
+
+print(i)

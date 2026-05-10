@@ -135,7 +135,7 @@ impl Frame {
     }
 
     fn add_i64(&mut self, chunk: &Chunk, dst: usize, value: i64) -> Result<(), VmError> {
-        let next = self.get_i64(chunk, dst)? + value;
+        let next = checked_i64(self.get_i64(chunk, dst)?.checked_add(value))?;
         self.set_i64(chunk, dst, next);
         Ok(())
     }
@@ -218,17 +218,17 @@ impl Vm {
                 Op::ConstI64(n) => self.push(Value::Int(n)),
                 Op::FStr(parts) => self.eval_fstr(&parts, chunk)?,
                 Op::Add => self.binary_add()?,
-                Op::Sub => self.binary_num("sub", |a, b| a - b, |a, b| a - b)?,
-                Op::Mul => self.binary_num("mul", |a, b| a * b, |a, b| a * b)?,
+                Op::Sub => self.binary_num("sub", |a, b| a.checked_sub(b), |a, b| a - b)?,
+                Op::Mul => self.binary_num("mul", |a, b| a.checked_mul(b), |a, b| a * b)?,
                 Op::Div => self.binary_div()?,
-                Op::AddI64 => self.binary_i64(|a, b| Ok(a + b))?,
-                Op::SubI64 => self.binary_i64(|a, b| Ok(a - b))?,
-                Op::MulI64 => self.binary_i64(|a, b| Ok(a * b))?,
+                Op::AddI64 => self.binary_i64(|a, b| checked_i64(a.checked_add(b)))?,
+                Op::SubI64 => self.binary_i64(|a, b| checked_i64(a.checked_sub(b)))?,
+                Op::MulI64 => self.binary_i64(|a, b| checked_i64(a.checked_mul(b)))?,
                 Op::DivI64 => self.binary_i64(|a, b| {
                     if b == 0 {
                         Err(VmError::new("division by zero"))
                     } else {
-                        Ok(a / b)
+                        checked_i64(a.checked_div(b))
                     }
                 })?,
                 Op::Eq => self.binary_cmp(|a, b| a == b)?,
@@ -463,7 +463,7 @@ impl Vm {
         let b = self.pop()?;
         let a = self.pop()?;
         let value = match (a, b) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a + b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(checked_i64(a.checked_add(b))?),
             (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
             (Value::Str(a), Value::Str(b)) => Value::Str(a + &b),
             _ => return Err(VmError::new("type mismatch in binary expression")),
@@ -489,13 +489,13 @@ impl Vm {
     fn binary_num(
         &mut self,
         label: &str,
-        int_op: fn(i64, i64) -> i64,
+        int_op: fn(i64, i64) -> Option<i64>,
         float_op: fn(f64, f64) -> f64,
     ) -> Result<(), VmError> {
         let b = self.pop()?;
         let a = self.pop()?;
         let value = match (a, b) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(int_op(a, b)),
+            (Value::Int(a), Value::Int(b)) => Value::Int(checked_i64(int_op(a, b))?),
             (Value::Float(a), Value::Float(b)) => Value::Float(float_op(a, b)),
             _ => return Err(VmError::new(format!("unsupported {} operation", label))),
         };
@@ -508,7 +508,7 @@ impl Vm {
         let a = self.pop()?;
         let value = match (a, b) {
             (Value::Int(_), Value::Int(0)) => return Err(VmError::new("division by zero")),
-            (Value::Int(a), Value::Int(b)) => Value::Int(a / b),
+            (Value::Int(a), Value::Int(b)) => Value::Int(checked_i64(a.checked_div(b))?),
             (Value::Float(a), Value::Float(b)) => Value::Float(a / b),
             _ => return Err(VmError::new("unsupported div operation")),
         };
@@ -542,7 +542,7 @@ impl Vm {
 
     fn unary_neg(&mut self) -> Result<(), VmError> {
         let value = match self.pop()? {
-            Value::Int(n) => Value::Int(-n),
+            Value::Int(n) => Value::Int(checked_i64(n.checked_neg())?),
             Value::Float(n) => Value::Float(-n),
             _ => return Err(VmError::new("unary `-` requires numeric")),
         };
@@ -984,6 +984,10 @@ fn expect_int(args: &[Value], idx: usize) -> Result<i64, VmError> {
         ))),
         None => Err(VmError::new(format!("missing argument {}", idx + 1))),
     }
+}
+
+fn checked_i64(value: Option<i64>) -> Result<i64, VmError> {
+    value.ok_or_else(|| VmError::new("integer overflow"))
 }
 
 fn expect_str(args: &[Value], idx: usize) -> Result<&str, VmError> {

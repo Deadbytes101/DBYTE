@@ -534,9 +534,9 @@ impl Interpreter {
                 let rv = self.eval_expr(right)?;
                 match (lv, rv) {
                     (Value::Int(a), Value::Int(b)) => match op {
-                        BinOp::Add => Ok(Value::Int(a + b)),
-                        BinOp::Sub => Ok(Value::Int(a - b)),
-                        BinOp::Mul => Ok(Value::Int(a * b)),
+                        BinOp::Add => checked_int(a.checked_add(b), *span),
+                        BinOp::Sub => checked_int(a.checked_sub(b), *span),
+                        BinOp::Mul => checked_int(a.checked_mul(b), *span),
                         BinOp::Div => {
                             if b == 0 {
                                 return Err(RuntimeError {
@@ -544,7 +544,7 @@ impl Interpreter {
                                     span: *span,
                                 });
                             }
-                            Ok(Value::Int(a / b))
+                            checked_int(a.checked_div(b), *span)
                         }
                         BinOp::EqEq => Ok(Value::Bool(a == b)),
                         BinOp::NotEq => Ok(Value::Bool(a != b)),
@@ -593,7 +593,7 @@ impl Interpreter {
                 let v = self.eval_expr(expr)?;
                 match op {
                     UnaryOp::Neg => match v {
-                        Value::Int(n) => Ok(Value::Int(-n)),
+                        Value::Int(n) => checked_int(n.checked_neg(), *span),
                         Value::Float(n) => Ok(Value::Float(-n)),
                         _ => Err(RuntimeError {
                             msg: "unary `-` requires numeric".into(),
@@ -882,6 +882,13 @@ fn expect_int(args: &[Value], idx: usize) -> Result<i64, String> {
         )),
         None => Err(format!("missing argument {}", idx + 1)),
     }
+}
+
+fn checked_int(value: Option<i64>, span: Span) -> Result<Value, RuntimeError> {
+    value.map(Value::Int).ok_or_else(|| RuntimeError {
+        msg: "integer overflow".into(),
+        span,
+    })
 }
 
 fn expect_str(args: &[Value], idx: usize) -> Result<&str, String> {

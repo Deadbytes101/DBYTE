@@ -1,0 +1,6 @@
+let nums: list[int] = [1, 2, 3]
+let i: int = 0
+
+i = i + len(nums)
+
+print(i)

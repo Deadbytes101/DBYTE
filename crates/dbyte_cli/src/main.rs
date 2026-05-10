@@ -511,7 +511,7 @@ fn main() {
 
     match args[1].as_str() {
         "--version" => {
-            println!("DByte 1.3.0");
+            println!("DByte 1.3.1");
             process::exit(0);
         }
         "--help" | "-h" => {

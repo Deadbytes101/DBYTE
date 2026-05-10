@@ -1,0 +1,5 @@
+let max: int = 9223372036854775807
+
+max = max + 1
+
+print(max)

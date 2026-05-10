@@ -1,0 +1,3 @@
+let n: int = 3037000500
+
+print(n * n)
