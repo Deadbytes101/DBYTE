@@ -1,7 +1,7 @@
 use byteorder::{ByteOrder, BE, LE};
 use dbyte_ast::{FStrPart, Span};
 use dbyte_bytecode::{
-    format_op, BytecodeFunction, Chunk, ModuleMember, ModuleValue, NativeFn, Op, Value,
+    format_op, BytecodeFunction, Chunk, LocalKind, ModuleMember, ModuleValue, NativeFn, Op, Value,
 };
 use dbyte_compiler::{CompileError, Compiler};
 use dbyte_lexer::Lexer;
@@ -33,10 +33,133 @@ struct IteratorState {
     index: usize,
 }
 
+#[derive(Debug, Clone)]
+struct Frame {
+    values: Vec<Value>,
+    i64s: Vec<i64>,
+}
+
+impl Frame {
+    fn new(chunk: &Chunk) -> Self {
+        let i64_count = if chunk.i64_local_count > 0 {
+            chunk.i64_local_count
+        } else {
+            chunk
+                .local_kinds
+                .iter()
+                .filter(|kind| **kind == LocalKind::I64)
+                .count()
+        };
+        let has_value_locals = chunk.local_kinds.len() < chunk.local_names.len()
+            || chunk.local_kinds.contains(&LocalKind::Value);
+        Self {
+            values: if has_value_locals {
+                vec![Value::Void; chunk.local_names.len()]
+            } else {
+                Vec::new()
+            },
+            i64s: vec![0; i64_count],
+        }
+    }
+
+    fn ensure_slot(&mut self, slot: usize) {
+        if slot >= self.values.len() {
+            self.values.resize(slot + 1, Value::Void);
+        }
+    }
+
+    fn get_value(&self, chunk: &Chunk, slot: usize) -> Result<Value, VmError> {
+        match i64_local_slot(chunk, slot) {
+            Some(i64_slot) => self
+                .i64s
+                .get(i64_slot)
+                .copied()
+                .map(Value::Int)
+                .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", slot))),
+            None => self
+                .values
+                .get(slot)
+                .cloned()
+                .ok_or_else(|| VmError::new(format!("invalid local slot {}", slot))),
+        }
+    }
+
+    fn set_value(&mut self, chunk: &Chunk, slot: usize, value: Value) -> Result<(), VmError> {
+        match i64_local_slot(chunk, slot) {
+            Some(i64_slot) => match value {
+                Value::Int(n) => {
+                    self.i64s[i64_slot] = n;
+                    Ok(())
+                }
+                other => Err(VmError::new(format!(
+                    "expected int local {}, found {}",
+                    slot,
+                    other.kind_name()
+                ))),
+            },
+            None => {
+                self.ensure_slot(slot);
+                self.values[slot] = value;
+                Ok(())
+            }
+        }
+    }
+
+    fn get_i64(&self, chunk: &Chunk, slot: usize) -> Result<i64, VmError> {
+        match i64_local_slot(chunk, slot) {
+            Some(i64_slot) => self
+                .i64s
+                .get(i64_slot)
+                .copied()
+                .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", slot))),
+            None => match self.values.get(slot) {
+                Some(Value::Int(n)) => Ok(*n),
+                Some(other) => Err(VmError::new(format!(
+                    "expected int local {}, found {}",
+                    slot,
+                    other.kind_name()
+                ))),
+                None => Err(VmError::new(format!("invalid local slot {}", slot))),
+            },
+        }
+    }
+
+    fn set_i64(&mut self, chunk: &Chunk, slot: usize, value: i64) {
+        match i64_local_slot(chunk, slot) {
+            Some(i64_slot) => self.i64s[i64_slot] = value,
+            None => {
+                self.ensure_slot(slot);
+                self.values[slot] = Value::Int(value);
+            }
+        }
+    }
+
+    fn add_i64(&mut self, chunk: &Chunk, dst: usize, value: i64) -> Result<(), VmError> {
+        let next = self.get_i64(chunk, dst)? + value;
+        self.set_i64(chunk, dst, next);
+        Ok(())
+    }
+}
+
+fn i64_local_slot(chunk: &Chunk, slot: usize) -> Option<usize> {
+    if let Some(mapped) = chunk.local_i64_slots.get(slot).copied().flatten() {
+        return Some(mapped);
+    }
+    if chunk.local_kinds.get(slot).copied() != Some(LocalKind::I64) {
+        return None;
+    }
+    Some(
+        chunk.local_kinds[..slot]
+            .iter()
+            .filter(|kind| **kind == LocalKind::I64)
+            .count(),
+    )
+}
+
 pub struct Vm {
     stack: Vec<Value>,
     iter_stack: Vec<IteratorState>,
-    frames: Vec<Vec<Value>>,
+    frames: Vec<Frame>,
     trace: bool,
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
@@ -67,7 +190,7 @@ impl Vm {
     }
 
     pub fn run(&mut self, chunk: &Chunk) -> Result<(), VmError> {
-        self.frames.push(vec![Value::Void; chunk.local_names.len()]);
+        self.frames.push(Frame::new(chunk));
         let result = self.run_chunk(chunk);
         self.frames.pop();
         match result {
@@ -123,53 +246,52 @@ impl Vm {
                 Op::MakeList(count) => self.make_list(count)?,
                 Op::Index => self.index()?,
                 Op::LoadLocal(slot) => {
-                    let value = self
-                        .current_frame()?
-                        .get(slot)
-                        .cloned()
-                        .ok_or_else(|| VmError::new(format!("invalid local slot {}", slot)))?;
+                    let value = self.current_frame()?.get_value(chunk, slot)?;
                     self.push(value);
                 }
                 Op::LoadLocalI64(slot) => {
-                    let value = self
-                        .current_frame()?
-                        .get(slot)
-                        .ok_or_else(|| VmError::new(format!("invalid local slot {}", slot)))?;
-                    match value {
-                        Value::Int(n) => self.push(Value::Int(*n)),
-                        other => {
-                            return Err(VmError::new(format!(
-                                "expected int local {}, found {}",
-                                slot,
-                                other.kind_name()
-                            )))
-                        }
-                    }
+                    let value = self.current_frame()?.get_i64(chunk, slot)?;
+                    self.push(Value::Int(value));
                 }
                 Op::StoreLocal(slot) => {
                     let value = self.pop()?;
-                    let frame = self.current_frame_mut()?;
-                    if slot >= frame.len() {
-                        frame.resize(slot + 1, Value::Void);
-                    }
-                    frame[slot] = value;
+                    self.current_frame_mut()?.set_value(chunk, slot, value)?;
                 }
                 Op::StoreLocalI64(slot) => {
-                    let value = Value::Int(self.pop_i64()?);
-                    let frame = self.current_frame_mut()?;
-                    if slot >= frame.len() {
-                        frame.resize(slot + 1, Value::Void);
-                    }
-                    frame[slot] = value;
+                    let value = self.pop_i64()?;
+                    self.current_frame_mut()?.set_i64(chunk, slot, value);
+                }
+                Op::AddLocalI64 { dst, src } => {
+                    let value = self.current_frame()?.get_i64(chunk, src)?;
+                    self.current_frame_mut()?.add_i64(chunk, dst, value)?;
+                }
+                Op::AddLocalConstI64 { slot, value } => {
+                    self.current_frame_mut()?.add_i64(chunk, slot, value)?;
+                }
+                Op::LtLocalConstI64 { slot, value } => {
+                    let left = self.current_frame()?.get_i64(chunk, slot)?;
+                    self.push(Value::Bool(left < value));
+                }
+                Op::LeLocalConstI64 { slot, value } => {
+                    let left = self.current_frame()?.get_i64(chunk, slot)?;
+                    self.push(Value::Bool(left <= value));
+                }
+                Op::GtLocalConstI64 { slot, value } => {
+                    let left = self.current_frame()?.get_i64(chunk, slot)?;
+                    self.push(Value::Bool(left > value));
+                }
+                Op::GeLocalConstI64 { slot, value } => {
+                    let left = self.current_frame()?.get_i64(chunk, slot)?;
+                    self.push(Value::Bool(left >= value));
                 }
                 Op::Import(path, slot) => {
                     let alias = chunk.local_names.get(slot).cloned().unwrap_or_default();
                     let module = self.load_module(&path, &alias)?;
-                    let frame = self.current_frame_mut()?;
-                    if slot >= frame.len() {
-                        frame.resize(slot + 1, Value::Void);
-                    }
-                    frame[slot] = Value::Module(Rc::new(module));
+                    self.current_frame_mut()?.set_value(
+                        chunk,
+                        slot,
+                        Value::Module(Rc::new(module)),
+                    )?;
                 }
                 Op::Member(property) => {
                     let module = self.pop_module()?;
@@ -221,7 +343,7 @@ impl Vm {
                 Op::BufferReplace => self.buffer_replace()?,
                 Op::IterInit => self.iter_init()?,
                 Op::IterNext { slot, jump } => {
-                    let should_continue = self.iter_next(slot)?;
+                    let should_continue = self.iter_next(chunk, slot)?;
                     if !should_continue {
                         ip = jump;
                     }
@@ -256,13 +378,13 @@ impl Vm {
         Ok(None)
     }
 
-    fn current_frame(&self) -> Result<&Vec<Value>, VmError> {
+    fn current_frame(&self) -> Result<&Frame, VmError> {
         self.frames
             .last()
             .ok_or_else(|| VmError::new("no active VM frame"))
     }
 
-    fn current_frame_mut(&mut self) -> Result<&mut Vec<Value>, VmError> {
+    fn current_frame_mut(&mut self) -> Result<&mut Frame, VmError> {
         self.frames
             .last_mut()
             .ok_or_else(|| VmError::new("no active VM frame"))
@@ -326,7 +448,10 @@ impl Vm {
                                 name
                             ))
                         })?;
-                    out.push_str(&format!("{}", self.current_frame()?[slot]));
+                    out.push_str(&format!(
+                        "{}",
+                        self.current_frame()?.get_value(chunk, slot)?
+                    ));
                 }
             }
         }
@@ -492,7 +617,7 @@ impl Vm {
         Ok(())
     }
 
-    fn iter_next(&mut self, slot: usize) -> Result<bool, VmError> {
+    fn iter_next(&mut self, chunk: &Chunk, slot: usize) -> Result<bool, VmError> {
         let iter = match self.iter_stack.last_mut() {
             Some(iter) => iter,
             _ => return Err(VmError::new("expected iterator")),
@@ -503,11 +628,7 @@ impl Vm {
         }
         let value = iter.items[iter.index].clone();
         iter.index += 1;
-        let frame = self.current_frame_mut()?;
-        if slot >= frame.len() {
-            frame.resize(slot + 1, Value::Void);
-        }
-        frame[slot] = value;
+        self.current_frame_mut()?.set_value(chunk, slot, value)?;
         Ok(true)
     }
 
@@ -546,10 +667,10 @@ impl Vm {
                 argc
             )));
         }
-        let mut frame = vec![Value::Void; function.chunk.local_names.len()];
+        let mut frame = Frame::new(&function.chunk);
         for (idx, arg) in self.stack.drain(args_start..).enumerate() {
-            if idx < frame.len() {
-                frame[idx] = arg;
+            if idx < function.chunk.local_names.len() {
+                frame.set_value(&function.chunk, idx, arg)?;
             }
         }
         self.frames.push(frame);
@@ -713,17 +834,17 @@ impl Vm {
             .map_err(compile_error_to_vm)?;
 
         let saved_file = self.current_file.replace(path.to_path_buf());
-        self.frames.push(vec![Value::Void; chunk.local_names.len()]);
+        self.frames.push(Frame::new(&chunk));
         let executed = self.run_chunk(&chunk);
-        let frame = self.frames.pop().unwrap_or_default();
+        let frame = self.frames.pop();
         self.current_file = saved_file;
         executed?;
 
         let mut members = HashMap::new();
+        let frame = frame.ok_or_else(|| VmError::new("no module VM frame"))?;
         for (name, slot) in &chunk.public_values {
-            if let Some(value) = frame.get(*slot).cloned() {
-                members.insert(name.clone(), ModuleMember::Value(value));
-            }
+            let value = frame.get_value(&chunk, *slot)?;
+            members.insert(name.clone(), ModuleMember::Value(value));
         }
         for name in &chunk.public_functions {
             if let Some(function) = chunk.functions.get(name).cloned() {

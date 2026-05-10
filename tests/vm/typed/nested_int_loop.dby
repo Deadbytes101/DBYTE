@@ -1,0 +1,10 @@
+let outer = 0
+let total = 0
+while outer < 5:
+    let inner = 0
+    while inner < 5:
+        total = total + inner
+        inner = inner + 1
+    outer = outer + 1
+
+print(total)

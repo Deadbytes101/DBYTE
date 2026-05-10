@@ -193,6 +193,12 @@ pub enum Op {
     LoadLocalI64(usize),
     StoreLocal(usize),
     StoreLocalI64(usize),
+    AddLocalI64 { dst: usize, src: usize },
+    AddLocalConstI64 { slot: usize, value: i64 },
+    LtLocalConstI64 { slot: usize, value: i64 },
+    LeLocalConstI64 { slot: usize, value: i64 },
+    GtLocalConstI64 { slot: usize, value: i64 },
+    GeLocalConstI64 { slot: usize, value: i64 },
     Import(String, usize),
     Member(String),
     MemberCall(String, usize),
@@ -215,9 +221,18 @@ pub struct Chunk {
     pub constants: Vec<Value>,
     pub code: Vec<Op>,
     pub local_names: Vec<String>,
+    pub local_kinds: Vec<LocalKind>,
+    pub local_i64_slots: Vec<Option<usize>>,
+    pub i64_local_count: usize,
     pub functions: HashMap<String, BytecodeFunction>,
     pub public_values: Vec<(String, usize)>,
     pub public_functions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalKind {
+    Value,
+    I64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -234,6 +249,9 @@ impl Chunk {
             constants: Vec::new(),
             code: Vec::new(),
             local_names: Vec::new(),
+            local_kinds: Vec::new(),
+            local_i64_slots: Vec::new(),
+            i64_local_count: 0,
             functions: HashMap::new(),
             public_values: Vec::new(),
             public_functions: Vec::new(),
@@ -297,6 +315,42 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         Op::StoreLocalI64(slot) => {
             format!("STORE_LOCAL_I64 {} ; {}", slot, local_name(chunk, *slot))
         }
+        Op::AddLocalI64 { dst, src } => format!(
+            "ADD_LOCAL_I64 {} ; {} += {}",
+            dst,
+            local_name(chunk, *dst),
+            local_name(chunk, *src)
+        ),
+        Op::AddLocalConstI64 { slot, value } => format!(
+            "ADD_LOCAL_CONST_I64 {} {} ; {}",
+            slot,
+            value,
+            local_name(chunk, *slot)
+        ),
+        Op::LtLocalConstI64 { slot, value } => format!(
+            "LT_LOCAL_CONST_I64 {} {} ; {}",
+            slot,
+            value,
+            local_name(chunk, *slot)
+        ),
+        Op::LeLocalConstI64 { slot, value } => format!(
+            "LE_LOCAL_CONST_I64 {} {} ; {}",
+            slot,
+            value,
+            local_name(chunk, *slot)
+        ),
+        Op::GtLocalConstI64 { slot, value } => format!(
+            "GT_LOCAL_CONST_I64 {} {} ; {}",
+            slot,
+            value,
+            local_name(chunk, *slot)
+        ),
+        Op::GeLocalConstI64 { slot, value } => format!(
+            "GE_LOCAL_CONST_I64 {} {} ; {}",
+            slot,
+            value,
+            local_name(chunk, *slot)
+        ),
         Op::Import(path, slot) => format!("IMPORT {} -> {}", path, local_name(chunk, *slot)),
         Op::Member(name) => format!("MEMBER {}", name),
         Op::MemberCall(name, argc) => format!("MEMBER_CALL {} {}", name, argc),
