@@ -168,6 +168,28 @@ if ($fallbackDisasm.Code -ne 0) { throw "fallback member call disasm failed: $($
 Assert-Contains $fallbackDisasm.Text "MEMBER_CALL u32_le 2" "non-std fallback member call"
 Assert-NotContains $fallbackDisasm.Text "READ_U32_LE" "non-std fallback avoids binary intrinsic"
 
+$directCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\direct_call_disasm.dby")
+if ($directCallDisasm.Code -ne 0) { throw "direct function call disasm failed: $($directCallDisasm.Text)" }
+Assert-Contains $directCallDisasm.Text "CALL_FN" "direct function call fast path"
+Assert-Contains $directCallDisasm.Text "RETURN_I64" "typed int return fast path"
+Assert-NotContains $directCallDisasm.Text "CALL add 2" "direct function avoids string call"
+
+$nestedCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\nested_function_call.dby")
+if ($nestedCallDisasm.Code -ne 0) { throw "nested function call disasm failed: $($nestedCallDisasm.Text)" }
+Assert-Contains $nestedCallDisasm.Text "CALL_FN 0 1 ; inc" "nested function direct call fast path"
+Assert-Contains $nestedCallDisasm.Text "CALL_FN 1 1 ; add_two" "outer function direct call fast path"
+
+$genericCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\generic_function_fallback.dby")
+if ($genericCallDisasm.Code -ne 0) { throw "generic function call disasm failed: $($genericCallDisasm.Text)" }
+Assert-Contains $genericCallDisasm.Text "CALL_FN" "generic user function still uses direct function id"
+Assert-Contains $genericCallDisasm.Text "RETURN" "generic return keeps generic return path"
+Assert-NotContains $genericCallDisasm.Text "RETURN_I64" "generic return avoids typed int return"
+
+$discardCallDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\function_call.dby")
+if ($discardCallDisasm.Code -ne 0) { throw "function_call disasm failed: $($discardCallDisasm.Text)" }
+Assert-Contains $discardCallDisasm.Text "CALL_FN_DISCARD" "discarded function call avoids return stack traffic"
+Assert-NotContains $discardCallDisasm.Text "CALL work 1" "discarded function avoids string call"
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
@@ -267,7 +289,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.3.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.4.0") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree

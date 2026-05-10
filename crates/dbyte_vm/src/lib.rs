@@ -62,6 +62,29 @@ impl Frame {
         }
     }
 
+    fn reset(&mut self, chunk: &Chunk) {
+        let i64_count = if chunk.i64_local_count > 0 {
+            chunk.i64_local_count
+        } else {
+            chunk
+                .local_kinds
+                .iter()
+                .filter(|kind| **kind == LocalKind::I64)
+                .count()
+        };
+        let has_value_locals = chunk.local_kinds.len() < chunk.local_names.len()
+            || chunk.local_kinds.contains(&LocalKind::Value);
+
+        if has_value_locals {
+            self.values.resize(chunk.local_names.len(), Value::Void);
+            self.values.fill(Value::Void);
+        } else {
+            self.values.clear();
+        }
+        self.i64s.resize(i64_count, 0);
+        self.i64s.fill(0);
+    }
+
     fn ensure_slot(&mut self, slot: usize) {
         if slot >= self.values.len() {
             self.values.resize(slot + 1, Value::Void);
@@ -160,6 +183,7 @@ pub struct Vm {
     stack: Vec<Value>,
     iter_stack: Vec<IteratorState>,
     frames: Vec<Frame>,
+    free_frames: Vec<Frame>,
     trace: bool,
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
@@ -172,6 +196,7 @@ impl Vm {
             stack: Vec::new(),
             iter_stack: Vec::new(),
             frames: Vec::new(),
+            free_frames: Vec::new(),
             trace: false,
             current_file: None,
             module_cache: HashMap::new(),
@@ -368,7 +393,25 @@ impl Vm {
                         self.push(value);
                     }
                 }
+                Op::CallFn { id, argc } => {
+                    let args_start = self.stack.len() - argc;
+                    let function = chunk
+                        .functions_by_id
+                        .get(id)
+                        .ok_or_else(|| VmError::new(format!("invalid function id {}", id)))?;
+                    let value = self.call_function(function, args_start)?;
+                    self.push(value);
+                }
+                Op::CallFnDiscard { id, argc } => {
+                    let args_start = self.stack.len() - argc;
+                    let function = chunk
+                        .functions_by_id
+                        .get(id)
+                        .ok_or_else(|| VmError::new(format!("invalid function id {}", id)))?;
+                    let _ = self.call_function(function, args_start)?;
+                }
                 Op::Return => return Ok(Some(self.pop()?)),
+                Op::ReturnI64 => return Ok(Some(Value::Int(self.pop_i64()?))),
                 Op::Pop => {
                     self.pop()?;
                 }
@@ -388,6 +431,20 @@ impl Vm {
         self.frames
             .last_mut()
             .ok_or_else(|| VmError::new("no active VM frame"))
+    }
+
+    fn acquire_frame(&mut self, chunk: &Chunk) -> Frame {
+        match self.free_frames.pop() {
+            Some(mut frame) => {
+                frame.reset(chunk);
+                frame
+            }
+            None => Frame::new(chunk),
+        }
+    }
+
+    fn release_frame(&mut self, frame: Frame) {
+        self.free_frames.push(frame);
     }
 
     fn push(&mut self, value: Value) {
@@ -667,16 +724,20 @@ impl Vm {
                 argc
             )));
         }
-        let mut frame = Frame::new(&function.chunk);
+        let mut frame = self.acquire_frame(&function.chunk);
         for (idx, arg) in self.stack.drain(args_start..).enumerate() {
             if idx < function.chunk.local_names.len() {
                 frame.set_value(&function.chunk, idx, arg)?;
             }
         }
         self.frames.push(frame);
-        let result = self.run_chunk(&function.chunk)?;
-        self.frames.pop();
-        Ok(result.unwrap_or(Value::Void))
+        let result = self.run_chunk(&function.chunk);
+        let frame = self
+            .frames
+            .pop()
+            .ok_or_else(|| VmError::new("no active VM frame"))?;
+        self.release_frame(frame);
+        Ok(result?.unwrap_or(Value::Void))
     }
 
     fn pop_module(&mut self) -> Result<Rc<ModuleValue>, VmError> {

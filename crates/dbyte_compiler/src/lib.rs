@@ -50,6 +50,7 @@ struct FunctionCompiler {
     locals: HashMap<String, usize>,
     local_types: HashMap<String, ExprType>,
     imports: HashMap<String, String>,
+    return_type: ExprType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,11 +66,16 @@ enum ExprType {
 
 impl FunctionCompiler {
     fn new(name: String) -> Self {
+        Self::new_with_return(name, ExprType::Unknown)
+    }
+
+    fn new_with_return(name: String, return_type: ExprType) -> Self {
         Self {
             chunk: Chunk::new(name),
             locals: HashMap::new(),
             local_types: HashMap::new(),
             imports: HashMap::new(),
+            return_type,
         }
     }
 
@@ -147,6 +153,14 @@ impl FunctionCompiler {
         self.chunk.add_const(value)
     }
 
+    fn insert_function(&mut self, function: BytecodeFunction) -> usize {
+        let id = self.chunk.functions_by_id.len();
+        self.chunk.function_ids.insert(function.name.clone(), id);
+        self.chunk.functions_by_id.push(function.clone());
+        self.chunk.functions.insert(function.name.clone(), function);
+        id
+    }
+
     fn compile_stmts(&mut self, stmts: &[Stmt]) -> Result<(), CompileError> {
         for stmt in stmts {
             self.compile_stmt(stmt)?;
@@ -192,10 +206,17 @@ impl FunctionCompiler {
                 is_pub,
                 name,
                 params,
+                ret_ty,
                 body,
                 ..
             } => {
-                let mut child = FunctionCompiler::new(name.clone());
+                let mut child = FunctionCompiler::new_with_return(
+                    name.clone(),
+                    expr_type_from_annotation(ret_ty),
+                );
+                child.chunk.functions = self.chunk.functions.clone();
+                child.chunk.function_ids = self.chunk.function_ids.clone();
+                child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 for param in params {
                     child.local_slot(&param.name);
                     child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
@@ -209,7 +230,7 @@ impl FunctionCompiler {
                     params: params.iter().map(|p| p.name.clone()).collect(),
                     chunk: child.finish(),
                 };
-                self.chunk.functions.insert(name.clone(), function);
+                self.insert_function(function);
                 if *is_pub {
                     self.chunk.public_functions.push(name.clone());
                 }
@@ -221,7 +242,11 @@ impl FunctionCompiler {
                     let idx = self.add_const(Value::Void);
                     self.emit(Op::Const(idx));
                 }
-                self.emit(Op::Return);
+                if self.return_type == ExprType::Int && value.is_some() {
+                    self.emit(Op::ReturnI64);
+                } else {
+                    self.emit(Op::Return);
+                }
             }
             Stmt::If {
                 cond,
@@ -280,11 +305,31 @@ impl FunctionCompiler {
                 self.emit(Op::Import(path.clone(), slot));
             }
             Stmt::Expr(expr) => {
+                if self.compile_discarded_call_fast_path(expr)? {
+                    return Ok(());
+                }
                 self.compile_expr(expr)?;
                 self.emit(Op::Pop);
             }
         }
         Ok(())
+    }
+
+    fn compile_discarded_call_fast_path(&mut self, expr: &Expr) -> Result<bool, CompileError> {
+        let Expr::Call { name, args, .. } = expr else {
+            return Ok(false);
+        };
+        let Some(id) = self.chunk.function_ids.get(name).copied() else {
+            return Ok(false);
+        };
+        for arg in args {
+            self.compile_expr(arg)?;
+        }
+        self.emit(Op::CallFnDiscard {
+            id,
+            argc: args.len(),
+        });
+        Ok(true)
     }
 
     fn compile_expr(&mut self, expr: &Expr) -> Result<(), CompileError> {
@@ -365,7 +410,14 @@ impl FunctionCompiler {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(Op::Call(name.clone(), args.len()));
+                if let Some(id) = self.chunk.function_ids.get(name).copied() {
+                    self.emit(Op::CallFn {
+                        id,
+                        argc: args.len(),
+                    });
+                } else {
+                    self.emit(Op::Call(name.clone(), args.len()));
+                }
             }
             Expr::Index { target, index, .. } => {
                 self.compile_expr(target)?;
