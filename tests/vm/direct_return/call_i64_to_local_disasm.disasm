@@ -1,0 +1,18 @@
+== call_i64_to_local_disasm.dby ==
+0000 CONST_I64 0
+0001 STORE_LOCAL_I64 0 ; total
+0002 LOAD_LOCAL_I64 0 ; total
+0003 CONST_I64 1
+0004 CALL_FN_I64_TO_LOCAL 0 2 -> 0 ; add -> total
+0005 LOAD_LOCAL_I64 0 ; total
+0006 CALL print 1
+0007 POP
+0008 HALT
+
+  == add ==
+  0000 LOAD_LOCAL_I64 0 ; a
+  0001 LOAD_LOCAL_I64 1 ; b
+  0002 ADD_I64
+  0003 RETURN_I64
+  0004 CONST 0        ; 
+  0005 RETURN
