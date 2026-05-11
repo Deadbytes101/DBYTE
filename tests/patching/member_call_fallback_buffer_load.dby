@@ -1,0 +1,3 @@
+import "./fallback_buffer_like_helper.dby" as buf
+
+print(buf.load("not-a-file.bin"))

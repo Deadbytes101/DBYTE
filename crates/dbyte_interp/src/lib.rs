@@ -250,7 +250,9 @@ impl Interpreter {
                     "write_bytes".into(),
                     ModuleMember::Native(native_fs_write_bytes),
                 );
+                members.insert("exists".into(), ModuleMember::Native(native_fs_exists));
             }
+
             "std.encoding" => {
                 members.insert(
                     "hex_encode".into(),
@@ -638,9 +640,10 @@ impl Interpreter {
                         Value::Str(s) => s.len(),
                         Value::List(l) => l.len(),
                         Value::Bytes(b) => b.len(),
+                        Value::Buffer(b) => b.borrow().len(),
                         _ => {
                             return Err(RuntimeError {
-                                msg: "len() expects str, list, or bytes".into(),
+                                msg: "len() expects str, list, bytes, or buffer".into(),
                                 span: *span,
                             })
                         }
@@ -954,6 +957,17 @@ fn native_math_min(args: &[Value]) -> Result<Value, String> {
 
 fn native_math_max(args: &[Value]) -> Result<Value, String> {
     Ok(Value::Int(expect_int(args, 0)?.max(expect_int(args, 1)?)))
+}
+
+fn native_fs_exists(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err("exists expects 1 argument".into());
+    }
+    let path = match &args[0] {
+        Value::Str(s) => s,
+        _ => return Err("exists expects a string path".into()),
+    };
+    Ok(Value::Int(if Path::new(path).exists() { 1 } else { 0 }))
 }
 
 fn native_fs_read_text(args: &[Value]) -> Result<Value, String> {

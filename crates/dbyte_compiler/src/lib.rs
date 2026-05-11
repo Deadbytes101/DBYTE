@@ -1,5 +1,6 @@
 use dbyte_ast::*;
-use dbyte_bytecode::{BytecodeFunction, Chunk, LocalKind, Op, Value};
+use dbyte_bytecode::{BytecodeFunction, Chunk, LocalKind, NativeFn, Op, Value};
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -315,7 +316,9 @@ impl FunctionCompiler {
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 child.function_return_types = self.function_return_types.clone();
                 child.function_param_types = self.function_param_types.clone();
+                child.imports = self.imports.clone();
                 child.inlining_counter = self.inlining_counter;
+
                 for param in params {
                     child.local_slot(&param.name);
                     child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
@@ -1249,7 +1252,9 @@ impl FunctionCompiler {
         match self.std_import_path(object) {
             Some("std.binary") if property == "u32_le" => ExprType::Int,
             Some("std.buffer") if property == "find" => ExprType::Int,
-            Some("std.buffer") if property == "replace" => ExprType::Unknown,
+            Some("std.buffer") if property == "load" => ExprType::Buffer,
+            Some("std.buffer") if property == "replace" || property == "save" => ExprType::Unknown,
+            Some("std.fs") if property == "exists" => ExprType::Int,
             _ => ExprType::Unknown,
         }
     }
@@ -1281,6 +1286,22 @@ impl FunctionCompiler {
                 self.compile_expr(&args[1])?;
                 self.compile_expr(&args[2])?;
                 self.emit(Op::BufferReplace);
+                Ok(true)
+            }
+            ("std.buffer", "load", 1) => {
+                self.compile_expr(&args[0])?;
+                self.emit(Op::BufferLoad);
+                Ok(true)
+            }
+            ("std.buffer", "save", 2) => {
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                self.emit(Op::BufferSave);
+                Ok(true)
+            }
+            ("std.fs", "exists", 1) => {
+                self.compile_expr(&args[0])?;
+                self.emit(Op::CallNative(NativeFn::FsExists));
                 Ok(true)
             }
             _ => Ok(false),

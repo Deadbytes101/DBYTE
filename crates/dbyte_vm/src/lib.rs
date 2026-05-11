@@ -554,6 +554,19 @@ impl Vm {
                     Op::ReadU32Le => self.read_u32_le()?,
                     Op::BufferFind => self.buffer_find()?,
                     Op::BufferReplace => self.buffer_replace()?,
+                    Op::BufferLoad => self.buffer_load()?,
+                    Op::BufferSave => self.buffer_save()?,
+                    Op::CallNative(native_id) => {
+                        let argc = match native_id {
+                            dbyte_bytecode::NativeFn::FsExists => 1,
+                            _ => 0,
+                        };
+                        let args_start = self.stack.len() - argc;
+                        let val = self.call_native(native_id, &self.stack[args_start..])?;
+                        self.stack.truncate(args_start);
+                        self.push(val);
+                    }
+
                     Op::IterInit => self.iter_init()?,
                     Op::IterNext { slot, jump } => {
                         let should_continue = self.iter_next(chunk, slot)?;
@@ -1317,7 +1330,8 @@ impl Vm {
                 Value::Str(s) => s.len(),
                 Value::List(l) => l.len(),
                 Value::Bytes(b) => b.len(),
-                _ => return Err(VmError::new("len() expects str, list, or bytes")),
+                Value::Buffer(b) => b.borrow().len(),
+                _ => return Err(VmError::new("len() expects str, list, bytes, or buffer")),
             };
             return Ok(Value::Int(length as i64));
         }
@@ -1370,6 +1384,15 @@ impl Vm {
                         VmError::new(format!("fs.write_bytes failed for `{}`: {}", path, e))
                     })
             }
+            FsExists => {
+                let path = expect_str(args, 0)?;
+                Ok(Value::Int(if std::path::Path::new(path).exists() {
+                    1
+                } else {
+                    0
+                }))
+            }
+
             EncodingHexEncode => {
                 let bytes = expect_bytes(args, 0)?;
                 Ok(Value::Str(hex::encode(bytes)))
@@ -1527,6 +1550,39 @@ impl Vm {
         };
         self.require_len(&data, offset, 4)?;
         self.push(Value::Int(LE::read_u32(&data[offset..]) as i64));
+        Ok(())
+    }
+
+    fn buffer_load(&mut self) -> Result<(), VmError> {
+        let path = match self.pop()? {
+            Value::Str(s) => s,
+            other => {
+                return Err(VmError::new(format!(
+                    "buffer.load expects str, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        let data = std::fs::read(&path)
+            .map_err(|e| VmError::new(format!("buffer.load failed for `{}`: {}", path, e)))?;
+        self.push(Value::Buffer(Rc::new(RefCell::new(data))));
+        Ok(())
+    }
+
+    fn buffer_save(&mut self) -> Result<(), VmError> {
+        let buffer = expect_buffer(&[self.pop()?], 0)?;
+        let path = match self.pop()? {
+            Value::Str(s) => s,
+            other => {
+                return Err(VmError::new(format!(
+                    "buffer.save expects str, found {}",
+                    other.kind_name()
+                )))
+            }
+        };
+        std::fs::write(&path, &*buffer.borrow())
+            .map_err(|e| VmError::new(format!("buffer.save failed for `{}`: {}", path, e)))?;
+        self.push(Value::Void);
         Ok(())
     }
 
