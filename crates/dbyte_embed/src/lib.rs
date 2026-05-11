@@ -3,6 +3,7 @@ use dbyte_interp::{Interpreter, RuntimeError};
 use dbyte_lexer::{LexError, Lexer};
 use dbyte_parser::{ParseError, Parser};
 use dbyte_typeck::{TypeChecker, TypeError};
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -74,6 +75,7 @@ pub struct DByteRuntime {
     checker: TypeChecker,
     interp: Interpreter,
     current_dir: PathBuf,
+    loaded_rc_paths: HashSet<PathBuf>,
 }
 
 impl Default for DByteRuntime {
@@ -139,10 +141,17 @@ impl DByteRuntime {
         if !rc_path.exists() {
             return Ok(());
         }
+        let rc_key = fs::canonicalize(&rc_path).unwrap_or_else(|_| rc_path.clone());
+        if self.loaded_rc_paths.contains(&rc_key) {
+            return Ok(());
+        }
+
         self.run_file(&rc_path).map_err(|source| DByteError::Rc {
             path: rc_path,
             source: Box::new(source),
-        })
+        })?;
+        self.loaded_rc_paths.insert(rc_key);
+        Ok(())
     }
 
     fn from_current_dir_unchecked(current_dir: PathBuf) -> Self {
@@ -151,6 +160,7 @@ impl DByteRuntime {
             checker: TypeChecker::with_entry_path(entry_path.clone()),
             interp: Interpreter::with_captured_output(entry_path),
             current_dir,
+            loaded_rc_paths: HashSet::new(),
         }
     }
 
@@ -293,6 +303,28 @@ mod tests {
     }
 
     #[test]
+    fn capture_output_isolated_between_runs() {
+        let mut rt = DByteRuntime::new();
+        let first = rt.run_source_capture("test", "print(1)").unwrap();
+        let second = rt.run_source_capture("test", "print(2)").unwrap();
+        assert_eq!(first.stdout, "1\n");
+        assert_eq!(second.stdout, "2\n");
+        assert_eq!(first.stderr, "");
+        assert_eq!(second.stderr, "");
+    }
+
+    #[test]
+    fn failed_run_does_not_leak_output_to_next_capture() {
+        let mut rt = DByteRuntime::new();
+        let error = rt
+            .run_source_capture("test", "print(1)\nlet bad: int = 1 / 0")
+            .unwrap_err();
+        assert!(matches!(error, DByteError::Runtime { .. }));
+        let out = rt.run_source_capture("test", "print(2)").unwrap();
+        assert_eq!(out.stdout, "2\n");
+    }
+
+    #[test]
     fn preserves_functions_and_imports() {
         let mut rt = DByteRuntime::new();
         rt.run_source(
@@ -356,6 +388,17 @@ mod tests {
     }
 
     #[test]
+    fn failed_check_source_does_not_mutate_state() {
+        let rt = DByteRuntime::new();
+        let error = rt
+            .check_source("test", "let bad: int = \"bad\"")
+            .unwrap_err();
+        assert!(matches!(error, DByteError::Type { .. }));
+        let error = rt.check_source("test", "print(bad)").unwrap_err();
+        assert!(error.to_string().contains("undefined variable"));
+    }
+
+    #[test]
     fn type_error_rolls_back_state() {
         let mut rt = DByteRuntime::new();
         let error = rt.run_source("test", "let bad: int = \"bad\"").unwrap_err();
@@ -384,6 +427,17 @@ mod tests {
     }
 
     #[test]
+    fn invalid_set_current_dir_keeps_previous_dir() {
+        let root = temp_dir("invalid-cwd");
+        let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
+        let before = rt.current_dir().to_path_buf();
+        let error = rt.set_current_dir(root.join("missing")).unwrap_err();
+        assert!(matches!(error, DByteError::Io { .. }));
+        assert_eq!(rt.current_dir(), before.as_path());
+        cleanup(root);
+    }
+
+    #[test]
     fn load_rc_preserves_state_and_supports_local_imports() {
         let root = temp_dir("rc-success");
         fs::write(
@@ -406,6 +460,55 @@ mod tests {
     }
 
     #[test]
+    fn load_rc_is_noop_after_success_in_same_directory() {
+        let root = temp_dir("rc-repeat");
+        fs::write(root.join(".dbyterc"), "let boot: int = 41\n").unwrap();
+        let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
+        rt.load_rc().unwrap();
+        rt.load_rc().unwrap();
+        let out = rt.run_source_capture("test", "print(boot + 1)").unwrap();
+        assert_eq!(out.stdout.trim(), "42");
+        cleanup(root);
+    }
+
+    #[test]
+    fn load_rc_after_current_dir_change_loads_new_rc() {
+        let root = temp_dir("rc-cwd-change");
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(first.join(".dbyterc"), "let first_value: int = 10\n").unwrap();
+        fs::write(second.join(".dbyterc"), "let second_value: int = 32\n").unwrap();
+
+        let mut rt = DByteRuntime::with_current_dir(&first).unwrap();
+        rt.load_rc().unwrap();
+        rt.set_current_dir(&second).unwrap();
+        rt.load_rc().unwrap();
+        let out = rt
+            .run_source_capture("test", "print(first_value + second_value)")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "42");
+        cleanup(root);
+    }
+
+    #[test]
+    fn bad_rc_rolls_back_partial_state() {
+        let root = temp_dir("rc-partial-rollback");
+        fs::write(
+            root.join(".dbyterc"),
+            "let partial: int = 1\nlet bad: int = \"bad\"\n",
+        )
+        .unwrap();
+        let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
+        let error = rt.load_rc().unwrap_err();
+        assert!(matches!(error, DByteError::Rc { .. }));
+        let error = rt.run_source("test", "print(partial)").unwrap_err();
+        assert!(error.to_string().contains("undefined variable"));
+        cleanup(root);
+    }
+
+    #[test]
     fn load_rc_reports_bad_rc() {
         let root = temp_dir("rc-error");
         fs::write(root.join(".dbyterc"), "let bad: int = \"bad\"\n").unwrap();
@@ -413,6 +516,46 @@ mod tests {
         let error = rt.load_rc().unwrap_err();
         assert!(matches!(error, DByteError::Rc { .. }));
         assert!(error.to_string().contains("RcError"));
+        cleanup(root);
+    }
+
+    #[test]
+    fn error_display_prefixes_are_stable() {
+        let root = temp_dir("display-prefixes");
+        let io = match DByteRuntime::with_current_dir(root.join("missing")) {
+            Ok(_) => panic!("missing current_dir unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert!(io.to_string().starts_with("IoError:"));
+
+        let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
+        assert!(rt
+            .run_source("test", "let x: int = \"bad\"")
+            .unwrap_err()
+            .to_string()
+            .starts_with("TypeError:"));
+        assert!(rt
+            .run_source("test", "let x: int = 1 / 0")
+            .unwrap_err()
+            .to_string()
+            .starts_with("RuntimeError:"));
+        assert!(rt
+            .run_source("test", "let x: int = ")
+            .unwrap_err()
+            .to_string()
+            .starts_with("ParseError:"));
+        assert!(rt
+            .run_source("test", "let s: str = b\"\\xGG\"")
+            .unwrap_err()
+            .to_string()
+            .starts_with("LexError:"));
+
+        fs::write(root.join(".dbyterc"), "let bad: int = \"bad\"\n").unwrap();
+        assert!(rt
+            .load_rc()
+            .unwrap_err()
+            .to_string()
+            .starts_with("RcError:"));
         cleanup(root);
     }
 

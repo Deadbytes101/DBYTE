@@ -417,4 +417,14 @@ Date: 2026-05-11
 v2.2.0 is not a performance release. It adds the embeddable tree-runtime crate
 for host applications and keeps benchmark claims limited to the measured suite.
 
+## v2.2.1 Note
+
+Version: v2.2.1
+Build: release
+Date: 2026-05-11
+
+v2.2.1 is not a performance release. It hardens the embeddable runtime API,
+including capture isolation, `.dbyterc` behavior, cwd handling, and rollback
+coverage.
+
 
