@@ -213,14 +213,14 @@ Baseline note: `VM v1.6.0` was measured as local release-build medians from five
 
 ## Perf Pass 8: Typed I64 Operand Stack
 
-Version: v1.7.0-dev
+Version: v1.7.0
 Build: release
 Date: 2026-05-11
 Optimizations: Added a separate VM `i64` operand stack and typed call-chain opcodes (`CALL_FN_I64_TO_I64_STACK`, `RETURN_I64_TO_I64_STACK`) so compiler-proven `int` function bodies and typed call-chain expressions avoid boxed `Value::Int` temporaries. Direct assignment from int-return functions still uses `CALL_FN_I64_TO_LOCAL`. This pass also added fused local-int compare-and-jump opcodes for the existing loop condition fast path so loop regression gates stay below the v1.6 baseline.
 
-Baseline note: `VM v1.7.0-dev` was measured as local release-build medians from five runs on the feature branch. Most rows compare against the recorded `VM v1.6.0` medians. `function_call_chain` and `function_call_many_args` were not recorded in the v1.6.0 table, so their baseline is the same-session `release-v1.6.1` executable median from five runs. Timings remain noisy on this machine; this table is a directional performance record and regression gate.
+Baseline note: `VM v1.7.0` was measured as local release-build medians from five runs on the feature branch. Most rows compare against the recorded `VM v1.6.0` medians. `function_call_chain` and `function_call_many_args` were not recorded in the v1.6.0 table, so their baseline is the same-session `release-v1.6.1` executable median from five runs. Timings remain noisy on this machine; this table is a directional performance record and regression gate.
 
-| Benchmark | VM baseline median | VM v1.7.0-dev median | Change |
+| Benchmark | VM baseline median | VM v1.7.0 median | Change |
 |---|---:|---:|---:|
 | loop_sum | 21.03 ms | 17.42 ms | 1.21x faster |
 | loop_sum_large | 41.09 ms | 34.45 ms | 1.19x faster |
@@ -247,7 +247,7 @@ Python: 3.12.9
 Build: release
 Date: 2026-05-11
 
-Baseline note: `bench --compare-python` was run five times on the v1.7.0-dev branch and the medians below are computed per benchmark. This is used for claim wording, not for release tagging. The safe claim from this run is: DByte outperforms Python on measured low-level binary parsing, buffer patching, and typed integer loop workloads, plus the optimized many-argument typed call workload. It is not correct yet to claim that DByte is broadly faster than Python.
+Baseline note: `bench --compare-python` was run five times on the v1.7.0 branch and the medians below are computed per benchmark. The safe claim from this run is: DByte v1.7.0 outperforms Python on measured low-level binary parsing, buffer patching, and typed integer loop workloads, plus the optimized many-argument typed call workload. It is not correct yet to claim that DByte is broadly faster than Python.
 
 | Benchmark | Python median | DByte VM median | Python / DByte VM |
 |---|---:|---:|---:|
