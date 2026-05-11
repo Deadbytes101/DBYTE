@@ -1,0 +1,6 @@
+import std.fs as fs
+
+fs.write_bytes("tests/patching/fs_exists_tmp.bin", b"ok")
+
+print(fs.exists("tests/patching/fs_exists_tmp.bin"))
+print(fs.exists("tests/patching/fs_exists_missing.bin"))

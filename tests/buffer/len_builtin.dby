@@ -1,0 +1,5 @@
+import std.buffer as buf
+
+let b: buffer = buf.from_bytes(b"DByte")
+
+print(len(b))

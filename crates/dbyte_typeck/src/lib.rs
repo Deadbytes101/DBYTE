@@ -437,11 +437,15 @@ impl TypeChecker {
                     }
                     let ty = self.check_expr(&args[0])?;
                     return match ty {
-                        ResolvedType::Str | ResolvedType::List(_) | ResolvedType::Bytes => {
-                            Ok(ResolvedType::Int)
-                        }
+                        ResolvedType::Str
+                        | ResolvedType::List(_)
+                        | ResolvedType::Bytes
+                        | ResolvedType::Buffer => Ok(ResolvedType::Int),
                         _ => Err(TypeError {
-                            msg: format!("len() expects str, list, or bytes, found `{}`", ty),
+                            msg: format!(
+                                "len() expects str, list, bytes, or buffer, found `{}`",
+                                ty
+                            ),
                             span: *span,
                         }),
                     };

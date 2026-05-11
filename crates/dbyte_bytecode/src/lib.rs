@@ -45,6 +45,7 @@ pub enum NativeFn {
     BinaryWriteU16Be,
     BinaryWriteU32Le,
     BinaryWriteU32Be,
+    FsExists,
 }
 
 impl NativeFn {
@@ -90,6 +91,7 @@ impl NativeFn {
             "std.binary.write_u16_be" => Some(Self::BinaryWriteU16Be),
             "std.binary.write_u32_le" => Some(Self::BinaryWriteU32Le),
             "std.binary.write_u32_be" => Some(Self::BinaryWriteU32Be),
+            "std.fs.exists" => Some(Self::FsExists),
             _ => None,
         }
     }
@@ -254,7 +256,11 @@ pub enum Op {
     ReadU32Le,
     BufferFind,
     BufferReplace,
+    BufferLoad,
+    BufferSave,
+    CallNative(NativeFn),
     IterInit,
+
     IterNext {
         slot: usize,
         jump: usize,
@@ -497,7 +503,11 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         Op::ReadU32Le => "READ_U32_LE".into(),
         Op::BufferFind => "BUFFER_FIND".into(),
         Op::BufferReplace => "BUFFER_REPLACE".into(),
+        Op::BufferLoad => "BUFFER_LOAD".into(),
+        Op::BufferSave => "BUFFER_SAVE".into(),
+        Op::CallNative(id) => format!("CALL_NATIVE {:?}", id),
         Op::IterInit => "ITER_INIT".into(),
+
         Op::IterNext { slot, jump } => {
             format!("ITER_NEXT {} -> {}", local_name(chunk, *slot), jump)
         }

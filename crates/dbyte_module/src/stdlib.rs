@@ -62,7 +62,15 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                     ret: TypeAnnotation::Inferred,
                 },
             ),
+            (
+                "exists".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str],
+                    ret: TypeAnnotation::Int,
+                },
+            ),
         ]),
+
         "std.encoding" => Some(vec![
             (
                 "hex_encode".into(),
