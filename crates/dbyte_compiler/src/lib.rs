@@ -49,6 +49,7 @@ struct FunctionCompiler {
     chunk: Chunk,
     locals: HashMap<String, usize>,
     local_types: HashMap<String, ExprType>,
+    function_return_types: HashMap<String, ExprType>,
     imports: HashMap<String, String>,
     return_type: ExprType,
 }
@@ -74,6 +75,7 @@ impl FunctionCompiler {
             chunk: Chunk::new(name),
             locals: HashMap::new(),
             local_types: HashMap::new(),
+            function_return_types: HashMap::new(),
             imports: HashMap::new(),
             return_type,
         }
@@ -186,7 +188,15 @@ impl FunctionCompiler {
 
     fn reserve_functions(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            if let Stmt::FnDef { name, params, .. } = stmt {
+            if let Stmt::FnDef {
+                name,
+                params,
+                ret_ty,
+                ..
+            } = stmt
+            {
+                self.function_return_types
+                    .insert(name.clone(), expr_type_from_annotation(ret_ty));
                 self.reserve_function(name, params);
             }
         }
@@ -210,6 +220,17 @@ impl FunctionCompiler {
                 ..
             } => {
                 let value_type = self.declared_or_expr_type(ty, value);
+                if value_type == ExprType::Int
+                    && self.can_compile_i64_call_to_local_fast_path(value)
+                {
+                    let slot = self.local_slot(name);
+                    self.set_local_type(name, value_type);
+                    self.compile_i64_call_to_local_fast_path(value, slot)?;
+                    if *is_pub {
+                        self.chunk.public_values.push((name.clone(), slot));
+                    }
+                    return Ok(());
+                }
                 self.compile_expr(value)?;
                 let slot = self.local_slot(name);
                 self.set_local_type(name, value_type);
@@ -249,6 +270,7 @@ impl FunctionCompiler {
                 child.chunk.functions = self.chunk.functions.clone();
                 child.chunk.function_ids = self.chunk.function_ids.clone();
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
+                child.function_return_types = self.function_return_types.clone();
                 for param in params {
                     child.local_slot(&param.name);
                     child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
@@ -491,6 +513,10 @@ impl FunctionCompiler {
             return Ok(false);
         }
         let dst = self.existing_slot(name, span)?;
+        if self.can_compile_i64_call_to_local_fast_path(value) {
+            self.compile_i64_call_to_local_fast_path(value, dst)?;
+            return Ok(true);
+        }
         let Expr::Binary {
             left, op, right, ..
         } = value
@@ -527,6 +553,56 @@ impl FunctionCompiler {
             }
             _ => Ok(false),
         }
+    }
+
+    fn can_compile_i64_call_to_local_fast_path(&self, value: &Expr) -> bool {
+        let Expr::Call { name, args, .. } = value else {
+            return false;
+        };
+        self.chunk.function_ids.contains_key(name)
+            && self.function_return_types.get(name).copied() == Some(ExprType::Int)
+            && args.iter().all(Self::is_simple_call_arg)
+    }
+
+    fn compile_i64_call_to_local_fast_path(
+        &mut self,
+        value: &Expr,
+        dst: usize,
+    ) -> Result<(), CompileError> {
+        let Expr::Call { name, args, .. } = value else {
+            return Ok(());
+        };
+        for arg in args {
+            self.compile_expr(arg)?;
+        }
+        let id = self
+            .chunk
+            .function_ids
+            .get(name)
+            .copied()
+            .ok_or_else(|| CompileError {
+                msg: format!("undefined function `{}`", name),
+                span: value.span(),
+            })?;
+        self.emit(Op::CallFnI64ToLocal {
+            id,
+            argc: args.len(),
+            dst,
+        });
+        Ok(())
+    }
+
+    fn is_simple_call_arg(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::IntLit(_, _)
+                | Expr::FloatLit(_, _)
+                | Expr::BoolLit(_, _)
+                | Expr::StrLit(_, _)
+                | Expr::BytesLit(_, _)
+                | Expr::FStr(_, _)
+                | Expr::Ident(_, _)
+        )
     }
 
     fn compile_i64_compare_fast_path(&mut self, expr: &Expr) -> Result<bool, CompileError> {
@@ -606,6 +682,11 @@ impl FunctionCompiler {
             }
             Expr::Unary { expr, .. } => self.expr_type(expr),
             Expr::Call { name, .. } if name == "len" => ExprType::Int,
+            Expr::Call { name, .. } => self
+                .function_return_types
+                .get(name)
+                .copied()
+                .unwrap_or(ExprType::Unknown),
             Expr::MemberCall {
                 object, property, ..
             } => self.intrinsic_return_type(object, property),

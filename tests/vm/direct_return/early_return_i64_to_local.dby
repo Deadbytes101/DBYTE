@@ -1,0 +1,10 @@
+fn pick(x: int) -> int:
+    if x > 0:
+        return 10
+    return 20
+
+let a: int = pick(1)
+let b: int = pick(0)
+
+print(a)
+print(b)

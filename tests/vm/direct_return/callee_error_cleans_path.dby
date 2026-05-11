@@ -1,0 +1,5 @@
+fn bad() -> int:
+    return 1 / 0
+
+let x: int = bad()
+print(x)

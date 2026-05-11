@@ -211,6 +211,7 @@ pub enum Op {
     JumpIfFalse(usize),
     Call(String, usize),
     CallFn { id: usize, argc: usize },
+    CallFnI64ToLocal { id: usize, argc: usize, dst: usize },
     CallFnDiscard { id: usize, argc: usize },
     Return,
     ReturnI64,
@@ -379,6 +380,17 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
                 .functions_by_id
                 .get(*id)
                 .map_or("<unknown>", |function| function.name.as_str())
+        ),
+        Op::CallFnI64ToLocal { id, argc, dst } => format!(
+            "CALL_FN_I64_TO_LOCAL {} {} -> {} ; {} -> {}",
+            id,
+            argc,
+            dst,
+            chunk
+                .functions_by_id
+                .get(*id)
+                .map_or("<unknown>", |function| function.name.as_str()),
+            local_name(chunk, *dst)
         ),
         Op::CallFnDiscard { id, argc } => format!(
             "CALL_FN_DISCARD {} {} ; {}",

@@ -174,6 +174,42 @@ Assert-Contains $directCallDisasm.Text "CALL_FN" "direct function call fast path
 Assert-Contains $directCallDisasm.Text "RETURN_I64" "typed int return fast path"
 Assert-NotContains $directCallDisasm.Text "CALL add 2" "direct function avoids string call"
 
+$directReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\call_i64_to_local_disasm.dby")
+if ($directReturnDisasm.Code -ne 0) { throw "direct return-to-local disasm failed: $($directReturnDisasm.Text)" }
+Assert-Contains $directReturnDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return-to-local fast path"
+Assert-Contains $directReturnDisasm.Text "RETURN_I64" "direct return-to-local typed return"
+Assert-NotContains $directReturnDisasm.Text "CALL add 2" "direct return-to-local avoids string call"
+
+$letInitDirectReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\let_init_i64_to_local.dby")
+if ($letInitDirectReturnDisasm.Code -ne 0) { throw "let init direct return-to-local disasm failed: $($letInitDirectReturnDisasm.Text)" }
+Assert-Contains $letInitDirectReturnDisasm.Text "CALL_FN_I64_TO_LOCAL" "let init direct return-to-local fast path"
+
+$earlyReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\early_return_i64_to_local.dby")
+if ($earlyReturnDisasm.Code -ne 0) { throw "early return direct return-to-local disasm failed: $($earlyReturnDisasm.Text)" }
+Assert-Contains $earlyReturnDisasm.Text "CALL_FN_I64_TO_LOCAL" "early return direct return-to-local fast path"
+
+$nestedArgFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\nested_call_fallback.dby")
+if ($nestedArgFallbackDisasm.Code -ne 0) { throw "nested argument fallback disasm failed: $($nestedArgFallbackDisasm.Text)" }
+Assert-Contains $nestedArgFallbackDisasm.Text "CALL_FN" "nested argument still uses direct function id fallback"
+Assert-NotContains $nestedArgFallbackDisasm.Text "CALL_FN_I64_TO_LOCAL" "nested argument avoids direct return-to-local"
+
+$directReturnGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\generic_return_no_fastpath.dby")
+if ($directReturnGenericDisasm.Code -ne 0) { throw "direct return generic fallback disasm failed: $($directReturnGenericDisasm.Text)" }
+Assert-Contains $directReturnGenericDisasm.Text "CALL_FN" "direct return generic fallback uses direct id"
+Assert-Contains $directReturnGenericDisasm.Text "RETURN" "direct return generic fallback keeps generic return"
+Assert-NotContains $directReturnGenericDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return generic fallback avoids direct return-to-local"
+Assert-NotContains $directReturnGenericDisasm.Text "RETURN_I64" "direct return generic fallback avoids return_i64"
+
+$directReturnNonIntDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\non_int_return_no_fastpath.dby")
+if ($directReturnNonIntDisasm.Code -ne 0) { throw "direct return non-int fallback disasm failed: $($directReturnNonIntDisasm.Text)" }
+Assert-Contains $directReturnNonIntDisasm.Text "CALL_FN" "direct return non-int fallback uses direct id"
+Assert-NotContains $directReturnNonIntDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return non-int fallback avoids direct return-to-local"
+
+$directReturnMemberFallback = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\member_call_not_call_fn.dby")
+if ($directReturnMemberFallback.Code -ne 0) { throw "direct return member fallback disasm failed: $($directReturnMemberFallback.Text)" }
+Assert-Contains $directReturnMemberFallback.Text "MEMBER_CALL max 2" "direct return member fallback keeps member dispatch"
+Assert-NotContains $directReturnMemberFallback.Text "CALL_FN_I64_TO_LOCAL" "direct return member fallback avoids direct return-to-local"
+
 $nestedCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\nested_function_call.dby")
 if ($nestedCallDisasm.Code -ne 0) { throw "nested function call disasm failed: $($nestedCallDisasm.Text)" }
 Assert-Contains $nestedCallDisasm.Text "CALL_FN 0 1 ; inc" "nested function direct call fast path"
@@ -336,7 +372,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.5.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.6.0") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree
