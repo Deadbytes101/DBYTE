@@ -44,11 +44,11 @@ dependencies = [
 
 [[package]]
 name = "dbyte_ast"
-version = "2.2.1"
+version = "2.3.0"
 
 [[package]]
 name = "dbyte_bytecode"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
  "hex",
@@ -56,11 +56,12 @@ dependencies = [
 
 [[package]]
 name = "dbyte_cli"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
  "dbyte_compiler",
+ "dbyte_embed",
  "dbyte_interp",
  "dbyte_lexer",
  "dbyte_parser",
@@ -71,7 +72,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_compiler"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
@@ -79,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_embed"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_interp",
@@ -90,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_interp"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "byteorder",
  "dbyte_ast",
@@ -104,21 +105,21 @@ dependencies = [
 
 [[package]]
 name = "dbyte_lexer"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
 ]
 
 [[package]]
 name = "dbyte_module"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
 ]
 
 [[package]]
 name = "dbyte_parser"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_lexer",
@@ -126,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_project"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "serde",
  "toml",
@@ -134,7 +135,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_typeck"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_lexer",
@@ -144,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_vm"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "byteorder",
  "dbyte_ast",
