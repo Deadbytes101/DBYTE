@@ -1,0 +1,13 @@
+import std.buffer as hbuf
+import std.encoding as henc
+import std.fs as hfs
+
+let path: str = "personal_tools_scratch_hexdump.bin"
+hfs.write_bytes(path, b"\x44\x42\x79\x74\x65\x00\x10\x20\xDE\xAD\xBE\xEF")
+
+let data: buffer = hbuf.load(path)
+
+print("hexdump:", path)
+print("bytes:", hbuf.len(data))
+print("0000:", henc.hex_encode(hbuf.slice(data, 0, 8)))
+print("0008:", henc.hex_encode(hbuf.slice(data, 8, 4)))
