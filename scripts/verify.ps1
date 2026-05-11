@@ -106,6 +106,56 @@ function Invoke-DbyteInput {
     }
 }
 
+function Git-Status-Short {
+    return Normalize-Output (& git status --short 2>&1)
+}
+
+function Assert-GitStatus-Unchanged($before, $name) {
+    $after = Git-Status-Short
+    if ($after -ne $before) {
+        throw "$name failed: git status changed from '$before' to '$after'"
+    }
+}
+
+function Assert-PersonalToolOutput($toolName, $output) {
+    switch ($toolName) {
+        "hexdump" {
+            Assert-Contains $output "hexdump:" "personal hexdump heading"
+            Assert-Contains $output "bytes: 12" "personal hexdump size"
+            Assert-Contains $output "0000: 4442797465001020" "personal hexdump first row"
+            Assert-Contains $output "0008: deadbeef" "personal hexdump second row"
+        }
+        "bininfo" {
+            Assert-Contains $output "bininfo:" "personal bininfo heading"
+            Assert-Contains $output "bytes: 9" "personal bininfo size"
+            Assert-Contains $output "first8: 0102030444427974" "personal bininfo first bytes"
+            Assert-Contains $output "checksum: 482" "personal bininfo checksum"
+        }
+        "find_bytes" {
+            Assert-Contains $output "find_bytes" "personal find bytes heading"
+            Assert-Contains $output "data: 00deadbeef00dead01" "personal find bytes data"
+            Assert-Contains $output "de_ad: 1" "personal find bytes first pattern"
+            Assert-Contains $output "be_ef: 3" "personal find bytes second pattern"
+            Assert-Contains $output "one_byte: 8" "personal find bytes single byte"
+            Assert-Contains $output "missing: -1" "personal find bytes missing pattern"
+        }
+        "patch_bytes" {
+            Assert-Contains $output "patched: 1" "personal patch bytes marker"
+            Assert-Contains $output "patched_hex: 009090909000" "personal patch bytes output"
+        }
+        "read_u32_table" {
+            Assert-Contains $output "u32_table:" "personal u32 table heading"
+            Assert-Contains $output "data: 7856341201000000efbeadde" "personal u32 table data"
+            Assert-Contains $output "0 -> 305419896" "personal u32 table first row"
+            Assert-Contains $output "4 -> 1" "personal u32 table second row"
+            Assert-Contains $output "8 -> 3735928559" "personal u32 table third row"
+        }
+        default {
+            throw "unknown personal tool assertion: $toolName"
+        }
+    }
+}
+
 Write-Host "Running VM hardening tests..."
 
 $disasmResult = Invoke-Dbyte -Arguments @("disasm", "tests\vm\disasm_smoke.dby")
@@ -561,44 +611,64 @@ finally {
 
 Write-Host "Running personal tools smoke tests..."
 
-$personalHexdump = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby")
-if ($personalHexdump.Code -ne 0) { throw "personal hexdump failed: $($personalHexdump.Text)" }
-Assert-Contains $personalHexdump.Text "0000:" "personal hexdump offset"
-Assert-Contains $personalHexdump.Text "4442797465001020" "personal hexdump first row"
-Assert-Contains $personalHexdump.Text "0008: deadbeef" "personal hexdump second row"
+$personalToolsStatus = Git-Status-Short
 
-$personalBininfo = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby")
-if ($personalBininfo.Code -ne 0) { throw "personal bininfo failed: $($personalBininfo.Text)" }
-Assert-Contains $personalBininfo.Text "bytes: 9" "personal bininfo size"
-Assert-Contains $personalBininfo.Text "first8: 0102030444427974" "personal bininfo first bytes"
-Assert-Contains $personalBininfo.Text "checksum: 482" "personal bininfo checksum"
+$personalToolFiles = @(
+    @{ Name = "hexdump"; Path = "hexdump.dby" },
+    @{ Name = "bininfo"; Path = "bininfo.dby" },
+    @{ Name = "find_bytes"; Path = "find_bytes.dby" },
+    @{ Name = "patch_bytes"; Path = "patch_bytes.dby" },
+    @{ Name = "read_u32_table"; Path = "read_u32_table.dby" }
+)
 
-$personalFindBytes = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby")
-if ($personalFindBytes.Code -ne 0) { throw "personal find_bytes failed: $($personalFindBytes.Text)" }
-Assert-Contains $personalFindBytes.Text "de_ad: 1" "personal find bytes first pattern"
-Assert-Contains $personalFindBytes.Text "be_ef: 3" "personal find bytes second pattern"
-Assert-Contains $personalFindBytes.Text "one_byte: 8" "personal find bytes single byte"
-Assert-Contains $personalFindBytes.Text "missing: -1" "personal find bytes missing pattern"
+foreach ($tool in $personalToolFiles) {
+    $result = Invoke-Dbyte -Arguments @("run", "personal_tools\$($tool.Path)")
+    if ($result.Code -ne 0) { throw "personal tool from repo root failed [$($tool.Name)]: $($result.Text)" }
+    Assert-PersonalToolOutput $tool.Name $result.Text
+}
+Assert-GitStatus-Unchanged $personalToolsStatus "personal tools repo-root run cleanliness"
 
-$personalPatchBytes = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby")
-if ($personalPatchBytes.Code -ne 0) { throw "personal patch_bytes failed: $($personalPatchBytes.Text)" }
-Assert-Contains $personalPatchBytes.Text "patched: 1" "personal patch bytes marker"
-Assert-Contains $personalPatchBytes.Text "patched_hex: 009090909000" "personal patch bytes output"
+Push-Location (Join-Path $repoRoot "personal_tools")
+try {
+    foreach ($tool in $personalToolFiles) {
+        $result = Invoke-Dbyte -Arguments @("run", $tool.Path)
+        if ($result.Code -ne 0) { throw "personal tool from personal_tools cwd failed [$($tool.Name)]: $($result.Text)" }
+        Assert-PersonalToolOutput $tool.Name $result.Text
+    }
+}
+finally {
+    Pop-Location
+}
+Assert-GitStatus-Unchanged $personalToolsStatus "personal tools cwd run cleanliness"
 
-$personalU32Table = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby")
-if ($personalU32Table.Code -ne 0) { throw "personal read_u32_table failed: $($personalU32Table.Text)" }
-Assert-Contains $personalU32Table.Text "0 -> 305419896" "personal u32 table first row"
-Assert-Contains $personalU32Table.Text "4 -> 1" "personal u32 table second row"
-Assert-Contains $personalU32Table.Text "8 -> 3735928559" "personal u32 table third row"
+$personalShellNoRcAlias = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "hexdump`nquit`n"
+if ($personalShellNoRcAlias.Code -ne 0) { throw "personal shell no-rc alias guard failed: $($personalShellNoRcAlias.Text)" }
+Assert-Contains $personalShellNoRcAlias.Text "ShellError: unknown command: hexdump" "personal shell no-rc hides aliases"
 
 $personalShellRun = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "run personal_tools/hexdump.dby`nquit`n"
 if ($personalShellRun.Code -ne 0) { throw "personal shell run failed: $($personalShellRun.Text)" }
-Assert-Contains $personalShellRun.Text "0000: 4442797465001020" "personal shell no-rc run"
+Assert-PersonalToolOutput "hexdump" $personalShellRun.Text
 
-$personalShellAliases = Invoke-DbyteInput -Arguments @("shell") -InputText "hexdump`npatch-bytes`nquit`n"
+$personalShellAliases = Invoke-DbyteInput -Arguments @("shell") -InputText "hexdump`nbininfo`nfind-bytes`npatch-bytes`nu32-table`nquit`n"
 if ($personalShellAliases.Code -ne 0) { throw "personal shell aliases failed: $($personalShellAliases.Text)" }
-Assert-Contains $personalShellAliases.Text "0008: deadbeef" "personal shell hexdump alias"
-Assert-Contains $personalShellAliases.Text "patched_hex: 009090909000" "personal shell patch alias"
+foreach ($tool in $personalToolFiles) {
+    Assert-PersonalToolOutput $tool.Name $personalShellAliases.Text
+}
+
+$personalToolsShellRoot = Join-Path $repoRoot "personal_tools"
+$personalShellToolsCwdAliases = Invoke-DbyteInput -Arguments @("shell") -WorkingDirectory $personalToolsShellRoot -InputText "hexdump`nbininfo`nfind-bytes`npatch-bytes`nu32-table`nquit`n"
+if ($personalShellToolsCwdAliases.Code -ne 0) { throw "personal shell aliases from personal_tools cwd failed: $($personalShellToolsCwdAliases.Text)" }
+foreach ($tool in $personalToolFiles) {
+    Assert-PersonalToolOutput $tool.Name $personalShellToolsCwdAliases.Text
+}
+Assert-GitStatus-Unchanged $personalToolsStatus "personal tools shell cleanliness"
+
+$readme = Get-Content (Join-Path $repoRoot "README.md") -Raw
+Assert-Contains $readme "dbyte run personal_tools\hexdump.dby" "README personal hexdump command"
+Assert-Contains $readme "dbyte run personal_tools\bininfo.dby" "README personal bininfo command"
+Assert-Contains $readme "dbyte run personal_tools\find_bytes.dby" "README personal find command"
+Assert-Contains $readme "dbyte run personal_tools\patch_bytes.dby" "README personal patch command"
+Assert-Contains $readme "dbyte run personal_tools\read_u32_table.dby" "README personal u32 command"
 
 Write-Host "Running project workflow tests..."
 
