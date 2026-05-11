@@ -156,8 +156,25 @@ impl DByteRuntime {
         self.run_file_inner(path.as_ref(), false).map(|_| ())
     }
 
+    pub fn run_file_with_args(
+        &mut self,
+        path: impl AsRef<Path>,
+        args: Vec<String>,
+    ) -> Result<(), DByteError> {
+        self.run_file_inner_with_args(path.as_ref(), false, args)
+            .map(|_| ())
+    }
+
     pub fn run_file_capture(&mut self, path: impl AsRef<Path>) -> Result<RunOutput, DByteError> {
         self.run_file_inner(path.as_ref(), true)
+    }
+
+    pub fn run_file_capture_with_args(
+        &mut self,
+        path: impl AsRef<Path>,
+        args: Vec<String>,
+    ) -> Result<RunOutput, DByteError> {
+        self.run_file_inner_with_args(path.as_ref(), true, args)
     }
 
     pub fn load_rc(&mut self) -> Result<(), DByteError> {
@@ -218,6 +235,15 @@ impl DByteRuntime {
     }
 
     fn run_file_inner(&mut self, path: &Path, capture: bool) -> Result<RunOutput, DByteError> {
+        self.run_file_inner_with_args(path, capture, Vec::new())
+    }
+
+    fn run_file_inner_with_args(
+        &mut self,
+        path: &Path,
+        capture: bool,
+        args: Vec<String>,
+    ) -> Result<RunOutput, DByteError> {
         let path = if path.is_absolute() {
             path.to_path_buf()
         } else {
@@ -229,11 +255,14 @@ impl DByteRuntime {
         })?;
         let label = path.display().to_string();
         let previous_entry = self.current_dir.join("<embed>");
+        let previous_args = self.interp.script_args().to_vec();
         self.checker.set_entry_path(path.clone());
         self.interp.set_entry_path(path.clone());
+        self.interp.set_script_args(args);
         let result = self.run_source_inner(&label, &source, capture);
         self.checker.set_entry_path(previous_entry.clone());
         self.interp.set_entry_path(previous_entry);
+        self.interp.set_script_args(previous_args);
         result
     }
 
@@ -447,6 +476,26 @@ mod tests {
         let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
         let out = rt.run_file_capture("main.dby").unwrap();
         assert_eq!(out.stdout.trim(), "from file");
+        cleanup(root);
+    }
+
+    #[test]
+    fn run_file_capture_with_args_scopes_script_args() {
+        let root = temp_dir("run-file-args");
+        fs::write(
+            root.join("main.dby"),
+            "import std.env as env\nlet args: list[str] = env.args()\nprint(len(args))\nif len(args) > 0:\n    print(args[0])\n",
+        )
+        .unwrap();
+        let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
+        let out = rt
+            .run_file_capture_with_args("main.dby", vec!["alpha".into()])
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "1\nalpha");
+        let out = rt
+            .run_source_capture("test", "print(len(env.args()))")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "0");
         cleanup(root);
     }
 

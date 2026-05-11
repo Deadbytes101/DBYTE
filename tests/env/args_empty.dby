@@ -1,0 +1,4 @@
+import std.env as env
+
+let args: list[str] = env.args()
+print(len(args))

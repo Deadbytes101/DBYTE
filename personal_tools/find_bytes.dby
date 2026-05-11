@@ -1,11 +1,33 @@
 import std.buffer as fbuf
 import std.encoding as fenc
+import std.env as fenv
+import std.fs as ffs
 
+let args: list[str] = fenv.args()
 let data: buffer = fbuf.from_bytes(b"\x00\xDE\xAD\xBE\xEF\x00\xDE\xAD\x01")
+let pattern: bytes = b"\xDE\xAD"
+let label: str = "de_ad"
+let should_run: bool = true
 
-print("find_bytes")
-print("data:", fenc.hex_encode(fbuf.to_bytes(data)))
-print("de_ad:", fbuf.find(data, b"\xDE\xAD"))
-print("be_ef:", fbuf.find(data, b"\xBE\xEF"))
-print("one_byte:", fbuf.find(data, b"\x01"))
-print("missing:", fbuf.find(data, b"\xAA\xBB"))
+if len(args) == 0:
+    print("find_bytes")
+else:
+    if len(args) != 2:
+        print("usage: find_bytes <file> <hex_pattern>")
+        print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
+        should_run = false
+    else:
+        data = fbuf.from_bytes(ffs.read_bytes(args[0]))
+        pattern = fenc.hex_decode(args[1])
+        label = "pattern"
+
+if should_run:
+    print("data:", fenc.hex_encode(fbuf.to_bytes(data)))
+
+    if len(args) == 0:
+        print("de_ad:", fbuf.find(data, b"\xDE\xAD"))
+        print("be_ef:", fbuf.find(data, b"\xBE\xEF"))
+        print("one_byte:", fbuf.find(data, b"\x01"))
+        print("missing:", fbuf.find(data, b"\xAA\xBB"))
+    else:
+        print(label + ":", fbuf.find(data, pattern))

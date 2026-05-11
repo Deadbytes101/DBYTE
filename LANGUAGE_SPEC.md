@@ -1,6 +1,6 @@
 # DByte Language Specification
 
-Version: Public Alpha v2.4.1
+Version: Public Alpha v2.5.0
 
 DByte is a statically checked, Python-like scripting language with a bytecode VM
 and low-level standard library support for binary parsing and buffer patching.
@@ -216,6 +216,9 @@ math.max(a: int, b: int) -> int
 ```dbyte
 env.args() -> list[str]
 ```
+
+`env.args()` returns only arguments passed after the script path. It does not
+include the `dbyte` executable, subcommand, flags, or script path.
 
 ## Errors
 

@@ -1,20 +1,50 @@
 import std.buffer as pbuf
 import std.encoding as penc
+import std.env as penv
 import std.fs as pfs
 
+let args: list[str] = penv.args()
 let input_path: str = "personal_tools_scratch_patch.bin"
 let output_path: str = "personal_tools_scratch_patch.patched.bin"
-pfs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
+let find_bytes: bytes = b"\xDE\xAD\xBE\xEF"
+let replace_bytes: bytes = b"\x90\x90\x90\x90"
+let should_run: bool = true
 
-let data: buffer = pbuf.load(input_path)
-let pos: int = pbuf.find(data, b"\xDE\xAD\xBE\xEF")
-
-if pos >= 0:
-    pbuf.replace(data, pos, b"\x90\x90\x90\x90")
-    pbuf.save(output_path, data)
-    print("patched:", pos)
+if len(args) == 0:
+    pfs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
 else:
-    print("patched: no")
+    if len(args) != 3:
+        print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+        print("example: dbyte run personal_tools/patch_bytes.dby firmware.bin DEADBEEF CAFEBABE")
+        should_run = false
+    else:
+        input_path = args[0]
+        output_path = args[0] + ".patched"
+        find_bytes = penc.hex_decode(args[1])
+        replace_bytes = penc.hex_decode(args[2])
 
-let patched: bytes = pfs.read_bytes(output_path)
-print("patched_hex:", penc.hex_encode(patched))
+if should_run:
+    let valid_patch: bool = true
+    if len(args) == 3:
+        if len(find_bytes) != len(replace_bytes):
+            print("error: find_hex and replace_hex must have the same byte length")
+            valid_patch = false
+
+    if valid_patch:
+        let data: buffer = pbuf.load(input_path)
+        let pos: int = pbuf.find(data, find_bytes)
+        if pos >= 0:
+            pbuf.replace(data, pos, replace_bytes)
+            pbuf.save(output_path, data)
+            if len(args) == 0:
+                print("patched:", pos)
+            else:
+                print("patched first match at offset", pos)
+                print("wrote", output_path)
+            let patched: bytes = pfs.read_bytes(output_path)
+            print("patched_hex:", penc.hex_encode(patched))
+        else:
+            if len(args) == 0:
+                print("patched: no")
+            else:
+                print("pattern not found")

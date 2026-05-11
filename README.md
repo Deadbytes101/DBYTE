@@ -148,6 +148,16 @@ dbyte run personal_tools\patch_bytes.dby
 dbyte run personal_tools\read_u32_table.dby
 ```
 
+They also accept script arguments for real files:
+
+```powershell
+dbyte run personal_tools\hexdump.dby firmware.bin
+dbyte run personal_tools\bininfo.dby firmware.bin
+dbyte run personal_tools\find_bytes.dby firmware.bin DEADBEEF
+dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE
+dbyte run personal_tools\read_u32_table.dby firmware.bin
+```
+
 From `dbyte shell`, the repo `.dbyterc` exposes shortcuts:
 
 ```txt
@@ -157,6 +167,9 @@ find-bytes
 patch-bytes
 u32-table
 ```
+
+Script arguments are available to DByte code through `std.env.args()`. The list
+contains only arguments after the script path.
 
 ## Embedding DByte
 

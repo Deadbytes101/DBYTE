@@ -1,20 +1,37 @@
 import std.buffer as ibuf
 import std.encoding as ienc
+import std.env as ienv
 import std.fs as ifs
 
+let args: list[str] = ienv.args()
 let path: str = "personal_tools_scratch_bininfo.bin"
-ifs.write_bytes(path, b"\x01\x02\x03\x04\x44\x42\x79\x74\x65")
+let should_run: bool = true
 
-let data: buffer = ibuf.load(path)
-let bytes: bytes = ibuf.to_bytes(data)
-let i: int = 0
-let checksum: int = 0
+if len(args) == 0:
+    ifs.write_bytes(path, b"\x01\x02\x03\x04\x44\x42\x79\x74\x65")
+else:
+    if len(args) != 1:
+        print("usage: bininfo <file>")
+        print("example: dbyte run personal_tools/bininfo.dby sample.bin")
+        should_run = false
+    else:
+        path = args[0]
 
-while i < len(bytes):
-    checksum = checksum + bytes[i]
-    i = i + 1
+if should_run:
+    let data: buffer = ibuf.load(path)
+    let bytes: bytes = ibuf.to_bytes(data)
+    let i: int = 0
+    let checksum: int = 0
+    let first_len: int = 8
 
-print("bininfo:", path)
-print("bytes:", len(bytes))
-print("first8:", ienc.hex_encode(ibuf.slice(data, 0, 8)))
-print("checksum:", checksum)
+    if len(bytes) < first_len:
+        first_len = len(bytes)
+
+    while i < len(bytes):
+        checksum = checksum + bytes[i]
+        i = i + 1
+
+    print("bininfo:", path)
+    print("bytes:", len(bytes))
+    print("first8:", ienc.hex_encode(ibuf.slice(data, 0, first_len)))
+    print("checksum:", checksum)

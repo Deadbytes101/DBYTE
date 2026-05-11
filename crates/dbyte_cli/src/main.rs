@@ -630,11 +630,14 @@ impl ShellSession {
     }
 
     fn command_run(&mut self, args: &[String]) {
-        if args.len() != 2 {
-            eprintln!("ShellError: run expects 1 file");
+        if args.len() < 2 {
+            eprintln!("ShellError: run expects a file");
             return;
         }
-        match self.runtime.run_file_capture(&args[1]) {
+        match self
+            .runtime
+            .run_file_capture_with_args(&args[1], args[2..].to_vec())
+        {
             Ok(output) => print!("{}", output.stdout),
             Err(e) => eprintln!("{}", e),
         }
@@ -831,7 +834,7 @@ fn cmd_shell(no_rc: bool) {
     shell_loop(&mut session);
 }
 
-fn cmd_run(path: &Path, type_check: bool, engine: Engine, trace: bool) {
+fn cmd_run(path: &Path, type_check: bool, engine: Engine, trace: bool, script_args: Vec<String>) {
     let path_label = path.display().to_string();
     let (src, program) = parse_file(path);
     if type_check {
@@ -841,6 +844,7 @@ fn cmd_run(path: &Path, type_check: bool, engine: Engine, trace: bool) {
     match engine {
         Engine::Tree => {
             let mut interp = Interpreter::with_entry_path(path.to_path_buf());
+            interp.set_script_args(script_args);
             if let Err(e) = interp.run(&program) {
                 print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
                 process::exit(1);
@@ -850,6 +854,7 @@ fn cmd_run(path: &Path, type_check: bool, engine: Engine, trace: bool) {
             let chunk = compile_program(path, &src, &program);
             let mut vm = Vm::with_entry_path(path.to_path_buf());
             vm.set_trace(trace);
+            vm.set_script_args(script_args);
             if let Err(e) = vm.run(&chunk) {
                 print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
                 process::exit(1);
@@ -871,7 +876,7 @@ fn cmd_run_project(type_check: bool, engine: Engine, trace: bool) {
         eprintln!("ProjectError: failed to enter project root: {}", e);
         process::exit(1);
     });
-    cmd_run(&project.entry_path, type_check, engine, trace);
+    cmd_run(&project.entry_path, type_check, engine, trace, Vec::new());
 }
 
 fn cmd_check(path: &Path) {
@@ -940,7 +945,7 @@ fn usage() {
     println!(
         "DByte - low-level scripting language\n\n\
          Usage:\n  \
-         dbyte run [--vm] <file>\n  \
+         dbyte run [--vm] <file> [arg ...]\n  \
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \
          dbyte bench [--engine tree|vm] [--compare-python]\n  \
@@ -1252,7 +1257,13 @@ fn main() {
             let mut engine = Engine::Tree;
             let mut trace = false;
             let mut file: Option<PathBuf> = None;
+            let mut script_args = Vec::new();
+            let mut seen_file = false;
             for arg in &args[2..] {
+                if seen_file {
+                    script_args.push(arg.clone());
+                    continue;
+                }
                 match arg.as_str() {
                     "--no-check" => type_check = false,
                     "--vm" => engine = Engine::Vm,
@@ -1260,11 +1271,14 @@ fn main() {
                         trace = true;
                         engine = Engine::Vm;
                     }
-                    _ => file = Some(PathBuf::from(arg)),
+                    _ => {
+                        file = Some(PathBuf::from(arg));
+                        seen_file = true;
+                    }
                 }
             }
             if let Some(path) = file {
-                cmd_run(&path, type_check, engine, trace);
+                cmd_run(&path, type_check, engine, trace, script_args);
             } else {
                 cmd_run_project(type_check, engine, trace);
             }
