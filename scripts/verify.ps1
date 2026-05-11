@@ -457,6 +457,40 @@ Assert-Contains $shellBasic.Text "ShellError: alias cannot override built-in com
 Assert-Contains $shellBasic.Text "ShellError: unknown command: hi" "shell unalias removes alias"
 Assert-Contains $shellBasic.Text "ShellError: unknown command: not_a_real_cmd" "shell unknown command"
 
+$shellHardeningRoot = Join-Path $interactiveRoot "shell-hardening"
+New-Item -ItemType Directory -Path $shellHardeningRoot | Out-Null
+Set-Content -Path (Join-Path $shellHardeningRoot "one.dby") -Value "print(`"one alias`")" -NoNewline
+Set-Content -Path (Join-Path $shellHardeningRoot "two.dby") -Value "print(`"two alias`")" -NoNewline
+$chainAliases = "alias n01 = n02`nalias n02 = n03`nalias n03 = n04`nalias n04 = n05`nalias n05 = n06`nalias n06 = n07`nalias n07 = n08`nalias n08 = n09`nalias n09 = n10`nalias n10 = n11`nalias n11 = n12`nalias n12 = n13`nalias n13 = n14`nalias n14 = n15`nalias n15 = n16`nalias n16 = n17`nalias n17 = n18`n"
+$shellHardeningInput = "cd `"$shellHardeningRoot`"`n: let keep: int = 41`nmissing_cmd`ncd missing-dir`nrun missing.dby`ncheck missing.dby`n: print(keep + 1)`nalias bad = missing_cmd`nbad`nalias a = b`nalias b = a`na`n$chainAliases" + "n01`nalias hi = run one.dby`nalias hi = run two.dby`nwhich hi`naliases`nhi`nunalias hi`nwhich hi`nunalias hi`nunalias run`nunterminated `"quote`n: print(keep + 2)`nquit`n"
+$shellHardening = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellHardeningInput
+if ($shellHardening.Code -ne 0) { throw "shell hardening command failed: $($shellHardening.Text)" }
+Assert-Contains $shellHardening.Text "ShellError: unknown command: missing_cmd" "shell unknown direct command"
+Assert-Contains $shellHardening.Text "ShellError: failed to cd" "shell bad cd preserves session"
+Assert-Contains $shellHardening.Text "IoError:" "shell bad run/check reports error"
+Assert-Contains $shellHardening.Text "42" "shell state survives failed commands"
+Assert-Contains $shellHardening.Text "ShellError: unknown command: missing_cmd" "shell alias unknown target"
+Assert-Contains $shellHardening.Text "ShellError: alias expansion cycle detected: a -> b -> a" "shell alias cycle guard"
+Assert-Contains $shellHardening.Text "ShellError: alias expansion limit exceeded" "shell alias chain limit"
+Assert-Contains $shellHardening.Text "hi: alias -> run two.dby" "shell alias overwrite which"
+Assert-Contains $shellHardening.Text "hi = run two.dby" "shell alias overwrite list"
+Assert-Contains $shellHardening.Text "two alias" "shell alias overwrite executes latest"
+Assert-Contains $shellHardening.Text "hi: not found" "shell which after unalias"
+Assert-Contains $shellHardening.Text "ShellError: alias not found: hi" "shell unalias missing"
+Assert-Contains $shellHardening.Text "ShellError: alias not found: run" "shell unalias built-in missing"
+Assert-Contains $shellHardening.Text "ShellError: unterminated quote" "shell unterminated quote"
+Assert-Contains $shellHardening.Text "43" "shell recovers after unterminated quote"
+
+$shellSpacesRoot = Join-Path $interactiveRoot "shell path spaces"
+$shellSpacesDir = Join-Path $shellSpacesRoot "dir with spaces"
+New-Item -ItemType Directory -Path $shellSpacesDir -Force | Out-Null
+Set-Content -Path (Join-Path $shellSpacesDir "file with spaces.dby") -Value "print(`"space path ok`")" -NoNewline
+$shellSpacesInput = "cd `"dir with spaces`"`nrun `"file with spaces.dby`"`ncheck `"file with spaces.dby`"`nquit`n"
+$shellSpaces = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellSpacesInput -WorkingDirectory $shellSpacesRoot
+if ($shellSpaces.Code -ne 0) { throw "shell spaces command failed: $($shellSpaces.Text)" }
+Assert-Contains $shellSpaces.Text "space path ok" "shell run path with spaces"
+Assert-Contains $shellSpaces.Text "no type errors found" "shell check path with spaces"
+
 $shellRcRoot = Join-Path $interactiveRoot "shell-rc"
 New-Item -ItemType Directory -Path $shellRcRoot | Out-Null
 Set-Content -Path (Join-Path $shellRcRoot "helper.dby") -Value "pub fn inc(x: int) -> int:`n    return x + 1`n" -NoNewline
@@ -476,10 +510,10 @@ Assert-Contains $shellNoRc.Text "undefined variable" "shell no-rc skips rc"
 
 $shellBadAliasRoot = Join-Path $interactiveRoot "shell-bad-alias-rc"
 New-Item -ItemType Directory -Path $shellBadAliasRoot | Out-Null
-Set-Content -Path (Join-Path $shellBadAliasRoot ".dbyterc") -Value "@shell alias cd = ls" -NoNewline
+Set-Content -Path (Join-Path $shellBadAliasRoot ".dbyterc") -Value "let ok: int = 1`n@shell alias cd = ls" -NoNewline
 $shellBadAlias = Invoke-DbyteInput -Arguments @("shell") -InputText "quit`n" -WorkingDirectory $shellBadAliasRoot
 if ($shellBadAlias.Code -eq 0) { throw "shell bad alias rc unexpectedly passed: $($shellBadAlias.Text)" }
-Assert-Contains $shellBadAlias.Text "ShellError: .dbyterc line 1: alias cannot override built-in command: cd" "shell rc alias collision"
+Assert-Contains $shellBadAlias.Text "ShellError: .dbyterc line 2: alias cannot override built-in command: cd" "shell rc alias collision line number"
 
 $shellExamples = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cd examples`nrun hello.dby`ncheck hello.dby`nquit`n"
 if ($shellExamples.Code -ne 0) { throw "shell examples cwd command failed: $($shellExamples.Text)" }
