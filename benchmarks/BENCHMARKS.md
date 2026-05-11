@@ -316,24 +316,25 @@ Optimizations: Implemented bytecode-level function inlining in the compiler for 
 
 | Benchmark | Python | DByte VM | Ratio |
 |---|---:|---:|---|
-| binary_read_u32 | 109.71 ms | 75.05 ms | 1.46x faster |
-| buffer_replace | 14.17 ms | 7.88 ms | 1.80x faster |
-| bytes_find | 1.14 ms | 0.41 ms | 2.78x faster |
-| bytes_find_single | 0.30 ms | 0.17 ms | 1.75x faster |
-| function_call | 52.78 ms | 0.05 ms | **1064.11x faster** |
-| function_call_chain | 83.09 ms | 0.29 ms | **284.75x faster** |
-| function_call_int | 88.44 ms | 0.04 ms | **2377.42x faster** |
-| function_call_loop_return | 58.52 ms | 0.04 ms | **1459.35x faster** |
-| function_call_many_args | 79.07 ms | 0.05 ms | **1532.36x faster** |
-| function_call_nested | 35.21 ms | 0.07 ms | **512.52x faster** |
-| int_compare_loop | 63.32 ms | 36.59 ms | 1.73x faster |
-| loop_sum | 36.37 ms | 15.53 ms | 2.34x faster |
-| loop_sum_large | 75.41 ms | 36.69 ms | 2.06x faster |
-| nested_int_loop | 36.39 ms | 16.76 ms | 2.17x faster |
-| patch_workflow | 46.97 ms | 22.75 ms | 2.06x faster |
+| binary_read_u32 | 159.52 ms | 66.14 ms | 2.41x faster |
+| buffer_replace | 14.68 ms | 8.90 ms | 1.65x faster |
+| bytes_find | 1.14 ms | 0.46 ms | 2.46x faster |
+| bytes_find_single | 0.34 ms | 0.20 ms | 1.72x faster |
+| function_call | 53.17 ms | 39.98 ms | 1.33x faster |
+| function_call_chain | 81.58 ms | 47.23 ms | 1.73x faster |
+| function_call_int | 55.08 ms | 55.10 ms | 1.00x |
+| function_call_loop_return | 60.84 ms | 42.40 ms | 1.43x faster |
+| function_call_many_args | 78.41 ms | 65.66 ms | 1.19x faster |
+| function_call_nested | 33.38 ms | 29.54 ms | 1.13x faster |
+| int_compare_loop | 60.45 ms | 39.71 ms | 1.52x faster |
+| loop_sum | 38.68 ms | 15.16 ms | 2.55x faster |
+| loop_sum_large | 71.42 ms | 31.06 ms | 2.30x faster |
+| nested_int_loop | 33.41 ms | 18.28 ms | 1.83x faster |
+| patch_workflow | 36.06 ms | 21.94 ms | 1.64x faster |
 
 ### Findings
 
-- unction_call benchmark is completely inlined, bypassing VM frame dispatch overhead entirely. Time dropped from 110.60 ms (v1.8.0) to  .05 ms.
-- DByte v1.9.0 now solidly beats Python across the **entire benchmark suite**.
-- Small function abstraction is now a zero-cost abstraction.
+- DByte v1.9.0 is faster than Python on nearly all measured benchmarks, including binary parsing, byte search, buffer patching, typed integer loops, and most function-call workloads.
+- Function inlining significantly reduced the overhead of small function calls, though some complex call chains (`function_call_int`) are still hitting the limits of the current inlining guards.
+- Small function abstraction is now approaching zero-cost, but further refinement of the I64 return path and argument transfer is planned for v1.9.1 to definitively beat Python on every workload.
+

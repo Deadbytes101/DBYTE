@@ -55,6 +55,7 @@ struct FunctionCompiler {
     return_type: ExprType,
     inlining_stack: Vec<usize>,
     inlining_counter: usize,
+    current_function_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,7 +84,7 @@ impl FunctionCompiler {
 
     fn new_with_return(name: String, return_type: ExprType) -> Self {
         Self {
-            chunk: Chunk::new(name),
+            chunk: Chunk::new(name.clone()),
             locals: HashMap::new(),
             local_types: HashMap::new(),
             function_return_types: HashMap::new(),
@@ -92,6 +93,7 @@ impl FunctionCompiler {
             return_type,
             inlining_stack: Vec::new(),
             inlining_counter: 0,
+            current_function_name: name,
         }
     }
 
@@ -454,16 +456,19 @@ impl FunctionCompiler {
             for arg in args {
                 self.compile_i64_stack_expr(arg)?;
             }
+            self.emit(Op::CallFnI64Discard {
+                id,
+                argc: args.len(),
+            });
         } else {
             for arg in args {
                 self.compile_expr(arg)?;
             }
+            self.emit(Op::CallFnDiscard {
+                id,
+                argc: args.len(),
+            });
         }
-
-        self.emit(Op::CallFnDiscard {
-            id,
-            argc: args.len(),
-        });
         Ok(true)
     }
 
@@ -645,18 +650,50 @@ impl FunctionCompiler {
         args: &[Expr],
         return_target: InlineReturn,
     ) -> Result<bool, CompileError> {
+        if name == self.current_function_name {
+            return Ok(false);
+        }
         let Some(id) = self.chunk.function_ids.get(name).copied() else {
             return Ok(false);
         };
         if self.inlining_stack.contains(&id) {
             return Ok(false);
         }
-        self.inlining_stack.push(id);
         let callee = self.chunk.functions_by_id[id].clone();
+        if args.len() != callee.params.len() {
+            return Ok(false);
+        }
+        self.inlining_stack.push(id);
 
-        if callee.chunk.code.len() > 50 {
+        if callee.chunk.code.len() > 30 {
             self.inlining_stack.pop();
             return Ok(false);
+        }
+
+        // Conservative guards: Only inline simple arithmetic/logic functions.
+        // Reject if it contains complex operations or loops.
+        for op in callee.chunk.code.iter() {
+            match op {
+                Op::Call(..) | Op::MemberCall(..) | Op::Import(..) => {
+                    self.inlining_stack.pop();
+                    return Ok(false);
+                }
+                Op::IterInit | Op::IterNext { .. } => {
+                    // Loops are too complex for initial inlining stabilization
+                    self.inlining_stack.pop();
+                    return Ok(false);
+                }
+                Op::CallFn { .. }
+                | Op::CallFnI64ToI64Stack { .. }
+                | Op::CallFnI64ToLocal { .. }
+                | Op::CallFnDiscard { .. }
+                | Op::CallFnI64Discard { .. } => {
+                    // Reject nested function calls to keep stack management simple
+                    self.inlining_stack.pop();
+                    return Ok(false);
+                }
+                _ => {}
+            }
         }
 
         let mut constant_map = HashMap::new();
@@ -760,7 +797,8 @@ impl FunctionCompiler {
                 | Op::JumpIfNotLeLocalConstI64 { slot, .. }
                 | Op::JumpIfNotGtLocalConstI64 { slot, .. }
                 | Op::JumpIfNotGeLocalConstI64 { slot, .. }
-                | Op::IterNext { slot, .. } => {
+                | Op::IterNext { slot, .. }
+                | Op::Import(_, slot) => {
                     *slot += local_base;
                     if let Op::AddLocalI64 { src: s, .. } = &mut op {
                         *s += local_base;
@@ -843,17 +881,17 @@ impl FunctionCompiler {
                         *target = new_target;
                     }
                 }
-                Op::IterNext { jump, .. } => {
-                    if let Some(&new_target) = offset_map.get(jump) {
-                        *jump = new_target;
-                    }
-                }
                 Op::JumpIfNotLtLocalConstI64 { target, .. }
                 | Op::JumpIfNotLeLocalConstI64 { target, .. }
                 | Op::JumpIfNotGtLocalConstI64 { target, .. }
                 | Op::JumpIfNotGeLocalConstI64 { target, .. } => {
                     if let Some(&new_target) = offset_map.get(target) {
                         *target = new_target;
+                    }
+                }
+                Op::IterNext { jump, .. } => {
+                    if let Some(&new_target) = offset_map.get(jump) {
+                        *jump = new_target;
                     }
                 }
                 _ => {}
@@ -981,7 +1019,7 @@ impl FunctionCompiler {
             return Ok(());
         }
         for arg in args {
-            self.compile_expr(arg)?;
+            self.compile_i64_stack_expr(arg)?;
         }
         let id = self
             .chunk

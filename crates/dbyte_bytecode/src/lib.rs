@@ -247,6 +247,10 @@ pub enum Op {
     Import(String, usize),
     Member(String),
     MemberCall(String, usize),
+    CallFnI64Discard {
+        id: usize,
+        argc: usize,
+    },
     ReadU32Le,
     BufferFind,
     BufferReplace,
@@ -532,6 +536,15 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         ),
         Op::CallFnDiscard { id, argc } => format!(
             "CALL_FN_DISCARD {} {} ; {}",
+            id,
+            argc,
+            chunk
+                .functions_by_id
+                .get(*id)
+                .map_or("<unknown>", |function| function.name.as_str())
+        ),
+        Op::CallFnI64Discard { id, argc } => format!(
+            "CALL_FN_I64_DISCARD {} {} ; {}",
             id,
             argc,
             chunk
