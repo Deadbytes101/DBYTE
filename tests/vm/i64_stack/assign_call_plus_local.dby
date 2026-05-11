@@ -1,0 +1,7 @@
+fn value(n: int) -> int:
+    return n + 2
+
+let total: int = 10
+let i: int = 30
+total = total + value(i)
+print(total)

@@ -105,20 +105,20 @@ if ($loopDisasm.Code -ne 0) { throw "loop_sum disasm failed: $($loopDisasm.Text)
 Assert-Contains $loopDisasm.Text "STORE_LOCAL_I64" "loop_sum typed store"
 Assert-Contains $loopDisasm.Text "ADD_LOCAL_I64" "loop_sum direct local add"
 Assert-Contains $loopDisasm.Text "ADD_LOCAL_CONST_I64" "loop_sum direct const increment"
-Assert-Contains $loopDisasm.Text "LT_LOCAL_CONST_I64" "loop_sum direct local less-than"
+Assert-Contains $loopDisasm.Text "JUMP_IF_NOT_LT_LOCAL_CONST_I64" "loop_sum direct local less-than jump"
 
 $largeLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum_large.dby")
 if ($largeLoopDisasm.Code -ne 0) { throw "loop_sum_large disasm failed: $($largeLoopDisasm.Text)" }
 Assert-Contains $largeLoopDisasm.Text "STORE_LOCAL_I64" "loop_sum_large typed store"
 Assert-Contains $largeLoopDisasm.Text "ADD_LOCAL_I64" "loop_sum_large direct local add"
 Assert-Contains $largeLoopDisasm.Text "ADD_LOCAL_CONST_I64" "loop_sum_large direct const increment"
-Assert-Contains $largeLoopDisasm.Text "LT_LOCAL_CONST_I64" "loop_sum_large direct local less-than"
+Assert-Contains $largeLoopDisasm.Text "JUMP_IF_NOT_LT_LOCAL_CONST_I64" "loop_sum_large direct local less-than jump"
 
 $compareLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\int_compare_loop.dby")
 if ($compareLoopDisasm.Code -ne 0) { throw "int_compare_loop disasm failed: $($compareLoopDisasm.Text)" }
-Assert-Contains $compareLoopDisasm.Text "GE_LOCAL_CONST_I64" "int_compare_loop direct greater-equal"
-Assert-Contains $compareLoopDisasm.Text "LE_LOCAL_CONST_I64" "int_compare_loop direct less-equal"
-Assert-Contains $compareLoopDisasm.Text "LT_LOCAL_CONST_I64" "int_compare_loop direct loop condition"
+Assert-Contains $compareLoopDisasm.Text "JUMP_IF_NOT_GE_LOCAL_CONST_I64" "int_compare_loop direct greater-equal jump"
+Assert-Contains $compareLoopDisasm.Text "JUMP_IF_NOT_LE_LOCAL_CONST_I64" "int_compare_loop direct less-equal jump"
+Assert-Contains $compareLoopDisasm.Text "JUMP_IF_NOT_LT_LOCAL_CONST_I64" "int_compare_loop direct loop condition jump"
 
 $fallbackLocalDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\generic_local_fallback.dby")
 if ($fallbackLocalDisasm.Code -ne 0) { throw "generic local fallback disasm failed: $($fallbackLocalDisasm.Text)" }
@@ -223,10 +223,34 @@ if ($directReturnMemberFallback.Code -ne 0) { throw "direct return member fallba
 Assert-Contains $directReturnMemberFallback.Text "MEMBER_CALL max 2" "direct return member fallback keeps member dispatch"
 Assert-NotContains $directReturnMemberFallback.Text "CALL_FN_I64_TO_LOCAL" "direct return member fallback avoids direct return-to-local"
 
+$i64StackChainDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\typed_call_chain_disasm.dby")
+if ($i64StackChainDisasm.Code -ne 0) { throw "i64 stack chain disasm failed: $($i64StackChainDisasm.Text)" }
+Assert-Contains $i64StackChainDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack direct typed call"
+Assert-Contains $i64StackChainDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack typed return"
+Assert-Contains $i64StackChainDisasm.Text "ADD_I64_STACK" "i64 stack typed add"
+Assert-NotContains $i64StackChainDisasm.Text "CALL inc 1" "i64 stack chain avoids string call"
+
+$i64StackAssignDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\assign_call_plus_local.dby")
+if ($i64StackAssignDisasm.Code -ne 0) { throw "i64 stack assign disasm failed: $($i64StackAssignDisasm.Text)" }
+Assert-Contains $i64StackAssignDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack assignment call result"
+Assert-Contains $i64StackAssignDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack assignment stores typed local"
+
+$i64StackFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\generic_return_no_i64_stack_call.dby")
+if ($i64StackFallbackDisasm.Code -ne 0) { throw "i64 stack generic fallback disasm failed: $($i64StackFallbackDisasm.Text)" }
+Assert-Contains $i64StackFallbackDisasm.Text "CALL_FN" "i64 stack generic fallback keeps direct id"
+Assert-NotContains $i64StackFallbackDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack generic fallback avoids typed call"
+Assert-NotContains $i64StackFallbackDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack generic fallback avoids typed return"
+
+$i64StackMemberFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\member_std_no_i64_stack_call.dby")
+if ($i64StackMemberFallbackDisasm.Code -ne 0) { throw "i64 stack member fallback disasm failed: $($i64StackMemberFallbackDisasm.Text)" }
+Assert-Contains $i64StackMemberFallbackDisasm.Text "MEMBER_CALL max 2" "i64 stack std member fallback keeps member dispatch"
+Assert-NotContains $i64StackMemberFallbackDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack std member fallback avoids typed call"
+
 $nestedCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\nested_function_call.dby")
 if ($nestedCallDisasm.Code -ne 0) { throw "nested function call disasm failed: $($nestedCallDisasm.Text)" }
-Assert-Contains $nestedCallDisasm.Text "CALL_FN 0 1 ; inc" "nested function direct call fast path"
+Assert-Contains $nestedCallDisasm.Text "CALL_FN_I64_TO_I64_STACK 0 1 ; inc" "nested function i64 stack direct call fast path"
 Assert-Contains $nestedCallDisasm.Text "CALL_FN 1 1 ; add_two" "outer function direct call fast path"
+Assert-Contains $nestedCallDisasm.Text "RETURN_I64_TO_I64_STACK" "nested function i64 stack return fast path"
 
 $genericCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\generic_function_fallback.dby")
 if ($genericCallDisasm.Code -ne 0) { throw "generic function call disasm failed: $($genericCallDisasm.Text)" }
@@ -385,7 +409,7 @@ $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.6.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch "DByte 1.7.0") { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree
