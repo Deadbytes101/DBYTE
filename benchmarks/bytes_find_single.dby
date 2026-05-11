@@ -1,0 +1,9 @@
+import std.buffer as buf
+
+let b = buf.new(10004)
+buf.set(b, 10000, 0xAB)
+
+let i = 0
+while i < 1000:
+    buf.find(b, b"\xAB")
+    i = i + 1

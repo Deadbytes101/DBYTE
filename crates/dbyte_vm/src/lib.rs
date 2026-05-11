@@ -7,6 +7,7 @@ use dbyte_compiler::{CompileError, Compiler};
 use dbyte_lexer::Lexer;
 use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
+use memchr::memmem;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1448,11 +1449,7 @@ impl Vm {
             }
         };
         let buf = buffer.borrow();
-        let pos = buf
-            .windows(pattern.len())
-            .position(|w| w == pattern)
-            .map(|p| p as i64)
-            .unwrap_or(-1);
+        let pos = fast_find_bytes(&buf, &pattern);
         self.push(Value::Int(pos));
         Ok(())
     }
@@ -1531,6 +1528,22 @@ fn compile_error_to_vm(error: CompileError) -> VmError {
     VmError {
         msg: error.msg,
         span: error.span,
+    }
+}
+
+/// Fast byte-pattern search using SIMD-accelerated memchr/memmem.
+/// Returns the byte offset of the first match, or -1 if not found.
+/// For single-byte patterns this is O(n) with memchr (SIMD).
+/// For multi-byte patterns this uses the two-way memmem algorithm.
+fn fast_find_bytes(haystack: &[u8], needle: &[u8]) -> i64 {
+    match needle.len() {
+        0 => -1,
+        1 => memchr::memchr(needle[0], haystack)
+            .map(|p| p as i64)
+            .unwrap_or(-1),
+        _ => memmem::find(haystack, needle)
+            .map(|p| p as i64)
+            .unwrap_or(-1),
     }
 }
 
@@ -1721,12 +1734,7 @@ impl Vm {
                     return Err(VmError::new("buffer.find: pattern cannot be empty"));
                 }
                 let buf = b.borrow();
-                let pos = buf
-                    .windows(pattern.len())
-                    .position(|w| w == pattern)
-                    .map(|p| p as i64)
-                    .unwrap_or(-1);
-                Ok(Value::Int(pos))
+                Ok(Value::Int(fast_find_bytes(&buf, pattern)))
             }
             BufferReplace => {
                 let b = expect_buffer(args, 0)?;
