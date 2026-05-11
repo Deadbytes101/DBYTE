@@ -1,0 +1,10 @@
+fn inc(n: int) -> int:
+    return n + 1
+
+fn double(n: int) -> int:
+    return n * 2
+
+fn mix(n: int) -> int:
+    return double(inc(n)) + inc(double(n))
+
+print(mix(5))
