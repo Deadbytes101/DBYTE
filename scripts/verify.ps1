@@ -156,6 +156,10 @@ function Assert-PersonalToolOutput($toolName, $output) {
     }
 }
 
+function Bytes-Hex($path) {
+    return -join ([System.IO.File]::ReadAllBytes((Resolve-Path $path).Path) | ForEach-Object { $_.ToString("x2") })
+}
+
 Write-Host "Running VM hardening tests..."
 
 $disasmResult = Invoke-Dbyte -Arguments @("disasm", "tests\vm\disasm_smoke.dby")
@@ -609,6 +613,53 @@ finally {
     Pop-Location
 }
 
+Write-Host "Running script argument tests..."
+
+$scriptArgsRoot = Join-Path $repoRoot "target\verify-script-args"
+if (Test-Path $scriptArgsRoot) {
+    Remove-Item -Recurse -Force $scriptArgsRoot
+}
+New-Item -ItemType Directory -Path $scriptArgsRoot | Out-Null
+$scriptArgsFile = Join-Path $scriptArgsRoot "args_probe.dby"
+Set-Content -Path $scriptArgsFile -Value @'
+import std.env as env
+
+let args: list[str] = env.args()
+print(len(args))
+if len(args) > 0:
+    print(args[0])
+if len(args) > 1:
+    print(args[1])
+'@ -NoNewline
+
+$scriptArgsNone = Invoke-Dbyte -Arguments @("run", $scriptArgsFile)
+if ($scriptArgsNone.Code -ne 0) { throw "script args empty failed: $($scriptArgsNone.Text)" }
+Assert-Equal $scriptArgsNone.Text "0" "script args empty"
+
+$scriptArgsTree = Invoke-Dbyte -Arguments @("run", $scriptArgsFile, "alpha", "two words")
+if ($scriptArgsTree.Code -ne 0) { throw "script args tree failed: $($scriptArgsTree.Text)" }
+Assert-Equal $scriptArgsTree.Text "2`nalpha`ntwo words" "script args tree"
+
+$scriptArgsVm = Invoke-Dbyte -Arguments @("run", "--vm", $scriptArgsFile, "alpha", "two words")
+if ($scriptArgsVm.Code -ne 0) { throw "script args vm failed: $($scriptArgsVm.Text)" }
+Assert-Equal $scriptArgsVm.Text "2`nalpha`ntwo words" "script args vm"
+
+$scriptArgsCheck = Invoke-Dbyte -Arguments @("check", $scriptArgsFile)
+if ($scriptArgsCheck.Code -ne 0) { throw "script args check failed: $($scriptArgsCheck.Text)" }
+Assert-Contains $scriptArgsCheck.Text "no type errors found" "script args check ignores args"
+
+$scriptArgsDisasm = Invoke-Dbyte -Arguments @("disasm", $scriptArgsFile)
+if ($scriptArgsDisasm.Code -ne 0) { throw "script args disasm failed: $($scriptArgsDisasm.Text)" }
+Assert-Contains $scriptArgsDisasm.Text "MEMBER_CALL args 0" "script args disasm"
+
+$scriptArgsRepl = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "import std.env as env`nprint(len(env.args()))`n.quit`n"
+if ($scriptArgsRepl.Code -ne 0) { throw "script args repl failed: $($scriptArgsRepl.Text)" }
+Assert-Contains $scriptArgsRepl.Text "0" "script args repl empty"
+
+$scriptArgsShellCode = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText ": import std.env as env`n: print(len(env.args()))`nquit`n"
+if ($scriptArgsShellCode.Code -ne 0) { throw "script args shell code failed: $($scriptArgsShellCode.Text)" }
+Assert-Contains $scriptArgsShellCode.Text "0" "script args shell code empty"
+
 Write-Host "Running personal tools smoke tests..."
 
 $personalToolsStatus = Git-Status-Short
@@ -641,6 +692,61 @@ finally {
 }
 Assert-GitStatus-Unchanged $personalToolsStatus "personal tools cwd run cleanliness"
 
+$personalArgsRoot = Join-Path $repoRoot "target\verify-personal-tools"
+if (Test-Path $personalArgsRoot) {
+    Remove-Item -Recurse -Force $personalArgsRoot
+}
+New-Item -ItemType Directory -Path $personalArgsRoot | Out-Null
+$personalArgsFile = Join-Path $personalArgsRoot "sample.bin"
+[System.IO.File]::WriteAllBytes($personalArgsFile, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x78, 0x56, 0x34, 0x12))
+
+$personalHexArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile)
+if ($personalHexArgs.Code -ne 0) { throw "personal hexdump args failed: $($personalHexArgs.Text)" }
+Assert-Contains $personalHexArgs.Text "bytes: 10" "personal hexdump args size"
+Assert-Contains $personalHexArgs.Text "0000: 00deadbeef007856" "personal hexdump args first row"
+Assert-Contains $personalHexArgs.Text "0008: 3412" "personal hexdump args second row"
+
+$personalBinArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby", $personalArgsFile)
+if ($personalBinArgs.Code -ne 0) { throw "personal bininfo args failed: $($personalBinArgs.Text)" }
+Assert-Contains $personalBinArgs.Text "bytes: 10" "personal bininfo args size"
+Assert-Contains $personalBinArgs.Text "first8: 00deadbeef007856" "personal bininfo args first bytes"
+
+$personalFindArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile, "DEADBEEF")
+if ($personalFindArgs.Code -ne 0) { throw "personal find args failed: $($personalFindArgs.Text)" }
+Assert-Contains $personalFindArgs.Text "pattern: 1" "personal find args offset"
+
+$personalPatchArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF", "CAFEBABE")
+if ($personalPatchArgs.Code -ne 0) { throw "personal patch args failed: $($personalPatchArgs.Text)" }
+Assert-Contains $personalPatchArgs.Text "patched first match at offset 1" "personal patch args offset"
+Assert-Contains $personalPatchArgs.Text "wrote $personalArgsFile.patched" "personal patch args output path"
+Assert-Contains $personalPatchArgs.Text "patched_hex: 00cafebabe0078563412" "personal patch args bytes"
+Assert-Equal (Bytes-Hex $personalArgsFile) "00deadbeef0078563412" "personal patch original unchanged"
+Assert-Equal (Bytes-Hex "$personalArgsFile.patched") "00cafebabe0078563412" "personal patch output bytes"
+
+$personalPatchMissing = Join-Path $personalArgsRoot "missing.bin"
+[System.IO.File]::WriteAllBytes($personalPatchMissing, [byte[]](0x01, 0x02, 0x03, 0x04))
+$personalPatchMissingResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchMissing, "DEADBEEF", "CAFEBABE")
+if ($personalPatchMissingResult.Code -ne 0) { throw "personal patch missing failed: $($personalPatchMissingResult.Text)" }
+Assert-Equal $personalPatchMissingResult.Text "pattern not found" "personal patch missing output"
+if (Test-Path "$personalPatchMissing.patched") { throw "personal patch missing unexpectedly wrote output" }
+
+$personalPatchUnequal = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF", "CAFE")
+if ($personalPatchUnequal.Code -ne 0) { throw "personal patch unequal failed: $($personalPatchUnequal.Text)" }
+Assert-Equal $personalPatchUnequal.Text "error: find_hex and replace_hex must have the same byte length" "personal patch unequal length"
+
+$personalU32Args = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile)
+if ($personalU32Args.Code -ne 0) { throw "personal u32 args failed: $($personalU32Args.Text)" }
+Assert-Contains $personalU32Args.Text "0 -> 3199065600" "personal u32 args first row"
+Assert-Contains $personalU32Args.Text "4 -> 1450705135" "personal u32 args second row"
+
+$personalUsageFind = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile)
+if ($personalUsageFind.Code -ne 0) { throw "personal find usage failed: $($personalUsageFind.Text)" }
+Assert-Equal $personalUsageFind.Text "usage: find_bytes <file> <hex_pattern>`nexample: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF" "personal find usage"
+
+$personalUsagePatch = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF")
+if ($personalUsagePatch.Code -ne 0) { throw "personal patch usage failed: $($personalUsagePatch.Text)" }
+Assert-Equal $personalUsagePatch.Text "usage: patch_bytes <file> <find_hex> <replace_hex>`nexample: dbyte run personal_tools/patch_bytes.dby firmware.bin DEADBEEF CAFEBABE" "personal patch usage"
+
 $personalShellNoRcAlias = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "hexdump`nquit`n"
 if ($personalShellNoRcAlias.Code -ne 0) { throw "personal shell no-rc alias guard failed: $($personalShellNoRcAlias.Text)" }
 Assert-Contains $personalShellNoRcAlias.Text "ShellError: unknown command: hexdump" "personal shell no-rc hides aliases"
@@ -648,6 +754,10 @@ Assert-Contains $personalShellNoRcAlias.Text "ShellError: unknown command: hexdu
 $personalShellRun = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "run personal_tools/hexdump.dby`nquit`n"
 if ($personalShellRun.Code -ne 0) { throw "personal shell run failed: $($personalShellRun.Text)" }
 Assert-PersonalToolOutput "hexdump" $personalShellRun.Text
+
+$personalShellRunArgs = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "run personal_tools/find_bytes.dby `"$personalArgsFile`" DEADBEEF`nquit`n"
+if ($personalShellRunArgs.Code -ne 0) { throw "personal shell run args failed: $($personalShellRunArgs.Text)" }
+Assert-Contains $personalShellRunArgs.Text "pattern: 1" "personal shell run passes args"
 
 $personalShellAliases = Invoke-DbyteInput -Arguments @("shell") -InputText "hexdump`nbininfo`nfind-bytes`npatch-bytes`nu32-table`nquit`n"
 if ($personalShellAliases.Code -ne 0) { throw "personal shell aliases failed: $($personalShellAliases.Text)" }

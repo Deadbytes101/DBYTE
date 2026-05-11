@@ -217,6 +217,9 @@ math.max(a: int, b: int) -> int
 env.args() -> list[str]
 ```
 
+`env.args()` returns only arguments passed after the script path. It does not
+include the `dbyte` executable, subcommand, flags, or script path.
+
 ## Errors
 
 Errors include a category, message, file path, line, and column:

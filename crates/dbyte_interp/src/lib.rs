@@ -38,6 +38,7 @@ pub enum ModuleMember {
     Value(Value),
     Function(Vec<Param>, Vec<Stmt>),
     Native(NativeFn),
+    EnvArgs,
 }
 
 impl std::fmt::Display for Value {
@@ -115,6 +116,7 @@ pub struct Interpreter {
     in_function: usize,
     call_depth: usize,
     output: OutputSink,
+    script_args: Vec<String>,
 }
 
 impl Default for Interpreter {
@@ -134,6 +136,7 @@ impl Interpreter {
             in_function: 0,
             call_depth: 0,
             output: OutputSink::Stdout,
+            script_args: Vec::new(),
         }
     }
 
@@ -145,6 +148,14 @@ impl Interpreter {
 
     pub fn set_entry_path(&mut self, path: impl Into<PathBuf>) {
         self.current_file = Some(path.into());
+    }
+
+    pub fn set_script_args(&mut self, args: Vec<String>) {
+        self.script_args = args;
+    }
+
+    pub fn script_args(&self) -> &[String] {
+        &self.script_args
     }
 
     pub fn with_captured_output(path: impl Into<PathBuf>) -> Self {
@@ -314,7 +325,7 @@ impl Interpreter {
                 members.insert("sha256".into(), ModuleMember::Native(native_hash_sha256));
             }
             "std.env" => {
-                members.insert("args".into(), ModuleMember::Native(native_env_args));
+                members.insert("args".into(), ModuleMember::EnvArgs);
             }
             "std.buffer" => {
                 members.insert("new".into(), ModuleMember::Native(native_buffer_new));
@@ -716,10 +727,12 @@ impl Interpreter {
                 span,
             } => match self.eval_member(object, property, *span)? {
                 ModuleMember::Value(value) => Ok(value),
-                ModuleMember::Function(_, _) | ModuleMember::Native(_) => Err(RuntimeError {
-                    msg: format!("module member `{}` is callable", property),
-                    span: *span,
-                }),
+                ModuleMember::Function(_, _) | ModuleMember::Native(_) | ModuleMember::EnvArgs => {
+                    Err(RuntimeError {
+                        msg: format!("module member `{}` is callable", property),
+                        span: *span,
+                    })
+                }
             },
 
             Expr::MemberCall {
@@ -734,6 +747,17 @@ impl Interpreter {
                 ModuleMember::Native(f) => {
                     let vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_expr(a)).collect();
                     f(&vals?).map_err(|msg| RuntimeError { msg, span: *span })
+                }
+                ModuleMember::EnvArgs => {
+                    if !args.is_empty() {
+                        return Err(RuntimeError {
+                            msg: format!("function `env.args` expects 0 args, got {}", args.len()),
+                            span: *span,
+                        });
+                    }
+                    Ok(Value::List(
+                        self.script_args.iter().cloned().map(Value::Str).collect(),
+                    ))
                 }
                 ModuleMember::Value(_) => Err(RuntimeError {
                     msg: format!("module member `{}` is not callable", property),
@@ -1066,16 +1090,6 @@ fn native_hash_sha256(args: &[Value]) -> Result<Value, String> {
     hasher.update(bytes);
     let result = hasher.finalize();
     Ok(Value::Bytes(result.to_vec()))
-}
-
-fn native_env_args(args: &[Value]) -> Result<Value, String> {
-    if !args.is_empty() {
-        return Err(format!(
-            "function `env.args` expects 0 args, got {}",
-            args.len()
-        ));
-    }
-    Ok(Value::List(std::env::args().map(Value::Str).collect()))
 }
 
 fn checked_offset(_name: &str, offset: i64) -> Result<usize, String> {

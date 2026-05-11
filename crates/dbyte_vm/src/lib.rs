@@ -217,6 +217,7 @@ pub struct Vm {
     free_frames: Vec<Frame>,
     trace: bool,
     current_file: Option<PathBuf>,
+    script_args: Vec<String>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
     loading_stack: Vec<String>,
     active_function_tables: Vec<Vec<Rc<BytecodeFunction>>>,
@@ -232,6 +233,7 @@ impl Vm {
             free_frames: Vec::new(),
             trace: false,
             current_file: None,
+            script_args: Vec::new(),
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
             active_function_tables: Vec::new(),
@@ -246,6 +248,14 @@ impl Vm {
 
     pub fn set_trace(&mut self, trace: bool) {
         self.trace = trace;
+    }
+
+    pub fn set_script_args(&mut self, args: Vec<String>) {
+        self.script_args = args;
+    }
+
+    pub fn script_args(&self) -> &[String] {
+        &self.script_args
     }
 
     pub fn run(&mut self, chunk: &Chunk) -> Result<(), VmError> {
@@ -1411,7 +1421,17 @@ impl Vm {
                 let result = hasher.finalize();
                 Ok(Value::Bytes(result.to_vec()))
             }
-            EnvArgs => Ok(Value::List(std::env::args().map(Value::Str).collect())),
+            EnvArgs => {
+                if !args.is_empty() {
+                    return Err(VmError::new(format!(
+                        "function `env.args` expects 0 args, got {}",
+                        args.len()
+                    )));
+                }
+                Ok(Value::List(
+                    self.script_args.iter().cloned().map(Value::Str).collect(),
+                ))
+            }
             BufferNew | BufferFromBytes | BufferToBytes | BufferLen | BufferGet | BufferSet
             | BufferSlice | BufferLoad | BufferSave | BufferFind | BufferReplace => {
                 self.native_buffer_dispatch(id, args)
