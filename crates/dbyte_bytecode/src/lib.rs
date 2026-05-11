@@ -278,7 +278,9 @@ pub enum Op {
     Return,
     ReturnI64,
     ReturnI64ToI64Stack,
+    I64ToStack,
     Pop,
+    PopI64Stack,
     Halt,
 }
 
@@ -516,6 +518,7 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
                 .get(*id)
                 .map_or("<unknown>", |function| function.name.as_str())
         ),
+        Op::I64ToStack => "i64_to_stack".to_string(),
         Op::CallFnI64ToLocal { id, argc, dst } => format!(
             "CALL_FN_I64_TO_LOCAL {} {} -> {} ; {} -> {}",
             id,
@@ -536,11 +539,12 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
                 .get(*id)
                 .map_or("<unknown>", |function| function.name.as_str())
         ),
-        Op::Return => "RETURN".into(),
-        Op::ReturnI64 => "RETURN_I64".into(),
-        Op::ReturnI64ToI64Stack => "RETURN_I64_TO_I64_STACK".into(),
-        Op::Pop => "POP".into(),
-        Op::Halt => "HALT".into(),
+        Op::Return => "RETURN".to_string(),
+        Op::ReturnI64 => "RETURN_I64".to_string(),
+        Op::ReturnI64ToI64Stack => "RETURN_I64_TO_I64_STACK".to_string(),
+        Op::Pop => "POP".to_string(),
+        Op::PopI64Stack => "POP_I64_STACK".to_string(),
+        Op::Halt => "HALT".to_string(),
     }
 }
 

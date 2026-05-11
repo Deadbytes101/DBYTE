@@ -417,11 +417,13 @@ finally {
     Pop-Location
 }
 
+$EXPECTED_VERSION = "1.9.0"
+$DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.8.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch $EXPECTED_VERSION) { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree

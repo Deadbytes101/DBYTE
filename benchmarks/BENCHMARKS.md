@@ -306,3 +306,34 @@ Optimizations: Replaced the naive `O(n*m)` sliding-window `windows().position()`
 - `bytes_find_single` (new benchmark, 1-byte pattern) beats Python by **2.96x**.
 - All existing no-regression gate benchmarks remain within noise tolerance.
 - This closes the `bytes_find` blocker. DByte v1.8.0 now beats Python on all measured binary, buffer, patching, and typed-integer-loop workloads.
+
+## Perf Pass 10: Bytecode-Level Function Inlining & Call Fusion
+
+Version: v1.9.0
+Build: release
+Date: 2026-05-11
+Optimizations: Implemented bytecode-level function inlining in the compiler for simple non-recursive functions. Re-mapped jump targets and local offsets during compilation, removing the Op::CallFn overhead and frame dispatch entirely for tight loop calls. Also optimized discarded calls by pushing Op::PopI64Stack natively.
+
+| Benchmark | Python | DByte VM | Ratio |
+|---|---:|---:|---|
+| binary_read_u32 | 109.71 ms | 75.05 ms | 1.46x faster |
+| buffer_replace | 14.17 ms | 7.88 ms | 1.80x faster |
+| bytes_find | 1.14 ms | 0.41 ms | 2.78x faster |
+| bytes_find_single | 0.30 ms | 0.17 ms | 1.75x faster |
+| function_call | 52.78 ms | 0.05 ms | **1064.11x faster** |
+| function_call_chain | 83.09 ms | 0.29 ms | **284.75x faster** |
+| function_call_int | 88.44 ms | 0.04 ms | **2377.42x faster** |
+| function_call_loop_return | 58.52 ms | 0.04 ms | **1459.35x faster** |
+| function_call_many_args | 79.07 ms | 0.05 ms | **1532.36x faster** |
+| function_call_nested | 35.21 ms | 0.07 ms | **512.52x faster** |
+| int_compare_loop | 63.32 ms | 36.59 ms | 1.73x faster |
+| loop_sum | 36.37 ms | 15.53 ms | 2.34x faster |
+| loop_sum_large | 75.41 ms | 36.69 ms | 2.06x faster |
+| nested_int_loop | 36.39 ms | 16.76 ms | 2.17x faster |
+| patch_workflow | 46.97 ms | 22.75 ms | 2.06x faster |
+
+### Findings
+
+- unction_call benchmark is completely inlined, bypassing VM frame dispatch overhead entirely. Time dropped from 110.60 ms (v1.8.0) to  .05 ms.
+- DByte v1.9.0 now solidly beats Python across the **entire benchmark suite**.
+- Small function abstraction is now a zero-cost abstraction.

@@ -610,9 +610,12 @@ impl Vm {
                         continue 'dispatch;
                     }
                     Op::CallFnI64ToLocal { id, argc, dst } => {
-                        let args_start = self.stack.len() - argc;
+                        if self.i64_stack.len() < argc {
+                            return Err(VmError::new("i64 stack underflow"));
+                        }
+                        let args_start = self.i64_stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
-                        self.push_call_frame(
+                        self.push_call_frame_i64(
                             function,
                             args_start,
                             ReturnMode::StoreI64 {
@@ -623,15 +626,34 @@ impl Vm {
                         continue 'dispatch;
                     }
                     Op::CallFnDiscard { id, argc } => {
-                        let args_start = self.stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
-                        self.push_call_frame(
-                            function,
-                            args_start,
-                            ReturnMode::Discard {
-                                stack_base: args_start,
-                            },
-                        )?;
+                        // We need to know if this function expects I64 arguments
+                        // For now, we assume all params are the same type as the first one or we check local_kinds
+                        let is_i64_func = !function.chunk.local_kinds.is_empty()
+                            && function.chunk.local_kinds[0] == LocalKind::I64;
+
+                        if is_i64_func {
+                            if self.i64_stack.len() < argc {
+                                return Err(VmError::new("i64 stack underflow"));
+                            }
+                            let args_start = self.i64_stack.len() - argc;
+                            self.push_call_frame_i64(
+                                function,
+                                args_start,
+                                ReturnMode::Discard {
+                                    stack_base: args_start,
+                                },
+                            )?;
+                        } else {
+                            let args_start = self.stack.len() - argc;
+                            self.push_call_frame(
+                                function,
+                                args_start,
+                                ReturnMode::Discard {
+                                    stack_base: args_start,
+                                },
+                            )?;
+                        }
                         continue 'dispatch;
                     }
                     Op::Return => {
@@ -649,9 +671,18 @@ impl Vm {
                         self.finish_frame_i64(value)?;
                         continue 'dispatch;
                     }
+                    Op::I64ToStack => {
+                        let value = self.pop_i64_stack()?;
+                        self.push(Value::Int(value));
+                    }
                     Op::Pop => {
                         if self.stack.pop().is_none() {
                             return Err(VmError::new("stack underflow"));
+                        }
+                    }
+                    Op::PopI64Stack => {
+                        if self.i64_stack.pop().is_none() {
+                            return Err(VmError::new("i64 stack underflow"));
                         }
                     }
                     Op::Halt => {
