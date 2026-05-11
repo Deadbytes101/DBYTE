@@ -7,6 +7,13 @@ syntax with predictable performance.
 Public alpha status: DByte is usable for experiments and small tools, but the
 language and standard library may still change before a stable 2.x release.
 
+![DByte Logo](assets/logo/dbyte-logo.png)
+
+Website: https://dbytelang.22web.org
+
+DByte — a fast personal low-level scripting language for binary tools, shell
+workflows, and system experiments.
+
 Performance claim:
 
 > DByte v1.9.2 outperforms Python 3.12.9 across DByte's measured benchmark
@@ -152,10 +159,14 @@ They also accept script arguments for real files:
 
 ```powershell
 dbyte run personal_tools\hexdump.dby firmware.bin
+dbyte run personal_tools\hexdump.dby firmware.bin 16 64
 dbyte run personal_tools\bininfo.dby firmware.bin
 dbyte run personal_tools\find_bytes.dby firmware.bin DEADBEEF
 dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE
+dbyte run personal_tools\patch_bytes.dby --all firmware.bin DEADBEEF CAFEBABE
+dbyte run personal_tools\patch_bytes.dby --offset 128 firmware.bin CAFEBABE
 dbyte run personal_tools\read_u32_table.dby firmware.bin
+dbyte run personal_tools\read_u32_table.dby firmware.bin 0 8
 ```
 
 From `dbyte shell`, the repo `.dbyterc` exposes shortcuts:

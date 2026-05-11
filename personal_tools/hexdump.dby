@@ -10,16 +10,103 @@ let data: buffer = hbuf.from_bytes(b"")
 let size: int = 0
 let first_len: int = 8
 let second_len: int = 0
+let offset: int = 0
+let length: int = 0
+let row_offset: int = 0
+let row_len: int = 0
+let remaining: int = 0
+let decimal_text: str = ""
+let decimal_value: int = 0
+let decimal_valid: bool = true
+let digit: int = -1
+let ch: str = ""
+let has_range: bool = false
 
 if len(args) == 0:
     hfs.write_bytes(path, b"\x44\x42\x79\x74\x65\x00\x10\x20\xDE\xAD\xBE\xEF")
 else:
-    if len(args) != 1:
-        print("usage: hexdump <file>")
-        print("example: dbyte run personal_tools/hexdump.dby sample.bin")
-        should_run = false
-    else:
+    if len(args) == 1:
         path = args[0]
+    else:
+        if len(args) == 3:
+            path = args[0]
+            has_range = true
+            decimal_text = args[1]
+            decimal_valid = true
+            decimal_value = 0
+            if len(decimal_text) == 0:
+                decimal_valid = false
+            for ch in decimal_text:
+                digit = -1
+                if ch == "0":
+                    digit = 0
+                if ch == "1":
+                    digit = 1
+                if ch == "2":
+                    digit = 2
+                if ch == "3":
+                    digit = 3
+                if ch == "4":
+                    digit = 4
+                if ch == "5":
+                    digit = 5
+                if ch == "6":
+                    digit = 6
+                if ch == "7":
+                    digit = 7
+                if ch == "8":
+                    digit = 8
+                if ch == "9":
+                    digit = 9
+                if digit < 0:
+                    decimal_valid = false
+                else:
+                    decimal_value = decimal_value * 10 + digit
+            if decimal_valid:
+                offset = decimal_value
+            else:
+                print("error: offset must be a decimal integer")
+                should_run = false
+            decimal_text = args[2]
+            decimal_valid = true
+            decimal_value = 0
+            if len(decimal_text) == 0:
+                decimal_valid = false
+            for ch in decimal_text:
+                digit = -1
+                if ch == "0":
+                    digit = 0
+                if ch == "1":
+                    digit = 1
+                if ch == "2":
+                    digit = 2
+                if ch == "3":
+                    digit = 3
+                if ch == "4":
+                    digit = 4
+                if ch == "5":
+                    digit = 5
+                if ch == "6":
+                    digit = 6
+                if ch == "7":
+                    digit = 7
+                if ch == "8":
+                    digit = 8
+                if ch == "9":
+                    digit = 9
+                if digit < 0:
+                    decimal_valid = false
+                else:
+                    decimal_value = decimal_value * 10 + digit
+            if decimal_valid:
+                length = decimal_value
+            else:
+                print("error: length must be a decimal integer")
+                should_run = false
+        else:
+            print("usage: hexdump <file> [offset length]")
+            print("example: dbyte run personal_tools/hexdump.dby sample.bin 0 16")
+            should_run = false
 
 if should_run:
     data = hbuf.load(path)
@@ -28,23 +115,35 @@ if should_run:
     second_len = 0
 
 if should_run:
-    if size < first_len:
-        first_len = size
-
-if should_run:
-    if size > 8:
-        second_len = size - 8
-        if second_len > 8:
-            second_len = 8
+    if has_range:
+        if offset + length > size:
+            print("error: range out of bounds")
+            should_run = false
 
 if should_run:
     print("hexdump:", path)
     print("bytes:", size)
 
 if should_run:
-    if first_len > 0:
-        print("0000:", henc.hex_encode(hbuf.slice(data, 0, first_len)))
-
-if should_run:
-    if second_len > 0:
-        print("0008:", henc.hex_encode(hbuf.slice(data, 8, second_len)))
+    if has_range:
+        print("range:", offset, length)
+        row_offset = offset
+        remaining = length
+        while remaining > 0:
+            row_len = remaining
+            if row_len > 8:
+                row_len = 8
+            print(row_offset, ":", henc.hex_encode(hbuf.slice(data, row_offset, row_len)))
+            row_offset = row_offset + row_len
+            remaining = remaining - row_len
+    else:
+        if size < first_len:
+            first_len = size
+        if size > 8:
+            second_len = size - 8
+            if second_len > 8:
+                second_len = 8
+        if first_len > 0:
+            print("0000:", henc.hex_encode(hbuf.slice(data, 0, first_len)))
+        if second_len > 0:
+            print("0008:", henc.hex_encode(hbuf.slice(data, 8, second_len)))
