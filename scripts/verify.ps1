@@ -377,14 +377,33 @@ $replPersist = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "let
 if ($replPersist.Code -ne 0) { throw "repl persistence failed: $($replPersist.Text)" }
 Assert-Contains $replPersist.Text "42" "repl variable persistence"
 
-$replFunction = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "fn add(a: int, b: int) -> int:`n    return a + b`n`nprint(add(20, 22))`n.quit`n"
+$replFunction = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "fn add(a: int, b: int) -> int:`n    return a + b`n`nprint(add(20, 22))`nprint(add(1, 2))`n.quit`n"
 if ($replFunction.Code -ne 0) { throw "repl function persistence failed: $($replFunction.Text)" }
 Assert-Contains $replFunction.Text "42" "repl multiline function persistence"
+Assert-Contains $replFunction.Text "3" "repl repeated function call persistence"
 
-$replReset = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "let x: int = 1`n.reset`nprint(x)`n.quit`n"
+$replMalformedBlock = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "fn broken() -> int:`n`nprint(42)`n.quit`n"
+if ($replMalformedBlock.Code -ne 0) { throw "repl malformed block recovery command failed: $($replMalformedBlock.Text)" }
+Assert-Contains $replMalformedBlock.Text "ParseError" "repl malformed block reports parse error"
+Assert-Contains $replMalformedBlock.Text "42" "repl malformed block recovers"
+
+$replHelpUnknownEof = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText ".help`n.nope`nprint(7)`n"
+if ($replHelpUnknownEof.Code -ne 0) { throw "repl help/unknown/eof failed: $($replHelpUnknownEof.Text)" }
+Assert-Contains $replHelpUnknownEof.Text "DByte REPL commands" "repl help command"
+Assert-Contains $replHelpUnknownEof.Text "ReplError: unknown command: .nope" "repl unknown dot command"
+Assert-Contains $replHelpUnknownEof.Text "7" "repl eof exits cleanly after code"
+
+$replCrLfBom = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText ([char]0xfeff + "let crlf: int = 41`r`nprint(crlf + 1)`r`n.quit`r`n")
+if ($replCrLfBom.Code -ne 0) { throw "repl crlf/bom failed: $($replCrLfBom.Text)" }
+Assert-Contains $replCrLfBom.Text "42" "repl crlf bom input"
+
+$replReset = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "import std.math as math`nfn add_one(x: int) -> int:`n    return x + 1`n`nlet x: int = 1`nprint(math.max(add_one(x), 3))`n.reset`nprint(x)`nprint(add_one(1))`nprint(math.max(1, 2))`nimport std.math as math`nprint(math.max(2, 4))`n.quit`n"
 if ($replReset.Code -ne 0) { throw "repl reset command failed: $($replReset.Text)" }
 Assert-Contains $replReset.Text "reset" "repl reset acknowledgement"
-Assert-Contains $replReset.Text "undefined variable" "repl reset clears state"
+Assert-Contains $replReset.Text "3" "repl reset precondition output"
+Assert-Contains $replReset.Text "undefined variable" "repl reset clears variables/imports"
+Assert-Contains $replReset.Text "undefined function" "repl reset clears functions"
+Assert-Contains $replReset.Text "4" "repl import works again after reset"
 
 $interactiveRoot = Join-Path $repoRoot "target\verify-interactive"
 if (Test-Path $interactiveRoot) {
@@ -394,10 +413,12 @@ New-Item -ItemType Directory -Path $interactiveRoot | Out-Null
 
 $replRcRoot = Join-Path $interactiveRoot "repl-rc"
 New-Item -ItemType Directory -Path $replRcRoot | Out-Null
-Set-Content -Path (Join-Path $replRcRoot ".dbyterc") -Value "let boot: int = 41" -NoNewline
-$replRc = Invoke-DbyteInput -Arguments @("repl") -InputText "print(boot + 1)`n.quit`n" -WorkingDirectory $replRcRoot
+Set-Content -Path (Join-Path $replRcRoot "helper.dby") -Value "pub fn inc(x: int) -> int:`n    return x + 1`n" -NoNewline
+Set-Content -Path (Join-Path $replRcRoot ".dbyterc") -Value "import std.math as math`nimport `"./helper.dby`" as helper`nlet boot: int = math.max(helper.inc(40), 1)" -NoNewline
+$replRc = Invoke-DbyteInput -Arguments @("repl") -InputText "print(boot + 1)`nprint(helper.inc(1))`n.quit`n" -WorkingDirectory $replRcRoot
 if ($replRc.Code -ne 0) { throw "repl rc load failed: $($replRc.Text)" }
 Assert-Contains $replRc.Text "42" "repl rc state"
+Assert-Contains $replRc.Text "2" "repl rc local import state"
 
 $replNoRc = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "print(boot)`n.quit`n" -WorkingDirectory $replRcRoot
 if ($replNoRc.Code -ne 0) { throw "repl no-rc command failed: $($replNoRc.Text)" }
@@ -413,10 +434,12 @@ Assert-Contains $replBadRc.Text "RcError: failed to load .dbyterc" "repl bad rc 
 $shellRoot = Join-Path $interactiveRoot "shell"
 New-Item -ItemType Directory -Path $shellRoot | Out-Null
 Set-Content -Path (Join-Path $shellRoot "hello.dby") -Value "print(`"shell file ok`")" -NoNewline
-$shellInput = "version`npwd`ncd `"$shellRoot`"`nls`nrun hello.dby`ncheck hello.dby`n: let y: int = 40`n: print(y + 2)`nnot_a_real_cmd`nquit`n"
+$shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun hello.dby`ncheck hello.dby`n: let y: int = 40`n: print(y + 2)`nnot_a_real_cmd`nquit`n"
 $shellBasic = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellInput
 if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.Text)" }
-Assert-Contains $shellBasic.Text "DByte 2.1.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
+Assert-Contains $shellBasic.Text "DByte 2.1.1" "shell version"
+Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
 Assert-Contains $shellBasic.Text "no type errors found" "shell check file"
@@ -425,10 +448,21 @@ Assert-Contains $shellBasic.Text "ShellError: unknown command: not_a_real_cmd" "
 
 $shellRcRoot = Join-Path $interactiveRoot "shell-rc"
 New-Item -ItemType Directory -Path $shellRcRoot | Out-Null
-Set-Content -Path (Join-Path $shellRcRoot ".dbyterc") -Value "let boot: int = 41" -NoNewline
-$shellRc = Invoke-DbyteInput -Arguments @("shell") -InputText ": print(boot + 1)`nquit`n" -WorkingDirectory $shellRcRoot
+Set-Content -Path (Join-Path $shellRcRoot "helper.dby") -Value "pub fn inc(x: int) -> int:`n    return x + 1`n" -NoNewline
+Set-Content -Path (Join-Path $shellRcRoot ".dbyterc") -Value "import std.math as math`nimport `"./helper.dby`" as helper`nlet boot: int = math.max(helper.inc(40), 1)" -NoNewline
+$shellRc = Invoke-DbyteInput -Arguments @("shell") -InputText ": print(boot + 1)`n: print(helper.inc(1))`nquit`n" -WorkingDirectory $shellRcRoot
 if ($shellRc.Code -ne 0) { throw "shell rc load failed: $($shellRc.Text)" }
 Assert-Contains $shellRc.Text "42" "shell rc state"
+Assert-Contains $shellRc.Text "2" "shell rc local import state"
+
+$shellNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText ": print(boot)`nquit`n" -WorkingDirectory $shellRcRoot
+if ($shellNoRc.Code -ne 0) { throw "shell no-rc command failed: $($shellNoRc.Text)" }
+Assert-Contains $shellNoRc.Text "undefined variable" "shell no-rc skips rc"
+
+$shellExamples = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cd examples`nrun hello.dby`ncheck hello.dby`nquit`n"
+if ($shellExamples.Code -ne 0) { throw "shell examples cwd command failed: $($shellExamples.Text)" }
+Assert-Contains $shellExamples.Text "Hello, DByte!" "shell run from cwd after cd"
+Assert-Contains $shellExamples.Text "no type errors found" "shell check from cwd after cd"
 
 $shellTestRoot = Join-Path $interactiveRoot "shell-test"
 New-Item -ItemType Directory -Path (Join-Path $shellTestRoot "src") -Force | Out-Null
@@ -450,6 +484,20 @@ try {
     $runNoRc = Invoke-Dbyte -Arguments @("run", "main.dby")
     if ($runNoRc.Code -ne 0) { throw "run loaded rc unexpectedly: $($runNoRc.Text)" }
     Assert-Equal $runNoRc.Text "run ignores rc" "run ignores rc"
+    $checkNoRc = Invoke-Dbyte -Arguments @("check", "main.dby")
+    if ($checkNoRc.Code -ne 0) { throw "check loaded rc unexpectedly: $($checkNoRc.Text)" }
+    Assert-Contains $checkNoRc.Text "no type errors found" "check ignores rc"
+    $newNoRcRoot = Join-Path $runNoRcRoot "new-no-rc"
+    New-Item -ItemType Directory -Path $newNoRcRoot | Out-Null
+    Push-Location $newNoRcRoot
+    try {
+        $newNoRc = Invoke-Dbyte -Arguments @("new", "rcsafe")
+        if ($newNoRc.Code -ne 0) { throw "new loaded parent rc unexpectedly: $($newNoRc.Text)" }
+        Assert-Contains $newNoRc.Text "created DByte project" "new ignores rc"
+    }
+    finally {
+        Pop-Location
+    }
 }
 finally {
     Pop-Location
@@ -550,7 +598,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.1.0"
+$EXPECTED_VERSION = "2.1.1"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
