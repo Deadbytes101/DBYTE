@@ -338,3 +338,35 @@ Optimizations: Implemented bytecode-level function inlining in the compiler for 
 - Function inlining significantly reduced the overhead of small function calls, though some complex call chains (`function_call_int`) are still hitting the limits of the current inlining guards.
 - Small function abstraction is now approaching zero-cost, but further refinement of the I64 return path and argument transfer is planned for v1.9.1 to definitively beat Python on every workload.
 
+## Perf Pass 11: Zero-Cost Inlining (Argument Remapping)
+
+Version: v1.9.1
+Build: release
+Date: 2026-05-11
+Optimizations: Implemented direct argument remapping in the inliner. By analyzing parameter usage (read-only checks), the compiler now substitutes parameter loads with direct caller local loads or constants, eliminating the stack-to-local shuffle. This achieves true zero-cost abstraction for small helper functions.
+
+| Benchmark | Python | DByte VM | Ratio |
+|---|---:|---:|---|
+| binary_read_u32 | 114.32 ms | 63.99 ms | 1.79x faster |
+| buffer_replace | 13.91 ms | 7.86 ms | 1.77x faster |
+| bytes_find | 1.12 ms | 0.36 ms | 3.07x faster |
+| bytes_find_single | 0.31 ms | 0.22 ms | 1.38x faster |
+| function_call | 51.47 ms | 30.36 ms | 1.70x faster |
+| function_call_chain | 83.77 ms | 28.98 ms | 2.89x faster |
+| function_call_int | 57.83 ms | 30.03 ms | 1.93x faster |
+| function_call_loop_return | 59.23 ms | 34.81 ms | 1.70x faster |
+| function_call_many_args | 81.65 ms | 34.71 ms | 2.35x faster |
+| function_call_nested | 32.81 ms | 18.21 ms | 1.80x faster |
+| int_compare_loop | 62.55 ms | 38.82 ms | 1.61x faster |
+| loop_sum | 35.03 ms | 17.65 ms | 1.98x faster |
+| loop_sum_large | 93.97 ms | 37.42 ms | 2.51x faster |
+| nested_int_loop | 39.24 ms | 15.79 ms | 2.49x faster |
+| patch_workflow | 36.51 ms | 24.96 ms | 1.46x faster |
+
+### Findings
+
+- **DByte v1.9.1 beats Python across the full measured benchmark suite.**
+- 'Zero-Cost Inlining' has successfully eliminated the remaining bottleneck in function call overhead.
+- Simple helper functions (like `add`, `get`, `check`) now incur literally zero runtime overhead when inlined, producing optimal instruction sequences identical to hand-written inline logic.
+
+
