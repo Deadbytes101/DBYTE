@@ -497,7 +497,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 2.5.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 2.6.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -968,7 +968,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.5.1"
+$EXPECTED_VERSION = "2.6.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
