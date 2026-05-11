@@ -182,3 +182,31 @@ Baseline note: `VM v1.5.0` and `VM v1.5.1` were measured as local release-build 
 - v1.5.1 recovers the int-loop regressions introduced by the v1.5 frame-dispatch structure without adding new language features or opcodes.
 - Binary and patching workloads remain within the regression gate in the local median run.
 - Function-call-heavy workloads improve slightly but still need the planned v1.6 direct typed return-to-local path to materially close the gap with Python.
+
+## Perf Pass 7: Direct Typed Return-To-Local Calls
+
+Version: v1.6.0
+Build: release
+Date: 2026-05-11
+Optimizations: Added `CALL_FN_I64_TO_LOCAL` for direct user function calls returning `int` into an `int` local, plus a VM `ReturnMode::StoreI64` path so `RETURN_I64` writes directly into the caller frame instead of pushing a boxed stack value and immediately storing it. The compiler fast path is conservative: direct user calls with explicit `-> int` only, with nested call arguments and generic/member/std calls left on the existing fallback path.
+
+Baseline note: `VM v1.6.0` was measured as local release-build medians from five runs and compared to the recorded `VM v1.5.1` medians. Timings are noisy on this machine, so the table is used as a regression gate and directional performance record.
+
+| Benchmark | VM v1.5.1 median | VM v1.6.0 median | Change |
+|---|---:|---:|---:|
+| loop_sum | 23.86 ms | 21.03 ms | 1.13x faster |
+| loop_sum_large | 47.86 ms | 41.09 ms | 1.16x faster |
+| nested_int_loop | 25.14 ms | 20.88 ms | 1.20x faster |
+| binary_read_u32 | 80.82 ms | 67.01 ms | 1.21x faster |
+| buffer_replace | 10.08 ms | 8.88 ms | 1.14x faster |
+| patch_workflow | 27.15 ms | 23.46 ms | 1.16x faster |
+| function_call | 118.79 ms | 106.17 ms | 1.12x faster |
+| function_call_int | 150.27 ms | 123.07 ms | 1.22x faster |
+| function_call_loop_return | 150.03 ms | 126.05 ms | 1.19x faster |
+| function_call_nested | 104.19 ms | 87.40 ms | 1.19x faster |
+
+### Findings
+
+- Direct typed return-to-local materially improves the int-return assignment workloads while preserving the loop and binary regression gates.
+- `function_call_int`, `function_call_loop_return`, and `function_call_nested` all improve clearly, matching the primary v1.6 target.
+- The stretch target for `function_call` below 90 ms was not reached in this median run; the remaining cost is still frame setup, typed argument transfer, and executing small function bodies.
