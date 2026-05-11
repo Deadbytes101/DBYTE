@@ -25,6 +25,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Buffer stdlib for load, save, find, replace, slice, get, and set.
 - File, hash, encoding, math, env, binary, and buffer standard modules.
 - Built-in test runner: `dbyte test`.
+- Interactive REPL and DByte-native shell for personal scripting sessions.
 
 ## Quick Start
 
@@ -32,6 +33,13 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 dbyte --version
 dbyte run --vm examples\hello.dby
 dbyte test --engine vm
+```
+
+Start an interactive session:
+
+```powershell
+dbyte repl
+dbyte shell
 ```
 
 Create a project:
@@ -81,8 +89,28 @@ dbyte disasm <file>
 dbyte tokens <file>
 dbyte ast <file>
 dbyte bench --compare-python
+dbyte repl [--no-rc]
+dbyte shell [--no-rc]
 dbyte new <name>
 ```
+
+## Interactive Runtime
+
+`dbyte repl` keeps variables, functions, imports, and module state alive across
+inputs. Use `.help`, `.reset`, and `.quit` / `.exit` for REPL control.
+
+`dbyte shell` is a DByte-native command shell, not an OS passthrough shell.
+Built-ins include `pwd`, `cd`, `ls`, `run`, `check`, `test`, `version`, and
+`repl`. Execute DByte code explicitly with `:`, for example:
+
+```txt
+: let x: int = 40
+: print(x + 2)
+```
+
+Both interactive commands load `.dbyterc` from the current directory unless
+`--no-rc` is passed. Non-interactive commands such as `run`, `check`, `test`,
+`bench`, and `new` do not load `.dbyterc`.
 
 ## Documentation
 

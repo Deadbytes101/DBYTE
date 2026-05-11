@@ -99,6 +99,7 @@ enum Signal {
     Error(RuntimeError),
 }
 
+#[derive(Clone)]
 pub struct Interpreter {
     env: Vec<HashMap<String, Value>>,
     fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
@@ -132,6 +133,10 @@ impl Interpreter {
         let mut interp = Self::new();
         interp.current_file = Some(path.into());
         interp
+    }
+
+    pub fn set_entry_path(&mut self, path: impl Into<PathBuf>) {
+        self.current_file = Some(path.into());
     }
 
     fn push_scope(&mut self) {

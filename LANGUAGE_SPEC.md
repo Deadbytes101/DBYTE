@@ -1,6 +1,6 @@
 # DByte Language Specification
 
-Version: Public Alpha v2.0.0
+Version: Public Alpha v2.1.0
 
 DByte is a statically checked, Python-like scripting language with a bytecode VM
 and low-level standard library support for binary parsing and buffer patching.
@@ -94,6 +94,45 @@ print(len(b"abc"))
 ```
 
 `len()` supports `str`, `list`, `bytes`, and `buffer`.
+
+## Interactive Runtime
+
+`dbyte repl` evaluates DByte statements with persistent tree-interpreter state.
+Variables, functions, imports, and module state survive until `.reset` or
+session exit. Multiline `fn`, `if`, `while`, and `for` blocks are finished with
+a blank line.
+
+REPL commands:
+
+```txt
+.help
+.reset
+.quit
+.exit
+```
+
+`dbyte shell` is a DByte-native shell. It does not execute unknown commands as
+operating-system commands. Supported shell commands:
+
+```txt
+help
+quit
+exit
+clear
+pwd
+cd <path>
+ls
+run <file.dby>
+check <file.dby>
+test
+version
+repl
+: <dbyte code>
+```
+
+`dbyte repl` and `dbyte shell` load `.dbyterc` from the current directory before
+interactive input. Pass `--no-rc` to skip it. Other commands, including `run`,
+`check`, `test`, `bench`, and `new`, never load `.dbyterc`.
 
 ## Standard Modules
 
