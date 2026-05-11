@@ -416,7 +416,7 @@ New-Item -ItemType Directory -Path $interactiveRoot | Out-Null
 $replRcRoot = Join-Path $interactiveRoot "repl-rc"
 New-Item -ItemType Directory -Path $replRcRoot | Out-Null
 Set-Content -Path (Join-Path $replRcRoot "helper.dby") -Value "pub fn inc(x: int) -> int:`n    return x + 1`n" -NoNewline
-Set-Content -Path (Join-Path $replRcRoot ".dbyterc") -Value "import std.math as math`nimport `"./helper.dby`" as helper`nlet boot: int = math.max(helper.inc(40), 1)" -NoNewline
+Set-Content -Path (Join-Path $replRcRoot ".dbyterc") -Value "@shell alias ignored = help`nimport std.math as math`nimport `"./helper.dby`" as helper`nlet boot: int = math.max(helper.inc(40), 1)" -NoNewline
 $replRc = Invoke-DbyteInput -Arguments @("repl") -InputText "print(boot + 1)`nprint(helper.inc(1))`n.quit`n" -WorkingDirectory $replRcRoot
 if ($replRc.Code -ne 0) { throw "repl rc load failed: $($replRc.Text)" }
 Assert-Contains $replRc.Text "42" "repl rc state"
@@ -436,30 +436,50 @@ Assert-Contains $replBadRc.Text "RcError: failed to load .dbyterc" "repl bad rc 
 $shellRoot = Join-Path $interactiveRoot "shell"
 New-Item -ItemType Directory -Path $shellRoot | Out-Null
 Set-Content -Path (Join-Path $shellRoot "hello.dby") -Value "print(`"shell file ok`")" -NoNewline
-$shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun hello.dby`ncheck hello.dby`n: let y: int = 40`n: print(y + 2)`nnot_a_real_cmd`nquit`n"
+Set-Content -Path (Join-Path $shellRoot "defs.dby") -Value "pub fn from_file(x: int) -> int:`n    return x + 22`n" -NoNewline
+$shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun hello.dby`ncheck hello.dby`nrun defs.dby`n: let y: int = 40`n: print(y + 2)`n: print(from_file(20))`nalias hi = run hello.dby`nwhich help`nwhich hi`nwhich missing`naliases`nhi`nalias run = ls`nunalias hi`nhi`nnot_a_real_cmd`nquit`n"
 $shellBasic = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellInput
 if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.Text)" }
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
+Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
+Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
 Assert-Contains $shellBasic.Text "DByte 2.2.1" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
 Assert-Contains $shellBasic.Text "no type errors found" "shell check file"
 Assert-Contains $shellBasic.Text "42" "shell code persistence"
+Assert-Contains $shellBasic.Text "help: built-in" "shell which built-in"
+Assert-Contains $shellBasic.Text "hi: alias -> run hello.dby" "shell which alias"
+Assert-Contains $shellBasic.Text "missing: not found" "shell which missing"
+Assert-Contains $shellBasic.Text "hi = run hello.dby" "shell aliases list"
+Assert-Contains $shellBasic.Text "ShellError: alias cannot override built-in command: run" "shell alias built-in collision"
+Assert-Contains $shellBasic.Text "ShellError: unknown command: hi" "shell unalias removes alias"
 Assert-Contains $shellBasic.Text "ShellError: unknown command: not_a_real_cmd" "shell unknown command"
 
 $shellRcRoot = Join-Path $interactiveRoot "shell-rc"
 New-Item -ItemType Directory -Path $shellRcRoot | Out-Null
 Set-Content -Path (Join-Path $shellRcRoot "helper.dby") -Value "pub fn inc(x: int) -> int:`n    return x + 1`n" -NoNewline
-Set-Content -Path (Join-Path $shellRcRoot ".dbyterc") -Value "import std.math as math`nimport `"./helper.dby`" as helper`nlet boot: int = math.max(helper.inc(40), 1)" -NoNewline
-$shellRc = Invoke-DbyteInput -Arguments @("shell") -InputText ": print(boot + 1)`n: print(helper.inc(1))`nquit`n" -WorkingDirectory $shellRcRoot
+Set-Content -Path (Join-Path $shellRcRoot "hello.dby") -Value "print(`"rc alias ok`")" -NoNewline
+Set-Content -Path (Join-Path $shellRcRoot ".dbyterc") -Value "@shell alias hello = run hello.dby`nimport std.math as math`nimport `"./helper.dby`" as helper`nlet boot: int = math.max(helper.inc(40), 1)" -NoNewline
+$shellRc = Invoke-DbyteInput -Arguments @("shell") -InputText "hello`nwhich hello`n: print(boot + 1)`n: print(helper.inc(1))`nquit`n" -WorkingDirectory $shellRcRoot
 if ($shellRc.Code -ne 0) { throw "shell rc load failed: $($shellRc.Text)" }
+Assert-Contains $shellRc.Text "rc alias ok" "shell rc alias"
+Assert-Contains $shellRc.Text "hello: alias -> run hello.dby" "shell rc alias which"
 Assert-Contains $shellRc.Text "42" "shell rc state"
 Assert-Contains $shellRc.Text "2" "shell rc local import state"
 
-$shellNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText ": print(boot)`nquit`n" -WorkingDirectory $shellRcRoot
+$shellNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "hello`n: print(boot)`nquit`n" -WorkingDirectory $shellRcRoot
 if ($shellNoRc.Code -ne 0) { throw "shell no-rc command failed: $($shellNoRc.Text)" }
+Assert-Contains $shellNoRc.Text "ShellError: unknown command: hello" "shell no-rc skips aliases"
 Assert-Contains $shellNoRc.Text "undefined variable" "shell no-rc skips rc"
+
+$shellBadAliasRoot = Join-Path $interactiveRoot "shell-bad-alias-rc"
+New-Item -ItemType Directory -Path $shellBadAliasRoot | Out-Null
+Set-Content -Path (Join-Path $shellBadAliasRoot ".dbyterc") -Value "@shell alias cd = ls" -NoNewline
+$shellBadAlias = Invoke-DbyteInput -Arguments @("shell") -InputText "quit`n" -WorkingDirectory $shellBadAliasRoot
+if ($shellBadAlias.Code -eq 0) { throw "shell bad alias rc unexpectedly passed: $($shellBadAlias.Text)" }
+Assert-Contains $shellBadAlias.Text "ShellError: .dbyterc line 1: alias cannot override built-in command: cd" "shell rc alias collision"
 
 $shellExamples = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cd examples`nrun hello.dby`ncheck hello.dby`nquit`n"
 if ($shellExamples.Code -ne 0) { throw "shell examples cwd command failed: $($shellExamples.Text)" }

@@ -17,3 +17,4 @@ dbyte_typeck.workspace = true
 dbyte_interp.workspace = true
 dbyte_project.workspace = true
 dbyte_vm.workspace = true
+dbyte_embed.workspace = true

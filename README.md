@@ -101,16 +101,38 @@ inputs. Use `.help`, `.reset`, and `.quit` / `.exit` for REPL control.
 
 `dbyte shell` is a DByte-native command shell, not an OS passthrough shell.
 Built-ins include `pwd`, `cd`, `ls`, `run`, `check`, `test`, `version`, and
-`repl`. Execute DByte code explicitly with `:`, for example:
+`repl`. Shell help is generated from the built-in command registry, and
+`which`, `alias`, `unalias`, and `aliases` are available for personal command
+shortcuts. Execute DByte code explicitly with `:`, for example:
 
 ```txt
 : let x: int = 40
 : print(x + 2)
 ```
 
+Shell aliases are command-level shortcuts, not DByte language syntax:
+
+```txt
+alias hello = run examples/hello.dby
+hello
+which hello
+unalias hello
+```
+
 Both interactive commands load `.dbyterc` from the current directory unless
 `--no-rc` is passed. Non-interactive commands such as `run`, `check`, `test`,
 `bench`, and `new` do not load `.dbyterc`.
+
+For `dbyte shell`, `.dbyterc` may include shell-only directives that are stripped
+before DByte code is parsed:
+
+```txt
+@shell alias hello = run hello.dby
+
+let boot: int = 41
+```
+
+See `personal_tools/` for a small personal command environment example.
 
 ## Embedding DByte
 

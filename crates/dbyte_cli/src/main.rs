@@ -4,12 +4,14 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use dbyte_compiler::Compiler;
+use dbyte_embed::{DByteError, DByteRuntime};
 use dbyte_interp::Interpreter;
 use dbyte_lexer::Lexer;
 use dbyte_parser::Parser;
 use dbyte_project::{create_project, find_project_root, load_project, ProjectError};
 use dbyte_typeck::TypeChecker;
 use dbyte_vm::Vm;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
@@ -130,59 +132,6 @@ fn parse_source(path_label: &str, src: &str) -> Result<dbyte_ast::Program, ()> {
     })
 }
 
-fn check_file_status(path: &Path) -> bool {
-    let path_label = path.display().to_string();
-    let src = match fs::read_to_string(path) {
-        Ok(src) => src,
-        Err(e) => {
-            eprintln!("error: cannot read `{}`: {}", path_label, e);
-            return false;
-        }
-    };
-    let Ok(program) = parse_source(&path_label, &src) else {
-        return false;
-    };
-    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
-    match checker.check_program(&program) {
-        Ok(_) => {
-            println!(
-                "\x1b[1;32mok\x1b[0m: no type errors found in `{}`",
-                path_label
-            );
-            true
-        }
-        Err(e) => {
-            print_error("TypeError", &e.msg, e.span, &path_label, &src);
-            false
-        }
-    }
-}
-
-fn run_file_tree_status(path: &Path) -> bool {
-    let path_label = path.display().to_string();
-    let src = match fs::read_to_string(path) {
-        Ok(src) => src,
-        Err(e) => {
-            eprintln!("error: cannot read `{}`: {}", path_label, e);
-            return false;
-        }
-    };
-    let Ok(program) = parse_source(&path_label, &src) else {
-        return false;
-    };
-    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
-    if let Err(e) = checker.check_program(&program) {
-        print_error("TypeError", &e.msg, e.span, &path_label, &src);
-        return false;
-    }
-    let mut interp = Interpreter::with_entry_path(path.to_path_buf());
-    if let Err(e) = interp.run(&program) {
-        print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
-        return false;
-    }
-    true
-}
-
 #[derive(Clone)]
 struct InteractiveSession {
     checker: TypeChecker,
@@ -198,12 +147,6 @@ impl InteractiveSession {
             interp: Interpreter::with_entry_path(entry_path.clone()),
             entry_path,
         }
-    }
-
-    fn set_cwd(&mut self, cwd: &Path) {
-        self.entry_path = cwd.join("<interactive>");
-        self.checker.set_entry_path(self.entry_path.clone());
-        self.interp.set_entry_path(self.entry_path.clone());
     }
 
     fn reset(&mut self) {
@@ -248,6 +191,7 @@ impl InteractiveSession {
                 return false;
             }
         };
+        let src = strip_shell_directives(&src);
         if self.eval(&rc_path.display().to_string(), &src) {
             true
         } else {
@@ -371,23 +315,428 @@ fn split_shell_command(line: &str) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
-fn print_shell_help() {
-    println!("DByte shell commands:");
-    println!("  help                 show this help");
-    println!("  quit, exit           leave the shell");
-    println!("  clear                clear the terminal");
-    println!("  pwd                  print current directory");
-    println!("  cd <path>            change current directory");
-    println!("  ls                   list current directory");
-    println!("  run <file.dby>       run a DByte file with the tree interpreter");
-    println!("  check <file.dby>     type-check a DByte file");
-    println!("  test                 run dbyte test from the shell current directory");
-    println!("  version              print DByte version");
-    println!("  repl                 enter the DByte REPL");
-    println!("  : <code>             execute DByte code in persistent shell state");
+fn strip_shell_directives(src: &str) -> String {
+    src.lines()
+        .filter(|line| !line.trim_start().starts_with("@shell "))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn shell_loop(session: &mut InteractiveSession) {
+#[derive(Clone, Copy)]
+struct ShellCommand {
+    name: &'static str,
+    usage: &'static str,
+    description: &'static str,
+}
+
+const SHELL_COMMANDS: &[ShellCommand] = &[
+    ShellCommand {
+        name: "help",
+        usage: "help",
+        description: "show shell command help",
+    },
+    ShellCommand {
+        name: "version",
+        usage: "version",
+        description: "print DByte version",
+    },
+    ShellCommand {
+        name: "pwd",
+        usage: "pwd",
+        description: "print shell current directory",
+    },
+    ShellCommand {
+        name: "cd",
+        usage: "cd <path>",
+        description: "change shell current directory",
+    },
+    ShellCommand {
+        name: "ls",
+        usage: "ls",
+        description: "list shell current directory",
+    },
+    ShellCommand {
+        name: "run",
+        usage: "run <file.dby>",
+        description: "run a DByte file in persistent shell state",
+    },
+    ShellCommand {
+        name: "check",
+        usage: "check <file.dby>",
+        description: "type-check a DByte file",
+    },
+    ShellCommand {
+        name: "test",
+        usage: "test",
+        description: "run dbyte test from the shell current directory",
+    },
+    ShellCommand {
+        name: "repl",
+        usage: "repl",
+        description: "enter the DByte REPL",
+    },
+    ShellCommand {
+        name: "alias",
+        usage: "alias <name> = <command>",
+        description: "define or replace a shell alias",
+    },
+    ShellCommand {
+        name: "unalias",
+        usage: "unalias <name>",
+        description: "remove a shell alias",
+    },
+    ShellCommand {
+        name: "aliases",
+        usage: "aliases",
+        description: "list shell aliases",
+    },
+    ShellCommand {
+        name: "which",
+        usage: "which <name>",
+        description: "show whether a name is built-in or alias",
+    },
+    ShellCommand {
+        name: "clear",
+        usage: "clear",
+        description: "clear the terminal",
+    },
+    ShellCommand {
+        name: "exit",
+        usage: "exit",
+        description: "leave the shell",
+    },
+    ShellCommand {
+        name: "quit",
+        usage: "quit",
+        description: "leave the shell",
+    },
+];
+
+fn shell_builtin_names() -> HashSet<&'static str> {
+    SHELL_COMMANDS.iter().map(|command| command.name).collect()
+}
+
+fn shell_command(name: &str) -> Option<&'static ShellCommand> {
+    SHELL_COMMANDS.iter().find(|command| command.name == name)
+}
+
+fn print_shell_help() {
+    println!("DByte shell commands:");
+    for command in SHELL_COMMANDS {
+        println!("  {:<24} {}", command.usage, command.description);
+    }
+    println!(
+        "  {:<24} execute DByte code in persistent shell state",
+        ": <code>"
+    );
+}
+
+struct ShellSession {
+    runtime: DByteRuntime,
+    aliases: HashMap<String, String>,
+    builtins: HashSet<&'static str>,
+}
+
+impl ShellSession {
+    fn new(cwd: &Path) -> Result<Self, DByteError> {
+        Ok(Self {
+            runtime: DByteRuntime::with_current_dir(cwd)?,
+            aliases: HashMap::new(),
+            builtins: shell_builtin_names(),
+        })
+    }
+
+    fn load_rc(&mut self) -> bool {
+        let rc_path = self.runtime.current_dir().join(".dbyterc");
+        if !rc_path.exists() {
+            return true;
+        }
+        let src = match fs::read_to_string(&rc_path) {
+            Ok(src) => src,
+            Err(e) => {
+                eprintln!("RcError: failed to read .dbyterc: {}", e);
+                return false;
+            }
+        };
+
+        let mut dbyte_lines = Vec::new();
+        for (idx, line) in src.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if let Some(directive) = trimmed.strip_prefix("@shell ") {
+                if let Err(e) = self.apply_shell_directive(directive) {
+                    eprintln!("ShellError: .dbyterc line {}: {}", idx + 1, e);
+                    return false;
+                }
+            } else {
+                dbyte_lines.push(line);
+            }
+        }
+
+        let dbyte_src = dbyte_lines.join("\n");
+        if dbyte_src.trim().is_empty() {
+            return true;
+        }
+        match self
+            .runtime
+            .run_source(&rc_path.display().to_string(), &dbyte_src)
+        {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("RcError: failed to load .dbyterc: {}", e);
+                false
+            }
+        }
+    }
+
+    fn apply_shell_directive(&mut self, directive: &str) -> Result<(), String> {
+        let Some(alias_def) = directive.trim_start().strip_prefix("alias ") else {
+            return Err(format!("unknown shell directive: {}", directive.trim()));
+        };
+        let args = split_shell_command(alias_def)?;
+        let (name, command) = parse_alias_definition(&args)?;
+        self.set_alias(name, command)
+    }
+
+    fn set_alias(&mut self, name: String, command: String) -> Result<(), String> {
+        validate_alias_name(&name)?;
+        if self.builtins.contains(name.as_str()) {
+            return Err(format!("alias cannot override built-in command: {}", name));
+        }
+        self.aliases.insert(name, command);
+        Ok(())
+    }
+
+    fn eval_code(&mut self, label: &str, code: &str) {
+        match self.runtime.run_source_capture(label, code) {
+            Ok(output) => print!("{}", output.stdout),
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+
+    fn execute_line(&mut self, line: &str) -> bool {
+        if let Some(code) = line.strip_prefix(':') {
+            self.eval_code("<shell>", code.trim_start());
+            return true;
+        }
+
+        let args = match split_shell_command(line) {
+            Ok(args) => args,
+            Err(e) => {
+                eprintln!("ShellError: {}", e);
+                return true;
+            }
+        };
+        self.execute_args(args, true)
+    }
+
+    fn execute_args(&mut self, args: Vec<String>, expand_alias: bool) -> bool {
+        if args.is_empty() {
+            return true;
+        }
+        if expand_alias {
+            if let Some(expansion) = self.aliases.get(&args[0]).cloned() {
+                let expanded = match split_shell_command(&expansion) {
+                    Ok(expanded) => expanded,
+                    Err(e) => {
+                        eprintln!("ShellError: alias `{}` is invalid: {}", args[0], e);
+                        return true;
+                    }
+                };
+                return self.execute_args(expanded, false);
+            }
+        }
+
+        match args[0].as_str() {
+            "help" => print_shell_help(),
+            "quit" | "exit" => return false,
+            "clear" => print!("\x1b[2J\x1b[H"),
+            "pwd" => println!("{}", self.runtime.current_dir().display()),
+            "cd" => self.command_cd(&args),
+            "ls" => self.command_ls(&args),
+            "run" => self.command_run(&args),
+            "check" => self.command_check(&args),
+            "test" => self.command_test(&args),
+            "version" => print_version(),
+            "repl" => self.command_repl(&args),
+            "alias" => self.command_alias(&args),
+            "unalias" => self.command_unalias(&args),
+            "aliases" => self.command_aliases(&args),
+            "which" => self.command_which(&args),
+            other => eprintln!("ShellError: unknown command: {}", other),
+        }
+        true
+    }
+
+    fn command_cd(&mut self, args: &[String]) {
+        if args.len() != 2 {
+            eprintln!("ShellError: cd expects 1 path");
+            return;
+        }
+        let path = PathBuf::from(&args[1]);
+        if let Err(e) = self.runtime.set_current_dir(&path) {
+            eprintln!("ShellError: failed to cd `{}`: {}", path.display(), e);
+        }
+    }
+
+    fn command_ls(&self, args: &[String]) {
+        if args.len() != 1 {
+            eprintln!("ShellError: ls expects 0 args");
+            return;
+        }
+        match fs::read_dir(self.runtime.current_dir()) {
+            Ok(entries) => {
+                let mut names = entries
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>();
+                names.sort();
+                for name in names {
+                    println!("{}", name);
+                }
+            }
+            Err(e) => eprintln!("ShellError: failed to list directory: {}", e),
+        }
+    }
+
+    fn command_run(&mut self, args: &[String]) {
+        if args.len() != 2 {
+            eprintln!("ShellError: run expects 1 file");
+            return;
+        }
+        match self.runtime.run_file_capture(&args[1]) {
+            Ok(output) => print!("{}", output.stdout),
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+
+    fn command_check(&self, args: &[String]) {
+        if args.len() != 2 {
+            eprintln!("ShellError: check expects 1 file");
+            return;
+        }
+        match self.runtime.check_file(&args[1]) {
+            Ok(()) => println!(
+                "\x1b[1;32mok\x1b[0m: no type errors found in `{}`",
+                self.runtime.current_dir().join(&args[1]).display()
+            ),
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+
+    fn command_test(&self, args: &[String]) {
+        if args.len() != 1 {
+            eprintln!("ShellError: test expects 0 args");
+            return;
+        }
+        let exe = match std::env::current_exe() {
+            Ok(exe) => exe,
+            Err(e) => {
+                eprintln!("ShellError: failed to find current executable: {}", e);
+                return;
+            }
+        };
+        match process::Command::new(exe)
+            .arg("test")
+            .current_dir(self.runtime.current_dir())
+            .output()
+        {
+            Ok(output) => {
+                print!("{}", String::from_utf8_lossy(&output.stdout));
+                eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                if !output.status.success() {
+                    eprintln!("ShellError: test failed");
+                }
+            }
+            Err(e) => eprintln!("ShellError: failed to run test: {}", e),
+        }
+    }
+
+    fn command_repl(&self, args: &[String]) {
+        if args.len() != 1 {
+            eprintln!("ShellError: repl expects 0 args");
+            return;
+        }
+        let mut session = InteractiveSession::new(self.runtime.current_dir());
+        repl_loop(&mut session);
+    }
+
+    fn command_alias(&mut self, args: &[String]) {
+        let (name, command) = match parse_alias_definition(&args[1..]) {
+            Ok(definition) => definition,
+            Err(e) => {
+                eprintln!("ShellError: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = self.set_alias(name, command) {
+            eprintln!("ShellError: {}", e);
+        }
+    }
+
+    fn command_unalias(&mut self, args: &[String]) {
+        if args.len() != 2 {
+            eprintln!("ShellError: unalias expects 1 name");
+            return;
+        }
+        self.aliases.remove(&args[1]);
+    }
+
+    fn command_aliases(&self, args: &[String]) {
+        if args.len() != 1 {
+            eprintln!("ShellError: aliases expects 0 args");
+            return;
+        }
+        let mut aliases = self.aliases.iter().collect::<Vec<_>>();
+        aliases.sort_by(|a, b| a.0.cmp(b.0));
+        for (name, command) in aliases {
+            println!("{} = {}", name, command);
+        }
+    }
+
+    fn command_which(&self, args: &[String]) {
+        if args.len() != 2 {
+            eprintln!("ShellError: which expects 1 name");
+            return;
+        }
+        let name = &args[1];
+        if shell_command(name).is_some() {
+            println!("{}: built-in", name);
+        } else if let Some(command) = self.aliases.get(name) {
+            println!("{}: alias -> {}", name, command);
+        } else {
+            println!("{}: not found", name);
+        }
+    }
+}
+
+fn parse_alias_definition(args: &[String]) -> Result<(String, String), String> {
+    if args.len() < 3 {
+        return Err("alias expects: alias <name> = <command>".into());
+    }
+    if args[1] != "=" {
+        return Err("alias expects `=` between name and command".into());
+    }
+    let command = args[2..].join(" ");
+    if command.trim().is_empty() {
+        return Err("alias command cannot be empty".into());
+    }
+    Ok((args[0].clone(), command))
+}
+
+fn validate_alias_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("alias name cannot be empty".into());
+    }
+    if name.starts_with('.') || name.starts_with(':') || name.starts_with('@') {
+        return Err(format!("invalid alias name: {}", name));
+    }
+    if name.chars().any(char::is_whitespace) {
+        return Err(format!("invalid alias name: {}", name));
+    }
+    Ok(())
+}
+
+fn shell_loop(session: &mut ShellSession) {
     let interactive = io::stdin().is_terminal();
     let stdin = io::stdin();
     let mut reader = stdin.lock();
@@ -416,94 +765,8 @@ fn shell_loop(session: &mut InteractiveSession) {
             continue;
         }
 
-        if let Some(code) = trimmed.strip_prefix(':') {
-            session.eval("<shell>", code.trim_start());
-            continue;
-        }
-
-        let args = match split_shell_command(trimmed) {
-            Ok(args) => args,
-            Err(e) => {
-                eprintln!("ShellError: {}", e);
-                continue;
-            }
-        };
-        if args.is_empty() {
-            continue;
-        }
-
-        match args[0].as_str() {
-            "help" => print_shell_help(),
-            "quit" | "exit" => break,
-            "clear" => print!("\x1b[2J\x1b[H"),
-            "pwd" => match std::env::current_dir() {
-                Ok(cwd) => println!("{}", cwd.display()),
-                Err(e) => eprintln!("ShellError: failed to read current directory: {}", e),
-            },
-            "cd" => {
-                if args.len() != 2 {
-                    eprintln!("ShellError: cd expects 1 path");
-                    continue;
-                }
-                let path = PathBuf::from(&args[1]);
-                if let Err(e) = std::env::set_current_dir(&path) {
-                    eprintln!("ShellError: failed to cd `{}`: {}", path.display(), e);
-                    continue;
-                }
-                match std::env::current_dir() {
-                    Ok(cwd) => session.set_cwd(&cwd),
-                    Err(e) => eprintln!("ShellError: failed to refresh current directory: {}", e),
-                }
-            }
-            "ls" => match fs::read_dir(".") {
-                Ok(entries) => {
-                    let mut names = entries
-                        .filter_map(|entry| entry.ok())
-                        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                        .collect::<Vec<_>>();
-                    names.sort();
-                    for name in names {
-                        println!("{}", name);
-                    }
-                }
-                Err(e) => eprintln!("ShellError: failed to list directory: {}", e),
-            },
-            "run" => {
-                if args.len() != 2 {
-                    eprintln!("ShellError: run expects 1 file");
-                    continue;
-                }
-                run_file_tree_status(Path::new(&args[1]));
-            }
-            "check" => {
-                if args.len() != 2 {
-                    eprintln!("ShellError: check expects 1 file");
-                    continue;
-                }
-                check_file_status(Path::new(&args[1]));
-            }
-            "test" => {
-                let exe = match std::env::current_exe() {
-                    Ok(exe) => exe,
-                    Err(e) => {
-                        eprintln!("ShellError: failed to find current executable: {}", e);
-                        continue;
-                    }
-                };
-                match process::Command::new(exe).arg("test").output() {
-                    Ok(output) => {
-                        print!("{}", String::from_utf8_lossy(&output.stdout));
-                        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-                        if !output.status.success() {
-                            eprintln!("ShellError: test failed");
-                        }
-                    }
-                    Err(e) => eprintln!("ShellError: failed to run test: {}", e),
-                }
-            }
-            "version" => print_version(),
-            "repl" => repl_loop(session),
-            other => eprintln!("ShellError: unknown command: {}", other),
+        if !session.execute_line(trimmed) {
+            break;
         }
     }
 }
@@ -525,8 +788,11 @@ fn cmd_shell(no_rc: bool) {
         eprintln!("ShellError: failed to read current directory: {}", e);
         process::exit(1);
     });
-    let mut session = InteractiveSession::new(&cwd);
-    if !no_rc && !session.load_rc(&cwd) {
+    let mut session = ShellSession::new(&cwd).unwrap_or_else(|e| {
+        eprintln!("ShellError: failed to create shell runtime: {}", e);
+        process::exit(1);
+    });
+    if !no_rc && !session.load_rc() {
         process::exit(1);
     }
     shell_loop(&mut session);

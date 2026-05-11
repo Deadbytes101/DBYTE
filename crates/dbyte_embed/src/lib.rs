@@ -102,6 +102,11 @@ impl DByteRuntime {
 
     pub fn set_current_dir(&mut self, path: impl Into<PathBuf>) -> Result<(), DByteError> {
         let path = path.into();
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.current_dir.join(path)
+        };
         let current_dir = normalize_existing_dir(&path)?;
         self.current_dir = current_dir;
         self.refresh_entry_path();
@@ -114,6 +119,25 @@ impl DByteRuntime {
         checker
             .check_program(&program)
             .map_err(|e| type_error(label, e))
+    }
+
+    pub fn check_file(&self, path: impl AsRef<Path>) -> Result<(), DByteError> {
+        let path = if path.as_ref().is_absolute() {
+            path.as_ref().to_path_buf()
+        } else {
+            self.current_dir.join(path.as_ref())
+        };
+        let source = fs::read_to_string(&path).map_err(|e| DByteError::Io {
+            path: path.clone(),
+            msg: e.to_string(),
+        })?;
+        let label = path.display().to_string();
+        let program = parse_source(&label, &source)?;
+        let mut checker = self.checker.clone();
+        checker.set_entry_path(path);
+        checker
+            .check_program(&program)
+            .map_err(|e| type_error(&label, e))
     }
 
     pub fn run_source(&mut self, label: &str, source: &str) -> Result<(), DByteError> {

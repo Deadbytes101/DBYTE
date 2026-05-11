@@ -61,6 +61,7 @@ dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
  "dbyte_compiler",
+ "dbyte_embed",
  "dbyte_interp",
  "dbyte_lexer",
  "dbyte_parser",
