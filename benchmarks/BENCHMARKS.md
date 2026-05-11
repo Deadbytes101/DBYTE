@@ -240,3 +240,34 @@ Baseline note: `VM v1.7.0-dev` was measured as local release-build medians from 
 - Typed i64 call-chain execution materially improves the function-call-heavy workloads, especially chained and many-argument int-return calls.
 - `function_call`, `function_call_int`, and `function_call_loop_return` all clear the v1.7 primary targets in this median run.
 - The loop and binary workloads stay inside the no-regression gate and improve after replacing typed local compare plus boxed bool branching with fused compare-and-jump bytecode.
+
+### Python Comparison Gate
+
+Python: 3.12.9
+Build: release
+Date: 2026-05-11
+
+Baseline note: `bench --compare-python` was run five times on the v1.7.0-dev branch and the medians below are computed per benchmark. This is used for claim wording, not for release tagging. The safe claim from this run is: DByte outperforms Python on measured low-level binary parsing, buffer patching, and typed integer loop workloads, plus the optimized many-argument typed call workload. It is not correct yet to claim that DByte is broadly faster than Python.
+
+| Benchmark | Python median | DByte VM median | Python / DByte VM |
+|---|---:|---:|---:|
+| binary_read_u32 | 110.87 ms | 65.92 ms | 1.68x |
+| buffer_replace | 15.23 ms | 8.07 ms | 1.89x |
+| patch_workflow | 32.56 ms | 21.67 ms | 1.50x |
+| loop_sum | 33.44 ms | 15.29 ms | 2.19x |
+| loop_sum_large | 68.64 ms | 31.94 ms | 2.15x |
+| nested_int_loop | 31.43 ms | 15.56 ms | 2.02x |
+| function_call_loop_return | 56.07 ms | 90.71 ms | 0.62x |
+| function_call_many_args | 75.02 ms | 71.43 ms | 1.05x |
+| function_call | 57.03 ms | 78.53 ms | 0.73x |
+| function_call_int | 49.96 ms | 102.93 ms | 0.49x |
+| function_call_nested | 32.15 ms | 61.37 ms | 0.52x |
+| function_call_chain | 74.05 ms | 97.27 ms | 0.76x |
+| bytes_find | 1.07 ms | 11.27 ms | 0.09x |
+
+### Python Gate Findings
+
+- Must-win binary, buffer, patching, and typed-loop workloads beat Python in the five-run median.
+- `function_call_many_args` beats Python slightly after the typed i64 operand-stack work.
+- `function_call_loop_return` does not beat Python yet, so the broader "faster than Python on DByte's target workloads" wording is not supported by this run.
+- `bytes_find` still loses heavily to Python's native search path and remains the clearest blocker for broader benchmark-suite claims.
