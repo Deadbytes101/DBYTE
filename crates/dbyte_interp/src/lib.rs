@@ -3,6 +3,7 @@ use dbyte_ast::*;
 use dbyte_lexer::Lexer;
 use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
+use memchr::memmem;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1308,11 +1309,12 @@ fn native_buffer_find(args: &[Value]) -> Result<Value, String> {
         return Err("buffer.find: pattern cannot be empty".into());
     }
     let buf = b.borrow();
-    let pos = buf
-        .windows(pattern.len())
-        .position(|w| w == pattern)
-        .map(|p| p as i64)
-        .unwrap_or(-1);
+    let pos = match pattern.len() {
+        1 => memchr::memchr(pattern[0], &buf)
+            .map(|p| p as i64)
+            .unwrap_or(-1),
+        _ => memmem::find(&buf, pattern).map(|p| p as i64).unwrap_or(-1),
+    };
     Ok(Value::Int(pos))
 }
 

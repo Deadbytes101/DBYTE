@@ -15,3 +15,4 @@ dbyte_module.workspace = true
 dbyte_parser.workspace = true
 hex.workspace = true
 sha2.workspace = true
+memchr.workspace = true

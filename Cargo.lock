@@ -87,6 +87,7 @@ dependencies = [
  "dbyte_module",
  "dbyte_parser",
  "hex",
+ "memchr",
  "sha2",
 ]
 
@@ -142,6 +143,7 @@ dependencies = [
  "dbyte_module",
  "dbyte_parser",
  "hex",
+ "memchr",
  "sha2",
 ]
 
