@@ -175,6 +175,13 @@ pub enum Op {
     SubI64,
     MulI64,
     DivI64,
+    ConstI64Stack(i64),
+    LoadLocalI64Stack(usize),
+    StoreLocalI64Stack(usize),
+    AddI64Stack,
+    SubI64Stack,
+    MulI64Stack,
+    DivI64Stack,
     Eq,
     Ne,
     Lt,
@@ -193,12 +200,50 @@ pub enum Op {
     LoadLocalI64(usize),
     StoreLocal(usize),
     StoreLocalI64(usize),
-    AddLocalI64 { dst: usize, src: usize },
-    AddLocalConstI64 { slot: usize, value: i64 },
-    LtLocalConstI64 { slot: usize, value: i64 },
-    LeLocalConstI64 { slot: usize, value: i64 },
-    GtLocalConstI64 { slot: usize, value: i64 },
-    GeLocalConstI64 { slot: usize, value: i64 },
+    AddLocalI64 {
+        dst: usize,
+        src: usize,
+    },
+    AddLocalConstI64 {
+        slot: usize,
+        value: i64,
+    },
+    LtLocalConstI64 {
+        slot: usize,
+        value: i64,
+    },
+    LeLocalConstI64 {
+        slot: usize,
+        value: i64,
+    },
+    GtLocalConstI64 {
+        slot: usize,
+        value: i64,
+    },
+    GeLocalConstI64 {
+        slot: usize,
+        value: i64,
+    },
+    JumpIfNotLtLocalConstI64 {
+        slot: usize,
+        value: i64,
+        target: usize,
+    },
+    JumpIfNotLeLocalConstI64 {
+        slot: usize,
+        value: i64,
+        target: usize,
+    },
+    JumpIfNotGtLocalConstI64 {
+        slot: usize,
+        value: i64,
+        target: usize,
+    },
+    JumpIfNotGeLocalConstI64 {
+        slot: usize,
+        value: i64,
+        target: usize,
+    },
     Import(String, usize),
     Member(String),
     MemberCall(String, usize),
@@ -206,15 +251,33 @@ pub enum Op {
     BufferFind,
     BufferReplace,
     IterInit,
-    IterNext { slot: usize, jump: usize },
+    IterNext {
+        slot: usize,
+        jump: usize,
+    },
     Jump(usize),
     JumpIfFalse(usize),
     Call(String, usize),
-    CallFn { id: usize, argc: usize },
-    CallFnI64ToLocal { id: usize, argc: usize, dst: usize },
-    CallFnDiscard { id: usize, argc: usize },
+    CallFn {
+        id: usize,
+        argc: usize,
+    },
+    CallFnI64ToI64Stack {
+        id: usize,
+        argc: usize,
+    },
+    CallFnI64ToLocal {
+        id: usize,
+        argc: usize,
+        dst: usize,
+    },
+    CallFnDiscard {
+        id: usize,
+        argc: usize,
+    },
     Return,
     ReturnI64,
+    ReturnI64ToI64Stack,
     Pop,
     Halt,
 }
@@ -303,6 +366,25 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         Op::SubI64 => "SUB_I64".into(),
         Op::MulI64 => "MUL_I64".into(),
         Op::DivI64 => "DIV_I64".into(),
+        Op::ConstI64Stack(n) => format!("CONST_I64_STACK {}", n),
+        Op::LoadLocalI64Stack(slot) => {
+            format!(
+                "LOAD_LOCAL_I64_STACK {} ; {}",
+                slot,
+                local_name(chunk, *slot)
+            )
+        }
+        Op::StoreLocalI64Stack(slot) => {
+            format!(
+                "STORE_LOCAL_I64_STACK {} ; {}",
+                slot,
+                local_name(chunk, *slot)
+            )
+        }
+        Op::AddI64Stack => "ADD_I64_STACK".into(),
+        Op::SubI64Stack => "SUB_I64_STACK".into(),
+        Op::MulI64Stack => "MUL_I64_STACK".into(),
+        Op::DivI64Stack => "DIV_I64_STACK".into(),
         Op::Eq => "EQ".into(),
         Op::Ne => "NE".into(),
         Op::Lt => "LT".into(),
@@ -359,6 +441,50 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
             value,
             local_name(chunk, *slot)
         ),
+        Op::JumpIfNotLtLocalConstI64 {
+            slot,
+            value,
+            target,
+        } => format!(
+            "JUMP_IF_NOT_LT_LOCAL_CONST_I64 {} {} -> {} ; {}",
+            slot,
+            value,
+            target,
+            local_name(chunk, *slot)
+        ),
+        Op::JumpIfNotLeLocalConstI64 {
+            slot,
+            value,
+            target,
+        } => format!(
+            "JUMP_IF_NOT_LE_LOCAL_CONST_I64 {} {} -> {} ; {}",
+            slot,
+            value,
+            target,
+            local_name(chunk, *slot)
+        ),
+        Op::JumpIfNotGtLocalConstI64 {
+            slot,
+            value,
+            target,
+        } => format!(
+            "JUMP_IF_NOT_GT_LOCAL_CONST_I64 {} {} -> {} ; {}",
+            slot,
+            value,
+            target,
+            local_name(chunk, *slot)
+        ),
+        Op::JumpIfNotGeLocalConstI64 {
+            slot,
+            value,
+            target,
+        } => format!(
+            "JUMP_IF_NOT_GE_LOCAL_CONST_I64 {} {} -> {} ; {}",
+            slot,
+            value,
+            target,
+            local_name(chunk, *slot)
+        ),
         Op::Import(path, slot) => format!("IMPORT {} -> {}", path, local_name(chunk, *slot)),
         Op::Member(name) => format!("MEMBER {}", name),
         Op::MemberCall(name, argc) => format!("MEMBER_CALL {} {}", name, argc),
@@ -374,6 +500,15 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         Op::Call(name, argc) => format!("CALL {} {}", name, argc),
         Op::CallFn { id, argc } => format!(
             "CALL_FN {} {} ; {}",
+            id,
+            argc,
+            chunk
+                .functions_by_id
+                .get(*id)
+                .map_or("<unknown>", |function| function.name.as_str())
+        ),
+        Op::CallFnI64ToI64Stack { id, argc } => format!(
+            "CALL_FN_I64_TO_I64_STACK {} {} ; {}",
             id,
             argc,
             chunk
@@ -403,6 +538,7 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         ),
         Op::Return => "RETURN".into(),
         Op::ReturnI64 => "RETURN_I64".into(),
+        Op::ReturnI64ToI64Stack => "RETURN_I64_TO_I64_STACK".into(),
         Op::Pop => "POP".into(),
         Op::Halt => "HALT".into(),
     }

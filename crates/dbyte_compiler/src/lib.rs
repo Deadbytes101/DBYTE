@@ -50,6 +50,7 @@ struct FunctionCompiler {
     locals: HashMap<String, usize>,
     local_types: HashMap<String, ExprType>,
     function_return_types: HashMap<String, ExprType>,
+    function_param_types: HashMap<String, Vec<ExprType>>,
     imports: HashMap<String, String>,
     return_type: ExprType,
 }
@@ -76,6 +77,7 @@ impl FunctionCompiler {
             locals: HashMap::new(),
             local_types: HashMap::new(),
             function_return_types: HashMap::new(),
+            function_param_types: HashMap::new(),
             imports: HashMap::new(),
             return_type,
         }
@@ -94,6 +96,10 @@ impl FunctionCompiler {
         match &mut self.chunk.code[at] {
             Op::Jump(slot) | Op::JumpIfFalse(slot) => *slot = target,
             Op::IterNext { jump, .. } => *jump = target,
+            Op::JumpIfNotLtLocalConstI64 { target: slot, .. }
+            | Op::JumpIfNotLeLocalConstI64 { target: slot, .. }
+            | Op::JumpIfNotGtLocalConstI64 { target: slot, .. }
+            | Op::JumpIfNotGeLocalConstI64 { target: slot, .. } => *slot = target,
             _ => {}
         }
     }
@@ -197,6 +203,13 @@ impl FunctionCompiler {
             {
                 self.function_return_types
                     .insert(name.clone(), expr_type_from_annotation(ret_ty));
+                self.function_param_types.insert(
+                    name.clone(),
+                    params
+                        .iter()
+                        .map(|param| expr_type_from_annotation(&param.ty))
+                        .collect(),
+                );
                 self.reserve_function(name, params);
             }
         }
@@ -231,6 +244,19 @@ impl FunctionCompiler {
                     }
                     return Ok(());
                 }
+                if value_type == ExprType::Int
+                    && self.expr_has_i64_stack_call(value)
+                    && self.can_compile_i64_stack_expr(value)
+                {
+                    self.compile_i64_stack_expr(value)?;
+                    let slot = self.local_slot(name);
+                    self.set_local_type(name, value_type);
+                    self.emit(Op::StoreLocalI64Stack(slot));
+                    if *is_pub {
+                        self.chunk.public_values.push((name.clone(), slot));
+                    }
+                    return Ok(());
+                }
                 self.compile_expr(value)?;
                 let slot = self.local_slot(name);
                 self.set_local_type(name, value_type);
@@ -245,6 +271,9 @@ impl FunctionCompiler {
             }
             Stmt::Assign { name, value, span } => {
                 if self.compile_i64_assign_fast_path(name, value, *span)? {
+                    return Ok(());
+                }
+                if self.compile_i64_stack_assign_fast_path(name, value, *span)? {
                     return Ok(());
                 }
                 self.compile_expr(value)?;
@@ -271,6 +300,7 @@ impl FunctionCompiler {
                 child.chunk.function_ids = self.chunk.function_ids.clone();
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 child.function_return_types = self.function_return_types.clone();
+                child.function_param_types = self.function_param_types.clone();
                 for param in params {
                     child.local_slot(&param.name);
                     child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
@@ -291,6 +321,11 @@ impl FunctionCompiler {
             }
             Stmt::Return { value, .. } => {
                 if let Some(value) = value {
+                    if self.return_type == ExprType::Int && self.can_compile_i64_stack_expr(value) {
+                        self.compile_i64_stack_expr(value)?;
+                        self.emit(Op::ReturnI64ToI64Stack);
+                        return Ok(());
+                    }
                     self.compile_expr(value)?;
                 } else {
                     let idx = self.add_const(Value::Void);
@@ -308,10 +343,14 @@ impl FunctionCompiler {
                 else_body,
                 ..
             } => {
-                if !self.compile_i64_compare_fast_path(cond)? {
-                    self.compile_expr(cond)?;
-                }
-                let jf = self.emit(Op::JumpIfFalse(usize::MAX));
+                let jf = if let Some(jump) = self.compile_i64_compare_jump_fast_path(cond)? {
+                    jump
+                } else {
+                    if !self.compile_i64_compare_fast_path(cond)? {
+                        self.compile_expr(cond)?;
+                    }
+                    self.emit(Op::JumpIfFalse(usize::MAX))
+                };
                 self.compile_stmts(then_body)?;
                 let jend = self.emit(Op::Jump(usize::MAX));
                 let else_start = self.chunk.code.len();
@@ -324,10 +363,14 @@ impl FunctionCompiler {
             }
             Stmt::While { cond, body, .. } => {
                 let loop_start = self.chunk.code.len();
-                if !self.compile_i64_compare_fast_path(cond)? {
-                    self.compile_expr(cond)?;
-                }
-                let exit = self.emit(Op::JumpIfFalse(usize::MAX));
+                let exit = if let Some(jump) = self.compile_i64_compare_jump_fast_path(cond)? {
+                    jump
+                } else {
+                    if !self.compile_i64_compare_fast_path(cond)? {
+                        self.compile_expr(cond)?;
+                    }
+                    self.emit(Op::JumpIfFalse(usize::MAX))
+                };
                 self.compile_stmts(body)?;
                 self.emit(Op::Jump(loop_start));
                 let end = self.chunk.code.len();
@@ -555,6 +598,99 @@ impl FunctionCompiler {
         }
     }
 
+    fn can_compile_i64_stack_expr(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::IntLit(_, _) => true,
+            Expr::Ident(name, _) => self.local_type(name) == ExprType::Int,
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div)
+                    && self.can_compile_i64_stack_expr(left)
+                    && self.can_compile_i64_stack_expr(right)
+            }
+            Expr::Call { name, args, .. } => self.can_compile_i64_stack_call(name, args),
+            _ => false,
+        }
+    }
+
+    fn expr_has_i64_stack_call(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Binary { left, right, .. } => {
+                self.expr_has_i64_stack_call(left) || self.expr_has_i64_stack_call(right)
+            }
+            Expr::Call { name, args, .. } => {
+                self.can_compile_i64_stack_call(name, args)
+                    || args.iter().any(|arg| self.expr_has_i64_stack_call(arg))
+            }
+            _ => false,
+        }
+    }
+
+    fn can_compile_i64_stack_call(&self, name: &str, args: &[Expr]) -> bool {
+        self.chunk.function_ids.contains_key(name)
+            && self.function_return_types.get(name).copied() == Some(ExprType::Int)
+            && self.function_param_types.get(name).is_some_and(|params| {
+                params.len() == args.len() && params.iter().all(|param| *param == ExprType::Int)
+            })
+            && args.iter().all(|arg| self.can_compile_i64_stack_expr(arg))
+    }
+
+    fn compile_i64_stack_expr(&mut self, expr: &Expr) -> Result<(), CompileError> {
+        match expr {
+            Expr::IntLit(value, _) => {
+                self.emit(Op::ConstI64Stack(*value));
+            }
+            Expr::Ident(name, span) => {
+                let slot = self.existing_slot(name, *span)?;
+                self.emit(Op::LoadLocalI64Stack(slot));
+            }
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                self.compile_i64_stack_expr(left)?;
+                self.compile_i64_stack_expr(right)?;
+                self.emit(match op {
+                    BinOp::Add => Op::AddI64Stack,
+                    BinOp::Sub => Op::SubI64Stack,
+                    BinOp::Mul => Op::MulI64Stack,
+                    BinOp::Div => Op::DivI64Stack,
+                    _ => {
+                        return Err(CompileError {
+                            msg: "unsupported i64 stack expression".into(),
+                            span: expr.span(),
+                        })
+                    }
+                });
+            }
+            Expr::Call { name, args, .. } => {
+                for arg in args {
+                    self.compile_i64_stack_expr(arg)?;
+                }
+                let id =
+                    self.chunk
+                        .function_ids
+                        .get(name)
+                        .copied()
+                        .ok_or_else(|| CompileError {
+                            msg: format!("undefined function `{}`", name),
+                            span: expr.span(),
+                        })?;
+                self.emit(Op::CallFnI64ToI64Stack {
+                    id,
+                    argc: args.len(),
+                });
+            }
+            _ => {
+                return Err(CompileError {
+                    msg: "unsupported i64 stack expression".into(),
+                    span: expr.span(),
+                })
+            }
+        }
+        Ok(())
+    }
+
     fn can_compile_i64_call_to_local_fast_path(&self, value: &Expr) -> bool {
         let Expr::Call { name, args, .. } = value else {
             return false;
@@ -603,6 +739,52 @@ impl FunctionCompiler {
                 | Expr::FStr(_, _)
                 | Expr::Ident(_, _)
         )
+    }
+
+    fn compile_i64_compare_jump_fast_path(
+        &mut self,
+        expr: &Expr,
+    ) -> Result<Option<usize>, CompileError> {
+        let Expr::Binary {
+            left, op, right, ..
+        } = expr
+        else {
+            return Ok(None);
+        };
+        let Expr::Ident(name, span) = &**left else {
+            return Ok(None);
+        };
+        if self.local_type(name) != ExprType::Int {
+            return Ok(None);
+        }
+        let Expr::IntLit(value, _) = &**right else {
+            return Ok(None);
+        };
+        let slot = self.existing_slot(name, *span)?;
+        let op = match op {
+            BinOp::Lt => Op::JumpIfNotLtLocalConstI64 {
+                slot,
+                value: *value,
+                target: usize::MAX,
+            },
+            BinOp::LtEq => Op::JumpIfNotLeLocalConstI64 {
+                slot,
+                value: *value,
+                target: usize::MAX,
+            },
+            BinOp::Gt => Op::JumpIfNotGtLocalConstI64 {
+                slot,
+                value: *value,
+                target: usize::MAX,
+            },
+            BinOp::GtEq => Op::JumpIfNotGeLocalConstI64 {
+                slot,
+                value: *value,
+                target: usize::MAX,
+            },
+            _ => return Ok(None),
+        };
+        Ok(Some(self.emit(op)))
     }
 
     fn compile_i64_compare_fast_path(&mut self, expr: &Expr) -> Result<bool, CompileError> {
@@ -734,6 +916,24 @@ impl FunctionCompiler {
             }
             _ => Ok(false),
         }
+    }
+
+    fn compile_i64_stack_assign_fast_path(
+        &mut self,
+        name: &str,
+        value: &Expr,
+        span: Span,
+    ) -> Result<bool, CompileError> {
+        if self.local_type(name) != ExprType::Int
+            || !self.expr_has_i64_stack_call(value)
+            || !self.can_compile_i64_stack_expr(value)
+        {
+            return Ok(false);
+        }
+        let dst = self.existing_slot(name, span)?;
+        self.compile_i64_stack_expr(value)?;
+        self.emit(Op::StoreLocalI64Stack(dst));
+        Ok(true)
     }
 
     fn std_import_path(&self, expr: &Expr) -> Option<&str> {

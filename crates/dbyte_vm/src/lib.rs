@@ -47,6 +47,7 @@ struct Frame {
 enum ReturnMode {
     TopLevel,
     Push { stack_base: usize },
+    PushI64 { stack_base: usize },
     StoreI64 { stack_base: usize, dst: usize },
     Discard { stack_base: usize },
 }
@@ -196,6 +197,7 @@ fn required_i64_slot(chunk: &Chunk, slot: usize) -> Result<usize, VmError> {
 
 pub struct Vm {
     stack: Vec<Value>,
+    i64_stack: Vec<i64>,
     iter_stack: Vec<IteratorState>,
     frames: Vec<ExecFrame>,
     free_frames: Vec<Frame>,
@@ -210,6 +212,7 @@ impl Vm {
     pub fn new() -> Self {
         Self {
             stack: Vec::new(),
+            i64_stack: Vec::new(),
             iter_stack: Vec::new(),
             frames: Vec::new(),
             free_frames: Vec::new(),
@@ -287,6 +290,7 @@ impl Vm {
                 match op {
                     Op::Const(idx) => self.push(chunk.constants[idx].clone()),
                     Op::ConstI64(n) => self.push(Value::Int(n)),
+                    Op::ConstI64Stack(n) => self.i64_stack.push(n),
                     Op::FStr(parts) => self.eval_fstr(&parts, chunk)?,
                     Op::Add => self.binary_add()?,
                     Op::Sub => self.binary_num("sub", |a, b| a.checked_sub(b), |a, b| a - b)?,
@@ -296,6 +300,22 @@ impl Vm {
                     Op::SubI64 => self.binary_i64(|a, b| checked_i64(a.checked_sub(b)))?,
                     Op::MulI64 => self.binary_i64(|a, b| checked_i64(a.checked_mul(b)))?,
                     Op::DivI64 => self.binary_i64(|a, b| {
+                        if b == 0 {
+                            Err(VmError::new("division by zero"))
+                        } else {
+                            checked_i64(a.checked_div(b))
+                        }
+                    })?,
+                    Op::AddI64Stack => {
+                        self.binary_i64_stack(|a, b| checked_i64(a.checked_add(b)))?
+                    }
+                    Op::SubI64Stack => {
+                        self.binary_i64_stack(|a, b| checked_i64(a.checked_sub(b)))?
+                    }
+                    Op::MulI64Stack => {
+                        self.binary_i64_stack(|a, b| checked_i64(a.checked_mul(b)))?
+                    }
+                    Op::DivI64Stack => self.binary_i64_stack(|a, b| {
                         if b == 0 {
                             Err(VmError::new("division by zero"))
                         } else {
@@ -331,6 +351,10 @@ impl Vm {
                             })?;
                         self.push(Value::Int(value));
                     }
+                    Op::LoadLocalI64Stack(slot) => {
+                        let value = self.load_i64_local(chunk, slot)?;
+                        self.i64_stack.push(value);
+                    }
                     Op::StoreLocal(slot) => {
                         let value = self.pop()?;
                         self.current_frame_mut()?.set_value(chunk, slot, value)?;
@@ -346,6 +370,10 @@ impl Vm {
                                 VmError::new(format!("invalid i64 local slot {}", slot))
                             })?;
                         *target = value;
+                    }
+                    Op::StoreLocalI64Stack(slot) => {
+                        let value = self.pop_i64_stack()?;
+                        self.store_i64_in_frame(chunk, slot, value)?;
                     }
                     Op::AddLocalI64 { dst, src } => {
                         let src_i64_slot = required_i64_slot(chunk, src)?;
@@ -416,6 +444,34 @@ impl Vm {
                                 VmError::new(format!("invalid i64 local slot {}", slot))
                             })?;
                         self.push(Value::Bool(left >= value));
+                    }
+                    Op::JumpIfNotLtLocalConstI64 {
+                        slot,
+                        value,
+                        target,
+                    } => {
+                        self.jump_if_not_local_const_i64(chunk, slot, value, target, |a, b| a < b)?
+                    }
+                    Op::JumpIfNotLeLocalConstI64 {
+                        slot,
+                        value,
+                        target,
+                    } => {
+                        self.jump_if_not_local_const_i64(chunk, slot, value, target, |a, b| a <= b)?
+                    }
+                    Op::JumpIfNotGtLocalConstI64 {
+                        slot,
+                        value,
+                        target,
+                    } => {
+                        self.jump_if_not_local_const_i64(chunk, slot, value, target, |a, b| a > b)?
+                    }
+                    Op::JumpIfNotGeLocalConstI64 {
+                        slot,
+                        value,
+                        target,
+                    } => {
+                        self.jump_if_not_local_const_i64(chunk, slot, value, target, |a, b| a >= b)?
                     }
                     Op::Import(path, slot) => {
                         let alias = chunk.local_names.get(slot).cloned().unwrap_or_default();
@@ -537,6 +593,18 @@ impl Vm {
                         )?;
                         continue 'dispatch;
                     }
+                    Op::CallFnI64ToI64Stack { id, argc } => {
+                        let args_start = self.i64_stack.len() - argc;
+                        let function = self.resolve_function(chunk, id)?;
+                        self.push_call_frame_i64(
+                            function,
+                            args_start,
+                            ReturnMode::PushI64 {
+                                stack_base: args_start,
+                            },
+                        )?;
+                        continue 'dispatch;
+                    }
                     Op::CallFnI64ToLocal { id, argc, dst } => {
                         let args_start = self.stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
@@ -572,6 +640,11 @@ impl Vm {
                         self.finish_frame_i64(value)?;
                         continue 'dispatch;
                     }
+                    Op::ReturnI64ToI64Stack => {
+                        let value = self.pop_i64_stack()?;
+                        self.finish_frame_i64(value)?;
+                        continue 'dispatch;
+                    }
                     Op::Pop => {
                         if self.stack.pop().is_none() {
                             return Err(VmError::new("stack underflow"));
@@ -588,6 +661,10 @@ impl Vm {
                                 self.release_frame(frame.locals);
                                 self.stack.truncate(stack_base);
                                 self.push(Value::Void);
+                            }
+                            ReturnMode::PushI64 { stack_base } => {
+                                self.release_frame(frame.locals);
+                                self.i64_stack.truncate(stack_base);
                             }
                             ReturnMode::StoreI64 { stack_base, dst } => {
                                 self.release_frame(frame.locals);
@@ -655,6 +732,14 @@ impl Vm {
                 self.push(value);
                 Ok(())
             }
+            ReturnMode::PushI64 { stack_base } => {
+                self.i64_stack.truncate(stack_base);
+                let Value::Int(value) = value else {
+                    return Err(VmError::new("expected int return value"));
+                };
+                self.i64_stack.push(value);
+                Ok(())
+            }
             ReturnMode::StoreI64 { stack_base, dst } => {
                 self.stack.truncate(stack_base);
                 let Value::Int(value) = value else {
@@ -681,6 +766,11 @@ impl Vm {
             ReturnMode::Push { stack_base } => {
                 self.stack.truncate(stack_base);
                 self.push(Value::Int(value));
+                Ok(())
+            }
+            ReturnMode::PushI64 { stack_base } => {
+                self.i64_stack.truncate(stack_base);
+                self.i64_stack.push(value);
                 Ok(())
             }
             ReturnMode::StoreI64 { stack_base, dst } => {
@@ -732,6 +822,44 @@ impl Vm {
         Ok(())
     }
 
+    fn push_call_frame_i64(
+        &mut self,
+        function: Rc<BytecodeFunction>,
+        args_start: usize,
+        return_mode: ReturnMode,
+    ) -> Result<(), VmError> {
+        let argc = self.i64_stack.len() - args_start;
+        if argc != function.params.len() {
+            return Err(VmError::new(format!(
+                "function `{}` expects {} args, got {}",
+                function.name,
+                function.params.len(),
+                argc
+            )));
+        }
+        if self.frames.len() >= MAX_CALL_DEPTH {
+            return Err(VmError::new("maximum call depth exceeded"));
+        }
+
+        let mut locals = self.acquire_frame(&function.chunk);
+        for idx in (0..argc).rev() {
+            let arg = self.pop_i64_stack()?;
+            if idx < function.chunk.local_names.len() {
+                match i64_local_slot(&function.chunk, idx) {
+                    Some(_) => locals.set_i64(&function.chunk, idx, arg),
+                    None => locals.set_value(&function.chunk, idx, Value::Int(arg))?,
+                }
+            }
+        }
+        self.frames.push(ExecFrame {
+            chunk: FrameChunk::Function(function),
+            locals,
+            ip: 0,
+            return_mode,
+        });
+        Ok(())
+    }
+
     fn resolve_function(&self, chunk: &Chunk, id: usize) -> Result<Rc<BytecodeFunction>, VmError> {
         if let Some(function) = self
             .active_function_tables
@@ -766,6 +894,49 @@ impl Vm {
         Ok(())
     }
 
+    fn load_i64_local(&self, chunk: &Chunk, slot: usize) -> Result<i64, VmError> {
+        let i64_slot = required_i64_slot(chunk, slot)?;
+        self.frames
+            .last()
+            .and_then(|frame| frame.locals.i64s.get(i64_slot))
+            .copied()
+            .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", slot)))
+    }
+
+    fn jump_if_not_local_const_i64(
+        &mut self,
+        chunk: &Chunk,
+        slot: usize,
+        value: i64,
+        target: usize,
+        predicate: impl FnOnce(i64, i64) -> bool,
+    ) -> Result<(), VmError> {
+        let left = self.load_i64_local(chunk, slot)?;
+        if !predicate(left, value) {
+            self.frames
+                .last_mut()
+                .ok_or_else(|| VmError::new("no active VM frame"))?
+                .ip = target;
+        }
+        Ok(())
+    }
+
+    fn store_i64_in_frame(
+        &mut self,
+        chunk: &Chunk,
+        slot: usize,
+        value: i64,
+    ) -> Result<(), VmError> {
+        let i64_slot = required_i64_slot(chunk, slot)?;
+        let target = self
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.locals.i64s.get_mut(i64_slot))
+            .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", slot)))?;
+        *target = value;
+        Ok(())
+    }
+
     fn push(&mut self, value: Value) {
         self.stack.push(value);
     }
@@ -784,6 +955,12 @@ impl Vm {
                 other.kind_name()
             ))),
         }
+    }
+
+    fn pop_i64_stack(&mut self) -> Result<i64, VmError> {
+        self.i64_stack
+            .pop()
+            .ok_or_else(|| VmError::new("i64 stack underflow"))
     }
 
     fn pop_args(&mut self, argc: usize) -> Result<Vec<Value>, VmError> {
@@ -852,6 +1029,16 @@ impl Vm {
         let b = self.pop_i64()?;
         let a = self.pop_i64()?;
         self.push(Value::Int(op(a, b)?));
+        Ok(())
+    }
+
+    fn binary_i64_stack(
+        &mut self,
+        op: fn(i64, i64) -> Result<i64, VmError>,
+    ) -> Result<(), VmError> {
+        let b = self.pop_i64_stack()?;
+        let a = self.pop_i64_stack()?;
+        self.i64_stack.push(op(a, b)?);
         Ok(())
     }
 

@@ -210,3 +210,33 @@ Baseline note: `VM v1.6.0` was measured as local release-build medians from five
 - Direct typed return-to-local materially improves the int-return assignment workloads while preserving the loop and binary regression gates.
 - `function_call_int`, `function_call_loop_return`, and `function_call_nested` all improve clearly, matching the primary v1.6 target.
 - The stretch target for `function_call` below 90 ms was not reached in this median run; the remaining cost is still frame setup, typed argument transfer, and executing small function bodies.
+
+## Perf Pass 8: Typed I64 Operand Stack
+
+Version: v1.7.0-dev
+Build: release
+Date: 2026-05-11
+Optimizations: Added a separate VM `i64` operand stack and typed call-chain opcodes (`CALL_FN_I64_TO_I64_STACK`, `RETURN_I64_TO_I64_STACK`) so compiler-proven `int` function bodies and typed call-chain expressions avoid boxed `Value::Int` temporaries. Direct assignment from int-return functions still uses `CALL_FN_I64_TO_LOCAL`. This pass also added fused local-int compare-and-jump opcodes for the existing loop condition fast path so loop regression gates stay below the v1.6 baseline.
+
+Baseline note: `VM v1.7.0-dev` was measured as local release-build medians from five runs on the feature branch. Most rows compare against the recorded `VM v1.6.0` medians. `function_call_chain` and `function_call_many_args` were not recorded in the v1.6.0 table, so their baseline is the same-session `release-v1.6.1` executable median from five runs. Timings remain noisy on this machine; this table is a directional performance record and regression gate.
+
+| Benchmark | VM baseline median | VM v1.7.0-dev median | Change |
+|---|---:|---:|---:|
+| loop_sum | 21.03 ms | 17.42 ms | 1.21x faster |
+| loop_sum_large | 41.09 ms | 34.45 ms | 1.19x faster |
+| nested_int_loop | 20.88 ms | 15.77 ms | 1.32x faster |
+| binary_read_u32 | 67.01 ms | 66.13 ms | 1.01x faster |
+| buffer_replace | 8.88 ms | 8.14 ms | 1.09x faster |
+| patch_workflow | 23.46 ms | 21.99 ms | 1.07x faster |
+| function_call | 106.17 ms | 76.11 ms | 1.39x faster |
+| function_call_int | 123.07 ms | 97.94 ms | 1.26x faster |
+| function_call_loop_return | 126.05 ms | 84.74 ms | 1.49x faster |
+| function_call_nested | 87.40 ms | 64.64 ms | 1.35x faster |
+| function_call_chain | 169.01 ms | 97.71 ms | 1.73x faster |
+| function_call_many_args | 149.95 ms | 74.45 ms | 2.01x faster |
+
+### Findings
+
+- Typed i64 call-chain execution materially improves the function-call-heavy workloads, especially chained and many-argument int-return calls.
+- `function_call`, `function_call_int`, and `function_call_loop_return` all clear the v1.7 primary targets in this median run.
+- The loop and binary workloads stay inside the no-regression gate and improve after replacing typed local compare plus boxed bool branching with fused compare-and-jump bytecode.

@@ -1,0 +1,4 @@
+let total: int = 2 + 3
+total = total * 4
+total = total - 5
+print(total)

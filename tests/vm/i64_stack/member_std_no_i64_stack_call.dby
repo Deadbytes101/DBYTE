@@ -1,0 +1,4 @@
+import std.math as math
+
+let value: int = math.max(10, 32)
+print(value)
