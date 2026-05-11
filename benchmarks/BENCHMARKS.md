@@ -306,3 +306,35 @@ Optimizations: Replaced the naive `O(n*m)` sliding-window `windows().position()`
 - `bytes_find_single` (new benchmark, 1-byte pattern) beats Python by **2.96x**.
 - All existing no-regression gate benchmarks remain within noise tolerance.
 - This closes the `bytes_find` blocker. DByte v1.8.0 now beats Python on all measured binary, buffer, patching, and typed-integer-loop workloads.
+
+## Perf Pass 10: Bytecode-Level Function Inlining & Call Fusion
+
+Version: v1.9.0
+Build: release
+Date: 2026-05-11
+Optimizations: Implemented bytecode-level function inlining in the compiler for simple non-recursive functions. Re-mapped jump targets and local offsets during compilation, removing the Op::CallFn overhead and frame dispatch entirely for tight loop calls. Also optimized discarded calls by pushing Op::PopI64Stack natively.
+
+| Benchmark | Python | DByte VM | Ratio |
+|---|---:|---:|---|
+| binary_read_u32 | 159.52 ms | 66.14 ms | 2.41x faster |
+| buffer_replace | 14.68 ms | 8.90 ms | 1.65x faster |
+| bytes_find | 1.14 ms | 0.46 ms | 2.46x faster |
+| bytes_find_single | 0.34 ms | 0.20 ms | 1.72x faster |
+| function_call | 53.17 ms | 39.98 ms | 1.33x faster |
+| function_call_chain | 81.58 ms | 47.23 ms | 1.73x faster |
+| function_call_int | 55.08 ms | 55.10 ms | 1.00x |
+| function_call_loop_return | 60.84 ms | 42.40 ms | 1.43x faster |
+| function_call_many_args | 78.41 ms | 65.66 ms | 1.19x faster |
+| function_call_nested | 33.38 ms | 29.54 ms | 1.13x faster |
+| int_compare_loop | 60.45 ms | 39.71 ms | 1.52x faster |
+| loop_sum | 38.68 ms | 15.16 ms | 2.55x faster |
+| loop_sum_large | 71.42 ms | 31.06 ms | 2.30x faster |
+| nested_int_loop | 33.41 ms | 18.28 ms | 1.83x faster |
+| patch_workflow | 36.06 ms | 21.94 ms | 1.64x faster |
+
+### Findings
+
+- DByte v1.9.0 is faster than Python on nearly all measured benchmarks, including binary parsing, byte search, buffer patching, typed integer loops, and most function-call workloads.
+- Function inlining significantly reduced the overhead of small function calls, though some complex call chains (`function_call_int`) are still hitting the limits of the current inlining guards.
+- Small function abstraction is now approaching zero-cost, but further refinement of the I64 return path and argument transfer is planned for v1.9.1 to definitively beat Python on every workload.
+

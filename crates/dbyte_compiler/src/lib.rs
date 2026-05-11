@@ -53,6 +53,9 @@ struct FunctionCompiler {
     function_param_types: HashMap<String, Vec<ExprType>>,
     imports: HashMap<String, String>,
     return_type: ExprType,
+    inlining_stack: Vec<usize>,
+    inlining_counter: usize,
+    current_function_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +69,14 @@ enum ExprType {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InlineReturn {
+    ValueStack,
+    I64Stack,
+    I64Local(usize),
+    Discard,
+}
+
 impl FunctionCompiler {
     fn new(name: String) -> Self {
         Self::new_with_return(name, ExprType::Unknown)
@@ -73,13 +84,16 @@ impl FunctionCompiler {
 
     fn new_with_return(name: String, return_type: ExprType) -> Self {
         Self {
-            chunk: Chunk::new(name),
+            chunk: Chunk::new(name.clone()),
             locals: HashMap::new(),
             local_types: HashMap::new(),
             function_return_types: HashMap::new(),
             function_param_types: HashMap::new(),
             imports: HashMap::new(),
             return_type,
+            inlining_stack: Vec::new(),
+            inlining_counter: 0,
+            current_function_name: name,
         }
     }
 
@@ -301,6 +315,7 @@ impl FunctionCompiler {
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 child.function_return_types = self.function_return_types.clone();
                 child.function_param_types = self.function_param_types.clone();
+                child.inlining_counter = self.inlining_counter;
                 for param in params {
                     child.local_slot(&param.name);
                     child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
@@ -309,6 +324,7 @@ impl FunctionCompiler {
                 let void_idx = child.add_const(Value::Void);
                 child.emit(Op::Const(void_idx));
                 child.emit(Op::Return);
+                self.inlining_counter = child.inlining_counter;
                 let function = BytecodeFunction {
                     name: name.clone(),
                     params: params.iter().map(|p| p.name.clone()).collect(),
@@ -419,13 +435,40 @@ impl FunctionCompiler {
         let Some(id) = self.chunk.function_ids.get(name).copied() else {
             return Ok(false);
         };
-        for arg in args {
-            self.compile_expr(arg)?;
+        if self.try_inline_function(name, args, InlineReturn::Discard)? {
+            return Ok(true);
         }
-        self.emit(Op::CallFnDiscard {
-            id,
-            argc: args.len(),
-        });
+
+        let is_i64_func = self.function_return_types.get(name).copied() == Some(ExprType::Int);
+
+        if is_i64_func {
+            for arg in args {
+                if !self.can_compile_i64_stack_expr(arg) {
+                    // Fallback to generic call
+                    for arg in args {
+                        self.compile_expr(arg)?;
+                    }
+                    self.emit(Op::Call(name.clone(), args.len()));
+                    self.emit(Op::Pop);
+                    return Ok(true);
+                }
+            }
+            for arg in args {
+                self.compile_i64_stack_expr(arg)?;
+            }
+            self.emit(Op::CallFnI64Discard {
+                id,
+                argc: args.len(),
+            });
+        } else {
+            for arg in args {
+                self.compile_expr(arg)?;
+            }
+            self.emit(Op::CallFnDiscard {
+                id,
+                argc: args.len(),
+            });
+        }
         Ok(true)
     }
 
@@ -504,6 +547,9 @@ impl FunctionCompiler {
                 });
             }
             Expr::Call { name, args, .. } => {
+                if self.try_inline_function(name, args, InlineReturn::ValueStack)? {
+                    return Ok(());
+                }
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
@@ -598,6 +644,264 @@ impl FunctionCompiler {
         }
     }
 
+    fn try_inline_function(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        return_target: InlineReturn,
+    ) -> Result<bool, CompileError> {
+        if name == self.current_function_name {
+            return Ok(false);
+        }
+        let Some(id) = self.chunk.function_ids.get(name).copied() else {
+            return Ok(false);
+        };
+        if self.inlining_stack.contains(&id) {
+            return Ok(false);
+        }
+        let callee = self.chunk.functions_by_id[id].clone();
+        if args.len() != callee.params.len() {
+            return Ok(false);
+        }
+        self.inlining_stack.push(id);
+
+        if callee.chunk.code.len() > 30 {
+            self.inlining_stack.pop();
+            return Ok(false);
+        }
+
+        // Conservative guards: Only inline simple arithmetic/logic functions.
+        // Reject if it contains complex operations or loops.
+        for op in callee.chunk.code.iter() {
+            match op {
+                Op::Call(..) | Op::MemberCall(..) | Op::Import(..) => {
+                    self.inlining_stack.pop();
+                    return Ok(false);
+                }
+                Op::IterInit | Op::IterNext { .. } => {
+                    // Loops are too complex for initial inlining stabilization
+                    self.inlining_stack.pop();
+                    return Ok(false);
+                }
+                Op::CallFn { .. }
+                | Op::CallFnI64ToI64Stack { .. }
+                | Op::CallFnI64ToLocal { .. }
+                | Op::CallFnDiscard { .. }
+                | Op::CallFnI64Discard { .. } => {
+                    // Reject nested function calls to keep stack management simple
+                    self.inlining_stack.pop();
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+
+        let mut constant_map = HashMap::new();
+        for (i, constant) in callee.chunk.constants.iter().enumerate() {
+            let new_idx = self.add_const(constant.clone());
+            constant_map.insert(i, new_idx);
+        }
+
+        let inline_id = self.inlining_counter;
+        self.inlining_counter += 1;
+
+        // Check if we can inline all arguments before emitting anything
+        for (i, arg_expr) in args.iter().enumerate() {
+            let param_type = self
+                .function_param_types
+                .get(name)
+                .and_then(|tys| tys.get(i))
+                .copied()
+                .unwrap_or(ExprType::Unknown);
+
+            if param_type == ExprType::Int && !self.can_compile_i64_stack_expr(arg_expr) {
+                self.inlining_stack.pop();
+                return Ok(false);
+            }
+        }
+
+        // Now compile all arguments to the stack first
+        for (i, arg_expr) in args.iter().enumerate() {
+            let param_type = self
+                .function_param_types
+                .get(name)
+                .and_then(|tys| tys.get(i))
+                .copied()
+                .unwrap_or(ExprType::Unknown);
+
+            if param_type == ExprType::Int {
+                self.compile_i64_stack_expr(arg_expr)?;
+            } else {
+                self.compile_expr(arg_expr)?;
+            }
+        }
+
+        let local_base = self.chunk.local_names.len();
+        let mut param_slots = Vec::new();
+
+        // First, allocate all parameter slots in forward order
+        for (i, param_name) in callee.params.iter().enumerate() {
+            let param_type = self
+                .function_param_types
+                .get(name)
+                .and_then(|tys| tys.get(i))
+                .copied()
+                .unwrap_or(ExprType::Unknown);
+
+            let full_name = format!("$inline_{}_{}_{}", inline_id, name, param_name);
+            let slot = self.local_slot(&full_name);
+            self.set_local_type(&full_name, param_type);
+            param_slots.push((slot, param_type));
+        }
+
+        // Second, allocate any other locals in the callee
+        for i in callee.params.len()..callee.chunk.local_names.len() {
+            let callee_local_name = &callee.chunk.local_names[i];
+            let full_name = format!("$inline_{}_{}_{}", inline_id, name, callee_local_name);
+            let _slot = self.local_slot(&full_name);
+            let kind = callee.chunk.local_kinds[i];
+            let ty = if kind == LocalKind::I64 {
+                ExprType::Int
+            } else {
+                ExprType::Unknown
+            };
+            self.set_local_type(&full_name, ty);
+        }
+
+        // Third, store arguments into parameter slots in reverse order
+        for (slot, param_type) in param_slots.into_iter().rev() {
+            if param_type == ExprType::Int {
+                self.emit(Op::StoreLocalI64Stack(slot));
+            } else {
+                self.emit(Op::StoreLocal(slot));
+            }
+        }
+
+        let mut offset_map = HashMap::new();
+        let instruction_offset = self.chunk.code.len();
+        for (i, mut op) in callee.chunk.code.clone().into_iter().enumerate() {
+            offset_map.insert(i, self.chunk.code.len());
+            match &mut op {
+                Op::LoadLocal(slot)
+                | Op::StoreLocal(slot)
+                | Op::LoadLocalI64(slot)
+                | Op::StoreLocalI64(slot)
+                | Op::LoadLocalI64Stack(slot)
+                | Op::StoreLocalI64Stack(slot)
+                | Op::AddLocalConstI64 { slot, .. }
+                | Op::LtLocalConstI64 { slot, .. }
+                | Op::LeLocalConstI64 { slot, .. }
+                | Op::GtLocalConstI64 { slot, .. }
+                | Op::GeLocalConstI64 { slot, .. }
+                | Op::JumpIfNotLtLocalConstI64 { slot, .. }
+                | Op::JumpIfNotLeLocalConstI64 { slot, .. }
+                | Op::JumpIfNotGtLocalConstI64 { slot, .. }
+                | Op::JumpIfNotGeLocalConstI64 { slot, .. }
+                | Op::IterNext { slot, .. }
+                | Op::Import(_, slot) => {
+                    *slot += local_base;
+                    if let Op::AddLocalI64 { src: s, .. } = &mut op {
+                        *s += local_base;
+                    }
+                }
+                Op::AddLocalI64 { dst, src } => {
+                    *dst += local_base;
+                    *src += local_base;
+                }
+                Op::CallFnI64ToLocal { dst, .. } => {
+                    *dst += local_base;
+                }
+                Op::Jump(_) | Op::JumpIfFalse(_) => {
+                    // Jumps will be patched in a second pass
+                }
+                Op::Return => {
+                    if !matches!(
+                        return_target,
+                        InlineReturn::ValueStack | InlineReturn::Discard
+                    ) {
+                        // Type mismatch in inline return
+                    }
+                    self.emit(Op::Jump(usize::MAX));
+                    continue;
+                }
+                Op::ReturnI64 | Op::ReturnI64ToI64Stack => {
+                    match return_target {
+                        InlineReturn::I64Stack => {
+                            self.emit(Op::Jump(usize::MAX));
+                        }
+                        InlineReturn::ValueStack => {
+                            self.emit(Op::I64ToStack);
+                            self.emit(Op::Jump(usize::MAX));
+                        }
+                        InlineReturn::I64Local(dst) => {
+                            self.emit(Op::StoreLocalI64Stack(dst));
+                            self.emit(Op::Jump(usize::MAX));
+                        }
+                        InlineReturn::Discard => {
+                            self.emit(Op::PopI64Stack);
+                            self.emit(Op::Jump(usize::MAX));
+                        }
+                    }
+                    continue;
+                }
+                Op::Const(idx) => {
+                    *idx = constant_map[idx];
+                }
+                Op::FStr(parts) => {
+                    for part in parts {
+                        if let dbyte_ast::FStrPart::Interp(name) = part {
+                            *name = format!("$inline_{}_{}_{}", inline_id, callee.name, name);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if let Op::JumpIfNotLtLocalConstI64 { .. }
+            | Op::JumpIfNotLeLocalConstI64 { .. }
+            | Op::JumpIfNotGtLocalConstI64 { .. }
+            | Op::JumpIfNotGeLocalConstI64 { .. } = &mut op
+            {
+                // Jumps will be patched in a second pass
+            }
+            if let Op::AddLocalI64 { .. } = &mut op {
+                // Already handled in match
+            }
+            self.emit(op);
+        }
+
+        let end_of_inline = self.chunk.code.len();
+        offset_map.insert(callee.chunk.code.len(), end_of_inline);
+
+        for i in instruction_offset..end_of_inline {
+            match &mut self.chunk.code[i] {
+                Op::Jump(target) | Op::JumpIfFalse(target) => {
+                    if *target == usize::MAX {
+                        *target = end_of_inline;
+                    } else if let Some(&new_target) = offset_map.get(target) {
+                        *target = new_target;
+                    }
+                }
+                Op::JumpIfNotLtLocalConstI64 { target, .. }
+                | Op::JumpIfNotLeLocalConstI64 { target, .. }
+                | Op::JumpIfNotGtLocalConstI64 { target, .. }
+                | Op::JumpIfNotGeLocalConstI64 { target, .. } => {
+                    if let Some(&new_target) = offset_map.get(target) {
+                        *target = new_target;
+                    }
+                }
+                Op::IterNext { jump, .. } => {
+                    if let Some(&new_target) = offset_map.get(jump) {
+                        *jump = new_target;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.inlining_stack.pop();
+        Ok(true)
+    }
+
     fn can_compile_i64_stack_expr(&self, expr: &Expr) -> bool {
         match expr {
             Expr::IntLit(_, _) => true,
@@ -664,6 +968,9 @@ impl FunctionCompiler {
                 });
             }
             Expr::Call { name, args, .. } => {
+                if self.try_inline_function(name, args, InlineReturn::I64Stack)? {
+                    return Ok(());
+                }
                 for arg in args {
                     self.compile_i64_stack_expr(arg)?;
                 }
@@ -708,8 +1015,11 @@ impl FunctionCompiler {
         let Expr::Call { name, args, .. } = value else {
             return Ok(());
         };
+        if self.try_inline_function(name, args, InlineReturn::I64Local(dst))? {
+            return Ok(());
+        }
         for arg in args {
-            self.compile_expr(arg)?;
+            self.compile_i64_stack_expr(arg)?;
         }
         let id = self
             .chunk

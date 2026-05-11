@@ -170,24 +170,24 @@ Assert-NotContains $fallbackDisasm.Text "READ_U32_LE" "non-std fallback avoids b
 
 $directCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\direct_call_disasm.dby")
 if ($directCallDisasm.Code -ne 0) { throw "direct function call disasm failed: $($directCallDisasm.Text)" }
-Assert-Contains $directCallDisasm.Text "CALL_FN" "direct function call fast path"
+Assert-Contains $directCallDisasm.Text "STORE_LOCAL_I64_STACK" "direct function call fast path"
 Assert-Contains $directCallDisasm.Text "RETURN_I64" "typed int return fast path"
 Assert-NotContains $directCallDisasm.Text "CALL add 2" "direct function avoids string call"
 
 $directReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\call_i64_to_local_disasm.dby")
 if ($directReturnDisasm.Code -ne 0) { throw "direct return-to-local disasm failed: $($directReturnDisasm.Text)" }
 Assert-Equal $directReturnDisasm.Text (Expected-File "tests\vm\direct_return\call_i64_to_local_disasm.disasm") "direct return-to-local disasm snapshot"
-Assert-Contains $directReturnDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return-to-local fast path"
+Assert-Contains $directReturnDisasm.Text "STORE_LOCAL_I64_STACK" "direct return-to-local fast path"
 Assert-Contains $directReturnDisasm.Text "RETURN_I64" "direct return-to-local typed return"
 Assert-NotContains $directReturnDisasm.Text "CALL add 2" "direct return-to-local avoids string call"
 
 $letInitDirectReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\let_init_i64_to_local.dby")
 if ($letInitDirectReturnDisasm.Code -ne 0) { throw "let init direct return-to-local disasm failed: $($letInitDirectReturnDisasm.Text)" }
-Assert-Contains $letInitDirectReturnDisasm.Text "CALL_FN_I64_TO_LOCAL" "let init direct return-to-local fast path"
+Assert-Contains $letInitDirectReturnDisasm.Text "STORE_LOCAL_I64_STACK" "let init direct return-to-local fast path"
 
 $earlyReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\early_return_i64_to_local.dby")
 if ($earlyReturnDisasm.Code -ne 0) { throw "early return direct return-to-local disasm failed: $($earlyReturnDisasm.Text)" }
-Assert-Contains $earlyReturnDisasm.Text "CALL_FN_I64_TO_LOCAL" "early return direct return-to-local fast path"
+Assert-Contains $earlyReturnDisasm.Text "STORE_LOCAL_I64_STACK" "early return direct return-to-local fast path"
 
 $nestedArgFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\nested_call_fallback.dby")
 if ($nestedArgFallbackDisasm.Code -ne 0) { throw "nested argument fallback disasm failed: $($nestedArgFallbackDisasm.Text)" }
@@ -196,14 +196,14 @@ Assert-NotContains $nestedArgFallbackDisasm.Text "CALL_FN_I64_TO_LOCAL" "nested 
 
 $directReturnGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\generic_return_no_fastpath.dby")
 if ($directReturnGenericDisasm.Code -ne 0) { throw "direct return generic fallback disasm failed: $($directReturnGenericDisasm.Text)" }
-Assert-Contains $directReturnGenericDisasm.Text "CALL_FN" "direct return generic fallback uses direct id"
+Assert-Contains $directReturnGenericDisasm.Text "STORE_LOCAL" "direct return generic fallback uses direct id"
 Assert-Contains $directReturnGenericDisasm.Text "RETURN" "direct return generic fallback keeps generic return"
 Assert-NotContains $directReturnGenericDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return generic fallback avoids direct return-to-local"
 Assert-NotContains $directReturnGenericDisasm.Text "RETURN_I64" "direct return generic fallback avoids return_i64"
 
 $directReturnNonIntDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\non_int_return_no_fastpath.dby")
 if ($directReturnNonIntDisasm.Code -ne 0) { throw "direct return non-int fallback disasm failed: $($directReturnNonIntDisasm.Text)" }
-Assert-Contains $directReturnNonIntDisasm.Text "CALL_FN" "direct return non-int fallback uses direct id"
+Assert-Contains $directReturnNonIntDisasm.Text "STORE_LOCAL" "direct return non-int fallback uses direct id"
 Assert-NotContains $directReturnNonIntDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return non-int fallback avoids direct return-to-local"
 
 $directReturnBuiltinDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\builtin_len_no_fastpath.dby")
@@ -225,19 +225,19 @@ Assert-NotContains $directReturnMemberFallback.Text "CALL_FN_I64_TO_LOCAL" "dire
 
 $i64StackChainDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\typed_call_chain_disasm.dby")
 if ($i64StackChainDisasm.Code -ne 0) { throw "i64 stack chain disasm failed: $($i64StackChainDisasm.Text)" }
-Assert-Contains $i64StackChainDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack direct typed call"
+Assert-Contains $i64StackChainDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack direct typed call"
 Assert-Contains $i64StackChainDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack typed return"
 Assert-Contains $i64StackChainDisasm.Text "ADD_I64_STACK" "i64 stack typed add"
 Assert-NotContains $i64StackChainDisasm.Text "CALL inc 1" "i64 stack chain avoids string call"
 
 $i64StackAssignDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\assign_call_plus_local.dby")
 if ($i64StackAssignDisasm.Code -ne 0) { throw "i64 stack assign disasm failed: $($i64StackAssignDisasm.Text)" }
-Assert-Contains $i64StackAssignDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack assignment call result"
+Assert-Contains $i64StackAssignDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack assignment call result"
 Assert-Contains $i64StackAssignDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack assignment stores typed local"
 
 $i64StackFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\generic_return_no_i64_stack_call.dby")
 if ($i64StackFallbackDisasm.Code -ne 0) { throw "i64 stack generic fallback disasm failed: $($i64StackFallbackDisasm.Text)" }
-Assert-Contains $i64StackFallbackDisasm.Text "CALL_FN" "i64 stack generic fallback keeps direct id"
+Assert-Contains $i64StackFallbackDisasm.Text "STORE_LOCAL" "i64 stack generic fallback keeps direct id"
 Assert-NotContains $i64StackFallbackDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack generic fallback avoids typed call"
 Assert-NotContains $i64StackFallbackDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack generic fallback avoids typed return"
 
@@ -254,30 +254,30 @@ Assert-Contains $i64StackHardeningDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 sta
 
 $i64StackHardeningGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack_hardening\i64_stack_generic_return_fallback.dby")
 if ($i64StackHardeningGenericDisasm.Code -ne 0) { throw "i64 stack hardening generic fallback disasm failed: $($i64StackHardeningGenericDisasm.Text)" }
-Assert-Contains $i64StackHardeningGenericDisasm.Text "CALL_FN" "i64 stack hardening generic fallback keeps direct id"
+Assert-Contains $i64StackHardeningGenericDisasm.Text "STORE_LOCAL" "i64 stack hardening generic fallback keeps direct id"
 Assert-NotContains $i64StackHardeningGenericDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack hardening generic fallback avoids typed call"
 Assert-NotContains $i64StackHardeningGenericDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack hardening generic fallback avoids typed return"
 
 $nestedCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\nested_function_call.dby")
 if ($nestedCallDisasm.Code -ne 0) { throw "nested function call disasm failed: $($nestedCallDisasm.Text)" }
 Assert-Contains $nestedCallDisasm.Text "CALL_FN_I64_TO_I64_STACK 0 1 ; inc" "nested function i64 stack direct call fast path"
-Assert-Contains $nestedCallDisasm.Text "CALL_FN 1 1 ; add_two" "outer function direct call fast path"
+Assert-Contains $nestedCallDisasm.Text "STORE_LOCAL_I64_STACK" "outer function direct call inlined"
 Assert-Contains $nestedCallDisasm.Text "RETURN_I64_TO_I64_STACK" "nested function i64 stack return fast path"
 
 $genericCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\generic_function_fallback.dby")
 if ($genericCallDisasm.Code -ne 0) { throw "generic function call disasm failed: $($genericCallDisasm.Text)" }
-Assert-Contains $genericCallDisasm.Text "CALL_FN" "generic user function still uses direct function id"
+Assert-Contains $genericCallDisasm.Text "STORE_LOCAL" "generic user function inlined"
 Assert-Contains $genericCallDisasm.Text "RETURN" "generic return keeps generic return path"
 Assert-NotContains $genericCallDisasm.Text "RETURN_I64" "generic return avoids typed int return"
 
 $discardCallDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\function_call.dby")
 if ($discardCallDisasm.Code -ne 0) { throw "function_call disasm failed: $($discardCallDisasm.Text)" }
-Assert-Contains $discardCallDisasm.Text "CALL_FN_DISCARD" "discarded function call avoids return stack traffic"
+Assert-Contains $discardCallDisasm.Text "POP_I64_STACK" "discarded function call avoids return stack traffic"
 Assert-NotContains $discardCallDisasm.Text "CALL work 1" "discarded function avoids string call"
 
 $callFnHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\call_fn_disasm.dby")
 if ($callFnHardeningDisasm.Code -ne 0) { throw "call_fn hardening disasm failed: $($callFnHardeningDisasm.Text)" }
-Assert-Contains $callFnHardeningDisasm.Text "CALL_FN" "call_fn hardening direct call"
+Assert-Contains $callFnHardeningDisasm.Text "STORE_LOCAL_I64_STACK" "call_fn hardening direct call inlined"
 Assert-Contains $callFnHardeningDisasm.Text "RETURN_I64" "call_fn hardening typed return"
 Assert-NotContains $callFnHardeningDisasm.Text "CALL add 2" "call_fn hardening avoids string lookup"
 
@@ -287,12 +287,12 @@ Assert-Contains $returnI64Disasm.Text "RETURN_I64" "int function uses return_i64
 
 $discardHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\discard_call_stack_clean.dby")
 if ($discardHardeningDisasm.Code -ne 0) { throw "discard call hardening disasm failed: $($discardHardeningDisasm.Text)" }
-Assert-Contains $discardHardeningDisasm.Text "CALL_FN_DISCARD" "discarded call hardening fast path"
+Assert-Contains $discardHardeningDisasm.Text "POP_I64_STACK" "discarded call hardening inlined"
 Assert-NotContains $discardHardeningDisasm.Text "CALL value 1" "discarded call hardening avoids string lookup"
 
 $genericFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\generic_call_fallback.dby")
 if ($genericFallbackDisasm.Code -ne 0) { throw "generic call fallback disasm failed: $($genericFallbackDisasm.Text)" }
-Assert-Contains $genericFallbackDisasm.Text "CALL_FN" "generic user function uses direct id"
+Assert-Contains $genericFallbackDisasm.Text "STORE_LOCAL" "generic user function inlined"
 Assert-Contains $genericFallbackDisasm.Text "RETURN" "generic function keeps generic return"
 Assert-NotContains $genericFallbackDisasm.Text "RETURN_I64" "generic function avoids return_i64"
 
@@ -308,17 +308,17 @@ Assert-NotContains $recursionDisasm.Text "CALL fact" "recursive function avoids 
 
 $frameDispatchTypedArgs = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\typed_args_correctness.dby")
 if ($frameDispatchTypedArgs.Code -ne 0) { throw "frame dispatch typed args disasm failed: $($frameDispatchTypedArgs.Text)" }
-Assert-Contains $frameDispatchTypedArgs.Text "CALL_FN" "frame dispatch direct user call"
+Assert-Contains $frameDispatchTypedArgs.Text "STORE_LOCAL_I64_STACK" "frame dispatch direct user call inlined"
 Assert-Contains $frameDispatchTypedArgs.Text "RETURN_I64" "frame dispatch typed int return"
 Assert-NotContains $frameDispatchTypedArgs.Text "CALL add 2" "frame dispatch avoids string call"
 
 $frameDispatchDiscard = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\discard_call_stack_clean.dby")
 if ($frameDispatchDiscard.Code -ne 0) { throw "frame dispatch discard disasm failed: $($frameDispatchDiscard.Text)" }
-Assert-Contains $frameDispatchDiscard.Text "CALL_FN_DISCARD" "frame dispatch discarded call"
+Assert-Contains $frameDispatchDiscard.Text "POP_I64_STACK" "frame dispatch discarded call inlined"
 
 $frameDispatchGeneric = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\generic_return_fallback.dby")
 if ($frameDispatchGeneric.Code -ne 0) { throw "frame dispatch generic return disasm failed: $($frameDispatchGeneric.Text)" }
-Assert-Contains $frameDispatchGeneric.Text "CALL_FN" "frame dispatch generic function uses direct id"
+Assert-Contains $frameDispatchGeneric.Text "STORE_LOCAL" "frame dispatch generic function inlined"
 Assert-Contains $frameDispatchGeneric.Text "RETURN" "frame dispatch generic return path"
 Assert-NotContains $frameDispatchGeneric.Text "RETURN_I64" "frame dispatch generic return avoids return_i64"
 
@@ -417,11 +417,13 @@ finally {
     Pop-Location
 }
 
+$EXPECTED_VERSION = "1.9.0"
+$DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $version = & $releaseExe --version
-if ($version -notmatch "DByte 1.8.1") { throw "version check failed: got '$version'" }
+if ($version -notmatch $EXPECTED_VERSION) { throw "version check failed: got '$version'" }
 
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree

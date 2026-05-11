@@ -47,10 +47,23 @@ struct Frame {
 #[derive(Debug, Clone, Copy)]
 enum ReturnMode {
     TopLevel,
-    Push { stack_base: usize },
-    PushI64 { stack_base: usize },
-    StoreI64 { stack_base: usize, dst: usize },
-    Discard { stack_base: usize },
+    Push {
+        value_stack_base: usize,
+        i64_stack_base: usize,
+    },
+    PushI64 {
+        value_stack_base: usize,
+        i64_stack_base: usize,
+    },
+    StoreI64 {
+        value_stack_base: usize,
+        i64_stack_base: usize,
+        dst: usize,
+    },
+    Discard {
+        value_stack_base: usize,
+        i64_stack_base: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -522,7 +535,8 @@ impl Vm {
                                     Rc::new(*f),
                                     args_start,
                                     ReturnMode::Push {
-                                        stack_base: args_start - 1,
+                                        value_stack_base: args_start - 1,
+                                        i64_stack_base: self.i64_stack.len(),
                                     },
                                 )?;
                                 continue 'dispatch;
@@ -576,20 +590,23 @@ impl Vm {
                                 Rc::new(function),
                                 args_start,
                                 ReturnMode::Push {
-                                    stack_base: args_start,
+                                    value_stack_base: args_start,
+                                    i64_stack_base: self.i64_stack.len(),
                                 },
                             )?;
                             continue 'dispatch;
                         }
                     }
                     Op::CallFn { id, argc } => {
-                        let args_start = self.stack.len() - argc;
+                        let value_stack_base = self.stack.len() - argc;
+                        let i64_stack_base = self.i64_stack.len();
                         let function = self.resolve_function(chunk, id)?;
                         self.push_call_frame(
                             function,
-                            args_start,
+                            value_stack_base,
                             ReturnMode::Push {
-                                stack_base: args_start,
+                                value_stack_base,
+                                i64_stack_base,
                             },
                         )?;
                         continue 'dispatch;
@@ -598,38 +615,64 @@ impl Vm {
                         if self.i64_stack.len() < argc {
                             return Err(VmError::new("i64 stack underflow"));
                         }
-                        let args_start = self.i64_stack.len() - argc;
+                        let value_stack_base = self.stack.len();
+                        let i64_stack_base = self.i64_stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
                         self.push_call_frame_i64(
                             function,
-                            args_start,
+                            i64_stack_base,
                             ReturnMode::PushI64 {
-                                stack_base: args_start,
+                                value_stack_base,
+                                i64_stack_base,
                             },
                         )?;
                         continue 'dispatch;
                     }
                     Op::CallFnI64ToLocal { id, argc, dst } => {
-                        let args_start = self.stack.len() - argc;
+                        if self.i64_stack.len() < argc {
+                            return Err(VmError::new("i64 stack underflow"));
+                        }
+                        let value_stack_base = self.stack.len();
+                        let i64_stack_base = self.i64_stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
-                        self.push_call_frame(
+                        self.push_call_frame_i64(
                             function,
-                            args_start,
+                            i64_stack_base,
                             ReturnMode::StoreI64 {
-                                stack_base: args_start,
+                                value_stack_base,
+                                i64_stack_base,
                                 dst,
                             },
                         )?;
                         continue 'dispatch;
                     }
                     Op::CallFnDiscard { id, argc } => {
-                        let args_start = self.stack.len() - argc;
+                        let value_stack_base = self.stack.len() - argc;
+                        let i64_stack_base = self.i64_stack.len();
                         let function = self.resolve_function(chunk, id)?;
                         self.push_call_frame(
                             function,
-                            args_start,
+                            value_stack_base,
                             ReturnMode::Discard {
-                                stack_base: args_start,
+                                value_stack_base,
+                                i64_stack_base,
+                            },
+                        )?;
+                        continue 'dispatch;
+                    }
+                    Op::CallFnI64Discard { id, argc } => {
+                        if self.i64_stack.len() < argc {
+                            return Err(VmError::new("i64 stack underflow"));
+                        }
+                        let value_stack_base = self.stack.len();
+                        let i64_stack_base = self.i64_stack.len() - argc;
+                        let function = self.resolve_function(chunk, id)?;
+                        self.push_call_frame_i64(
+                            function,
+                            i64_stack_base,
+                            ReturnMode::Discard {
+                                value_stack_base,
+                                i64_stack_base,
                             },
                         )?;
                         continue 'dispatch;
@@ -649,9 +692,18 @@ impl Vm {
                         self.finish_frame_i64(value)?;
                         continue 'dispatch;
                     }
+                    Op::I64ToStack => {
+                        let value = self.pop_i64_stack()?;
+                        self.push(Value::Int(value));
+                    }
                     Op::Pop => {
                         if self.stack.pop().is_none() {
                             return Err(VmError::new("stack underflow"));
+                        }
+                    }
+                    Op::PopI64Stack => {
+                        if self.i64_stack.pop().is_none() {
+                            return Err(VmError::new("i64 stack underflow"));
                         }
                     }
                     Op::Halt => {
@@ -661,23 +713,41 @@ impl Vm {
                             .ok_or_else(|| VmError::new("no active VM frame"))?;
                         match frame.return_mode {
                             ReturnMode::TopLevel => return Ok(Some(frame.locals)),
-                            ReturnMode::Push { stack_base } => {
+                            ReturnMode::Push {
+                                value_stack_base,
+                                i64_stack_base,
+                            } => {
                                 self.release_frame(frame.locals);
-                                self.stack.truncate(stack_base);
+                                self.stack.truncate(value_stack_base);
+                                self.i64_stack.truncate(i64_stack_base);
                                 self.push(Value::Void);
                             }
-                            ReturnMode::PushI64 { stack_base } => {
+                            ReturnMode::PushI64 {
+                                value_stack_base,
+                                i64_stack_base,
+                            } => {
                                 self.release_frame(frame.locals);
-                                self.i64_stack.truncate(stack_base);
+                                self.stack.truncate(value_stack_base);
+                                self.i64_stack.truncate(i64_stack_base);
+                                self.i64_stack.push(0);
                             }
-                            ReturnMode::StoreI64 { stack_base, dst } => {
+                            ReturnMode::StoreI64 {
+                                value_stack_base,
+                                i64_stack_base,
+                                dst,
+                            } => {
                                 self.release_frame(frame.locals);
-                                self.stack.truncate(stack_base);
-                                let _ = dst;
+                                self.stack.truncate(value_stack_base);
+                                self.i64_stack.truncate(i64_stack_base);
+                                self.store_i64_in_current_frame(dst, 0)?;
                             }
-                            ReturnMode::Discard { stack_base } => {
+                            ReturnMode::Discard {
+                                value_stack_base,
+                                i64_stack_base,
+                            } => {
                                 self.release_frame(frame.locals);
-                                self.stack.truncate(stack_base);
+                                self.stack.truncate(value_stack_base);
+                                self.i64_stack.truncate(i64_stack_base);
                             }
                         }
                         continue 'dispatch;
@@ -731,28 +801,45 @@ impl Vm {
         self.release_frame(frame.locals);
         match return_mode {
             ReturnMode::TopLevel => Err(VmError::new("return outside function")),
-            ReturnMode::Push { stack_base } => {
-                self.stack.truncate(stack_base);
+            ReturnMode::Push {
+                value_stack_base,
+                i64_stack_base,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 self.push(value);
                 Ok(())
             }
-            ReturnMode::PushI64 { stack_base } => {
-                self.i64_stack.truncate(stack_base);
+            ReturnMode::PushI64 {
+                value_stack_base,
+                i64_stack_base,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 let Value::Int(value) = value else {
                     return Err(VmError::new("expected int return value"));
                 };
                 self.i64_stack.push(value);
                 Ok(())
             }
-            ReturnMode::StoreI64 { stack_base, dst } => {
-                self.stack.truncate(stack_base);
+            ReturnMode::StoreI64 {
+                value_stack_base,
+                i64_stack_base,
+                dst,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 let Value::Int(value) = value else {
                     return Err(VmError::new("expected int return value"));
                 };
                 self.store_i64_in_current_frame(dst, value)
             }
-            ReturnMode::Discard { stack_base } => {
-                self.stack.truncate(stack_base);
+            ReturnMode::Discard {
+                value_stack_base,
+                i64_stack_base,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 Ok(())
             }
         }
@@ -767,22 +854,39 @@ impl Vm {
         self.release_frame(frame.locals);
         match return_mode {
             ReturnMode::TopLevel => Err(VmError::new("return outside function")),
-            ReturnMode::Push { stack_base } => {
-                self.stack.truncate(stack_base);
+            ReturnMode::Push {
+                value_stack_base,
+                i64_stack_base,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 self.push(Value::Int(value));
                 Ok(())
             }
-            ReturnMode::PushI64 { stack_base } => {
-                self.i64_stack.truncate(stack_base);
+            ReturnMode::PushI64 {
+                value_stack_base,
+                i64_stack_base,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 self.i64_stack.push(value);
                 Ok(())
             }
-            ReturnMode::StoreI64 { stack_base, dst } => {
-                self.stack.truncate(stack_base);
+            ReturnMode::StoreI64 {
+                value_stack_base,
+                i64_stack_base,
+                dst,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 self.store_i64_in_current_frame(dst, value)
             }
-            ReturnMode::Discard { stack_base } => {
-                self.stack.truncate(stack_base);
+            ReturnMode::Discard {
+                value_stack_base,
+                i64_stack_base,
+            } => {
+                self.stack.truncate(value_stack_base);
+                self.i64_stack.truncate(i64_stack_base);
                 Ok(())
             }
         }

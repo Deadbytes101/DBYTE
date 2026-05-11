@@ -1,0 +1,8 @@
+fn multiply(a: int, b: int) -> int:
+    let result = a * b
+    return result
+
+let result = 100
+let x = multiply(5, 5)
+print(result)
+print(x)

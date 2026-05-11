@@ -501,6 +501,10 @@ fn parse_engine(args: &[String]) -> Engine {
     engine
 }
 
+fn print_version() {
+    println!("DByte 1.9.0");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
@@ -511,7 +515,7 @@ fn main() {
 
     match args[1].as_str() {
         "--version" => {
-            println!("DByte 1.8.1");
+            print_version();
             process::exit(0);
         }
         "--help" | "-h" => {
