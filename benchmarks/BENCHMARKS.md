@@ -1,4 +1,22 @@
-# DByte Benchmarks
+# DByte Performance Benchmarks
+
+This document records comparative performance of the DByte VM against Python
+3.12.9 on a local Windows release-build test machine.
+
+Safe public claim:
+
+> DByte v1.9.2 outperforms Python 3.12.9 across DByte's measured benchmark
+> suite on a Windows release-build test machine.
+
+This is limited to the benchmark suite below. It is not a claim that DByte is
+faster than Python for every workload, platform, or implementation style.
+
+## Public Alpha Baseline: v1.9.2 / v2.0.0
+
+`v2.0.0` is a public alpha packaging and documentation release based on the
+`v1.9.2` engine plus installer, examples, and release artifacts. No new
+performance claim is introduced by v2.0.0.
+
 
 ## Baseline: v1.1.0
 
@@ -365,8 +383,8 @@ Optimizations: Implemented direct argument remapping in the inliner. By analyzin
 
 ### Findings
 
-- **DByte v1.9.1 beats Python across the full measured benchmark suite.**
-- 'Zero-Cost Inlining' has successfully eliminated the remaining bottleneck in function call overhead.
+- DByte v1.9.1 beats Python across the full measured benchmark suite on this Windows release-build test machine.
+- 'Zero-Cost Inlining' has successfully eliminated the remaining measured bottleneck in function call overhead.
 - Simple helper functions (like `add`, `get`, `check`) now incur literally zero runtime overhead when inlined, producing optimal instruction sequences identical to hand-written inline logic.
 
 
