@@ -412,6 +412,8 @@ const SHELL_COMMANDS: &[ShellCommand] = &[
     },
 ];
 
+const ALIAS_EXPANSION_LIMIT: usize = 16;
+
 fn shell_builtin_names() -> HashSet<&'static str> {
     SHELL_COMMANDS.iter().map(|command| command.name).collect()
 }
@@ -526,24 +528,53 @@ impl ShellSession {
                 return true;
             }
         };
-        self.execute_args(args, true)
+        self.execute_args(args)
     }
 
-    fn execute_args(&mut self, args: Vec<String>, expand_alias: bool) -> bool {
+    fn expand_aliases(&self, args: Vec<String>) -> Result<Vec<String>, String> {
+        let mut current = args;
+        let mut seen = Vec::<String>::new();
+        let mut hops = 0usize;
+
+        loop {
+            if current.is_empty() {
+                return Ok(current);
+            }
+            let name = current[0].clone();
+            let Some(expansion) = self.aliases.get(&name) else {
+                return Ok(current);
+            };
+
+            if let Some(first_seen) = seen.iter().position(|seen_name| seen_name == &name) {
+                let mut cycle = seen[first_seen..].to_vec();
+                cycle.push(name);
+                return Err(format!(
+                    "alias expansion cycle detected: {}",
+                    cycle.join(" -> ")
+                ));
+            }
+            if hops >= ALIAS_EXPANSION_LIMIT {
+                return Err("alias expansion limit exceeded".into());
+            }
+            seen.push(name.clone());
+            hops += 1;
+
+            current = split_shell_command(expansion)
+                .map_err(|e| format!("alias `{}` is invalid: {}", name, e))?;
+        }
+    }
+
+    fn execute_args(&mut self, args: Vec<String>) -> bool {
+        let args = match self.expand_aliases(args) {
+            Ok(args) => args,
+            Err(e) => {
+                eprintln!("ShellError: {}", e);
+                return true;
+            }
+        };
+
         if args.is_empty() {
             return true;
-        }
-        if expand_alias {
-            if let Some(expansion) = self.aliases.get(&args[0]).cloned() {
-                let expanded = match split_shell_command(&expansion) {
-                    Ok(expanded) => expanded,
-                    Err(e) => {
-                        eprintln!("ShellError: alias `{}` is invalid: {}", args[0], e);
-                        return true;
-                    }
-                };
-                return self.execute_args(expanded, false);
-            }
         }
 
         match args[0].as_str() {
@@ -678,7 +709,9 @@ impl ShellSession {
             eprintln!("ShellError: unalias expects 1 name");
             return;
         }
-        self.aliases.remove(&args[1]);
+        if self.aliases.remove(&args[1]).is_none() {
+            eprintln!("ShellError: alias not found: {}", args[1]);
+        }
     }
 
     fn command_aliases(&self, args: &[String]) {
