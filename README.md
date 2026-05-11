@@ -152,10 +152,14 @@ They also accept script arguments for real files:
 
 ```powershell
 dbyte run personal_tools\hexdump.dby firmware.bin
+dbyte run personal_tools\hexdump.dby firmware.bin 16 64
 dbyte run personal_tools\bininfo.dby firmware.bin
 dbyte run personal_tools\find_bytes.dby firmware.bin DEADBEEF
 dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE
+dbyte run personal_tools\patch_bytes.dby --all firmware.bin DEADBEEF CAFEBABE
+dbyte run personal_tools\patch_bytes.dby --offset 128 firmware.bin CAFEBABE
 dbyte run personal_tools\read_u32_table.dby firmware.bin
+dbyte run personal_tools\read_u32_table.dby firmware.bin 0 8
 ```
 
 From `dbyte shell`, the repo `.dbyterc` exposes shortcuts:
