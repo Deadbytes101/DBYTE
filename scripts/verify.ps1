@@ -13,6 +13,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo test
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $cargo test -p dbyte_embed
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo run -q -p dbyte_cli -- test --engine tree
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo run -q -p dbyte_cli -- test --engine vm
@@ -438,7 +440,7 @@ $shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun he
 $shellBasic = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellInput
 if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.Text)" }
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
-Assert-Contains $shellBasic.Text "DByte 2.1.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 2.2.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -598,7 +600,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.1.1"
+$EXPECTED_VERSION = "2.2.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"

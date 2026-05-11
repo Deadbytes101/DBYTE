@@ -408,4 +408,13 @@ v2.1.1 is not a performance release. It hardens the interactive runtime added in
 v2.1.0 with additional REPL, shell, and `.dbyterc` regression coverage. The
 benchmark claim remains unchanged.
 
+## v2.2.0 Note
+
+Version: v2.2.0
+Build: release
+Date: 2026-05-11
+
+v2.2.0 is not a performance release. It adds the embeddable tree-runtime crate
+for host applications and keeps benchmark claims limited to the measured suite.
+
 

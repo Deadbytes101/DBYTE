@@ -100,6 +100,12 @@ enum Signal {
 }
 
 #[derive(Clone)]
+enum OutputSink {
+    Stdout,
+    Capture(Rc<RefCell<String>>),
+}
+
+#[derive(Clone)]
 pub struct Interpreter {
     env: Vec<HashMap<String, Value>>,
     fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
@@ -108,6 +114,7 @@ pub struct Interpreter {
     loading_stack: Vec<String>,
     in_function: usize,
     call_depth: usize,
+    output: OutputSink,
 }
 
 impl Default for Interpreter {
@@ -126,6 +133,7 @@ impl Interpreter {
             loading_stack: Vec::new(),
             in_function: 0,
             call_depth: 0,
+            output: OutputSink::Stdout,
         }
     }
 
@@ -137,6 +145,40 @@ impl Interpreter {
 
     pub fn set_entry_path(&mut self, path: impl Into<PathBuf>) {
         self.current_file = Some(path.into());
+    }
+
+    pub fn with_captured_output(path: impl Into<PathBuf>) -> Self {
+        let mut interp = Self::with_entry_path(path);
+        interp.capture_output();
+        interp
+    }
+
+    pub fn capture_output(&mut self) {
+        self.output = OutputSink::Capture(Rc::new(RefCell::new(String::new())));
+    }
+
+    pub fn clear_captured_output(&mut self) {
+        if let OutputSink::Capture(output) = &self.output {
+            output.borrow_mut().clear();
+        }
+    }
+
+    pub fn take_captured_output(&mut self) -> String {
+        match &self.output {
+            OutputSink::Capture(output) => std::mem::take(&mut *output.borrow_mut()),
+            OutputSink::Stdout => String::new(),
+        }
+    }
+
+    fn emit_line(&mut self, line: &str) {
+        match &self.output {
+            OutputSink::Stdout => println!("{}", line),
+            OutputSink::Capture(output) => {
+                let mut output = output.borrow_mut();
+                output.push_str(line);
+                output.push('\n');
+            }
+        }
     }
 
     fn push_scope(&mut self) {
@@ -630,7 +672,7 @@ impl Interpreter {
                 if name == "print" {
                     let vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_expr(a)).collect();
                     let strs: Vec<String> = vals?.iter().map(|v| format!("{}", v)).collect();
-                    println!("{}", strs.join(" "));
+                    self.emit_line(&strs.join(" "));
                     return Ok(Value::Void);
                 }
                 if name == "len" {
