@@ -11,11 +11,12 @@ members = [
     "crates/dbyte_module",
     "crates/dbyte_project",
     "crates/dbyte_vm",
+    "crates/dbyte_embed",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "2.1.1"
+version = "2.2.0"
 edition = "2021"
 authors = ["Deadbyte"]
 license = "MIT"
@@ -31,6 +32,7 @@ dbyte_compiler = { path = "crates/dbyte_compiler" }
 dbyte_module = { path = "crates/dbyte_module" }
 dbyte_project = { path = "crates/dbyte_project" }
 dbyte_vm = { path = "crates/dbyte_vm" }
+dbyte_embed = { path = "crates/dbyte_embed" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 hex = "0.4.3"

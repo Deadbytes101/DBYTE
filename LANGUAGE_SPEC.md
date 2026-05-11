@@ -1,6 +1,6 @@
 # DByte Language Specification
 
-Version: Public Alpha v2.1.1
+Version: Public Alpha v2.2.0
 
 DByte is a statically checked, Python-like scripting language with a bytecode VM
 and low-level standard library support for binary parsing and buffer patching.
@@ -10,6 +10,8 @@ and low-level standard library support for binary parsing and buffer patching.
 - Source files use `.dby`.
 - A project can define `Dbyte.toml`.
 - `package.entry` points to the main script.
+- The embeddable runtime crate `dbyte_embed` runs the same tested language and
+  standard library surface as the CLI tree interpreter.
 
 Minimal `Dbyte.toml`:
 
