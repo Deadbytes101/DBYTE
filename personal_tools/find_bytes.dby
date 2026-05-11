@@ -24,6 +24,7 @@ else:
 if should_run:
     print("data:", fenc.hex_encode(fbuf.to_bytes(data)))
 
+if should_run:
     if len(args) == 0:
         print("de_ad:", fbuf.find(data, b"\xDE\xAD"))
         print("be_ef:", fbuf.find(data, b"\xBE\xEF"))

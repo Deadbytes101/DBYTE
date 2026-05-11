@@ -9,6 +9,10 @@ let output_path: str = "personal_tools_scratch_patch.patched.bin"
 let find_bytes: bytes = b"\xDE\xAD\xBE\xEF"
 let replace_bytes: bytes = b"\x90\x90\x90\x90"
 let should_run: bool = true
+let valid_patch: bool = true
+let data: buffer = pbuf.from_bytes(b"")
+let pos: int = -1
+let patched: bytes = b""
 
 if len(args) == 0:
     pfs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
@@ -24,15 +28,15 @@ else:
         replace_bytes = penc.hex_decode(args[2])
 
 if should_run:
-    let valid_patch: bool = true
+    valid_patch = true
     if len(args) == 3:
         if len(find_bytes) != len(replace_bytes):
             print("error: find_hex and replace_hex must have the same byte length")
             valid_patch = false
 
     if valid_patch:
-        let data: buffer = pbuf.load(input_path)
-        let pos: int = pbuf.find(data, find_bytes)
+        data = pbuf.load(input_path)
+        pos = pbuf.find(data, find_bytes)
         if pos >= 0:
             pbuf.replace(data, pos, replace_bytes)
             pbuf.save(output_path, data)
@@ -41,7 +45,7 @@ if should_run:
             else:
                 print("patched first match at offset", pos)
                 print("wrote", output_path)
-            let patched: bytes = pfs.read_bytes(output_path)
+            patched = pfs.read_bytes(output_path)
             print("patched_hex:", penc.hex_encode(patched))
         else:
             if len(args) == 0:

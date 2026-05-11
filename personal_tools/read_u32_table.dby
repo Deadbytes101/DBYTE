@@ -6,6 +6,8 @@ import std.fs as ufs
 let args: list[str] = uenv.args()
 let path: str = "personal_tools_scratch_u32.bin"
 let should_run: bool = true
+let data: bytes = b""
+let offset: int = 0
 
 if len(args) == 0:
     ufs.write_bytes(path, b"\x78\x56\x34\x12\x01\x00\x00\x00\xEF\xBE\xAD\xDE")
@@ -18,12 +20,14 @@ else:
         path = args[0]
 
 if should_run:
-    let data: bytes = ufs.read_bytes(path)
-    let offset: int = 0
+    data = ufs.read_bytes(path)
+    offset = 0
 
+if should_run:
     print("u32_table:", path)
     print("data:", uenc.hex_encode(data))
 
+if should_run:
     while offset + 4 <= len(data):
         print(offset, "->", ubin.u32_le(data, offset))
         offset = offset + 4
