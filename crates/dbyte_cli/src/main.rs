@@ -502,7 +502,7 @@ fn parse_engine(args: &[String]) -> Engine {
 }
 
 fn print_version() {
-    println!("DByte 1.9.0");
+    println!("DByte {}", env!("CARGO_PKG_VERSION"));
 }
 
 fn main() {

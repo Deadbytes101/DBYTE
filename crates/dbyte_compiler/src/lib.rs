@@ -696,7 +696,54 @@ impl FunctionCompiler {
             }
         }
 
+        let mut params_read_only = vec![true; callee.params.len()];
+        let mut param_usage_count = vec![0; callee.params.len()];
+        for op in callee.chunk.code.iter() {
+            match op {
+                Op::StoreLocal(slot)
+                | Op::StoreLocalI64(slot)
+                | Op::StoreLocalI64Stack(slot)
+                | Op::AddLocalI64 { dst: slot, .. }
+                | Op::AddLocalConstI64 { slot, .. }
+                | Op::IterNext { slot, .. }
+                | Op::Import(_, slot)
+                    if *slot < callee.params.len() =>
+                {
+                    params_read_only[*slot] = false;
+                }
+                Op::LoadLocal(slot) | Op::LoadLocalI64(slot) | Op::LoadLocalI64Stack(slot)
+                    if *slot < callee.params.len() =>
+                {
+                    param_usage_count[*slot] += 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Check if we can use "Stack Pass-Through"
+        // Condition: first N opcodes are LOAD_LOCAL_I64_STACK 0, 1, ..., N-1
+        // and these are the only usages of those params.
+        let mut can_pass_through = true;
+        if callee.params.is_empty() || callee.chunk.code.len() < callee.params.len() {
+            can_pass_through = false;
+        } else {
+            for i in 0..callee.params.len() {
+                if !params_read_only[i] || param_usage_count[i] != 1 {
+                    can_pass_through = false;
+                    break;
+                }
+                match callee.chunk.code[i] {
+                    Op::LoadLocalI64Stack(slot) if slot == i => {}
+                    _ => {
+                        can_pass_through = false;
+                        break;
+                    }
+                }
+            }
+        }
+
         let mut constant_map = HashMap::new();
+
         for (i, constant) in callee.chunk.constants.iter().enumerate() {
             let new_idx = self.add_const(constant.clone());
             constant_map.insert(i, new_idx);
@@ -768,19 +815,31 @@ impl FunctionCompiler {
             self.set_local_type(&full_name, ty);
         }
 
-        // Third, store arguments into parameter slots in reverse order
-        for (slot, param_type) in param_slots.into_iter().rev() {
-            if param_type == ExprType::Int {
-                self.emit(Op::StoreLocalI64Stack(slot));
-            } else {
-                self.emit(Op::StoreLocal(slot));
+        // Third, store arguments into parameter slots in reverse order (unless passing through)
+        if !can_pass_through {
+            for (slot, param_type) in param_slots.into_iter().rev() {
+                if param_type == ExprType::Int {
+                    self.emit(Op::StoreLocalI64Stack(slot));
+                } else {
+                    self.emit(Op::StoreLocal(slot));
+                }
             }
         }
 
         let mut offset_map = HashMap::new();
         let instruction_offset = self.chunk.code.len();
+        let start_index = if can_pass_through {
+            callee.params.len()
+        } else {
+            0
+        };
+
         for (i, mut op) in callee.chunk.code.clone().into_iter().enumerate() {
+            if i < start_index {
+                continue;
+            }
             offset_map.insert(i, self.chunk.code.len());
+
             match &mut op {
                 Op::LoadLocal(slot)
                 | Op::StoreLocal(slot)
