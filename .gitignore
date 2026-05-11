@@ -6,3 +6,4 @@ dbyte-v*-windows-x64/
 dbyte-v*-windows-x64.zip
 
 tests/patching/fs_exists_tmp.bin
+personal_tools_scratch_*.bin

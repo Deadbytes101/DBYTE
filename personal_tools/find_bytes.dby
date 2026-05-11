@@ -1,0 +1,11 @@
+import std.buffer as fbuf
+import std.encoding as fenc
+
+let data: buffer = fbuf.from_bytes(b"\x00\xDE\xAD\xBE\xEF\x00\xDE\xAD\x01")
+
+print("find_bytes")
+print("data:", fenc.hex_encode(fbuf.to_bytes(data)))
+print("de_ad:", fbuf.find(data, b"\xDE\xAD"))
+print("be_ef:", fbuf.find(data, b"\xBE\xEF"))
+print("one_byte:", fbuf.find(data, b"\x01"))
+print("missing:", fbuf.find(data, b"\xAA\xBB"))

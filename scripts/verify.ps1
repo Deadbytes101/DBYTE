@@ -559,6 +559,47 @@ finally {
     Pop-Location
 }
 
+Write-Host "Running personal tools smoke tests..."
+
+$personalHexdump = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby")
+if ($personalHexdump.Code -ne 0) { throw "personal hexdump failed: $($personalHexdump.Text)" }
+Assert-Contains $personalHexdump.Text "0000:" "personal hexdump offset"
+Assert-Contains $personalHexdump.Text "4442797465001020" "personal hexdump first row"
+Assert-Contains $personalHexdump.Text "0008: deadbeef" "personal hexdump second row"
+
+$personalBininfo = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby")
+if ($personalBininfo.Code -ne 0) { throw "personal bininfo failed: $($personalBininfo.Text)" }
+Assert-Contains $personalBininfo.Text "bytes: 9" "personal bininfo size"
+Assert-Contains $personalBininfo.Text "first8: 0102030444427974" "personal bininfo first bytes"
+Assert-Contains $personalBininfo.Text "checksum: 482" "personal bininfo checksum"
+
+$personalFindBytes = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby")
+if ($personalFindBytes.Code -ne 0) { throw "personal find_bytes failed: $($personalFindBytes.Text)" }
+Assert-Contains $personalFindBytes.Text "de_ad: 1" "personal find bytes first pattern"
+Assert-Contains $personalFindBytes.Text "be_ef: 3" "personal find bytes second pattern"
+Assert-Contains $personalFindBytes.Text "one_byte: 8" "personal find bytes single byte"
+Assert-Contains $personalFindBytes.Text "missing: -1" "personal find bytes missing pattern"
+
+$personalPatchBytes = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby")
+if ($personalPatchBytes.Code -ne 0) { throw "personal patch_bytes failed: $($personalPatchBytes.Text)" }
+Assert-Contains $personalPatchBytes.Text "patched: 1" "personal patch bytes marker"
+Assert-Contains $personalPatchBytes.Text "patched_hex: 009090909000" "personal patch bytes output"
+
+$personalU32Table = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby")
+if ($personalU32Table.Code -ne 0) { throw "personal read_u32_table failed: $($personalU32Table.Text)" }
+Assert-Contains $personalU32Table.Text "0 -> 305419896" "personal u32 table first row"
+Assert-Contains $personalU32Table.Text "4 -> 1" "personal u32 table second row"
+Assert-Contains $personalU32Table.Text "8 -> 3735928559" "personal u32 table third row"
+
+$personalShellRun = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "run personal_tools/hexdump.dby`nquit`n"
+if ($personalShellRun.Code -ne 0) { throw "personal shell run failed: $($personalShellRun.Text)" }
+Assert-Contains $personalShellRun.Text "0000: 4442797465001020" "personal shell no-rc run"
+
+$personalShellAliases = Invoke-DbyteInput -Arguments @("shell") -InputText "hexdump`npatch-bytes`nquit`n"
+if ($personalShellAliases.Code -ne 0) { throw "personal shell aliases failed: $($personalShellAliases.Text)" }
+Assert-Contains $personalShellAliases.Text "0008: deadbeef" "personal shell hexdump alias"
+Assert-Contains $personalShellAliases.Text "patched_hex: 009090909000" "personal shell patch alias"
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")

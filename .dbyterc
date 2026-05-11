@@ -1,0 +1,5 @@
+@shell alias hexdump = run personal_tools/hexdump.dby
+@shell alias bininfo = run personal_tools/bininfo.dby
+@shell alias find-bytes = run personal_tools/find_bytes.dby
+@shell alias patch-bytes = run personal_tools/patch_bytes.dby
+@shell alias u32-table = run personal_tools/read_u32_table.dby

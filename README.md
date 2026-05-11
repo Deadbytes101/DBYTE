@@ -134,6 +134,30 @@ let boot: int = 41
 
 See `personal_tools/` for a small personal command environment example.
 
+## Personal Tools
+
+`personal_tools/` contains self-contained DByte scripts for common binary
+inspection and patching workflows. They use the existing file, buffer, binary,
+and encoding standard modules and write only deterministic scratch files:
+
+```powershell
+dbyte run personal_tools\hexdump.dby
+dbyte run personal_tools\bininfo.dby
+dbyte run personal_tools\find_bytes.dby
+dbyte run personal_tools\patch_bytes.dby
+dbyte run personal_tools\read_u32_table.dby
+```
+
+From `dbyte shell`, the repo `.dbyterc` exposes shortcuts:
+
+```txt
+hexdump
+bininfo
+find-bytes
+patch-bytes
+u32-table
+```
+
 ## Embedding DByte
 
 Rust host applications can embed the tree runtime through `dbyte_embed`:

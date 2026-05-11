@@ -1,0 +1,20 @@
+import std.buffer as pbuf
+import std.encoding as penc
+import std.fs as pfs
+
+let input_path: str = "personal_tools_scratch_patch.bin"
+let output_path: str = "personal_tools_scratch_patch.patched.bin"
+pfs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
+
+let data: buffer = pbuf.load(input_path)
+let pos: int = pbuf.find(data, b"\xDE\xAD\xBE\xEF")
+
+if pos >= 0:
+    pbuf.replace(data, pos, b"\x90\x90\x90\x90")
+    pbuf.save(output_path, data)
+    print("patched:", pos)
+else:
+    print("patched: no")
+
+let patched: bytes = pfs.read_bytes(output_path)
+print("patched_hex:", penc.hex_encode(patched))

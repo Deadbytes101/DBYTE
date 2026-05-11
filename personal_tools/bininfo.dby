@@ -1,0 +1,20 @@
+import std.buffer as ibuf
+import std.encoding as ienc
+import std.fs as ifs
+
+let path: str = "personal_tools_scratch_bininfo.bin"
+ifs.write_bytes(path, b"\x01\x02\x03\x04\x44\x42\x79\x74\x65")
+
+let data: buffer = ibuf.load(path)
+let bytes: bytes = ibuf.to_bytes(data)
+let i: int = 0
+let checksum: int = 0
+
+while i < len(bytes):
+    checksum = checksum + bytes[i]
+    i = i + 1
+
+print("bininfo:", path)
+print("bytes:", len(bytes))
+print("first8:", ienc.hex_encode(ibuf.slice(data, 0, 8)))
+print("checksum:", checksum)

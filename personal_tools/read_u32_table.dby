@@ -1,0 +1,14 @@
+import std.binary as ubin
+import std.encoding as uenc
+import std.fs as ufs
+
+let path: str = "personal_tools_scratch_u32.bin"
+ufs.write_bytes(path, b"\x78\x56\x34\x12\x01\x00\x00\x00\xEF\xBE\xAD\xDE")
+
+let data: bytes = ufs.read_bytes(path)
+
+print("u32_table:", path)
+print("data:", uenc.hex_encode(data))
+print("0 ->", ubin.u32_le(data, 0))
+print("4 ->", ubin.u32_le(data, 4))
+print("8 ->", ubin.u32_le(data, 8))
