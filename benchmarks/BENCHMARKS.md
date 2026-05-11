@@ -398,4 +398,14 @@ v2.1.0 is not a performance release. It adds the personal runtime layer
 interactive commands only). The safe performance claim remains limited to the
 measured benchmark suite and machine described above.
 
+## v2.1.1 Note
+
+Version: v2.1.1
+Build: release
+Date: 2026-05-11
+
+v2.1.1 is not a performance release. It hardens the interactive runtime added in
+v2.1.0 with additional REPL, shell, and `.dbyterc` regression coverage. The
+benchmark claim remains unchanged.
+
 
