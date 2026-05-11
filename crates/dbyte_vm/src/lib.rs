@@ -47,6 +47,7 @@ struct Frame {
 enum ReturnMode {
     TopLevel,
     Push { stack_base: usize },
+    StoreI64 { stack_base: usize, dst: usize },
     Discard { stack_base: usize },
 }
 
@@ -536,6 +537,19 @@ impl Vm {
                         )?;
                         continue 'dispatch;
                     }
+                    Op::CallFnI64ToLocal { id, argc, dst } => {
+                        let args_start = self.stack.len() - argc;
+                        let function = self.resolve_function(chunk, id)?;
+                        self.push_call_frame(
+                            function,
+                            args_start,
+                            ReturnMode::StoreI64 {
+                                stack_base: args_start,
+                                dst,
+                            },
+                        )?;
+                        continue 'dispatch;
+                    }
                     Op::CallFnDiscard { id, argc } => {
                         let args_start = self.stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
@@ -574,6 +588,11 @@ impl Vm {
                                 self.release_frame(frame.locals);
                                 self.stack.truncate(stack_base);
                                 self.push(Value::Void);
+                            }
+                            ReturnMode::StoreI64 { stack_base, dst } => {
+                                self.release_frame(frame.locals);
+                                self.stack.truncate(stack_base);
+                                let _ = dst;
                             }
                             ReturnMode::Discard { stack_base } => {
                                 self.release_frame(frame.locals);
@@ -636,6 +655,13 @@ impl Vm {
                 self.push(value);
                 Ok(())
             }
+            ReturnMode::StoreI64 { stack_base, dst } => {
+                self.stack.truncate(stack_base);
+                let Value::Int(value) = value else {
+                    return Err(VmError::new("expected int return value"));
+                };
+                self.store_i64_in_current_frame(dst, value)
+            }
             ReturnMode::Discard { stack_base } => {
                 self.stack.truncate(stack_base);
                 Ok(())
@@ -656,6 +682,10 @@ impl Vm {
                 self.stack.truncate(stack_base);
                 self.push(Value::Int(value));
                 Ok(())
+            }
+            ReturnMode::StoreI64 { stack_base, dst } => {
+                self.stack.truncate(stack_base);
+                self.store_i64_in_current_frame(dst, value)
             }
             ReturnMode::Discard { stack_base } => {
                 self.stack.truncate(stack_base);
@@ -716,6 +746,24 @@ impl Vm {
             .cloned()
             .map(Rc::new)
             .ok_or_else(|| VmError::new(format!("invalid function id {}", id)))
+    }
+
+    fn store_i64_in_current_frame(&mut self, dst: usize, value: i64) -> Result<(), VmError> {
+        let caller_chunk = self
+            .frames
+            .last()
+            .ok_or_else(|| VmError::new("no caller frame"))?
+            .chunk
+            .clone();
+        let caller_chunk = caller_chunk.chunk();
+        let i64_slot = required_i64_slot(caller_chunk, dst)?;
+        let target = self
+            .frames
+            .last_mut()
+            .and_then(|frame| frame.locals.i64s.get_mut(i64_slot))
+            .ok_or_else(|| VmError::new(format!("invalid i64 local slot {}", dst)))?;
+        *target = value;
+        Ok(())
     }
 
     fn push(&mut self, value: Value) {
