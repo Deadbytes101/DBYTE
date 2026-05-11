@@ -594,6 +594,9 @@ impl Vm {
                         continue 'dispatch;
                     }
                     Op::CallFnI64ToI64Stack { id, argc } => {
+                        if self.i64_stack.len() < argc {
+                            return Err(VmError::new("i64 stack underflow"));
+                        }
                         let args_start = self.i64_stack.len() - argc;
                         let function = self.resolve_function(chunk, id)?;
                         self.push_call_frame_i64(
@@ -1989,5 +1992,81 @@ mod tests {
         let err = vm.run(&chunk).unwrap_err();
 
         assert!(err.msg.contains("function `add` expects 2 args, got 1"));
+    }
+
+    #[test]
+    fn reports_i64_stack_call_underflow() {
+        let mut function_chunk = Chunk::new("id");
+        function_chunk.local_names = vec!["n".into()];
+        function_chunk.code.push(Op::ConstI64Stack(0));
+        function_chunk.code.push(Op::ReturnI64ToI64Stack);
+
+        let function = BytecodeFunction {
+            name: "id".into(),
+            params: vec!["n".into()],
+            chunk: function_chunk,
+        };
+
+        let mut chunk = Chunk::new("test");
+        chunk.functions_by_id.push(function);
+        chunk.code.push(Op::CallFnI64ToI64Stack { id: 0, argc: 1 });
+        chunk.code.push(Op::Halt);
+
+        let mut vm = Vm::new();
+        let err = vm.run(&chunk).unwrap_err();
+
+        assert!(err.msg.contains("i64 stack underflow"));
+    }
+
+    #[test]
+    fn reports_i64_stack_function_arity_mismatch() {
+        let mut function_chunk = Chunk::new("add");
+        function_chunk.local_names = vec!["a".into(), "b".into()];
+        function_chunk.code.push(Op::ConstI64Stack(0));
+        function_chunk.code.push(Op::ReturnI64ToI64Stack);
+
+        let function = BytecodeFunction {
+            name: "add".into(),
+            params: vec!["a".into(), "b".into()],
+            chunk: function_chunk,
+        };
+
+        let mut chunk = Chunk::new("test");
+        chunk.functions_by_id.push(function);
+        chunk.code.push(Op::ConstI64Stack(1));
+        chunk.code.push(Op::CallFnI64ToI64Stack { id: 0, argc: 1 });
+        chunk.code.push(Op::Halt);
+
+        let mut vm = Vm::new();
+        let err = vm.run(&chunk).unwrap_err();
+
+        assert!(err.msg.contains("function `add` expects 2 args, got 1"));
+    }
+
+    #[test]
+    fn reports_i64_stack_recursion_depth() {
+        let mut function_chunk = Chunk::new("spin");
+        function_chunk.code.push(Op::ConstI64Stack(1));
+        function_chunk
+            .code
+            .push(Op::CallFnI64ToI64Stack { id: 0, argc: 1 });
+        function_chunk.code.push(Op::ReturnI64ToI64Stack);
+
+        let function = BytecodeFunction {
+            name: "spin".into(),
+            params: vec!["n".into()],
+            chunk: function_chunk,
+        };
+
+        let mut chunk = Chunk::new("test");
+        chunk.functions_by_id.push(function);
+        chunk.code.push(Op::ConstI64Stack(0));
+        chunk.code.push(Op::CallFnI64ToI64Stack { id: 0, argc: 1 });
+        chunk.code.push(Op::Halt);
+
+        let mut vm = Vm::new();
+        let err = vm.run(&chunk).unwrap_err();
+
+        assert!(err.msg.contains("maximum call depth exceeded"));
     }
 }

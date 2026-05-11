@@ -1,0 +1,8 @@
+fn inc(n: int) -> int:
+    return n + 1
+
+fn run(n: int) -> int:
+    return inc(n) + 1
+
+run(1)
+print(run(2))

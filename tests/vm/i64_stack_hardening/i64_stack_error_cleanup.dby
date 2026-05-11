@@ -1,0 +1,8 @@
+fn fail(n: int) -> int:
+    return n / 0
+
+fn wrap(n: int) -> int:
+    return fail(n) + 1
+
+let x: int = wrap(10)
+print(x)
