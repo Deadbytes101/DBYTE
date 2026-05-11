@@ -434,7 +434,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "1.9.2"
+$EXPECTED_VERSION = "2.0.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"

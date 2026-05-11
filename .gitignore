@@ -2,3 +2,5 @@ target/
 
 release-v*/
 dbyte-v*.bundle
+dbyte-v*-windows-x64/
+dbyte-v*-windows-x64.zip
