@@ -387,4 +387,15 @@ Optimizations: Implemented direct argument remapping in the inliner. By analyzin
 - 'Zero-Cost Inlining' has successfully eliminated the remaining measured bottleneck in function call overhead.
 - Simple helper functions (like `add`, `get`, `check`) now incur literally zero runtime overhead when inlined, producing optimal instruction sequences identical to hand-written inline logic.
 
+## v2.1.0 Note
+
+Version: v2.1.0
+Build: release
+Date: 2026-05-11
+
+v2.1.0 is not a performance release. It adds the personal runtime layer
+(`dbyte repl`, `dbyte shell`, and current-directory `.dbyterc` loading for
+interactive commands only). The safe performance claim remains limited to the
+measured benchmark suite and machine described above.
+
 

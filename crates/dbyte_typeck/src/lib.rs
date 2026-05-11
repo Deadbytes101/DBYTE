@@ -75,6 +75,7 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
     }
 }
 
+#[derive(Clone)]
 pub struct TypeChecker {
     env: Vec<HashMap<String, ResolvedType>>,
     fn_sigs: HashMap<String, (Vec<ResolvedType>, ResolvedType)>,
@@ -108,6 +109,10 @@ impl TypeChecker {
         let mut checker = Self::new();
         checker.current_file = Some(path.into());
         checker
+    }
+
+    pub fn set_entry_path(&mut self, path: impl Into<PathBuf>) {
+        self.current_file = Some(path.into());
     }
 
     fn push_scope(&mut self) {

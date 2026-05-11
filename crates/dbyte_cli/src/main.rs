@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -115,6 +116,422 @@ fn compile_program(path: &Path, src: &str, program: &dbyte_ast::Program) -> dbyt
     }
 }
 
+fn parse_source(path_label: &str, src: &str) -> Result<dbyte_ast::Program, ()> {
+    let tokens = match Lexer::new(src).tokenize() {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            print_error("LexError", &e.msg, e.span, path_label, src);
+            return Err(());
+        }
+    };
+
+    Parser::new(tokens).parse_program().map_err(|e| {
+        print_error("ParseError", &e.msg, e.span, path_label, src);
+    })
+}
+
+fn check_file_status(path: &Path) -> bool {
+    let path_label = path.display().to_string();
+    let src = match fs::read_to_string(path) {
+        Ok(src) => src,
+        Err(e) => {
+            eprintln!("error: cannot read `{}`: {}", path_label, e);
+            return false;
+        }
+    };
+    let Ok(program) = parse_source(&path_label, &src) else {
+        return false;
+    };
+    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
+    match checker.check_program(&program) {
+        Ok(_) => {
+            println!(
+                "\x1b[1;32mok\x1b[0m: no type errors found in `{}`",
+                path_label
+            );
+            true
+        }
+        Err(e) => {
+            print_error("TypeError", &e.msg, e.span, &path_label, &src);
+            false
+        }
+    }
+}
+
+fn run_file_tree_status(path: &Path) -> bool {
+    let path_label = path.display().to_string();
+    let src = match fs::read_to_string(path) {
+        Ok(src) => src,
+        Err(e) => {
+            eprintln!("error: cannot read `{}`: {}", path_label, e);
+            return false;
+        }
+    };
+    let Ok(program) = parse_source(&path_label, &src) else {
+        return false;
+    };
+    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
+    if let Err(e) = checker.check_program(&program) {
+        print_error("TypeError", &e.msg, e.span, &path_label, &src);
+        return false;
+    }
+    let mut interp = Interpreter::with_entry_path(path.to_path_buf());
+    if let Err(e) = interp.run(&program) {
+        print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
+        return false;
+    }
+    true
+}
+
+#[derive(Clone)]
+struct InteractiveSession {
+    checker: TypeChecker,
+    interp: Interpreter,
+    entry_path: PathBuf,
+}
+
+impl InteractiveSession {
+    fn new(cwd: &Path) -> Self {
+        let entry_path = cwd.join("<interactive>");
+        Self {
+            checker: TypeChecker::with_entry_path(entry_path.clone()),
+            interp: Interpreter::with_entry_path(entry_path.clone()),
+            entry_path,
+        }
+    }
+
+    fn set_cwd(&mut self, cwd: &Path) {
+        self.entry_path = cwd.join("<interactive>");
+        self.checker.set_entry_path(self.entry_path.clone());
+        self.interp.set_entry_path(self.entry_path.clone());
+    }
+
+    fn reset(&mut self) {
+        let entry_path = self.entry_path.clone();
+        self.checker = TypeChecker::with_entry_path(entry_path.clone());
+        self.interp = Interpreter::with_entry_path(entry_path);
+    }
+
+    fn eval(&mut self, label: &str, src: &str) -> bool {
+        let Ok(program) = parse_source(label, src) else {
+            return false;
+        };
+
+        let checker_snapshot = self.checker.clone();
+        let interp_snapshot = self.interp.clone();
+
+        if let Err(e) = self.checker.check_program(&program) {
+            print_error("TypeError", &e.msg, e.span, label, src);
+            self.checker = checker_snapshot;
+            return false;
+        }
+
+        if let Err(e) = self.interp.run(&program) {
+            print_error("RuntimeError", &e.msg, e.span, label, src);
+            self.checker = checker_snapshot;
+            self.interp = interp_snapshot;
+            return false;
+        }
+
+        true
+    }
+
+    fn load_rc(&mut self, cwd: &Path) -> bool {
+        let rc_path = cwd.join(".dbyterc");
+        if !rc_path.exists() {
+            return true;
+        }
+        let src = match fs::read_to_string(&rc_path) {
+            Ok(src) => src,
+            Err(e) => {
+                eprintln!("RcError: failed to read .dbyterc: {}", e);
+                return false;
+            }
+        };
+        if self.eval(&rc_path.display().to_string(), &src) {
+            true
+        } else {
+            eprintln!("RcError: failed to load .dbyterc");
+            false
+        }
+    }
+}
+
+fn starts_multiline_block(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.ends_with(':')
+        && (trimmed.starts_with("fn ")
+            || trimmed.starts_with("if ")
+            || trimmed.starts_with("while ")
+            || trimmed.starts_with("for "))
+}
+
+fn print_repl_help() {
+    println!("DByte REPL commands:");
+    println!("  .help          show this help");
+    println!("  .reset         clear variables, functions, imports, and module state");
+    println!("  .quit, .exit   leave the REPL");
+    println!("Use a blank line to finish multiline fn/if/while/for blocks.");
+}
+
+fn repl_loop(session: &mut InteractiveSession) {
+    let interactive = io::stdin().is_terminal();
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
+    let mut buffer = String::new();
+    let mut collecting_block = false;
+
+    loop {
+        if interactive {
+            let prompt = if collecting_block { "... " } else { "dbyte> " };
+            print!("{}", prompt);
+            let _ = io::stdout().flush();
+        }
+
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("ReplError: failed to read input: {}", e);
+                break;
+            }
+        }
+
+        let line_no_newline = line
+            .trim_end_matches(['\r', '\n'])
+            .trim_start_matches('\u{feff}');
+        let trimmed = line_no_newline.trim();
+
+        if !collecting_block && trimmed.starts_with('.') {
+            match trimmed {
+                ".help" => print_repl_help(),
+                ".quit" | ".exit" => break,
+                ".reset" => {
+                    session.reset();
+                    println!("reset");
+                }
+                _ => eprintln!("ReplError: unknown command: {}", trimmed),
+            }
+            continue;
+        }
+
+        if collecting_block {
+            if trimmed.is_empty() {
+                let src = buffer.trim_end().to_string();
+                if !src.is_empty() {
+                    session.eval("<repl>", &src);
+                }
+                buffer.clear();
+                collecting_block = false;
+            } else {
+                buffer.push_str(line_no_newline);
+                buffer.push('\n');
+            }
+            continue;
+        }
+
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if starts_multiline_block(line_no_newline) {
+            collecting_block = true;
+            buffer.push_str(line_no_newline);
+            buffer.push('\n');
+        } else {
+            session.eval("<repl>", line_no_newline);
+        }
+    }
+}
+
+fn split_shell_command(line: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for ch in line.chars() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            c if c.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+
+    if in_quotes {
+        return Err("unterminated quote".into());
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    Ok(args)
+}
+
+fn print_shell_help() {
+    println!("DByte shell commands:");
+    println!("  help                 show this help");
+    println!("  quit, exit           leave the shell");
+    println!("  clear                clear the terminal");
+    println!("  pwd                  print current directory");
+    println!("  cd <path>            change current directory");
+    println!("  ls                   list current directory");
+    println!("  run <file.dby>       run a DByte file with the tree interpreter");
+    println!("  check <file.dby>     type-check a DByte file");
+    println!("  test                 run dbyte test from the shell current directory");
+    println!("  version              print DByte version");
+    println!("  repl                 enter the DByte REPL");
+    println!("  : <code>             execute DByte code in persistent shell state");
+}
+
+fn shell_loop(session: &mut InteractiveSession) {
+    let interactive = io::stdin().is_terminal();
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
+
+    loop {
+        if interactive {
+            print!("dbyte-shell> ");
+            let _ = io::stdout().flush();
+        }
+
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("ShellError: failed to read input: {}", e);
+                break;
+            }
+        }
+
+        let line = line
+            .trim_end_matches(['\r', '\n'])
+            .trim_start_matches('\u{feff}');
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(code) = trimmed.strip_prefix(':') {
+            session.eval("<shell>", code.trim_start());
+            continue;
+        }
+
+        let args = match split_shell_command(trimmed) {
+            Ok(args) => args,
+            Err(e) => {
+                eprintln!("ShellError: {}", e);
+                continue;
+            }
+        };
+        if args.is_empty() {
+            continue;
+        }
+
+        match args[0].as_str() {
+            "help" => print_shell_help(),
+            "quit" | "exit" => break,
+            "clear" => print!("\x1b[2J\x1b[H"),
+            "pwd" => match std::env::current_dir() {
+                Ok(cwd) => println!("{}", cwd.display()),
+                Err(e) => eprintln!("ShellError: failed to read current directory: {}", e),
+            },
+            "cd" => {
+                if args.len() != 2 {
+                    eprintln!("ShellError: cd expects 1 path");
+                    continue;
+                }
+                let path = PathBuf::from(&args[1]);
+                if let Err(e) = std::env::set_current_dir(&path) {
+                    eprintln!("ShellError: failed to cd `{}`: {}", path.display(), e);
+                    continue;
+                }
+                match std::env::current_dir() {
+                    Ok(cwd) => session.set_cwd(&cwd),
+                    Err(e) => eprintln!("ShellError: failed to refresh current directory: {}", e),
+                }
+            }
+            "ls" => match fs::read_dir(".") {
+                Ok(entries) => {
+                    let mut names = entries
+                        .filter_map(|entry| entry.ok())
+                        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                        .collect::<Vec<_>>();
+                    names.sort();
+                    for name in names {
+                        println!("{}", name);
+                    }
+                }
+                Err(e) => eprintln!("ShellError: failed to list directory: {}", e),
+            },
+            "run" => {
+                if args.len() != 2 {
+                    eprintln!("ShellError: run expects 1 file");
+                    continue;
+                }
+                run_file_tree_status(Path::new(&args[1]));
+            }
+            "check" => {
+                if args.len() != 2 {
+                    eprintln!("ShellError: check expects 1 file");
+                    continue;
+                }
+                check_file_status(Path::new(&args[1]));
+            }
+            "test" => {
+                let exe = match std::env::current_exe() {
+                    Ok(exe) => exe,
+                    Err(e) => {
+                        eprintln!("ShellError: failed to find current executable: {}", e);
+                        continue;
+                    }
+                };
+                match process::Command::new(exe).arg("test").output() {
+                    Ok(output) => {
+                        print!("{}", String::from_utf8_lossy(&output.stdout));
+                        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                        if !output.status.success() {
+                            eprintln!("ShellError: test failed");
+                        }
+                    }
+                    Err(e) => eprintln!("ShellError: failed to run test: {}", e),
+                }
+            }
+            "version" => print_version(),
+            "repl" => repl_loop(session),
+            other => eprintln!("ShellError: unknown command: {}", other),
+        }
+    }
+}
+
+fn cmd_repl(no_rc: bool) {
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("ReplError: failed to read current directory: {}", e);
+        process::exit(1);
+    });
+    let mut session = InteractiveSession::new(&cwd);
+    if !no_rc && !session.load_rc(&cwd) {
+        process::exit(1);
+    }
+    repl_loop(&mut session);
+}
+
+fn cmd_shell(no_rc: bool) {
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("ShellError: failed to read current directory: {}", e);
+        process::exit(1);
+    });
+    let mut session = InteractiveSession::new(&cwd);
+    if !no_rc && !session.load_rc(&cwd) {
+        process::exit(1);
+    }
+    shell_loop(&mut session);
+}
+
 fn cmd_run(path: &Path, type_check: bool, engine: Engine, trace: bool) {
     let path_label = path.display().to_string();
     let (src, program) = parse_file(path);
@@ -228,6 +645,8 @@ fn usage() {
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \
          dbyte bench [--engine tree|vm] [--compare-python]\n  \
+         dbyte repl [--no-rc]\n  \
+         dbyte shell [--no-rc]\n  \
          dbyte disasm <file>\n  \
          dbyte tokens <file>\n  \
          dbyte ast <file>\n  \
@@ -559,6 +978,22 @@ fn main() {
             }
         }
         "test" => cmd_test(parse_engine(&args[2..])),
+        "repl" => {
+            let no_rc = args[2..].iter().any(|arg| arg == "--no-rc");
+            if args[2..].iter().any(|arg| arg != "--no-rc") {
+                usage();
+                process::exit(1);
+            }
+            cmd_repl(no_rc);
+        }
+        "shell" => {
+            let no_rc = args[2..].iter().any(|arg| arg == "--no-rc");
+            if args[2..].iter().any(|arg| arg != "--no-rc") {
+                usage();
+                process::exit(1);
+            }
+            cmd_shell(no_rc);
+        }
         "bench" => {
             let mut engine = None;
             let mut compare_python = false;

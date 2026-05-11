@@ -72,6 +72,38 @@ function Invoke-Dbyte {
     }
 }
 
+function Invoke-DbyteInput {
+    param(
+        [string[]]$Arguments,
+        [string]$InputText,
+        [string]$WorkingDirectory = $repoRoot
+    )
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $cli
+    $quotedArgs = foreach ($arg in $Arguments) {
+        '"' + $arg.Replace('"', '\"') + '"'
+    }
+    $psi.Arguments = ($quotedArgs -join " ")
+    $psi.WorkingDirectory = (Resolve-Path $WorkingDirectory).Path
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::Start($psi)
+    $process.StandardInput.Write($InputText)
+    $process.StandardInput.Close()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    return [PSCustomObject]@{
+        Code = $process.ExitCode
+        Text = Normalize-Output @($stdout, $stderr)
+    }
+}
+
 Write-Host "Running VM hardening tests..."
 
 $disasmResult = Invoke-Dbyte -Arguments @("disasm", "tests\vm\disasm_smoke.dby")
@@ -339,6 +371,90 @@ Assert-Contains $frameDispatchGeneric.Text "STORE_LOCAL" "frame dispatch generic
 Assert-Contains $frameDispatchGeneric.Text "RETURN" "frame dispatch generic return path"
 Assert-NotContains $frameDispatchGeneric.Text "RETURN_I64" "frame dispatch generic return avoids return_i64"
 
+Write-Host "Running interactive runtime tests..."
+
+$replPersist = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "let x: int = 40`nprint(x + 2)`n.quit`n"
+if ($replPersist.Code -ne 0) { throw "repl persistence failed: $($replPersist.Text)" }
+Assert-Contains $replPersist.Text "42" "repl variable persistence"
+
+$replFunction = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "fn add(a: int, b: int) -> int:`n    return a + b`n`nprint(add(20, 22))`n.quit`n"
+if ($replFunction.Code -ne 0) { throw "repl function persistence failed: $($replFunction.Text)" }
+Assert-Contains $replFunction.Text "42" "repl multiline function persistence"
+
+$replReset = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "let x: int = 1`n.reset`nprint(x)`n.quit`n"
+if ($replReset.Code -ne 0) { throw "repl reset command failed: $($replReset.Text)" }
+Assert-Contains $replReset.Text "reset" "repl reset acknowledgement"
+Assert-Contains $replReset.Text "undefined variable" "repl reset clears state"
+
+$interactiveRoot = Join-Path $repoRoot "target\verify-interactive"
+if (Test-Path $interactiveRoot) {
+    Remove-Item -Recurse -Force $interactiveRoot
+}
+New-Item -ItemType Directory -Path $interactiveRoot | Out-Null
+
+$replRcRoot = Join-Path $interactiveRoot "repl-rc"
+New-Item -ItemType Directory -Path $replRcRoot | Out-Null
+Set-Content -Path (Join-Path $replRcRoot ".dbyterc") -Value "let boot: int = 41" -NoNewline
+$replRc = Invoke-DbyteInput -Arguments @("repl") -InputText "print(boot + 1)`n.quit`n" -WorkingDirectory $replRcRoot
+if ($replRc.Code -ne 0) { throw "repl rc load failed: $($replRc.Text)" }
+Assert-Contains $replRc.Text "42" "repl rc state"
+
+$replNoRc = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "print(boot)`n.quit`n" -WorkingDirectory $replRcRoot
+if ($replNoRc.Code -ne 0) { throw "repl no-rc command failed: $($replNoRc.Text)" }
+Assert-Contains $replNoRc.Text "undefined variable" "repl no-rc skips rc"
+
+$replBadRcRoot = Join-Path $interactiveRoot "repl-bad-rc"
+New-Item -ItemType Directory -Path $replBadRcRoot | Out-Null
+Set-Content -Path (Join-Path $replBadRcRoot ".dbyterc") -Value "let bad: int = `"bad`"" -NoNewline
+$replBadRc = Invoke-DbyteInput -Arguments @("repl") -InputText ".quit`n" -WorkingDirectory $replBadRcRoot
+if ($replBadRc.Code -eq 0) { throw "repl bad rc unexpectedly passed: $($replBadRc.Text)" }
+Assert-Contains $replBadRc.Text "RcError: failed to load .dbyterc" "repl bad rc error"
+
+$shellRoot = Join-Path $interactiveRoot "shell"
+New-Item -ItemType Directory -Path $shellRoot | Out-Null
+Set-Content -Path (Join-Path $shellRoot "hello.dby") -Value "print(`"shell file ok`")" -NoNewline
+$shellInput = "version`npwd`ncd `"$shellRoot`"`nls`nrun hello.dby`ncheck hello.dby`n: let y: int = 40`n: print(y + 2)`nnot_a_real_cmd`nquit`n"
+$shellBasic = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellInput
+if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.Text)" }
+Assert-Contains $shellBasic.Text "DByte 2.1.0" "shell version"
+Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
+Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
+Assert-Contains $shellBasic.Text "no type errors found" "shell check file"
+Assert-Contains $shellBasic.Text "42" "shell code persistence"
+Assert-Contains $shellBasic.Text "ShellError: unknown command: not_a_real_cmd" "shell unknown command"
+
+$shellRcRoot = Join-Path $interactiveRoot "shell-rc"
+New-Item -ItemType Directory -Path $shellRcRoot | Out-Null
+Set-Content -Path (Join-Path $shellRcRoot ".dbyterc") -Value "let boot: int = 41" -NoNewline
+$shellRc = Invoke-DbyteInput -Arguments @("shell") -InputText ": print(boot + 1)`nquit`n" -WorkingDirectory $shellRcRoot
+if ($shellRc.Code -ne 0) { throw "shell rc load failed: $($shellRc.Text)" }
+Assert-Contains $shellRc.Text "42" "shell rc state"
+
+$shellTestRoot = Join-Path $interactiveRoot "shell-test"
+New-Item -ItemType Directory -Path (Join-Path $shellTestRoot "src") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $shellTestRoot "tests") -Force | Out-Null
+Set-Content -Path (Join-Path $shellTestRoot "Dbyte.toml") -Value "[package]`nname = `"shelltest`"`nversion = `"0.1.0`"`nentry = `"src/main.dby`"`n" -NoNewline
+Set-Content -Path (Join-Path $shellTestRoot "src\main.dby") -Value "print(`"shell test project`")" -NoNewline
+Set-Content -Path (Join-Path $shellTestRoot "tests\smoke.dby") -Value "print(`"shell test ok`")" -NoNewline
+Set-Content -Path (Join-Path $shellTestRoot "tests\smoke.out") -Value "shell test ok" -NoNewline
+$shellTest = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cd `"$shellTestRoot`"`ntest`nquit`n"
+if ($shellTest.Code -ne 0) { throw "shell test command failed: $($shellTest.Text)" }
+Assert-Contains $shellTest.Text "Test result: 1 passed, 0 failed" "shell test command"
+
+$runNoRcRoot = Join-Path $interactiveRoot "run-no-rc"
+New-Item -ItemType Directory -Path $runNoRcRoot | Out-Null
+Set-Content -Path (Join-Path $runNoRcRoot ".dbyterc") -Value "let bad: int = `"bad`"" -NoNewline
+Set-Content -Path (Join-Path $runNoRcRoot "main.dby") -Value "print(`"run ignores rc`")" -NoNewline
+Push-Location $runNoRcRoot
+try {
+    $runNoRc = Invoke-Dbyte -Arguments @("run", "main.dby")
+    if ($runNoRc.Code -ne 0) { throw "run loaded rc unexpectedly: $($runNoRc.Text)" }
+    Assert-Equal $runNoRc.Text "run ignores rc" "run ignores rc"
+}
+finally {
+    Pop-Location
+}
+
 Write-Host "Running project workflow tests..."
 
 Push-Location (Join-Path $repoRoot "tests\project\basic")
@@ -434,7 +550,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.0.0"
+$EXPECTED_VERSION = "2.1.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
