@@ -1,0 +1,3 @@
+let nums: list[int] = [1, 2, 3]
+let size: int = len(nums)
+print(size)
