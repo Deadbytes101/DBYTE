@@ -231,14 +231,12 @@ if should_run:
         if len(find_bytes) != len(replace_bytes):
             print("error: find_hex and replace_hex must have the same byte length")
             valid_patch = false
-
     if valid_patch:
         data = pbuf.load(input_path)
         if mode == "offset":
             if direct_offset + len(replace_bytes) > pbuf.len(data):
                 print("error: offset out of bounds")
                 valid_patch = false
-
     if valid_patch:
         if mode == "offset":
             pbuf.replace(data, direct_offset, replace_bytes)
