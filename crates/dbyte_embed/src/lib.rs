@@ -500,6 +500,68 @@ mod tests {
     }
 
     #[test]
+    fn run_file_with_args_restores_after_success_and_errors() {
+        let root = temp_dir("run-file-args-restore");
+        fs::write(
+            root.join("args.dby"),
+            "import std.env as env\nlet args: list[str] = env.args()\nprint(len(args))\nif len(args) > 0:\n    print(args[0])\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("args_again.dby"),
+            "let args: list[str] = env.args()\nprint(len(args))\nif len(args) > 0:\n    print(args[0])\n",
+        )
+        .unwrap();
+        fs::write(root.join("type_error.dby"), "let bad: int = \"bad\"\n").unwrap();
+        fs::write(root.join("runtime_error.dby"), "let bad: int = 1 / 0\n").unwrap();
+
+        let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
+        let out = rt
+            .run_file_capture_with_args("args.dby", vec!["alpha".into()])
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "1\nalpha");
+        let out = rt
+            .run_source_capture("after-success", "print(len(env.args()))")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "0");
+
+        rt.run_file_with_args("args_again.dby", vec!["beta".into()])
+            .unwrap();
+        let out = rt
+            .run_source_capture("after-noncapture-success", "print(len(env.args()))")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "0");
+
+        let error = rt
+            .run_file_capture_with_args("type_error.dby", vec!["type".into()])
+            .unwrap_err();
+        assert!(matches!(error, DByteError::Type { .. }));
+        let out = rt
+            .run_source_capture("after-type-error", "print(len(env.args()))")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "0");
+
+        let error = rt
+            .run_file_capture_with_args("runtime_error.dby", vec!["runtime".into()])
+            .unwrap_err();
+        assert!(matches!(error, DByteError::Runtime { .. }));
+        let out = rt
+            .run_source_capture("after-runtime-error", "print(len(env.args()))")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "0");
+
+        let error = rt
+            .run_file_capture_with_args("missing.dby", vec!["missing".into()])
+            .unwrap_err();
+        assert!(matches!(error, DByteError::Io { .. }));
+        let out = rt
+            .run_source_capture("after-missing-file", "print(len(env.args()))")
+            .unwrap();
+        assert_eq!(out.stdout.trim(), "0");
+        cleanup(root);
+    }
+
+    #[test]
     fn invalid_set_current_dir_keeps_previous_dir() {
         let root = temp_dir("invalid-cwd");
         let mut rt = DByteRuntime::with_current_dir(&root).unwrap();
