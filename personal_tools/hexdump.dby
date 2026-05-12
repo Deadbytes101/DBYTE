@@ -21,6 +21,9 @@ let decimal_valid: bool = true
 let digit: int = -1
 let ch: str = ""
 let has_range: bool = false
+let first_char: bool = true
+let offset_minus_err: bool = false
+let length_minus_err: bool = false
 
 if len(args) == 0:
     hfs.write_bytes(path, b"\x44\x42\x79\x74\x65\x00\x10\x20\xDE\xAD\xBE\xEF")
@@ -36,72 +39,92 @@ else:
             decimal_value = 0
             if len(decimal_text) == 0:
                 decimal_valid = false
+            offset_minus_err = false
+            first_char = true
             for ch in decimal_text:
-                digit = -1
-                if ch == "0":
-                    digit = 0
-                if ch == "1":
-                    digit = 1
-                if ch == "2":
-                    digit = 2
-                if ch == "3":
-                    digit = 3
-                if ch == "4":
-                    digit = 4
-                if ch == "5":
-                    digit = 5
-                if ch == "6":
-                    digit = 6
-                if ch == "7":
-                    digit = 7
-                if ch == "8":
-                    digit = 8
-                if ch == "9":
-                    digit = 9
-                if digit < 0:
-                    decimal_valid = false
-                else:
-                    decimal_value = decimal_value * 10 + digit
+                if first_char:
+                    first_char = false
+                    if ch == "-":
+                        print("error: offset must be a non-negative decimal integer")
+                        decimal_valid = false
+                        offset_minus_err = true
+                if decimal_valid:
+                    digit = -1
+                    if ch == "0":
+                        digit = 0
+                    if ch == "1":
+                        digit = 1
+                    if ch == "2":
+                        digit = 2
+                    if ch == "3":
+                        digit = 3
+                    if ch == "4":
+                        digit = 4
+                    if ch == "5":
+                        digit = 5
+                    if ch == "6":
+                        digit = 6
+                    if ch == "7":
+                        digit = 7
+                    if ch == "8":
+                        digit = 8
+                    if ch == "9":
+                        digit = 9
+                    if digit < 0:
+                        decimal_valid = false
+                    else:
+                        decimal_value = decimal_value * 10 + digit
             if decimal_valid:
                 offset = decimal_value
             else:
-                print("error: offset must be a decimal integer")
+                if offset_minus_err == false:
+                    print("error: offset must be a decimal integer")
                 should_run = false
             decimal_text = args[2]
             decimal_valid = true
             decimal_value = 0
             if len(decimal_text) == 0:
                 decimal_valid = false
+            length_minus_err = false
+            first_char = true
             for ch in decimal_text:
-                digit = -1
-                if ch == "0":
-                    digit = 0
-                if ch == "1":
-                    digit = 1
-                if ch == "2":
-                    digit = 2
-                if ch == "3":
-                    digit = 3
-                if ch == "4":
-                    digit = 4
-                if ch == "5":
-                    digit = 5
-                if ch == "6":
-                    digit = 6
-                if ch == "7":
-                    digit = 7
-                if ch == "8":
-                    digit = 8
-                if ch == "9":
-                    digit = 9
-                if digit < 0:
-                    decimal_valid = false
-                else:
-                    decimal_value = decimal_value * 10 + digit
+                if first_char:
+                    first_char = false
+                    if ch == "-":
+                        print("error: length must be a non-negative decimal integer")
+                        decimal_valid = false
+                        length_minus_err = true
+                if decimal_valid:
+                    digit = -1
+                    if ch == "0":
+                        digit = 0
+                    if ch == "1":
+                        digit = 1
+                    if ch == "2":
+                        digit = 2
+                    if ch == "3":
+                        digit = 3
+                    if ch == "4":
+                        digit = 4
+                    if ch == "5":
+                        digit = 5
+                    if ch == "6":
+                        digit = 6
+                    if ch == "7":
+                        digit = 7
+                    if ch == "8":
+                        digit = 8
+                    if ch == "9":
+                        digit = 9
+                    if digit < 0:
+                        decimal_valid = false
+                    else:
+                        decimal_value = decimal_value * 10 + digit
             if decimal_valid:
                 length = decimal_value
             else:
-                print("error: length must be a decimal integer")
+                if length_minus_err == false:
+                    print("error: length must be a decimal integer")
                 should_run = false
         else:
             print("usage: hexdump <file> [offset length]")
@@ -116,9 +139,12 @@ if should_run:
 
 if should_run:
     if has_range:
-        if offset + length > size:
-            print("error: range out of bounds")
+        if offset > size:
+            print("error: offset out of bounds")
             should_run = false
+        else:
+            if offset + length > size:
+                length = size - offset
 
 if should_run:
     print("hexdump:", path)

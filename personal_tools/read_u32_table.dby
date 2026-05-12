@@ -16,6 +16,9 @@ let decimal_value: int = 0
 let decimal_valid: bool = true
 let digit: int = -1
 let ch: str = ""
+let first_char: bool = true
+let offset_minus_err: bool = false
+let count_minus_err: bool = false
 
 if len(args) == 0:
     ufs.write_bytes(path, b"\x78\x56\x34\x12\x01\x00\x00\x00\xEF\xBE\xAD\xDE")
@@ -30,72 +33,92 @@ else:
             decimal_value = 0
             if len(decimal_text) == 0:
                 decimal_valid = false
+            offset_minus_err = false
+            first_char = true
             for ch in decimal_text:
-                digit = -1
-                if ch == "0":
-                    digit = 0
-                if ch == "1":
-                    digit = 1
-                if ch == "2":
-                    digit = 2
-                if ch == "3":
-                    digit = 3
-                if ch == "4":
-                    digit = 4
-                if ch == "5":
-                    digit = 5
-                if ch == "6":
-                    digit = 6
-                if ch == "7":
-                    digit = 7
-                if ch == "8":
-                    digit = 8
-                if ch == "9":
-                    digit = 9
-                if digit < 0:
-                    decimal_valid = false
-                else:
-                    decimal_value = decimal_value * 10 + digit
+                if first_char:
+                    first_char = false
+                    if ch == "-":
+                        print("error: offset must be a non-negative decimal integer")
+                        decimal_valid = false
+                        offset_minus_err = true
+                if decimal_valid:
+                    digit = -1
+                    if ch == "0":
+                        digit = 0
+                    if ch == "1":
+                        digit = 1
+                    if ch == "2":
+                        digit = 2
+                    if ch == "3":
+                        digit = 3
+                    if ch == "4":
+                        digit = 4
+                    if ch == "5":
+                        digit = 5
+                    if ch == "6":
+                        digit = 6
+                    if ch == "7":
+                        digit = 7
+                    if ch == "8":
+                        digit = 8
+                    if ch == "9":
+                        digit = 9
+                    if digit < 0:
+                        decimal_valid = false
+                    else:
+                        decimal_value = decimal_value * 10 + digit
             if decimal_valid:
                 start_offset = decimal_value
             else:
-                print("error: offset must be a decimal integer")
+                if offset_minus_err == false:
+                    print("error: offset must be a decimal integer")
                 should_run = false
             decimal_text = args[2]
             decimal_valid = true
             decimal_value = 0
             if len(decimal_text) == 0:
                 decimal_valid = false
+            count_minus_err = false
+            first_char = true
             for ch in decimal_text:
-                digit = -1
-                if ch == "0":
-                    digit = 0
-                if ch == "1":
-                    digit = 1
-                if ch == "2":
-                    digit = 2
-                if ch == "3":
-                    digit = 3
-                if ch == "4":
-                    digit = 4
-                if ch == "5":
-                    digit = 5
-                if ch == "6":
-                    digit = 6
-                if ch == "7":
-                    digit = 7
-                if ch == "8":
-                    digit = 8
-                if ch == "9":
-                    digit = 9
-                if digit < 0:
-                    decimal_valid = false
-                else:
-                    decimal_value = decimal_value * 10 + digit
+                if first_char:
+                    first_char = false
+                    if ch == "-":
+                        print("error: count must be a non-negative decimal integer")
+                        decimal_valid = false
+                        count_minus_err = true
+                if decimal_valid:
+                    digit = -1
+                    if ch == "0":
+                        digit = 0
+                    if ch == "1":
+                        digit = 1
+                    if ch == "2":
+                        digit = 2
+                    if ch == "3":
+                        digit = 3
+                    if ch == "4":
+                        digit = 4
+                    if ch == "5":
+                        digit = 5
+                    if ch == "6":
+                        digit = 6
+                    if ch == "7":
+                        digit = 7
+                    if ch == "8":
+                        digit = 8
+                    if ch == "9":
+                        digit = 9
+                    if digit < 0:
+                        decimal_valid = false
+                    else:
+                        decimal_value = decimal_value * 10 + digit
             if decimal_valid:
                 count = decimal_value
             else:
-                print("error: count must be a decimal integer")
+                if count_minus_err == false:
+                    print("error: count must be a decimal integer")
                 should_run = false
         else:
             print("usage: read_u32_table <file> [offset count]")
@@ -104,6 +127,12 @@ else:
 
 if should_run:
     data = ufs.read_bytes(path)
+    if len(args) == 3:
+        if start_offset > len(data):
+            print("error: offset out of bounds")
+            should_run = false
+
+if should_run:
     offset = start_offset
     if count >= 0:
         if start_offset + count * 4 > len(data):

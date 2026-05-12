@@ -807,6 +807,61 @@ Assert-Equal $personalPatchUnequal.Text "error: find_hex and replace_hex must ha
 Assert-Equal (Bytes-Hex $personalPatchUnequalFile) "00deadbeef00" "personal patch unequal original unchanged"
 if (Test-Path "$personalPatchUnequalFile.patched") { throw "personal patch unequal unexpectedly wrote output" }
 
+$personalPatchOffsetNeg = Join-Path $personalArgsRoot "offset-neg.bin"
+[System.IO.File]::WriteAllBytes($personalPatchOffsetNeg, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef))
+$personalPatchOffsetNegResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "-1", $personalPatchOffsetNeg, "CAFEBABE")
+if ($personalPatchOffsetNegResult.Code -ne 0) { throw "personal patch offset negative failed: $($personalPatchOffsetNegResult.Text)" }
+Assert-Equal $personalPatchOffsetNegResult.Text "error: offset must be a non-negative decimal integer" "personal patch offset negative"
+if (Test-Path "$personalPatchOffsetNeg.patched") { throw "personal patch offset negative unexpectedly wrote output" }
+
+$personalPatchBadReplace = Join-Path $personalArgsRoot "bad-replace.bin"
+[System.IO.File]::WriteAllBytes($personalPatchBadReplace, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef))
+$personalPatchBadReplaceResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchBadReplace, "DEADBEEF", "ZZZZZZZZ")
+if ($personalPatchBadReplaceResult.Code -ne 0) { throw "personal patch invalid replace failed: $($personalPatchBadReplaceResult.Text)" }
+Assert-Equal $personalPatchBadReplaceResult.Text "error: invalid replace_hex" "personal patch invalid replace"
+if (Test-Path "$personalPatchBadReplace.patched") { throw "personal patch invalid replace unexpectedly wrote output" }
+
+$personalPatchOffsetBadReplaceResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "0", $personalPatchBadReplace, "NOTHEX")
+if ($personalPatchOffsetBadReplaceResult.Code -ne 0) { throw "personal patch offset invalid replace failed: $($personalPatchOffsetBadReplaceResult.Text)" }
+Assert-Equal $personalPatchOffsetBadReplaceResult.Text "error: invalid replace_hex" "personal patch offset invalid replace"
+if (Test-Path "$personalPatchBadReplace.patched") { throw "personal patch offset invalid replace unexpectedly wrote output" }
+
+$personalFindNoMatch = Join-Path $personalArgsRoot "no-pattern.bin"
+[System.IO.File]::WriteAllBytes($personalFindNoMatch, [byte[]](0x01, 0x02, 0x03, 0x04))
+$personalFindNoMatchResult = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalFindNoMatch, "DEADBEEF")
+if ($personalFindNoMatchResult.Code -ne 0) { throw "personal find no match failed: $($personalFindNoMatchResult.Text)" }
+Assert-Contains $personalFindNoMatchResult.Text "pattern: not found" "personal find no match"
+
+$personalHexOob = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "11", "1")
+if ($personalHexOob.Code -ne 0) { throw "personal hexdump offset oob failed: $($personalHexOob.Text)" }
+Assert-Equal $personalHexOob.Text "error: offset out of bounds" "personal hexdump offset oob"
+
+$personalHexClamp = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "1", "999")
+if ($personalHexClamp.Code -ne 0) { throw "personal hexdump length clamp failed: $($personalHexClamp.Text)" }
+Assert-Contains $personalHexClamp.Text "range: 1 9" "personal hexdump length clamp header"
+Assert-Contains $personalHexClamp.Text "1 : deadbeef00785634" "personal hexdump length clamp row1"
+Assert-Contains $personalHexClamp.Text "9 : 12" "personal hexdump length clamp row2"
+
+$personalHexNeg = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "-1", "4")
+if ($personalHexNeg.Code -ne 0) { throw "personal hexdump negative offset failed: $($personalHexNeg.Text)" }
+Assert-Equal $personalHexNeg.Text "error: offset must be a non-negative decimal integer" "personal hexdump negative offset"
+
+$personalHexTwoArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "0")
+if ($personalHexTwoArgs.Code -ne 0) { throw "personal hexdump two args failed: $($personalHexTwoArgs.Text)" }
+Assert-Equal $personalHexTwoArgs.Text "usage: hexdump <file> [offset length]`nexample: dbyte run personal_tools/hexdump.dby sample.bin 0 16" "personal hexdump two args usage"
+
+$personalU32BadOffset = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "nope", "1")
+if ($personalU32BadOffset.Code -ne 0) { throw "personal u32 bad offset failed: $($personalU32BadOffset.Text)" }
+Assert-Equal $personalU32BadOffset.Text "error: offset must be a decimal integer" "personal u32 bad offset"
+
+$personalU32NegCount = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "0", "-1")
+if ($personalU32NegCount.Code -ne 0) { throw "personal u32 negative count failed: $($personalU32NegCount.Text)" }
+Assert-Equal $personalU32NegCount.Text "error: count must be a non-negative decimal integer" "personal u32 negative count"
+
+$personalU32OobStart = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "11", "1")
+if ($personalU32OobStart.Code -ne 0) { throw "personal u32 start offset oob failed: $($personalU32OobStart.Text)" }
+Assert-Equal $personalU32OobStart.Text "error: offset out of bounds" "personal u32 start offset oob"
+
 $personalU32Args = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile)
 if ($personalU32Args.Code -ne 0) { throw "personal u32 args failed: $($personalU32Args.Text)" }
 Assert-Contains $personalU32Args.Text "0 -> 3199065600" "personal u32 args first row"
@@ -823,6 +878,27 @@ $personalSpacedFile = Join-Path $personalSpacedRoot "quoted sample.bin"
 $personalFindSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalSpacedFile, "DEADBEEF")
 if ($personalFindSpaced.Code -ne 0) { throw "personal find spaced path failed: $($personalFindSpaced.Text)" }
 Assert-Contains $personalFindSpaced.Text "pattern: 1 0x1" "personal find spaced path"
+
+$personalHexSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalSpacedFile)
+if ($personalHexSpaced.Code -ne 0) { throw "personal hexdump spaced path failed: $($personalHexSpaced.Text)" }
+Assert-Contains $personalHexSpaced.Text "bytes: 6" "personal hexdump spaced path size"
+
+$personalBinSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby", $personalSpacedFile)
+if ($personalBinSpaced.Code -ne 0) { throw "personal bininfo spaced path failed: $($personalBinSpaced.Text)" }
+Assert-Contains $personalBinSpaced.Text "bytes: 6" "personal bininfo spaced path size"
+
+$personalPatchSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalSpacedFile, "DEADBEEF", "CAFEBABE")
+if ($personalPatchSpaced.Code -ne 0) { throw "personal patch spaced path failed: $($personalPatchSpaced.Text)" }
+Assert-Contains $personalPatchSpaced.Text "patched first match at offset 1" "personal patch spaced path"
+Assert-Equal (Bytes-Hex $personalSpacedFile) "00deadbeef00" "personal patch spaced original unchanged"
+
+$personalU32Spaced = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalSpacedFile, "1", "1")
+if ($personalU32Spaced.Code -ne 0) { throw "personal u32 spaced path failed: $($personalU32Spaced.Text)" }
+Assert-Contains $personalU32Spaced.Text "1 -> 4022250974" "personal u32 spaced path row"
+
+if (Test-Path "$personalSpacedFile.patched") {
+    Remove-Item -Force "$personalSpacedFile.patched"
+}
 
 $personalUsageFind = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile)
 if ($personalUsageFind.Code -ne 0) { throw "personal find usage failed: $($personalUsageFind.Text)" }
@@ -1017,6 +1093,35 @@ Assert-Equal (Bytes-Hex "$releasePatchOffsetFile.patched") "00cafebabe00" "relea
 $releaseU32Range = & $releaseExe run "personal_tools\read_u32_table.dby" $releaseToolsFile 11 1 2>&1
 if ($LASTEXITCODE -ne 0) { throw "release u32 range failed: $(Normalize-Output $releaseU32Range)" }
 Assert-Contains (Normalize-Output $releaseU32Range) "11 -> 305419896" "release u32 range"
+
+$releaseHexOob = & $releaseExe run "personal_tools\hexdump.dby" $releaseToolsFile 20 1 2>&1
+if ($LASTEXITCODE -ne 0) { throw "release hexdump offset oob failed: $(Normalize-Output $releaseHexOob)" }
+Assert-Equal (Normalize-Output $releaseHexOob) "error: offset out of bounds" "release hexdump offset oob"
+
+$releaseHexClamp = & $releaseExe run "personal_tools\hexdump.dby" $releaseToolsFile 1 999 2>&1
+if ($LASTEXITCODE -ne 0) { throw "release hexdump length clamp failed: $(Normalize-Output $releaseHexClamp)" }
+Assert-Contains (Normalize-Output $releaseHexClamp) "range: 1 14" "release hexdump length clamp header"
+Assert-Contains (Normalize-Output $releaseHexClamp) "1 : deadbeef11deadbe" "release hexdump length clamp row1"
+Assert-Contains (Normalize-Output $releaseHexClamp) "9 : ef2278563412" "release hexdump length clamp row2"
+
+$releaseFindNoMatchFile = Join-Path $releaseToolsRoot "no-match.bin"
+[System.IO.File]::WriteAllBytes($releaseFindNoMatchFile, [byte[]](0x01, 0x02, 0x03))
+$releaseFindNoMatch = & $releaseExe run "personal_tools\find_bytes.dby" $releaseFindNoMatchFile DEADBEEF 2>&1
+if ($LASTEXITCODE -ne 0) { throw "release find no match failed: $(Normalize-Output $releaseFindNoMatch)" }
+Assert-Contains (Normalize-Output $releaseFindNoMatch) "pattern: not found" "release find no match"
+
+if (Test-Path "$releaseToolsFile.patched") {
+    Remove-Item -Force "$releaseToolsFile.patched"
+}
+$releasePatchBadReplace = & $releaseExe run "personal_tools\patch_bytes.dby" $releaseToolsFile DEADBEEF ZZZZZZZZ 2>&1
+if ($LASTEXITCODE -ne 0) { throw "release patch invalid replace failed: $(Normalize-Output $releasePatchBadReplace)" }
+Assert-Equal (Normalize-Output $releasePatchBadReplace) "error: invalid replace_hex" "release patch invalid replace"
+if (Test-Path "$releaseToolsFile.patched") { throw "release patch invalid replace unexpectedly wrote output" }
+
+$releaseU32StartOob = & $releaseExe run "personal_tools\read_u32_table.dby" $releaseToolsFile 20 1 2>&1
+if ($LASTEXITCODE -ne 0) { throw "release u32 start offset oob failed: $(Normalize-Output $releaseU32StartOob)" }
+Assert-Equal (Normalize-Output $releaseU32StartOob) "error: offset out of bounds" "release u32 start offset oob"
+
 Assert-GitStatus-Unchanged $releasePersonalToolsStatus "release personal tools cleanliness"
 
 Write-Host "Running benchmark smoke tests..."
