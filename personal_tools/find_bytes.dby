@@ -110,4 +110,4 @@ if should_run:
                 hex_work = hex_work / 16
             print(label + ":", pos, "0x" + hex_offset)
         else:
-            print(label + ":", pos)
+            print(label + ": not found")
