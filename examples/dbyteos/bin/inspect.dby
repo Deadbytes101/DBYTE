@@ -1,0 +1,17 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+import std.env as env
+
+let args: list[str] = env.args()
+if len(args) == 0:
+    print("usage: inspect <file>")
+else:
+    let target: str = args[0]
+    if fs.exists(target) == 1:
+        print("Inspecting file:", target)
+        print("Exists: [YES]")
+        # In a real OS this would show size, permissions, etc.
+        # For now, we'll just confirm existence and type
+        print("Type:   DByte File/Dir")
+    else:
+        print("error: file not found:", target)

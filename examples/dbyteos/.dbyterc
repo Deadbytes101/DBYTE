@@ -1,0 +1,18 @@
+# DByteOS Shell Configuration
+# baseline aliases for the prototype environment
+
+# System Commands
+@shell alias boot = run boot.dby
+@shell alias status = run bin/status.dby
+@shell alias clean = run bin/clean.dby
+@shell alias inspect = run bin/inspect.dby
+
+# Navigation/Info (simulated)
+@shell alias dir = ls
+@shell alias whoami = : print("deadbyte")
+@shell alias whereami = pwd
+
+# Tools from previous releases (mappable to OS bin)
+@shell alias patch-demo = run ../sanctum/patch_demo.dby
+@shell alias u32-demo = run ../sanctum/u32_demo.dby
+@shell alias inspect-demo = run ../sanctum/inspect_demo.dby

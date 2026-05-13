@@ -1,0 +1,19 @@
+import std.fs as fs
+
+# Environment Helper
+pub fn resolve_path(p: str) -> str:
+    # If running from repo root
+    if fs.exists("examples/dbyteos") == 1:
+        return "examples/dbyteos/" + p
+    # If running from inside dbyteos
+    return p
+
+pub fn get_user() -> str:
+    return "deadbyte"
+
+pub fn get_home() -> str:
+    # Full inline to bypass prototype resolution bugs
+    let p: str = "home/deadbyte"
+    if fs.exists("examples/dbyteos") == 1:
+        return "examples/dbyteos/" + p
+    return p
