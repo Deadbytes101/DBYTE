@@ -179,15 +179,19 @@ impl InteractiveSession {
         true
     }
 
-    fn load_rc(&mut self, cwd: &Path) -> bool {
-        let rc_path = cwd.join(".dbyterc");
+    fn load_rc(&mut self, cwd: &Path, rc_override: Option<&Path>) -> bool {
+        let rc_path = if let Some(p) = rc_override {
+            cwd.join(p)
+        } else {
+            cwd.join(".dbyterc")
+        };
         if !rc_path.exists() {
             return true;
         }
         let src = match fs::read_to_string(&rc_path) {
             Ok(src) => src,
             Err(e) => {
-                eprintln!("RcError: failed to read .dbyterc: {}", e);
+                eprintln!("RcError: failed to read {}: {}", rc_path.display(), e);
                 return false;
             }
         };
@@ -195,7 +199,7 @@ impl InteractiveSession {
         if self.eval(&rc_path.display().to_string(), &src) {
             true
         } else {
-            eprintln!("RcError: failed to load .dbyterc");
+            eprintln!("RcError: failed to load {}", rc_path.display());
             false
         }
     }
@@ -448,15 +452,19 @@ impl ShellSession {
         })
     }
 
-    fn load_rc(&mut self) -> bool {
-        let rc_path = self.runtime.current_dir().join(".dbyterc");
+    fn load_rc(&mut self, rc_override: Option<&Path>) -> bool {
+        let rc_path = if let Some(p) = rc_override {
+            self.runtime.current_dir().join(p)
+        } else {
+            self.runtime.current_dir().join(".dbyterc")
+        };
         if !rc_path.exists() {
             return true;
         }
         let src = match fs::read_to_string(&rc_path) {
             Ok(src) => src,
             Err(e) => {
-                eprintln!("RcError: failed to read .dbyterc: {}", e);
+                eprintln!("RcError: failed to read {}: {}", rc_path.display(), e);
                 return false;
             }
         };
@@ -466,7 +474,7 @@ impl ShellSession {
             let trimmed = line.trim_start();
             if let Some(directive) = trimmed.strip_prefix("@shell ") {
                 if let Err(e) = self.apply_shell_directive(directive) {
-                    eprintln!("ShellError: .dbyterc line {}: {}", idx + 1, e);
+                    eprintln!("ShellError: {} line {}: {}", rc_path.display(), idx + 1, e);
                     return false;
                 }
             } else {
@@ -484,7 +492,7 @@ impl ShellSession {
         {
             Ok(()) => true,
             Err(e) => {
-                eprintln!("RcError: failed to load .dbyterc: {}", e);
+                eprintln!("RcError: failed to load {}: {}", rc_path.display(), e);
                 false
             }
         }
@@ -807,19 +815,19 @@ fn shell_loop(session: &mut ShellSession) {
     }
 }
 
-fn cmd_repl(no_rc: bool) {
+fn cmd_repl(no_rc: bool, rc_path: Option<&Path>) {
     let cwd = std::env::current_dir().unwrap_or_else(|e| {
         eprintln!("ReplError: failed to read current directory: {}", e);
         process::exit(1);
     });
     let mut session = InteractiveSession::new(&cwd);
-    if !no_rc && !session.load_rc(&cwd) {
+    if !no_rc && !session.load_rc(&cwd, rc_path) {
         process::exit(1);
     }
     repl_loop(&mut session);
 }
 
-fn cmd_shell(no_rc: bool) {
+fn cmd_shell(no_rc: bool, rc_path: Option<&Path>) {
     let cwd = std::env::current_dir().unwrap_or_else(|e| {
         eprintln!("ShellError: failed to read current directory: {}", e);
         process::exit(1);
@@ -828,7 +836,7 @@ fn cmd_shell(no_rc: bool) {
         eprintln!("ShellError: failed to create shell runtime: {}", e);
         process::exit(1);
     });
-    if !no_rc && !session.load_rc() {
+    if !no_rc && !session.load_rc(rc_path) {
         process::exit(1);
     }
     shell_loop(&mut session);
@@ -949,8 +957,8 @@ fn usage() {
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \
          dbyte bench [--engine tree|vm] [--compare-python]\n  \
-         dbyte repl [--no-rc]\n  \
-         dbyte shell [--no-rc]\n  \
+         dbyte repl [--no-rc] [--rc <path>]\n  \
+         dbyte shell [--no-rc] [--rc <path>]\n  \
          dbyte disasm <file>\n  \
          dbyte tokens <file>\n  \
          dbyte ast <file>\n  \
@@ -1292,20 +1300,48 @@ fn main() {
         }
         "test" => cmd_test(parse_engine(&args[2..])),
         "repl" => {
-            let no_rc = args[2..].iter().any(|arg| arg == "--no-rc");
-            if args[2..].iter().any(|arg| arg != "--no-rc") {
-                usage();
-                process::exit(1);
+            let mut no_rc = false;
+            let mut rc_path = None;
+            let mut iter = args.iter().skip(2);
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--no-rc" => no_rc = true,
+                    "--rc" => {
+                        rc_path = iter.next().map(Path::new);
+                        if rc_path.is_none() {
+                            usage();
+                            process::exit(1);
+                        }
+                    }
+                    _ => {
+                        usage();
+                        process::exit(1);
+                    }
+                }
             }
-            cmd_repl(no_rc);
+            cmd_repl(no_rc, rc_path);
         }
         "shell" => {
-            let no_rc = args[2..].iter().any(|arg| arg == "--no-rc");
-            if args[2..].iter().any(|arg| arg != "--no-rc") {
-                usage();
-                process::exit(1);
+            let mut no_rc = false;
+            let mut rc_path = None;
+            let mut iter = args.iter().skip(2);
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--no-rc" => no_rc = true,
+                    "--rc" => {
+                        rc_path = iter.next().map(Path::new);
+                        if rc_path.is_none() {
+                            usage();
+                            process::exit(1);
+                        }
+                    }
+                    _ => {
+                        usage();
+                        process::exit(1);
+                    }
+                }
             }
-            cmd_shell(no_rc);
+            cmd_shell(no_rc, rc_path);
         }
         "bench" => {
             let mut engine = None;
