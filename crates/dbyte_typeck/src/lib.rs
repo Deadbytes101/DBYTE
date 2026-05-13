@@ -737,14 +737,18 @@ impl TypeChecker {
             }
 
             Stmt::Import { path, alias, span } => {
-                if self.env.last().unwrap().contains_key(alias) {
-                    return Err(TypeError {
-                        msg: format!("ImportError: duplicate import alias: {}", alias),
-                        span: *span,
-                    });
-                }
                 let module = self.load_module(path, alias, *span)?;
-                self.define(alias, ResolvedType::Module(module));
+                let ty = ResolvedType::Module(module);
+                if let Some(existing) = self.env.last().unwrap().get(alias) {
+                    if *existing != ty {
+                        return Err(TypeError {
+                            msg: format!("ImportError: duplicate import alias: {}", alias),
+                            span: *span,
+                        });
+                    }
+                } else {
+                    self.define(alias, ty);
+                }
             }
 
             Stmt::Expr(e) => {

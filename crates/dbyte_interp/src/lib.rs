@@ -925,12 +925,6 @@ impl Interpreter {
             }
 
             Stmt::Import { path, alias, span } => {
-                if self.env.last().unwrap().contains_key(alias) {
-                    return Err(Signal::Error(RuntimeError {
-                        msg: format!("ImportError: duplicate import alias: {}", alias),
-                        span: *span,
-                    }));
-                }
                 let module = self
                     .load_module(path, alias, *span)
                     .map_err(Signal::Error)?;
