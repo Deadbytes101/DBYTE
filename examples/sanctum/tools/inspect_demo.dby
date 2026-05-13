@@ -1,0 +1,19 @@
+import std.fs as fs
+import std.buffer as buf
+import std.encoding as enc
+import std.env as env
+
+let args: list[str] = env.args()
+let target: str = "workspace/sample.bin"
+
+if len(args) > 0:
+    target = args[0]
+
+if fs.exists(target) == 1:
+    let data: buffer = buf.load(target)
+    print("Inspecting:", target)
+    print("Size:", buf.len(data))
+    print("Hex:", enc.hex_encode(buf.to_bytes(data)))
+else:
+    print("Error: file not found:", target)
+    print("Run 'boot' first to generate samples.")

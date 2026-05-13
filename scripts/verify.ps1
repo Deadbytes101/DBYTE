@@ -57,15 +57,23 @@ function Expected-File($path) {
 }
 
 function Invoke-Dbyte {
-    param([string[]]$Arguments)
+    param(
+        [string[]]$Arguments,
+        [string]$WorkingDirectory = $null
+    )
 
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    $oldCwd = Get-Location
     try {
+        if ($null -ne $WorkingDirectory) {
+            Set-Location $WorkingDirectory
+        }
         $output = & $cli @Arguments 2>&1
         $code = $LASTEXITCODE
     }
     finally {
+        Set-Location $oldCwd
         $ErrorActionPreference = $oldPreference
     }
     return [PSCustomObject]@{
@@ -497,7 +505,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 2.7.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 2.8.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1021,6 +1029,43 @@ Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out ou
 
 Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
+Write-Host "Running Sanctum Foundation tests..."
+
+$sanctumRoot = Join-Path $repoRoot "examples\sanctum"
+$sanctumStatus = Git-Status-Short
+
+# boot.dby smoke
+$sanctumBoot = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumBoot.Code -ne 0) { throw "sanctum boot.dby failed: $($sanctumBoot.Text)" }
+Assert-Contains $sanctumBoot.Text "S A N C T U M   F O U N D A T I O N" "sanctum boot banner"
+Assert-Contains $sanctumBoot.Text "Sanctum is ready." "sanctum boot ready"
+
+# tools smoke
+$sanctumInspect = Invoke-Dbyte -Arguments @("run", "tools\inspect_demo.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumInspect.Code -ne 0) { throw "sanctum inspect_demo failed: $($sanctumInspect.Text)" }
+Assert-Contains $sanctumInspect.Text "Inspecting: workspace/sample.bin" "sanctum inspect demo output"
+
+$sanctumPatch = Invoke-Dbyte -Arguments @("run", "tools\patch_demo.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumPatch.Code -ne 0) { throw "sanctum patch_demo failed: $($sanctumPatch.Text)" }
+Assert-Contains $sanctumPatch.Text "Saved to: workspace/sample.bin.patched" "sanctum patch demo output"
+
+$sanctumU32 = Invoke-Dbyte -Arguments @("run", "tools\u32_demo.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumU32.Code -ne 0) { throw "sanctum u32_demo failed: $($sanctumU32.Text)" }
+Assert-Contains $sanctumU32.Text "u32 dump for: workspace/sample.bin" "sanctum u32 demo output"
+
+# shell .dbyterc smoke (using alias)
+$sanctumShell = Invoke-DbyteInput -Arguments @("shell") -InputText "boot`nquit`n" -WorkingDirectory $sanctumRoot
+if ($sanctumShell.Code -ne 0) { throw "sanctum shell boot alias failed: $($sanctumShell.Text)" }
+Assert-Contains $sanctumShell.Text "S A N C T U M   F O U N D A T I O N" "sanctum shell boot alias result"
+
+# Cleanup generated files to keep git status clean
+Remove-Item -Path (Join-Path $sanctumRoot "workspace\sample.bin") -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $sanctumRoot "workspace\sample.bin.patched") -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $sanctumRoot "workspace") -ErrorAction SilentlyContinue
+
+Assert-GitStatus-Unchanged $sanctumStatus "sanctum foundation cleanliness"
+
+
 $readme = Get-Content (Join-Path $repoRoot "README.md") -Raw
 Assert-Contains $readme "dbyte run personal_tools\hexdump.dby" "README personal hexdump command"
 Assert-Contains $readme "dbyte run personal_tools\bininfo.dby" "README personal bininfo command"
@@ -1123,7 +1168,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.7.0"
+$EXPECTED_VERSION = "2.8.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
