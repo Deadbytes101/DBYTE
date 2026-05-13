@@ -17,3 +17,10 @@ pub fn get_home() -> str:
     if fs.exists("examples/dbyteos") == 1:
         return "examples/dbyteos/" + p
     return p
+
+pub fn resolve_os_file(name: str) -> str:
+    if fs.exists(name) == 1:
+        return name
+    if fs.exists("examples/dbyteos/" + name) == 1:
+        return "examples/dbyteos/" + name
+    return name

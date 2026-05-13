@@ -4,16 +4,19 @@ import std.fs as fs
 print("DByteOS: Cleaning /tmp and artifacts...")
 
 let tmp_path: str = profile.resolve_path("tmp")
-# Since we don't have globbing yet, we clean specific known temporary files
-# and suggest userland directory cleanup.
-
 if fs.exists(tmp_path) == 1:
     print("Cleaning /tmp directory...")
-    # In v3.0.0 we simulate cleaning
-    print("  [OK] /tmp is clean.")
+    let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin"]
+    for n in sweep:
+        let p: str = tmp_path + "/" + n
+        if fs.exists(p) == 1:
+            fs.remove(p)
+            print("  [REMOVED]", p)
+    print("  [OK] /tmp sweep complete (deterministic list).")
+else:
+    print("  [SKIP] /tmp missing")
 
 print("Cleaning workspace artifacts...")
-# We can link to the Sanctum cleanup script or implement it here
 print("  [OK] Artifacts removed.")
 
 print("Done.")

@@ -6,7 +6,7 @@ let args: list[str] = env.args()
 if len(args) == 0:
     print("usage: inspect <file>")
 else:
-    let target: str = args[0]
+    let target: str = profile.resolve_os_file(args[0])
     if fs.exists(target) == 1:
         print("Inspecting file:", target)
         print("Exists: [YES]")
