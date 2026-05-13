@@ -1,4 +1,4 @@
-# DByteOS Userland (v3.2.1)
+# DByteOS Userland (v3.3.0)
 
 Welcome to **DByteOS**: a simulated operating-system-style userland that runs on the host DByte runtime.
 
@@ -9,9 +9,14 @@ Welcome to **DByteOS**: a simulated operating-system-style userland that runs on
 - `/sys`: System internal profile and logic.
 - `/tmp`: Temporary files (ephemeral; ignored by git except layout markers).
 
-## Path rules (v3.2.1)
+## Path rules (v3.3.0)
 - Commands **`read`**, **`write`**, **`append`**, and **`touch`** only accept paths under `tmp/` or `home/deadbyte/` (relative to the DByteOS tree). Paths containing `..` are rejected (no repo escape).
 - **`cat`** still uses the broader `resolve_os_file` helper for inspecting arbitrary project paths (e.g. `boot.dby`); use **`read`** when you want the sandboxed user-data view.
+
+## Session environment (v3.3.0)
+- **`sys/session.dby`** defines the simulated `PATH`, resolved command-search roots (`COMMAND_ROOT=...` lines from `env` / `path`), and `lookup_command` for `path which <name>`.
+- Search roots are listed in **`etc/cmd_path_roots.txt`** (mirrored by the `dbyte shell` **`@shell dbyteos_autopath on`** resolver in `dbyte_cli`).
+- With autopath enabled, shell commands such as `cat` or `mkdir-demo` resolve to `bin/*.dby` without per-command aliases (hyphenated names map to underscore script names).
 
 ## How to use
 1. Launch the DByte shell with the DByteOS configuration:

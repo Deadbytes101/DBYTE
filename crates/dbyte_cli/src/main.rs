@@ -71,6 +71,105 @@ fn resolve_shell_run_script(cwd: &Path, rel: &str) -> PathBuf {
     }
 }
 
+/// DByteOS command search roots; keep in sync with `examples/dbyteos/etc/cmd_path_roots.txt`
+/// and `command_search_roots()` in `examples/dbyteos/sys/session.dby`.
+fn dbyteos_cmd_search_roots(cwd: &Path) -> Vec<String> {
+    let candidates = [
+        cwd.join("etc").join("cmd_path_roots.txt"),
+        cwd.join("examples")
+            .join("dbyteos")
+            .join("etc")
+            .join("cmd_path_roots.txt"),
+    ];
+    let mut found_path: Option<PathBuf> = None;
+    for p in candidates {
+        if p.is_file() {
+            found_path = Some(p);
+            break;
+        }
+    }
+    let Some(path) = found_path else {
+        return vec![
+            "bin".to_string(),
+            "tmp".to_string(),
+            "home/deadbyte".to_string(),
+        ];
+    };
+    let Ok(text) = fs::read_to_string(&path) else {
+        return vec![
+            "bin".to_string(),
+            "tmp".to_string(),
+            "home/deadbyte".to_string(),
+        ];
+    };
+    let roots: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_string)
+        .collect();
+    if roots.is_empty() {
+        vec![
+            "bin".to_string(),
+            "tmp".to_string(),
+            "home/deadbyte".to_string(),
+        ]
+    } else {
+        roots
+    }
+}
+
+fn command_name_to_script_candidates(name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let primary = format!("{name}.dby");
+    let underscored = name.replace('-', "_") + ".dby";
+    out.push(primary.clone());
+    if underscored != primary {
+        out.push(underscored);
+    }
+    out
+}
+
+fn validate_autopath_command_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("command name cannot be empty".into());
+    }
+    if name.starts_with('.') || name.starts_with(':') || name.starts_with('@') {
+        return Err(format!("invalid command name: {}", name));
+    }
+    for ch in name.chars() {
+        if ch.is_whitespace()
+            || matches!(
+                ch,
+                '/' | '\\' | '<' | '>' | '|' | ';' | '&' | '(' | ')' | '"' | '\''
+            )
+        {
+            return Err(format!("invalid command name: {}", name));
+        }
+    }
+    Ok(())
+}
+
+fn resolve_dbyteos_command_script(cwd: &Path, name: &str) -> Option<PathBuf> {
+    validate_autopath_command_name(name).ok()?;
+    let roots = dbyteos_cmd_search_roots(cwd);
+    let scripts = command_name_to_script_candidates(name);
+    for root in &roots {
+        for script in &scripts {
+            let rel = format!("{root}/{script}");
+            let candidate = resolve_shell_run_script(cwd, &rel);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn format_shell_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 fn parse_file(path: &Path) -> (String, dbyte_ast::Program) {
     let path_label = path.display().to_string();
     let src = match fs::read_to_string(path) {
@@ -468,6 +567,7 @@ struct ShellSession {
     runtime: DByteRuntime,
     aliases: HashMap<String, String>,
     builtins: HashSet<&'static str>,
+    dbyteos_autopath: bool,
 }
 
 impl ShellSession {
@@ -476,6 +576,7 @@ impl ShellSession {
             runtime: DByteRuntime::with_current_dir(cwd)?,
             aliases: HashMap::new(),
             builtins: shell_builtin_names(),
+            dbyteos_autopath: false,
         })
     }
 
@@ -533,12 +634,20 @@ impl ShellSession {
     }
 
     fn apply_shell_directive(&mut self, directive: &str) -> Result<(), String> {
-        let Some(alias_def) = directive.trim_start().strip_prefix("alias ") else {
-            return Err(format!("unknown shell directive: {}", directive.trim()));
-        };
-        let args = split_shell_command(alias_def)?;
-        let (name, command) = parse_alias_definition(&args)?;
-        self.set_alias(name, command)
+        let d = directive.trim();
+        if let Some(alias_def) = d.strip_prefix("alias ") {
+            let args = split_shell_command(alias_def)?;
+            let (name, command) = parse_alias_definition(&args)?;
+            self.set_alias(name, command)
+        } else if d == "dbyteos_autopath on" {
+            self.dbyteos_autopath = true;
+            Ok(())
+        } else if d == "dbyteos_autopath off" {
+            self.dbyteos_autopath = false;
+            Ok(())
+        } else {
+            Err(format!("unknown shell directive: {}", d))
+        }
     }
 
     fn set_alias(&mut self, name: String, command: String) -> Result<(), String> {
@@ -637,7 +746,27 @@ impl ShellSession {
             "unalias" => self.command_unalias(&args),
             "aliases" => self.command_aliases(&args),
             "which" => self.command_which(&args),
-            other => eprintln!("ShellError: unknown command: {}", other),
+            other => {
+                if self.dbyteos_autopath {
+                    if let Err(e) = validate_autopath_command_name(other) {
+                        eprintln!("ShellError: {}", e);
+                    } else if let Some(script) =
+                        resolve_dbyteos_command_script(self.runtime.current_dir(), other)
+                    {
+                        match self
+                            .runtime
+                            .run_file_capture_with_args(&script, args[1..].to_vec())
+                        {
+                            Ok(output) => print!("{}", output.stdout),
+                            Err(e) => eprintln!("{}", e),
+                        }
+                    } else {
+                        eprintln!("ShellError: unknown command: {}", other);
+                    }
+                } else {
+                    eprintln!("ShellError: unknown command: {}", other);
+                }
+            }
         }
         true
     }
@@ -784,6 +913,12 @@ impl ShellSession {
             println!("{}: built-in", name);
         } else if let Some(command) = self.aliases.get(name) {
             println!("{}: alias -> {}", name, command);
+        } else if self.dbyteos_autopath {
+            if let Some(script) = resolve_dbyteos_command_script(self.runtime.current_dir(), name) {
+                println!("{}: dbyteos -> {}", name, format_shell_path(&script));
+            } else {
+                println!("{}: not found", name);
+            }
         } else {
             println!("{}: not found", name);
         }
