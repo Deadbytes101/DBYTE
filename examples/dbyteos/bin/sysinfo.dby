@@ -1,0 +1,4 @@
+import "../etc/system.dby" as system
+
+print("DByteOS Userland Prototype")
+print("version: DByte " + system.os_version)

@@ -1,0 +1,14 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+import std.env as env
+
+let args: list[str] = env.args()
+if len(args) == 0:
+    print("usage: cat <file>")
+else:
+    let raw: str = args[0]
+    let target: str = profile.resolve_os_file(raw)
+    if fs.exists(target) == 1:
+        print(fs.read_text(target))
+    else:
+        print("error: file not found:", raw)
