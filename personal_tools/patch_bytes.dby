@@ -34,37 +34,114 @@ let offset_minus_err: bool = false
 if len(args) == 0:
     pfs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
 else:
-    if len(args) == 3:
-        mode = "first"
-        input_path = args[0]
-        output_path = args[0] + ".patched"
-        find_hex = args[1]
-        replace_hex = args[2]
+    if args[0] == "--help":
+        print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+        print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+        print("       patch_bytes --offset <offset> <file> <replace_hex>")
+        print("")
+        print("       Any mode accepts --out <outfile> as the last two arguments")
+        print("       to write the result to an explicit path instead of")
+        print("       <file>.patched")
+        print("")
+        print("options:")
+        print("  -h, --help        show this help")
+        print("  --out <outfile>   write output to <outfile> instead of <input>.patched")
+        print("")
+        print("example: dbyte run personal_tools/patch_bytes.dby sample.bin DEADBEEF CAFEBABE")
+        should_run = false
     else:
-        if len(args) == 4:
-            if args[0] == "--all":
-                mode = "all"
-                input_path = args[1]
-                output_path = args[1] + ".patched"
-                find_hex = args[2]
-                replace_hex = args[3]
-            else:
-                if args[0] == "--offset":
-                    mode = "offset"
-                    decimal_text = args[1]
-                    input_path = args[2]
-                    output_path = args[2] + ".patched"
-                    replace_hex = args[3]
-                else:
-                    print("usage: patch_bytes <file> <find_hex> <replace_hex>")
-                    print("       patch_bytes --all <file> <find_hex> <replace_hex>")
-                    print("       patch_bytes --offset <offset> <file> <replace_hex>")
-                    should_run = false
-        else:
+        if args[0] == "-h":
             print("usage: patch_bytes <file> <find_hex> <replace_hex>")
             print("       patch_bytes --all <file> <find_hex> <replace_hex>")
             print("       patch_bytes --offset <offset> <file> <replace_hex>")
+            print("")
+            print("       Any mode accepts --out <outfile> as the last two arguments")
+            print("       to write the result to an explicit path instead of")
+            print("       <file>.patched")
+            print("")
+            print("options:")
+            print("  -h, --help        show this help")
+            print("  --out <outfile>   write output to <outfile> instead of <input>.patched")
+            print("")
+            print("example: dbyte run personal_tools/patch_bytes.dby sample.bin DEADBEEF CAFEBABE")
             should_run = false
+        else:
+            if len(args) == 3:
+                mode = "first"
+                input_path = args[0]
+                output_path = args[0] + ".patched"
+                find_hex = args[1]
+                replace_hex = args[2]
+            else:
+                if len(args) == 4:
+                    if args[0] == "--all":
+                        mode = "all"
+                        input_path = args[1]
+                        output_path = args[1] + ".patched"
+                        find_hex = args[2]
+                        replace_hex = args[3]
+                    else:
+                        if args[0] == "--offset":
+                            mode = "offset"
+                            decimal_text = args[1]
+                            input_path = args[2]
+                            output_path = args[2] + ".patched"
+                            replace_hex = args[3]
+                        else:
+                            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                            should_run = false
+                else:
+                    if len(args) == 5:
+                        if args[3] == "--out":
+                            mode = "first"
+                            input_path = args[0]
+                            output_path = args[4]
+                            find_hex = args[1]
+                            replace_hex = args[2]
+                        else:
+                            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                            should_run = false
+                    else:
+                        if len(args) == 6:
+                            if args[0] == "--all":
+                                if args[4] == "--out":
+                                    mode = "all"
+                                    input_path = args[1]
+                                    output_path = args[5]
+                                    find_hex = args[2]
+                                    replace_hex = args[3]
+                                else:
+                                    print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                                    should_run = false
+                            else:
+                                if args[0] == "--offset":
+                                    if args[4] == "--out":
+                                        mode = "offset"
+                                        decimal_text = args[1]
+                                        input_path = args[2]
+                                        output_path = args[5]
+                                        replace_hex = args[3]
+                                    else:
+                                        print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                                        print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                                        print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                                        should_run = false
+                                else:
+                                    print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                                    should_run = false
+                        else:
+                            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                            should_run = false
 
 if should_run:
     if mode == "offset":

@@ -15,12 +15,34 @@ let first_len: int = 8
 if len(args) == 0:
     ifs.write_bytes(path, b"\x01\x02\x03\x04\x44\x42\x79\x74\x65")
 else:
-    if len(args) != 1:
+    if args[0] == "--help":
         print("usage: bininfo <file>")
+        print("")
+        print("options:")
+        print("  -h, --help    show this help")
+        print("")
         print("example: dbyte run personal_tools/bininfo.dby sample.bin")
         should_run = false
     else:
-        path = args[0]
+        if args[0] == "-h":
+            print("usage: bininfo <file>")
+            print("")
+            print("options:")
+            print("  -h, --help    show this help")
+            print("")
+            print("example: dbyte run personal_tools/bininfo.dby sample.bin")
+            should_run = false
+        else:
+            if len(args) != 1:
+                print("usage: bininfo <file>")
+                print("")
+                print("options:")
+                print("  -h, --help    show this help")
+                print("")
+                print("example: dbyte run personal_tools/bininfo.dby sample.bin")
+                should_run = false
+            else:
+                path = args[0]
 
 if should_run:
     data = ibuf.load(path)
