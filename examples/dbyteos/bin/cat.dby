@@ -7,8 +7,12 @@ if len(args) == 0:
     print("usage: cat <file>")
 else:
     let raw: str = args[0]
+    let i: int = 1
+    while i < len(args):
+        raw = raw + " " + args[i]
+        i = i + 1
     let target: str = profile.resolve_os_file(raw)
     if fs.exists(target) == 1:
         print(fs.read_text(target))
     else:
-        print("error: file not found:", raw)
+        print("error: cat: no such file or directory:", raw)
