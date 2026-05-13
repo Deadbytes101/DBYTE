@@ -2,5 +2,5 @@ import "../sys/profile.dby" as osprofile
 import "../etc/system.dby" as system
 
 print("user:", osprofile.get_user())
-print("home_path:", "home/" + osprofile.get_user())
+print("home_path:", osprofile.get_home())
 print("os_version:", system.os_version)
