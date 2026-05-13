@@ -1,1 +1,19 @@
-print("PATH=/bin:/tmp:/home/deadbyte")
+import "../sys/session.dby" as sess
+import std.env as env
+
+let args: list[str] = env.args()
+if len(args) < 1:
+    print(sess.path_display())
+    sess.print_resolved_command_roots()
+else:
+    if args[0] == "which":
+        if len(args) < 2:
+            print("error: path: which requires a command name")
+        else:
+            let found: str = sess.lookup_command(args[1])
+            if len(found) == 0:
+                print("error: path: command not found:", args[1])
+            else:
+                print(found)
+    else:
+        print("error: path: usage: path | path which <name>")

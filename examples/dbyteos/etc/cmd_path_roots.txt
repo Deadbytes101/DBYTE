@@ -1,0 +1,6 @@
+# DByteOS command search roots (one directory per line, relative to the OS tree root).
+# Keep in sync with `command_search_roots()` in examples/dbyteos/sys/session.dby
+# and `dbyteos_cmd_search_roots()` in crates/dbyte_cli/src/main.rs.
+bin
+tmp
+home/deadbyte
