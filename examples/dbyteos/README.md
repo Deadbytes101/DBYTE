@@ -1,4 +1,4 @@
-# DByteOS Userland (v3.1.0)
+# DByteOS Userland (v3.1.1)
 
 Welcome to **DByteOS**: a simulated operating-system-style userland that runs on the host DByte runtime.
 
