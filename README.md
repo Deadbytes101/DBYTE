@@ -165,9 +165,25 @@ dbyte run personal_tools\find_bytes.dby firmware.bin DEADBEEF
 dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE
 dbyte run personal_tools\patch_bytes.dby --all firmware.bin DEADBEEF CAFEBABE
 dbyte run personal_tools\patch_bytes.dby --offset 128 firmware.bin CAFEBABE
+dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE --out firmware.patched
 dbyte run personal_tools\read_u32_table.dby firmware.bin
 dbyte run personal_tools\read_u32_table.dby firmware.bin 0 8
 ```
+
+### Personal Tools Command Reference
+
+| Tool | Usage | Description |
+|---|---|---|
+| `hexdump.dby` | `hexdump.dby <file> [offset length]` | Hex dump file bytes, 8 bytes per row |
+| `bininfo.dby` | `bininfo.dby <file>` | File size, first 8 bytes hex, checksum |
+| `find_bytes.dby` | `find_bytes.dby <file> <hex_pattern>` | Find byte pattern, print offset (dec + hex) |
+| `patch_bytes.dby` | `patch_bytes.dby <file> <find> <replace>` | Patch first match, output to `<file>.patched` |
+| `patch_bytes.dby --all` | `patch_bytes.dby --all <file> <find> <replace>` | Patch all matches |
+| `patch_bytes.dby --offset` | `patch_bytes.dby --offset <N> <file> <replace>` | Patch at explicit byte offset |
+| `patch_bytes.dby --out` | append `--out <outfile>` to any mode | Write output to explicit path instead of `<file>.patched` |
+| `read_u32_table.dby` | `read_u32_table.dby <file> [offset count]` | Dump little-endian u32 table |
+
+All tools support `--help` / `-h`.
 
 From `dbyte shell`, the repo `.dbyterc` exposes shortcuts:
 

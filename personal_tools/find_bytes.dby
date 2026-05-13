@@ -21,72 +21,94 @@ let nibble: int = 0
 if len(args) == 0:
     print("find_bytes")
 else:
-    if len(args) != 2:
+    if args[0] == "--help":
         print("usage: find_bytes <file> <hex_pattern>")
+        print("")
+        print("options:")
+        print("  -h, --help    show this help")
+        print("")
         print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
         should_run = false
     else:
-        hex_text = args[1]
-        hex_valid = true
-        if len(hex_text) == 0:
-            hex_valid = false
-        if (len(hex_text) / 2) * 2 != len(hex_text):
-            hex_valid = false
-        for ch in hex_text:
-            digit = -1
-            if ch == "0":
-                digit = 0
-            if ch == "1":
-                digit = 1
-            if ch == "2":
-                digit = 2
-            if ch == "3":
-                digit = 3
-            if ch == "4":
-                digit = 4
-            if ch == "5":
-                digit = 5
-            if ch == "6":
-                digit = 6
-            if ch == "7":
-                digit = 7
-            if ch == "8":
-                digit = 8
-            if ch == "9":
-                digit = 9
-            if ch == "a":
-                digit = 10
-            if ch == "A":
-                digit = 10
-            if ch == "b":
-                digit = 11
-            if ch == "B":
-                digit = 11
-            if ch == "c":
-                digit = 12
-            if ch == "C":
-                digit = 12
-            if ch == "d":
-                digit = 13
-            if ch == "D":
-                digit = 13
-            if ch == "e":
-                digit = 14
-            if ch == "E":
-                digit = 14
-            if ch == "f":
-                digit = 15
-            if ch == "F":
-                digit = 15
-            if digit < 0:
-                hex_valid = false
-        if hex_valid:
-            data = fbuf.from_bytes(ffs.read_bytes(args[0]))
-            pattern = fenc.hex_decode(args[1])
-            label = "pattern"
-        else:
-            print("error: invalid hex_pattern")
+        if args[0] == "-h":
+            print("usage: find_bytes <file> <hex_pattern>")
+            print("")
+            print("options:")
+            print("  -h, --help    show this help")
+            print("")
+            print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
             should_run = false
+        else:
+            if len(args) != 2:
+                print("usage: find_bytes <file> <hex_pattern>")
+                print("")
+                print("options:")
+                print("  -h, --help    show this help")
+                print("")
+                print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
+                should_run = false
+            else:
+                hex_text = args[1]
+                hex_valid = true
+                if len(hex_text) == 0:
+                    hex_valid = false
+                if (len(hex_text) / 2) * 2 != len(hex_text):
+                    hex_valid = false
+                for ch in hex_text:
+                    digit = -1
+                    if ch == "0":
+                        digit = 0
+                    if ch == "1":
+                        digit = 1
+                    if ch == "2":
+                        digit = 2
+                    if ch == "3":
+                        digit = 3
+                    if ch == "4":
+                        digit = 4
+                    if ch == "5":
+                        digit = 5
+                    if ch == "6":
+                        digit = 6
+                    if ch == "7":
+                        digit = 7
+                    if ch == "8":
+                        digit = 8
+                    if ch == "9":
+                        digit = 9
+                    if ch == "a":
+                        digit = 10
+                    if ch == "A":
+                        digit = 10
+                    if ch == "b":
+                        digit = 11
+                    if ch == "B":
+                        digit = 11
+                    if ch == "c":
+                        digit = 12
+                    if ch == "C":
+                        digit = 12
+                    if ch == "d":
+                        digit = 13
+                    if ch == "D":
+                        digit = 13
+                    if ch == "e":
+                        digit = 14
+                    if ch == "E":
+                        digit = 14
+                    if ch == "f":
+                        digit = 15
+                    if ch == "F":
+                        digit = 15
+                    if digit < 0:
+                        hex_valid = false
+                if hex_valid:
+                    data = fbuf.from_bytes(ffs.read_bytes(args[0]))
+                    pattern = fenc.hex_decode(args[1])
+                    label = "pattern"
+                else:
+                    print("error: invalid hex_pattern")
+                    should_run = false
 
 if should_run:
     print("data:", fenc.hex_encode(fbuf.to_bytes(data)))

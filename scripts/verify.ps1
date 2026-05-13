@@ -497,7 +497,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 2.6.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 2.7.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -848,7 +848,9 @@ Assert-Equal $personalHexNeg.Text "error: offset must be a non-negative decimal 
 
 $personalHexTwoArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "0")
 if ($personalHexTwoArgs.Code -ne 0) { throw "personal hexdump two args failed: $($personalHexTwoArgs.Text)" }
-Assert-Equal $personalHexTwoArgs.Text "usage: hexdump <file> [offset length]`nexample: dbyte run personal_tools/hexdump.dby sample.bin 0 16" "personal hexdump two args usage"
+Assert-Contains $personalHexTwoArgs.Text "usage: hexdump <file> [offset length]" "personal hexdump two args usage line"
+Assert-Contains $personalHexTwoArgs.Text "-h, --help" "personal hexdump two args options"
+Assert-Contains $personalHexTwoArgs.Text "example: dbyte run personal_tools/hexdump.dby sample.bin 0 16" "personal hexdump two args example"
 
 $personalU32BadOffset = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "nope", "1")
 if ($personalU32BadOffset.Code -ne 0) { throw "personal u32 bad offset failed: $($personalU32BadOffset.Text)" }
@@ -902,11 +904,15 @@ if (Test-Path "$personalSpacedFile.patched") {
 
 $personalUsageFind = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile)
 if ($personalUsageFind.Code -ne 0) { throw "personal find usage failed: $($personalUsageFind.Text)" }
-Assert-Equal $personalUsageFind.Text "usage: find_bytes <file> <hex_pattern>`nexample: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF" "personal find usage"
+Assert-Contains $personalUsageFind.Text "usage: find_bytes <file> <hex_pattern>" "personal find usage line"
+Assert-Contains $personalUsageFind.Text "-h, --help" "personal find usage options"
+Assert-Contains $personalUsageFind.Text "example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF" "personal find usage example"
 
 $personalUsagePatch = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF")
 if ($personalUsagePatch.Code -ne 0) { throw "personal patch usage failed: $($personalUsagePatch.Text)" }
-Assert-Equal $personalUsagePatch.Text "usage: patch_bytes <file> <find_hex> <replace_hex>`n       patch_bytes --all <file> <find_hex> <replace_hex>`n       patch_bytes --offset <offset> <file> <replace_hex>" "personal patch usage"
+Assert-Contains $personalUsagePatch.Text "usage: patch_bytes <file> <find_hex> <replace_hex>" "personal patch usage first line"
+Assert-Contains $personalUsagePatch.Text "patch_bytes --all" "personal patch usage all line"
+Assert-Contains $personalUsagePatch.Text "patch_bytes --offset" "personal patch usage offset line"
 
 $personalShellNoRcAlias = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "hexdump`nquit`n"
 if ($personalShellNoRcAlias.Code -ne 0) { throw "personal shell no-rc alias guard failed: $($personalShellNoRcAlias.Text)" }
@@ -941,6 +947,79 @@ foreach ($tool in $personalToolFiles) {
     Assert-PersonalToolOutput $tool.Name $personalShellToolsCwdAliases.Text
 }
 Assert-GitStatus-Unchanged $personalToolsStatus "personal tools shell cleanliness"
+
+Write-Host "Running personal tools UX tests..."
+
+$personalUxStatus = Git-Status-Short
+$personalUxBinFile = Join-Path $repoRoot "target\verify-personal-tools\sample.bin"
+
+# --help smoke: each tool must print usage: and -h, --help
+foreach ($toolEntry in @(
+    @{ Name = "hexdump"; Path = "hexdump.dby" },
+    @{ Name = "find_bytes"; Path = "find_bytes.dby" },
+    @{ Name = "bininfo"; Path = "bininfo.dby" },
+    @{ Name = "read_u32_table"; Path = "read_u32_table.dby" },
+    @{ Name = "patch_bytes"; Path = "patch_bytes.dby" }
+)) {
+    $helpResult = Invoke-Dbyte -Arguments @("run", "personal_tools\$($toolEntry.Path)", "--help")
+    if ($helpResult.Code -ne 0) { throw "$($toolEntry.Name) --help failed: $($helpResult.Text)" }
+    Assert-Contains $helpResult.Text "usage:" "$($toolEntry.Name) --help contains usage:"
+    Assert-Contains $helpResult.Text "-h, --help" "$($toolEntry.Name) --help contains -h flag"
+    Assert-Contains $helpResult.Text "example:" "$($toolEntry.Name) --help contains example:"
+
+    $shortHelpResult = Invoke-Dbyte -Arguments @("run", "personal_tools\$($toolEntry.Path)", "-h")
+    if ($shortHelpResult.Code -ne 0) { throw "$($toolEntry.Name) -h failed: $($shortHelpResult.Text)" }
+    Assert-Contains $shortHelpResult.Text "usage:" "$($toolEntry.Name) -h contains usage:"
+    Assert-Contains $shortHelpResult.Text "-h, --help" "$($toolEntry.Name) -h contains -h flag"
+}
+Assert-GitStatus-Unchanged $personalUxStatus "personal tools --help cleanliness"
+
+# patch_bytes --out: first mode
+$patchOutRoot = Join-Path $repoRoot "target\verify-patch-out"
+if (Test-Path $patchOutRoot) { Remove-Item -Recurse -Force $patchOutRoot }
+New-Item -ItemType Directory -Path $patchOutRoot | Out-Null
+$patchOutSrc = Join-Path $patchOutRoot "src.bin"
+$patchOutDst = Join-Path $patchOutRoot "dst.bin"
+[System.IO.File]::WriteAllBytes($patchOutSrc, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00))
+
+$patchOutFirst = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $patchOutSrc, "DEADBEEF", "CAFEBABE", "--out", $patchOutDst)
+if ($patchOutFirst.Code -ne 0) { throw "patch_bytes --out first mode failed: $($patchOutFirst.Text)" }
+Assert-Contains $patchOutFirst.Text "patched first match at offset 1" "patch --out first offset"
+Assert-Contains $patchOutFirst.Text "wrote $patchOutDst" "patch --out first wrote path"
+if (-not (Test-Path $patchOutDst)) { throw "patch --out first: output file not created" }
+if (Test-Path "$patchOutSrc.patched") { throw "patch --out first: default .patched file unexpectedly created" }
+Assert-Equal (Bytes-Hex $patchOutSrc) "00deadbeef00" "patch --out first original unchanged"
+Assert-Equal (Bytes-Hex $patchOutDst) "00cafebabe00" "patch --out first output bytes"
+
+# patch_bytes --all --out
+$patchAllOutSrc = Join-Path $patchOutRoot "all-src.bin"
+$patchAllOutDst = Join-Path $patchOutRoot "all-dst.bin"
+[System.IO.File]::WriteAllBytes($patchAllOutSrc, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x11, 0xde, 0xad, 0xbe, 0xef, 0x22))
+
+$patchAllOut = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--all", $patchAllOutSrc, "DEADBEEF", "CAFEBABE", "--out", $patchAllOutDst)
+if ($patchAllOut.Code -ne 0) { throw "patch_bytes --all --out failed: $($patchAllOut.Text)" }
+Assert-Contains $patchAllOut.Text "patched count: 2" "patch --all --out count"
+Assert-Contains $patchAllOut.Text "wrote $patchAllOutDst" "patch --all --out wrote path"
+if (-not (Test-Path $patchAllOutDst)) { throw "patch --all --out: output file not created" }
+if (Test-Path "$patchAllOutSrc.patched") { throw "patch --all --out: default .patched file unexpectedly created" }
+Assert-Equal (Bytes-Hex $patchAllOutSrc) "00deadbeef11deadbeef22" "patch --all --out original unchanged"
+Assert-Equal (Bytes-Hex $patchAllOutDst) "00cafebabe11cafebabe22" "patch --all --out output bytes"
+
+# patch_bytes --offset --out
+$patchOffOutSrc = Join-Path $patchOutRoot "off-src.bin"
+$patchOffOutDst = Join-Path $patchOutRoot "off-dst.bin"
+[System.IO.File]::WriteAllBytes($patchOffOutSrc, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00))
+
+$patchOffOut = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "1", $patchOffOutSrc, "CAFEBABE", "--out", $patchOffOutDst)
+if ($patchOffOut.Code -ne 0) { throw "patch_bytes --offset --out failed: $($patchOffOut.Text)" }
+Assert-Contains $patchOffOut.Text "patched offset 1" "patch --offset --out marker"
+Assert-Contains $patchOffOut.Text "wrote $patchOffOutDst" "patch --offset --out wrote path"
+if (-not (Test-Path $patchOffOutDst)) { throw "patch --offset --out: output file not created" }
+if (Test-Path "$patchOffOutSrc.patched") { throw "patch --offset --out: default .patched file unexpectedly created" }
+Assert-Equal (Bytes-Hex $patchOffOutSrc) "00deadbeef00" "patch --offset --out original unchanged"
+Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out output bytes"
+
+Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
 $readme = Get-Content (Join-Path $repoRoot "README.md") -Raw
 Assert-Contains $readme "dbyte run personal_tools\hexdump.dby" "README personal hexdump command"
@@ -1044,7 +1123,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.6.1"
+$EXPECTED_VERSION = "2.7.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
