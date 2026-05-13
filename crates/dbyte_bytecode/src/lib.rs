@@ -46,6 +46,8 @@ pub enum NativeFn {
     BinaryWriteU32Le,
     BinaryWriteU32Be,
     FsExists,
+    FsMkdir,
+    FsRemove,
 }
 
 impl NativeFn {
@@ -92,6 +94,8 @@ impl NativeFn {
             "std.binary.write_u32_le" => Some(Self::BinaryWriteU32Le),
             "std.binary.write_u32_be" => Some(Self::BinaryWriteU32Be),
             "std.fs.exists" => Some(Self::FsExists),
+            "std.fs.mkdir" => Some(Self::FsMkdir),
+            "std.fs.remove" => Some(Self::FsRemove),
             _ => None,
         }
     }
