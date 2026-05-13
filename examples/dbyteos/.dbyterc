@@ -6,10 +6,16 @@
 @shell alias status = run bin/status.dby
 @shell alias clean = run bin/clean.dby
 @shell alias inspect = run bin/inspect.dby
+@shell alias whoami = run bin/whoami.dby
+@shell alias sysinfo = run bin/sysinfo.dby
+@shell alias home = run bin/home.dby
+@shell alias tmp = run bin/tmp.dby
+@shell alias cat = run bin/cat.dby
+@shell alias write-demo = run bin/write_demo.dby
+@shell alias ls-sys = run bin/ls_sys.dby
 
 # Navigation/Info (simulated)
 @shell alias dir = ls
-@shell alias whoami = : print("deadbyte")
 @shell alias whereami = pwd
 
 # Tools from previous releases (mappable to OS bin)

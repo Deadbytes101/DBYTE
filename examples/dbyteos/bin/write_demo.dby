@@ -1,0 +1,6 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+
+let p: str = profile.resolve_path("tmp") + "/write_demo.txt"
+fs.write_text(p, "dbyteos write_demo ok\n")
+print("wrote tmp/write_demo.txt")

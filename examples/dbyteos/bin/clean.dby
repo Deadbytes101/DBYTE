@@ -6,7 +6,7 @@ print("DByteOS: Cleaning /tmp and artifacts...")
 let tmp_path: str = profile.resolve_path("tmp")
 if fs.exists(tmp_path) == 1:
     print("Cleaning /tmp directory...")
-    let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin"]
+    let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin", "write_demo.txt"]
     for n in sweep:
         let p: str = tmp_path + "/" + n
         if fs.exists(p) == 1:
@@ -19,4 +19,4 @@ else:
 print("Cleaning workspace artifacts...")
 print("  [OK] Artifacts removed.")
 
-print("Done.")
+print("workspace sweep complete")

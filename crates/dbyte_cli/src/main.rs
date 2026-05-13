@@ -601,8 +601,10 @@ impl ShellSession {
             seen.push(name.clone());
             hops += 1;
 
-            current = split_shell_command(expansion)
+            let mut expanded = split_shell_command(expansion)
                 .map_err(|e| format!("alias `{}` is invalid: {}", name, e))?;
+            expanded.extend_from_slice(&current[1..]);
+            current = expanded;
         }
     }
 

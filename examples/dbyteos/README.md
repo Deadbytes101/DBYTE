@@ -1,13 +1,13 @@
-# DByteOS Userland Prototype (v3.0.1)
+# DByteOS Userland (v3.1.0)
 
-Welcome to the first prototype of **DByteOS**. This is a simulated operating system environment that runs directly on your host machine using the DByte runtime.
+Welcome to **DByteOS**: a simulated operating-system-style userland that runs on the host DByte runtime.
 
 ## Directory Structure
 - `/bin`: System utilities and commands.
 - `/etc`: System configuration files.
 - `/home`: User directories.
 - `/sys`: System internal profile and logic.
-- `/tmp`: Temporary files.
+- `/tmp`: Temporary files (ephemeral; ignored by git except layout markers).
 
 ## How to use
 1. Launch the DByte shell with the DByteOS configuration:
@@ -18,12 +18,13 @@ Welcome to the first prototype of **DByteOS**. This is a simulated operating sys
    ```txt
    dbyte> boot
    ```
-3. Use system commands:
-   - `status`: View system health.
-   - `ls`: List root directories (simulated).
-   - `whoami`: Check current user (simulated).
-   - `inspect <file>`: Inspect a file.
-   - `clean`: Clean temporary files.
+3. **Command set** (also runnable as `dbyte run examples/dbyteos/bin/<name>.dby` from the repo root):
+   - `whoami` — current user (simulated).
+   - `sysinfo` — prototype banner and DByte version string.
+   - `home` / `tmp` — logical paths in the simulated tree.
+   - `ls-sys` — layout of top-level virtual mounts.
+   - `write-demo` — writes only under `tmp/` (ignored); `cat` reads a path; `clean` removes known tmp artifacts.
+   - `status` — system health; `inspect <file>` — existence check; `clean` — deterministic tmp sweep.
 
 ## Philosophy
 DByteOS aims to provide a personal computing environment where the entire userland is scriptable in DByte. This prototype demonstrates the directory layout and command execution flow that will eventually be implemented in the native kernel.
