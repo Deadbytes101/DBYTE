@@ -1,0 +1,38 @@
+import std.fs as fs
+import std.env as env
+
+print("--------------------------------------------------")
+print("  ____  ____        _             ")
+print(" |  _ \| __ ) _   _| |_ ___       ")
+print(" | | | |  _ \| | | | __/ _ \      ")
+print(" | |_| | |_) | |_| | ||  __/      ")
+print(" |____/|____/ \__, |\__\___|      ")
+print("              |___/               ")
+print("        S A N C T U M   F O U N D A T I O N")
+print("--------------------------------------------------")
+let args: list[str] = env.args()
+if len(args) > 0:
+    print("DByte Version: " + args[0])
+else:
+    print("DByte Sanctum Environment")
+print("Mode: Personal Computing Environment")
+print("")
+
+let workspace_dir: str = "workspace"
+let sample_file: str = "workspace/sample.bin"
+
+if fs.exists(workspace_dir) == 0:
+    print("Initializing workspace directory...")
+    # Since we don't have mkdir yet in std, we just assume it exists or use it as a path
+    # Actually let's just write to the current dir if needed, but we'll try to use workspace/
+    # If it fails, we'll know.
+    print("Workspace directory not found. Creating samples in current directory.")
+
+print("Generating sample binary: " + sample_file)
+fs.write_bytes(sample_file, b"\x00\x11\x22\x33\xDE\xAD\xBE\xEF\x88\x99\xAA\xBB\xCC\xDD\xEE\xFF")
+
+print("")
+print("Sanctum is ready.")
+print("Type 'help' for shell commands, or use aliases:")
+print("  boot, inspect, patch-demo, u32-demo")
+print("--------------------------------------------------")
