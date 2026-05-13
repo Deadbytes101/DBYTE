@@ -12,11 +12,8 @@ pub fn get_user() -> str:
     return "deadbyte"
 
 pub fn get_home() -> str:
-    # Full inline to bypass prototype resolution bugs
     let p: str = "home/deadbyte"
-    if fs.exists("examples/dbyteos") == 1:
-        return "examples/dbyteos/" + p
-    return p
+    return resolve_path(p)
 
 pub fn resolve_os_file(name: str) -> str:
     if fs.exists(name) == 1:
@@ -37,40 +34,47 @@ pub fn join_args_from(args: list[str], start: int) -> str:
         i = i + 1
     return raw
 
-pub fn resolve_user_data_path(rel: str) -> str:
+pub fn path_has_dot_dot(p: str) -> int:
     let prev: str = ""
-    for c in rel:
+    for c in p:
         if prev == ".":
             if c == ".":
-                return ""
+                return 1
         prev = c
-    let resolved: str = rel
-    if fs.exists("examples/dbyteos") == 1:
-        resolved = "examples/dbyteos/" + rel
-    if rel == "tmp":
-        return resolved
-    if rel == "home/deadbyte":
-        return resolved
-    let n: int = len(rel)
+    return 0
+
+pub fn is_allowed_user_rel(raw: str) -> int:
+    if path_has_dot_dot(raw) == 1:
+        return 0
+    if raw == "tmp":
+        return 1
+    if raw == "home/deadbyte":
+        return 1
+    let n: int = len(raw)
     if n >= 4:
         let head: str = ""
         let count: int = 0
-        for c in rel:
+        for c in raw:
             if count < 4:
                 head = head + c
             count = count + 1
         if head == "tmp/":
-            return resolved
+            return 1
     if n >= 14:
         let head2: str = ""
         let count2: int = 0
-        for c in rel:
+        for c in raw:
             if count2 < 14:
                 head2 = head2 + c
             count2 = count2 + 1
         if head2 == "home/deadbyte/":
-            return resolved
-    return ""
+            return 1
+    return 0
+
+pub fn resolve_user_data_path(rel: str) -> str:
+    if is_allowed_user_rel(rel) == 0:
+        return ""
+    return resolve_path(rel)
 
 # Prefix of `rel` before the last '/' (e.g. tmp/a/b.txt -> tmp/a); empty if no slash.
 pub fn parent_rel_prefix(rel: str) -> str:

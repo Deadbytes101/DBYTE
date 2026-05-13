@@ -1,0 +1,9 @@
+import std.fs as fs
+
+fn priv_sum(a: int, b: int) -> int:
+    return a + b
+
+pub fn entry() -> int:
+    let root_marker: int = fs.exists("Cargo.toml")
+    let s: int = priv_sum(3, 4)
+    return s + root_marker

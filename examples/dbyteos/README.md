@@ -1,4 +1,4 @@
-# DByteOS Userland (v3.2.0)
+# DByteOS Userland (v3.2.1)
 
 Welcome to **DByteOS**: a simulated operating-system-style userland that runs on the host DByte runtime.
 
@@ -9,7 +9,7 @@ Welcome to **DByteOS**: a simulated operating-system-style userland that runs on
 - `/sys`: System internal profile and logic.
 - `/tmp`: Temporary files (ephemeral; ignored by git except layout markers).
 
-## Path rules (v3.2.0)
+## Path rules (v3.2.1)
 - Commands **`read`**, **`write`**, **`append`**, and **`touch`** only accept paths under `tmp/` or `home/deadbyte/` (relative to the DByteOS tree). Paths containing `..` are rejected (no repo escape).
 - **`cat`** still uses the broader `resolve_os_file` helper for inspecting arbitrary project paths (e.g. `boot.dby`); use **`read`** when you want the sandboxed user-data view.
 

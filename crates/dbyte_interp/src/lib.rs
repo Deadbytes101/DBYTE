@@ -9,6 +9,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+/// Top-level bindings and functions captured when loading a local file module.
+/// Used when invoking `module.pub_fn(...)` so the body sees imports, module `let`s,
+/// and sibling `fn` definitions from that file.
+#[derive(Debug, Clone)]
+pub struct ModuleLexical {
+    pub env: HashMap<String, Value>,
+    pub fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
+}
+
 type NativeFn = fn(&[Value]) -> Result<Value, String>;
 // Keep this below the host thread stack ceiling so recursion fails as a DByte
 // RuntimeError instead of aborting the Rust process.
@@ -31,6 +40,8 @@ pub enum Value {
 pub struct ModuleValue {
     pub alias: String,
     pub members: HashMap<String, ModuleMember>,
+    /// Present for file-backed modules; absent for `std.*` modules.
+    pub lexical: Option<Rc<ModuleLexical>>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +128,9 @@ pub struct Interpreter {
     call_depth: usize,
     output: OutputSink,
     script_args: Vec<String>,
+    /// While executing a user function entered from `module.member(...)`, function
+    /// name resolution checks this table before the host script's `fns`.
+    active_module_lexical: Option<Rc<ModuleLexical>>,
 }
 
 impl Default for Interpreter {
@@ -137,6 +151,7 @@ impl Interpreter {
             call_depth: 0,
             output: OutputSink::Stdout,
             script_args: Vec::new(),
+            active_module_lexical: None,
         }
     }
 
@@ -405,6 +420,7 @@ impl Interpreter {
         Ok(ModuleValue {
             alias: alias.to_string(),
             members,
+            lexical: None,
         })
     }
 
@@ -465,6 +481,17 @@ impl Interpreter {
             }
         }
 
+        let lexical_capture = if executed.is_ok() {
+            let env_snapshot = self.env.last().cloned().unwrap_or_default();
+            let fns_snapshot = self.fns.clone();
+            Some(Rc::new(ModuleLexical {
+                env: env_snapshot,
+                fns: fns_snapshot,
+            }))
+        } else {
+            None
+        };
+
         self.env = saved_env;
         self.fns = saved_fns;
         self.current_file = saved_file;
@@ -475,6 +502,7 @@ impl Interpreter {
             Ok(()) => Ok(ModuleValue {
                 alias: alias.to_string(),
                 members,
+                lexical: lexical_capture,
             }),
             Err(Signal::Error(e)) => Err(e),
             Err(Signal::Return(_)) => Err(RuntimeError {
@@ -711,16 +739,19 @@ impl Interpreter {
                     return Ok(Value::Int(length as i64));
                 }
 
-                let (params, body) = match self.fns.get(name).cloned() {
-                    Some(f) => f,
-                    None => {
-                        return Err(RuntimeError {
-                            msg: format!("undefined function `{}`", name),
-                            span: *span,
-                        })
-                    }
-                };
-                self.call_user_function(name, &params, &body, args, *span)
+                let (params, body) = if let Some(ref lex) = self.active_module_lexical {
+                    lex.fns
+                        .get(name)
+                        .cloned()
+                        .or_else(|| self.fns.get(name).cloned())
+                } else {
+                    self.fns.get(name).cloned()
+                }
+                .ok_or_else(|| RuntimeError {
+                    msg: format!("undefined function `{}`", name),
+                    span: *span,
+                })?;
+                self.call_user_function(name, &params, &body, args, *span, None)
             }
 
             Expr::Member {
@@ -742,27 +773,57 @@ impl Interpreter {
                 property,
                 args,
                 span,
-            } => match self.eval_member(object, property, *span)? {
-                ModuleMember::Function(params, body) => {
-                    self.call_user_function(property, &params, &body, args, *span)
-                }
-                ModuleMember::Native(f) => {
-                    let vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_expr(a)).collect();
-                    f(&vals?).map_err(|msg| RuntimeError { msg, span: *span })
-                }
-                ModuleMember::EnvArgs => {
-                    if !args.is_empty() {
-                        return Err(RuntimeError {
-                            msg: format!("function `env.args` expects 0 args, got {}", args.len()),
+            } => match self.eval_expr(object)? {
+                Value::Module(module) => {
+                    let module_entry = module.lexical.clone();
+                    let member =
+                        module
+                            .members
+                            .get(property)
+                            .cloned()
+                            .ok_or_else(|| RuntimeError {
+                                msg: format!(
+                                    "module '{}' has no public member '{}'",
+                                    module.alias, property
+                                ),
+                                span: *span,
+                            })?;
+                    match member {
+                        ModuleMember::Function(params, body) => self.call_user_function(
+                            property,
+                            &params,
+                            &body,
+                            args,
+                            *span,
+                            module_entry,
+                        ),
+                        ModuleMember::Native(f) => {
+                            let vals: Result<Vec<_>, _> =
+                                args.iter().map(|a| self.eval_expr(a)).collect();
+                            f(&vals?).map_err(|msg| RuntimeError { msg, span: *span })
+                        }
+                        ModuleMember::EnvArgs => {
+                            if !args.is_empty() {
+                                return Err(RuntimeError {
+                                    msg: format!(
+                                        "function `env.args` expects 0 args, got {}",
+                                        args.len()
+                                    ),
+                                    span: *span,
+                                });
+                            }
+                            Ok(Value::List(
+                                self.script_args.iter().cloned().map(Value::Str).collect(),
+                            ))
+                        }
+                        ModuleMember::Value(_) => Err(RuntimeError {
+                            msg: format!("module member `{}` is not callable", property),
                             span: *span,
-                        });
+                        }),
                     }
-                    Ok(Value::List(
-                        self.script_args.iter().cloned().map(Value::Str).collect(),
-                    ))
                 }
-                ModuleMember::Value(_) => Err(RuntimeError {
-                    msg: format!("module member `{}` is not callable", property),
+                _ => Err(RuntimeError {
+                    msg: "member access requires a module value".into(),
                     span: *span,
                 }),
             },
@@ -776,6 +837,7 @@ impl Interpreter {
         body: &[Stmt],
         args: &[Expr],
         span: Span,
+        module_entry: Option<Rc<ModuleLexical>>,
     ) -> Result<Value, RuntimeError> {
         if args.len() != params.len() {
             return Err(RuntimeError {
@@ -795,6 +857,19 @@ impl Interpreter {
             });
         }
 
+        let saved_active = if module_entry.is_some() {
+            self.active_module_lexical.take()
+        } else {
+            None
+        };
+        if let Some(ref lex) = module_entry {
+            self.active_module_lexical = Some(Rc::clone(lex));
+            self.push_scope();
+            for (k, v) in &lex.env {
+                self.define(k, v.clone());
+            }
+        }
+
         let arg_vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_expr(a)).collect();
         let arg_vals = arg_vals?;
         self.push_scope();
@@ -807,6 +882,12 @@ impl Interpreter {
         self.call_depth -= 1;
         self.in_function -= 1;
         self.pop_scope();
+
+        if module_entry.is_some() {
+            self.pop_scope();
+            self.active_module_lexical = saved_active;
+        }
+
         match result {
             Ok(_) => Ok(Value::Void),
             Err(Signal::Return(v)) => Ok(v),
