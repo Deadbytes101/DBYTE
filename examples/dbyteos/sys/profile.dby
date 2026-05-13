@@ -24,3 +24,62 @@ pub fn resolve_os_file(name: str) -> str:
     if fs.exists("examples/dbyteos/" + name) == 1:
         return "examples/dbyteos/" + name
     return name
+
+# --- User data paths (tmp/ and home/deadbyte/ only; no "..") ---
+
+pub fn join_args_from(args: list[str], start: int) -> str:
+    if start >= len(args):
+        return ""
+    let raw: str = args[start]
+    let i: int = start + 1
+    while i < len(args):
+        raw = raw + " " + args[i]
+        i = i + 1
+    return raw
+
+pub fn resolve_user_data_path(rel: str) -> str:
+    let prev: str = ""
+    for c in rel:
+        if prev == ".":
+            if c == ".":
+                return ""
+        prev = c
+    let resolved: str = rel
+    if fs.exists("examples/dbyteos") == 1:
+        resolved = "examples/dbyteos/" + rel
+    if rel == "tmp":
+        return resolved
+    if rel == "home/deadbyte":
+        return resolved
+    let n: int = len(rel)
+    if n >= 4:
+        let head: str = ""
+        let count: int = 0
+        for c in rel:
+            if count < 4:
+                head = head + c
+            count = count + 1
+        if head == "tmp/":
+            return resolved
+    if n >= 14:
+        let head2: str = ""
+        let count2: int = 0
+        for c in rel:
+            if count2 < 14:
+                head2 = head2 + c
+            count2 = count2 + 1
+        if head2 == "home/deadbyte/":
+            return resolved
+    return ""
+
+# Prefix of `rel` before the last '/' (e.g. tmp/a/b.txt -> tmp/a); empty if no slash.
+pub fn parent_rel_prefix(rel: str) -> str:
+    let acc: str = ""
+    let last_prefix: str = ""
+    for c in rel:
+        if c == "/":
+            last_prefix = acc
+            acc = acc + c
+        else:
+            acc = acc + c
+    return last_prefix

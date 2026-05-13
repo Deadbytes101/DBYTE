@@ -13,6 +13,15 @@
 @shell alias cat = run bin/cat.dby
 @shell alias write-demo = run bin/write_demo.dby
 @shell alias ls-sys = run bin/ls_sys.dby
+@shell alias read = run bin/read.dby
+@shell alias write = run bin/write.dby
+@shell alias append = run bin/append.dby
+@shell alias touch = run bin/touch.dby
+@shell alias mkdir-demo = run bin/mkdir_demo.dby
+@shell alias notes = run bin/notes.dby
+@shell alias profile = run bin/profile.dby
+@shell alias env = run bin/env.dby
+@shell alias path = run bin/path.dby
 
 # Navigation/Info (simulated)
 @shell alias dir = ls

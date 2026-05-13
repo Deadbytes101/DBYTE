@@ -1,0 +1,13 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+
+# Idempotent: ensures tmp/mkdir_demo exists and marker file has fixed contents.
+
+let rel_dir: str = "tmp/mkdir_demo"
+let dir_path: str = profile.resolve_path(rel_dir)
+if fs.exists(dir_path) == 0:
+    fs.mkdir(dir_path)
+let marker_rel: str = rel_dir + "/.mkdir_demo_ok"
+let marker_path: str = profile.resolve_path(marker_rel)
+fs.write_text(marker_path, "mkdir-demo ok\n")
+print("mkdir-demo: ok")

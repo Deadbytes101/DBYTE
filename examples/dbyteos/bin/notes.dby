@@ -1,0 +1,10 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+
+let rel: str = "home/deadbyte/notes.txt"
+let target: str = profile.resolve_user_data_path(rel)
+if target == "":
+    print("error: notes: internal path resolution failed")
+else:
+    fs.write_text(target, "dbyteos notes seed\n")
+    print("notes: ok")
