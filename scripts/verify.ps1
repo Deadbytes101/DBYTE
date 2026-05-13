@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 3.0.0") {
-    throw "Version mismatch: expected 'DByte 3.0.0', got '$versionOut'"
+if ($versionOut -ne "DByte 3.0.1") {
+    throw "Version mismatch: expected 'DByte 3.0.1', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 3.0.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 3.0.1" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1036,7 +1036,7 @@ Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out ou
 
 Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
-Write-Host "Running Sanctum System Workspace (v3.0.0) smoke tests..."
+Write-Host "Running Sanctum System Workspace (v3.0.1) smoke tests..."
 try {
     $sanctumRoot = Join-Path $repoRoot "examples\sanctum"
     $sanctumStatus = Git-Status-Short
@@ -1085,27 +1085,62 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Userland Prototype (v3.0.0) smoke tests..."
+Write-Host "Running DByteOS Userland Prototype (v3.0.1) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 try {
-    # 1. Boot sequence
     $dbyteosBoot = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $dbyteosRoot
     if ($dbyteosBoot.Code -ne 0) { throw "dbyteos boot failed: $($dbyteosBoot.Text)" }
     Assert-Contains $dbyteosBoot.Text "D B Y T E O S   U S E R L A N D" "dbyteos boot banner"
     Assert-Contains $dbyteosBoot.Text "[OK] /bin" "dbyteos boot bin check"
-    
-    # 2. System status
+    Assert-Contains $dbyteosBoot.Text "/tmp/.dbyteos_boot_touch" "dbyteos boot tmp marker"
+
+    $dbyteosBoot2 = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosBoot2.Code -ne 0) { throw "dbyteos boot repeat failed: $($dbyteosBoot2.Text)" }
+    Assert-Contains $dbyteosBoot2.Text "D B Y T E O S   U S E R L A N D" "dbyteos boot repeat banner"
+
+    $dbyteosStatusFromRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\status.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosStatusFromRoot.Code -ne 0) { throw "dbyteos status from repo root failed: $($dbyteosStatusFromRoot.Text)" }
+    Assert-Contains $dbyteosStatusFromRoot.Text "--- DByteOS System Status ---" "dbyteos status from repo root"
+
+    $dbyteosCleanFromRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\clean.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosCleanFromRoot.Code -ne 0) { throw "dbyteos clean from repo root failed: $($dbyteosCleanFromRoot.Text)" }
+    Assert-Contains $dbyteosCleanFromRoot.Text "sweep complete" "dbyteos clean from repo root sweep"
+
+    $dbyteosInspectFromRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\inspect.dby", "boot.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosInspectFromRoot.Code -ne 0) { throw "dbyteos inspect from repo root failed: $($dbyteosInspectFromRoot.Text)" }
+    Assert-Contains $dbyteosInspectFromRoot.Text "Inspecting file:" "dbyteos inspect from repo root"
+
     $dbyteosStatusReport = Invoke-Dbyte -Arguments @("run", "bin\status.dby") -WorkingDirectory $dbyteosRoot
     if ($dbyteosStatusReport.Code -ne 0) { throw "dbyteos status failed: $($dbyteosStatusReport.Text)" }
     Assert-Contains $dbyteosStatusReport.Text "--- DByteOS System Status ---" "dbyteos status banner"
     Assert-Contains $dbyteosStatusReport.Text "bin: [PRESENT]" "dbyteos status bin ok"
 
-    # 3. Shell aliases
     $dbyteosShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "status`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShell.Code -ne 0) { throw "dbyteos shell failed: $($dbyteosShell.Text)" }
     Assert-Contains $dbyteosShell.Text "--- DByteOS System Status ---" "dbyteos shell status alias"
-    Assert-Contains $dbyteosShell.Text "DByteOS: Cleaning /tmp and artifacts..." "dbyteos shell clean alias"
+    Assert-Contains $dbyteosShell.Text "sweep complete" "dbyteos shell clean alias sweep"
+
+    $dbyteosShellRcFromRoot = Invoke-DbyteInput -Arguments @("shell", "--rc", "examples\dbyteos\.dbyterc") -InputText "status`nquit`n" -WorkingDirectory $repoRoot
+    if ($dbyteosShellRcFromRoot.Code -ne 0) { throw "dbyteos shell --rc from repo root failed: $($dbyteosShellRcFromRoot.Text)" }
+    Assert-Contains $dbyteosShellRcFromRoot.Text "--- DByteOS System Status ---" "dbyteos shell rc from repo root"
+
+    $dbyteosShellNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "status`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellNoRc.Code -ne 0) { throw "dbyteos shell --no-rc failed: $($dbyteosShellNoRc.Text)" }
+    Assert-Contains $dbyteosShellNoRc.Text "ShellError: unknown command: status" "dbyteos shell --no-rc hides os aliases"
+
+    $dbyteosRcMissingRoot = Join-Path $repoRoot "target\verify-dbyteos-missing-rc"
+    $dbyteosShellBadRc = Invoke-DbyteInput -Arguments @("shell", "--rc", $dbyteosRcMissingRoot) -InputText "quit`n" -WorkingDirectory $repoRoot
+    if ($dbyteosShellBadRc.Code -eq 0) { throw "dbyteos shell missing --rc unexpectedly succeeded" }
+    Assert-Contains $dbyteosShellBadRc.Text "RcError: --rc file not found:" "dbyteos shell missing --rc error"
+
+    $dbyteosBadRcFile = Join-Path $repoRoot "target\verify-dbyteos-bad-directive.rc"
+    Set-Content -Path $dbyteosBadRcFile -Value "@shell notalias x`n" -NoNewline
+    $dbyteosBadRc = Invoke-DbyteInput -Arguments @("shell", "--rc", $dbyteosBadRcFile) -InputText "quit`n" -WorkingDirectory $repoRoot
+    if ($dbyteosBadRc.Code -eq 0) { throw "dbyteos shell bad directive unexpectedly succeeded" }
+    Assert-Contains $dbyteosBadRc.Text "ShellError:" "dbyteos bad rc shell error prefix"
+    Assert-Contains $dbyteosBadRc.Text "line 1:" "dbyteos bad rc line context"
+    Assert-Contains $dbyteosBadRc.Text "@shell notalias x" "dbyteos bad rc source line echo"
 
     Assert-GitStatus-Unchanged $dbyteosStatus "dbyteos system cleanliness"
 }
@@ -1216,7 +1251,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "3.0.0"
+$EXPECTED_VERSION = "3.0.1"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"

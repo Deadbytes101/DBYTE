@@ -44,6 +44,33 @@ fn print_project_error(error: ProjectError) -> ! {
     process::exit(1);
 }
 
+fn resolve_rc_path(cwd: &Path, rc_override: Option<&Path>) -> PathBuf {
+    match rc_override {
+        None => cwd.join(".dbyterc"),
+        Some(p) if p.is_absolute() => p.to_path_buf(),
+        Some(p) => cwd.join(p),
+    }
+}
+
+/// When the shell cwd is the repository root, `run bin/foo.dby` should still find
+/// scripts under `examples/dbyteos/` so DByteOS aliases work with `shell --rc`.
+fn resolve_shell_run_script(cwd: &Path, rel: &str) -> PathBuf {
+    let p = Path::new(rel);
+    if p.is_absolute() {
+        return p.to_path_buf();
+    }
+    let primary = cwd.join(rel);
+    if primary.exists() {
+        return primary;
+    }
+    let under_os = cwd.join("examples").join("dbyteos").join(rel);
+    if under_os.exists() {
+        under_os
+    } else {
+        primary
+    }
+}
+
 fn parse_file(path: &Path) -> (String, dbyte_ast::Program) {
     let path_label = path.display().to_string();
     let src = match fs::read_to_string(path) {
@@ -180,11 +207,11 @@ impl InteractiveSession {
     }
 
     fn load_rc(&mut self, cwd: &Path, rc_override: Option<&Path>) -> bool {
-        let rc_path = if let Some(p) = rc_override {
-            cwd.join(p)
-        } else {
-            cwd.join(".dbyterc")
-        };
+        let rc_path = resolve_rc_path(cwd, rc_override);
+        if rc_override.is_some() && !rc_path.exists() {
+            eprintln!("RcError: --rc file not found: {}", rc_path.display());
+            return false;
+        }
         if !rc_path.exists() {
             return true;
         }
@@ -453,11 +480,12 @@ impl ShellSession {
     }
 
     fn load_rc(&mut self, rc_override: Option<&Path>) -> bool {
-        let rc_path = if let Some(p) = rc_override {
-            self.runtime.current_dir().join(p)
-        } else {
-            self.runtime.current_dir().join(".dbyterc")
-        };
+        let cwd = self.runtime.current_dir();
+        let rc_path = resolve_rc_path(cwd, rc_override);
+        if rc_override.is_some() && !rc_path.exists() {
+            eprintln!("RcError: --rc file not found: {}", rc_path.display());
+            return false;
+        }
         if !rc_path.exists() {
             return true;
         }
@@ -474,7 +502,13 @@ impl ShellSession {
             let trimmed = line.trim_start();
             if let Some(directive) = trimmed.strip_prefix("@shell ") {
                 if let Err(e) = self.apply_shell_directive(directive) {
-                    eprintln!("ShellError: {} line {}: {}", rc_path.display(), idx + 1, e);
+                    eprintln!(
+                        "ShellError: {} line {}: {}\n  {}",
+                        rc_path.display(),
+                        idx + 1,
+                        e,
+                        line.trim_end()
+                    );
                     return false;
                 }
             } else {
@@ -642,9 +676,10 @@ impl ShellSession {
             eprintln!("ShellError: run expects a file");
             return;
         }
+        let script_path = resolve_shell_run_script(self.runtime.current_dir(), &args[1]);
         match self
             .runtime
-            .run_file_capture_with_args(&args[1], args[2..].to_vec())
+            .run_file_capture_with_args(&script_path, args[2..].to_vec())
         {
             Ok(output) => print!("{}", output.stdout),
             Err(e) => eprintln!("{}", e),

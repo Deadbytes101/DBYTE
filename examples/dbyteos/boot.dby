@@ -30,6 +30,9 @@ for d in dirs:
 
 print("")
 print("System initialization complete.")
+let touch_path: str = profile.resolve_path("tmp") + "/.dbyteos_boot_touch"
+fs.write_text(touch_path, "dbyteos boot ok\n")
+print("  [OK] /tmp/.dbyteos_boot_touch (session marker)")
 print("DByteOS is ready for interaction.")
 print("Type 'status' for system info or 'help' for commands.")
 print("--------------------------------------------------")

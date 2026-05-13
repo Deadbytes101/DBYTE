@@ -1,0 +1,4 @@
+# Ephemeral files only. Tracked layout uses .gitkeep + this file.
+*
+!.gitkeep
+!.gitignore

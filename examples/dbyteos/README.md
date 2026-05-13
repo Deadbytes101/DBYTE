@@ -1,4 +1,4 @@
-# DByteOS Userland Prototype (v3.0.0)
+# DByteOS Userland Prototype (v3.0.1)
 
 Welcome to the first prototype of **DByteOS**. This is a simulated operating system environment that runs directly on your host machine using the DByte runtime.
 
