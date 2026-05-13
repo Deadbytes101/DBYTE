@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 3.1.1") {
-    throw "Version mismatch: expected 'DByte 3.1.1', got '$versionOut'"
+if ($versionOut -ne "DByte 3.2.0") {
+    throw "Version mismatch: expected 'DByte 3.2.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 3.1.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 3.2.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1036,7 +1036,7 @@ Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out ou
 
 Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
-Write-Host "Running Sanctum System Workspace (v3.1.1) smoke tests..."
+Write-Host "Running Sanctum System Workspace (v3.2.0) smoke tests..."
 try {
     $sanctumRoot = Join-Path $repoRoot "examples\sanctum"
     $sanctumStatus = Git-Status-Short
@@ -1085,7 +1085,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v3.1.1) smoke tests..."
+Write-Host "Running DByteOS Command Set (v3.2.0) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 try {
@@ -1137,6 +1137,10 @@ try {
     if ($dbyteosShellNoRcCat.Code -ne 0) { throw "dbyteos shell --no-rc cat failed: $($dbyteosShellNoRcCat.Text)" }
     Assert-Contains $dbyteosShellNoRcCat.Text "ShellError: unknown command: cat" "dbyteos shell --no-rc hides cat alias"
 
+    $dbyteosShellNoRcRead = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "read tmp/verify_v32.txt`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellNoRcRead.Code -ne 0) { throw "dbyteos shell --no-rc read failed: $($dbyteosShellNoRcRead.Text)" }
+    Assert-Contains $dbyteosShellNoRcRead.Text "ShellError: unknown command: read" "dbyteos shell --no-rc hides read alias"
+
     $dbyteosRcMissingRoot = Join-Path $repoRoot "target\verify-dbyteos-missing-rc"
     $dbyteosShellBadRc = Invoke-DbyteInput -Arguments @("shell", "--rc", $dbyteosRcMissingRoot) -InputText "quit`n" -WorkingDirectory $repoRoot
     if ($dbyteosShellBadRc.Code -eq 0) { throw "dbyteos shell missing --rc unexpectedly succeeded" }
@@ -1157,7 +1161,7 @@ try {
     $dbyteosSysinfoRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\sysinfo.dby") -WorkingDirectory $repoRoot
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Userland Prototype" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.1.1" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.2.0" "dbyteos sysinfo version"
 
     $dbyteosHomeRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\home.dby") -WorkingDirectory $repoRoot
     if ($dbyteosHomeRoot.Code -ne 0) { throw "dbyteos home from root failed: $($dbyteosHomeRoot.Text)" }
@@ -1193,6 +1197,63 @@ try {
     if ($dbyteosCatRoot.Code -ne 0) { throw "dbyteos cat from root failed: $($dbyteosCatRoot.Text)" }
     Assert-Contains $dbyteosCatRoot.Text "dbyteos write_demo ok" "dbyteos cat from root"
 
+    # v3.2.0 file / user environment commands (writes only under tmp/ or home/deadbyte/)
+    $dbyteosReadBad = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "tmp/../README.md") -WorkingDirectory $repoRoot
+    if ($dbyteosReadBad.Code -ne 0) { throw "dbyteos read escape path exit code: $($dbyteosReadBad.Code)" }
+    Assert-Equal $dbyteosReadBad.Text "error: read: path not allowed: tmp/../README.md" "dbyteos read rejects dot-dot"
+
+    $dbyteosWriteV32 = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "tmp/verify_v32.txt", "hello", "v32", "smoke") -WorkingDirectory $repoRoot
+    if ($dbyteosWriteV32.Code -ne 0) { throw "dbyteos write from root failed: $($dbyteosWriteV32.Text)" }
+    Assert-Equal $dbyteosWriteV32.Text "write: ok" "dbyteos write from root"
+    $dbyteosReadV32 = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "tmp/verify_v32.txt") -WorkingDirectory $repoRoot
+    if ($dbyteosReadV32.Code -ne 0) { throw "dbyteos read from root failed: $($dbyteosReadV32.Text)" }
+    Assert-Equal $dbyteosReadV32.Text "hello v32 smoke" "dbyteos read from root"
+
+    $dbyteosPathRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\path.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosPathRoot.Code -ne 0) { throw "dbyteos path from root failed: $($dbyteosPathRoot.Text)" }
+    Assert-Equal $dbyteosPathRoot.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos path deterministic"
+
+    $dbyteosEnvRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\env.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosEnvRoot.Code -ne 0) { throw "dbyteos env from root failed: $($dbyteosEnvRoot.Text)" }
+    Assert-Contains $dbyteosEnvRoot.Text "USER=deadbyte" "dbyteos env user"
+    Assert-Contains $dbyteosEnvRoot.Text "HOME=home/deadbyte" "dbyteos env home"
+    Assert-Contains $dbyteosEnvRoot.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos env path"
+
+    $dbyteosProfileRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\profile.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosProfileRoot.Code -ne 0) { throw "dbyteos profile from root failed: $($dbyteosProfileRoot.Text)" }
+    Assert-Contains $dbyteosProfileRoot.Text "user: deadbyte" "dbyteos profile user"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.2.0" "dbyteos profile os version"
+
+    $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
+    Assert-Equal $dbyteosNotesOnce.Text "notes: ok" "dbyteos notes idempotent banner"
+    $dbyteosReadNotes = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "home/deadbyte/notes.txt") -WorkingDirectory $repoRoot
+    if ($dbyteosReadNotes.Code -ne 0) { throw "dbyteos read notes failed: $($dbyteosReadNotes.Text)" }
+    Assert-Equal $dbyteosReadNotes.Text "dbyteos notes seed" "dbyteos read notes body"
+
+    $dbyteosMkdirDemo = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\mkdir_demo.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosMkdirDemo.Code -ne 0) { throw "dbyteos mkdir_demo from root failed: $($dbyteosMkdirDemo.Text)" }
+    Assert-Equal $dbyteosMkdirDemo.Text "mkdir-demo: ok" "dbyteos mkdir_demo idempotent"
+
+    $dbyteosAppendA = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\append.dby", "tmp/append_test.txt", "line-a") -WorkingDirectory $repoRoot
+    if ($dbyteosAppendA.Code -ne 0) { throw "dbyteos append first failed: $($dbyteosAppendA.Text)" }
+    $dbyteosAppendB = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\append.dby", "tmp/append_test.txt", "line-b") -WorkingDirectory $repoRoot
+    if ($dbyteosAppendB.Code -ne 0) { throw "dbyteos append second failed: $($dbyteosAppendB.Text)" }
+    $dbyteosReadAppend = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "tmp/append_test.txt") -WorkingDirectory $repoRoot
+    if ($dbyteosReadAppend.Code -ne 0) { throw "dbyteos read append file failed: $($dbyteosReadAppend.Text)" }
+    Assert-Equal $dbyteosReadAppend.Text "line-a`nline-b" "dbyteos append accumulates lines"
+
+    $dbyteosTouchRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\touch.dby", "tmp/touched.txt") -WorkingDirectory $repoRoot
+    if ($dbyteosTouchRoot.Code -ne 0) { throw "dbyteos touch from root failed: $($dbyteosTouchRoot.Text)" }
+    Assert-Equal $dbyteosTouchRoot.Text "touch: ok" "dbyteos touch from root"
+
+    $dbyteosWriteCwd = Invoke-Dbyte -Arguments @("run", "bin\write.dby", "tmp/cwd_write.txt", "cwd", "ok") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosWriteCwd.Code -ne 0) { throw "dbyteos write from dbyteos cwd failed: $($dbyteosWriteCwd.Text)" }
+    Assert-Equal $dbyteosWriteCwd.Text "write: ok" "dbyteos write from dbyteos cwd"
+    $dbyteosReadCwd = Invoke-Dbyte -Arguments @("run", "bin\read.dby", "tmp/cwd_write.txt") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosReadCwd.Code -ne 0) { throw "dbyteos read from dbyteos cwd failed: $($dbyteosReadCwd.Text)" }
+    Assert-Equal $dbyteosReadCwd.Text "cwd ok" "dbyteos read from dbyteos cwd"
+
     $dbyteosCleanCmdRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\clean.dby") -WorkingDirectory $repoRoot
     if ($dbyteosCleanCmdRoot.Code -ne 0) { throw "dbyteos clean after command set failed: $($dbyteosCleanCmdRoot.Text)" }
     Assert-Contains $dbyteosCleanCmdRoot.Text "workspace sweep complete" "dbyteos clean workspace sweep line"
@@ -1201,12 +1262,16 @@ try {
     if ($dbyteosWhoamiCwd.Code -ne 0) { throw "dbyteos whoami from dbyteos cwd failed: $($dbyteosWhoamiCwd.Text)" }
     Assert-Equal $dbyteosWhoamiCwd.Text "deadbyte" "dbyteos whoami from dbyteos cwd"
 
-    $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.1.1" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.2.0" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
-    Assert-Contains $dbyteosCmdShell.Text "tmp`nwrote tmp/write_demo.txt" "dbyteos shell tmp then write-demo"
+    Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.2.0" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
+    Assert-Contains $dbyteosCmdShell.Text "mkdir-demo: ok" "dbyteos shell mkdir-demo"
+    Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
     Assert-Contains $dbyteosCmdShell.Text "workspace sweep complete" "dbyteos shell clean sweep"
 
@@ -1319,7 +1384,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "3.1.1"
+$EXPECTED_VERSION = "3.2.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
