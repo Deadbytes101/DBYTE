@@ -5,6 +5,9 @@ import std.env as env
 
 let args: list[str] = env.args()
 let target: str = "workspace/sample.bin"
+if fs.exists(target) == 0:
+    if fs.exists("examples/sanctum/workspace/sample.bin") == 1:
+        target = "examples/sanctum/workspace/sample.bin"
 
 if len(args) > 0:
     target = args[0]

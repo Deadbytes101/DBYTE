@@ -4,6 +4,10 @@ import std.encoding as enc
 import std.env as env
 
 let target: str = "workspace/sample.bin"
+if fs.exists(target) == 0:
+    if fs.exists("examples/sanctum/workspace/sample.bin") == 1:
+        target = "examples/sanctum/workspace/sample.bin"
+
 let find: bytes = b"\xDE\xAD\xBE\xEF"
 let repl: bytes = b"\xCA\xFE\xBA\xBE"
 
