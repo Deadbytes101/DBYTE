@@ -309,6 +309,8 @@ impl Interpreter {
                     ModuleMember::Native(native_fs_write_bytes),
                 );
                 members.insert("exists".into(), ModuleMember::Native(native_fs_exists));
+                members.insert("mkdir".into(), ModuleMember::Native(native_fs_mkdir));
+                members.insert("remove".into(), ModuleMember::Native(native_fs_remove));
             }
 
             "std.encoding" => {
@@ -1063,6 +1065,27 @@ fn native_fs_write_bytes(args: &[Value]) -> Result<Value, String> {
     std::fs::write(path, bytes)
         .map(|_| Value::Void)
         .map_err(|e| format!("fs.write_bytes failed for `{}`: {}", path, e))
+}
+
+fn native_fs_mkdir(args: &[Value]) -> Result<Value, String> {
+    let path = expect_str(args, 0)?;
+    std::fs::create_dir_all(path)
+        .map(|_| Value::Void)
+        .map_err(|e| format!("fs.mkdir failed for `{}`: {}", path, e))
+}
+
+fn native_fs_remove(args: &[Value]) -> Result<Value, String> {
+    let path = expect_str(args, 0)?;
+    let p = Path::new(path);
+    if p.is_dir() {
+        std::fs::remove_dir_all(p)
+            .map(|_| Value::Void)
+            .map_err(|e| format!("fs.remove failed for `{}`: {}", path, e))
+    } else {
+        std::fs::remove_file(p)
+            .map(|_| Value::Void)
+            .map_err(|e| format!("fs.remove failed for `{}`: {}", path, e))
+    }
 }
 
 fn native_encoding_hex_encode(args: &[Value]) -> Result<Value, String> {

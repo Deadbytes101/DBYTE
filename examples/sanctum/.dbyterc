@@ -1,7 +1,10 @@
 # DByte Sanctum Configuration
 # ---------------------------
 
-# Boot the environment
+# System Commands
+@shell alias init = run sanctum_init.dby
+@shell alias status = run sanctum_status.dby
+@shell alias clean = run scripts/clean_workspace.dby
 @shell alias boot = run boot.dby
 
 # Personal Tools

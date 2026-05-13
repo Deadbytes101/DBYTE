@@ -1,0 +1,9 @@
+# Sanctum Configuration
+# ---------------------
+# Use this file to define personal settings and environment variables.
+
+let version = "2.9.0"
+let mode = "personal"
+let owner = "Criminal Mastermind"
+
+print("Config loaded: v" + version + " (" + mode + ")")

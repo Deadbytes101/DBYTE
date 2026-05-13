@@ -69,6 +69,20 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                     ret: TypeAnnotation::Int,
                 },
             ),
+            (
+                "mkdir".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str],
+                    ret: TypeAnnotation::Inferred,
+                },
+            ),
+            (
+                "remove".into(),
+                StdlibExport::Function {
+                    params: vec![TypeAnnotation::Str],
+                    ret: TypeAnnotation::Inferred,
+                },
+            ),
         ]),
 
         "std.encoding" => Some(vec![

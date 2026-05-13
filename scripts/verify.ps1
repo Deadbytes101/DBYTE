@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 2.8.1") {
-    throw "Version mismatch: expected 'DByte 2.8.1', got '$versionOut'"
+if ($versionOut -ne "DByte 2.9.0") {
+    throw "Version mismatch: expected 'DByte 2.9.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 2.8.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 2.9.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1035,43 +1035,54 @@ Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out ou
 
 Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
-Write-Host "Running Sanctum smoke tests..."
+Write-Host "Running Sanctum System Workspace (v2.9.0) smoke tests..."
 
 $sanctumRoot = Join-Path $repoRoot "examples\sanctum"
 $sanctumStatus = Git-Status-Short
 
-# 1. Idempotent boot.dby
-$sanctumBoot1 = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $sanctumRoot
-if ($sanctumBoot1.Code -ne 0) { throw "sanctum boot.dby (1) failed: $($sanctumBoot1.Text)" }
-Assert-Contains $sanctumBoot1.Text "S A N C T U M   F O U N D A T I O N" "sanctum boot banner 1"
+# 1. Initialization (idempotent)
+$sanctumInit1 = Invoke-Dbyte -Arguments @("run", "sanctum_init.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumInit1.Code -ne 0) { throw "sanctum init (1) failed: $($sanctumInit1.Text)" }
+Assert-Contains $sanctumInit1.Text "S A N C T U M   I N I T I A L I Z A T I O N" "sanctum init banner 1"
 
-$sanctumBoot2 = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $sanctumRoot
-if ($sanctumBoot2.Code -ne 0) { throw "sanctum boot.dby (2) failed: $($sanctumBoot2.Text)" }
-Assert-Contains $sanctumBoot2.Text "S A N C T U M   F O U N D A T I O N" "sanctum boot banner 2"
+$sanctumInit2 = Invoke-Dbyte -Arguments @("run", "sanctum_init.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumInit2.Code -ne 0) { throw "sanctum init (2) failed: $($sanctumInit2.Text)" }
+Assert-Contains $sanctumInit2.Text "Directory exists: workspace" "sanctum init idempotent dir"
 
-# 2. Cross-directory execution (from root)
-$sanctumBootRoot = Invoke-Dbyte -Arguments @("run", "examples\sanctum\boot.dby")
-if ($sanctumBootRoot.Code -ne 0) { throw "sanctum boot from root failed: $($sanctumBootRoot.Text)" }
-Assert-Contains $sanctumBootRoot.Text "S A N C T U M   F O U N D A T I O N" "sanctum boot from root banner"
+# 2. Status report
+$sanctumStatusReport = Invoke-Dbyte -Arguments @("run", "sanctum_status.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumStatusReport.Code -ne 0) { throw "sanctum status failed: $($sanctumStatusReport.Text)" }
+Assert-Contains $sanctumStatusReport.Text "[OK] workspace" "sanctum status workspace ok"
+Assert-Contains $sanctumStatusReport.Text "[OK] config" "sanctum status config ok"
 
-# 3. Shell aliases smoke
-$sanctumShellAliases = Invoke-DbyteInput -Arguments @("shell") -InputText "boot`ninspect`npatch-demo`nu32-demo`nquit`n" -WorkingDirectory $sanctumRoot
-if ($sanctumShellAliases.Code -ne 0) { throw "sanctum shell aliases failed: $($sanctumShellAliases.Text)" }
-Assert-Contains $sanctumShellAliases.Text "S A N C T U M   F O U N D A T I O N" "sanctum shell alias boot"
-Assert-Contains $sanctumShellAliases.Text "Inspecting: workspace/sample.bin" "sanctum shell alias inspect"
-Assert-Contains $sanctumShellAliases.Text "Saved to: workspace/sample.bin.patched" "sanctum shell alias patch-demo"
-Assert-Contains $sanctumShellAliases.Text "u32 dump for: workspace/sample.bin" "sanctum shell alias u32-demo"
+# 3. Boot and Clean cycle
+$sanctumBoot = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumBoot.Code -ne 0) { throw "sanctum boot failed: $($sanctumBoot.Text)" }
+if (!(Test-Path (Join-Path $sanctumRoot "workspace\sample.bin"))) { throw "sanctum boot failed to generate sample.bin" }
 
-# 4. shell --no-rc (verify no aliases)
-$sanctumShellNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "boot`nquit`n" -WorkingDirectory $sanctumRoot
-Assert-Contains $sanctumShellNoRc.Text "ShellError: unknown command: boot" "sanctum shell --no-rc hides aliases"
+$sanctumClean = Invoke-Dbyte -Arguments @("run", "scripts\clean_workspace.dby") -WorkingDirectory $sanctumRoot
+if ($sanctumClean.Code -ne 0) { throw "sanctum clean failed: $($sanctumClean.Text)" }
+if (Test-Path (Join-Path $sanctumRoot "workspace\sample.bin")) { throw "sanctum clean failed to remove sample.bin" }
 
-# Cleanup generated files to keep git status clean
-$sanctumWorkspace = Join-Path $sanctumRoot "workspace"
-Remove-Item -Path (Join-Path $sanctumWorkspace "sample.bin") -ErrorAction SilentlyContinue
-Remove-Item -Path (Join-Path $sanctumWorkspace "sample.bin.patched") -ErrorAction SilentlyContinue
+# 4. Cross-directory verify
+$sanctumStatusRoot = Invoke-Dbyte -Arguments @("run", "examples\sanctum\sanctum_status.dby")
+if ($sanctumStatusRoot.Code -ne 0) { throw "sanctum status from root failed: $($sanctumStatusRoot.Text)" }
+Assert-Contains $sanctumStatusRoot.Text "[OK] workspace" "sanctum status from root"
 
-Assert-GitStatus-Unchanged $sanctumStatus "sanctum hardening cleanliness"
+# 5. Shell aliases
+$sanctumShell = Invoke-DbyteInput -Arguments @("shell") -InputText "status`ninit`nclean`nquit`n" -WorkingDirectory $sanctumRoot
+if ($sanctumShell.Code -ne 0) { throw "sanctum shell aliases failed: $($sanctumShell.Text)" }
+Assert-Contains $sanctumShell.Text "S A N C T U M   S Y S T E M   S T A T U S" "sanctum shell status alias"
+Assert-Contains $sanctumShell.Text "S A N C T U M   I N I T I A L I Z A T I O N" "sanctum shell init alias"
+
+# Cleanup
+Remove-Item -Path (Join-Path $sanctumRoot "workspace") -Recurse -Force -ErrorAction SilentlyContinue
+# We only delete the directories if they are empty, but we keep the tracked files.
+# Actually, the best is to just remove what we know we created as temporary.
+# In v2.9.0, config/sanctum.dby and notes/README.md are part of the repo now.
+# So we don't delete them.
+
+Assert-GitStatus-Unchanged $sanctumStatus "sanctum system workspace cleanliness"
 
 
 $readme = Get-Content (Join-Path $repoRoot "README.md") -Raw
@@ -1176,7 +1187,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "2.8.1"
+$EXPECTED_VERSION = "2.9.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"

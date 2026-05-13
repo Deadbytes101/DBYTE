@@ -1402,6 +1402,31 @@ impl Vm {
                     0
                 }))
             }
+            FsMkdir => {
+                let path = expect_str(args, 0)?;
+                std::fs::create_dir_all(path)
+                    .map(|_| Value::Void)
+                    .map_err(|e| VmError::new(format!("fs.mkdir failed for `{}`: {}", path, e)))
+            }
+            FsRemove => {
+                let path = expect_str(args, 0)?;
+                if std::path::Path::new(path).is_dir() {
+                    std::fs::remove_dir_all(path)
+                        .map(|_| Value::Void)
+                        .map_err(|e| {
+                            VmError::new(format!(
+                                "fs.remove failed for directory `{}`: {}",
+                                path, e
+                            ))
+                        })
+                } else {
+                    std::fs::remove_file(path)
+                        .map(|_| Value::Void)
+                        .map_err(|e| {
+                            VmError::new(format!("fs.remove failed for file `{}`: {}", path, e))
+                        })
+                }
+            }
 
             EncodingHexEncode => {
                 let bytes = expect_bytes(args, 0)?;
