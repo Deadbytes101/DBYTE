@@ -1130,6 +1130,10 @@ try {
     Assert-Contains $dbyteosShellWhichCat.Text "cat: dbyteos ->" "dbyteos shell which cat autopath"
     Assert-Contains $dbyteosShellWhichCat.Text "examples/dbyteos/bin/cat.dby" "dbyteos shell which cat resolved path"
 
+    $dbyteosShellWhichHelp = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellWhichHelp.Code -ne 0) { throw "dbyteos shell which help failed: $($dbyteosShellWhichHelp.Text)" }
+    Assert-Contains $dbyteosShellWhichHelp.Text "help: built-in" "dbyteos shell which built-in"
+
     $dbyteosShellInspectArgs = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "inspect boot.dby`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellInspectArgs.Code -ne 0) { throw "dbyteos shell inspect args failed: $($dbyteosShellInspectArgs.Text)" }
     Assert-Contains $dbyteosShellInspectArgs.Text "Inspecting file:" "dbyteos shell inspect passes args"
@@ -1222,6 +1226,10 @@ try {
     $dbyteosPathWhichMkdir = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\path.dby", "which", "mkdir-demo") -WorkingDirectory $repoRoot
     if ($dbyteosPathWhichMkdir.Code -ne 0) { throw "dbyteos path which mkdir-demo failed: $($dbyteosPathWhichMkdir.Text)" }
     Assert-Contains $dbyteosPathWhichMkdir.Text "examples/dbyteos/bin/mkdir_demo.dby" "dbyteos path which hyphen command"
+
+    $dbyteosPathWhichUnknown = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\path.dby", "which", "does-not-exist-xyz") -WorkingDirectory $repoRoot
+    if ($dbyteosPathWhichUnknown.Code -ne 0) { throw "dbyteos path which unknown failed: $($dbyteosPathWhichUnknown.Text)" }
+    Assert-Contains $dbyteosPathWhichUnknown.Text "error: path: command not found: does-not-exist-xyz" "dbyteos path which unknown deterministic"
 
     $dbyteosEnvRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\env.dby") -WorkingDirectory $repoRoot
     if ($dbyteosEnvRoot.Code -ne 0) { throw "dbyteos env from root failed: $($dbyteosEnvRoot.Text)" }
