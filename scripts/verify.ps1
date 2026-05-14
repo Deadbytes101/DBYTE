@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 3.7.1") {
-    throw "Version mismatch: expected 'DByte 3.7.1', got '$versionOut'"
+if ($versionOut -ne "DByte 3.8.0") {
+    throw "Version mismatch: expected 'DByte 3.8.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 3.7.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 3.8.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1079,7 +1079,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v3.7.1) smoke tests..."
+Write-Host "Running DByteOS Command Set (v3.8.0) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 try {
@@ -1118,6 +1118,7 @@ try {
     $dbyteosShellHelp = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "help`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellHelp.Code -ne 0) { throw "dbyteos shell help failed: $($dbyteosShellHelp.Text)" }
     Assert-Contains $dbyteosShellHelp.Text "--- DByteOS Manual ---" "dbyteos shell help output (aliased)"
+    Assert-Contains $dbyteosShellHelp.Text "perm      - inspect permission policy" "dbyteos shell help perm"
 
     $dbyteosShellWhichHelpAliased = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosShellWhichHelpAliased.Text "help: alias -> run bin/help.dby" "which help with alias"
@@ -1138,6 +1139,11 @@ try {
 
     $dbyteosShellManTraversal = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man ../sys/session`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosShellManTraversal.Text "Error: invalid manual topic name '../sys/session'" "dbyteos shell man traversal reject"
+
+    $dbyteosShellManPerm = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man perm`nman security`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellManPerm.Code -ne 0) { throw "dbyteos shell man perm/security failed: $($dbyteosShellManPerm.Text)" }
+    Assert-Contains $dbyteosShellManPerm.Text "DByteOS Permission Command" "dbyteos man perm"
+    Assert-Contains $dbyteosShellManPerm.Text "DByteOS Security Policy" "dbyteos man security"
 
 
     $dbyteosShellRcFromRoot = Invoke-DbyteInput -Arguments @("shell", "--rc", "examples\dbyteos\.dbyterc") -InputText "status`nquit`n" -WorkingDirectory $repoRoot
@@ -1189,7 +1195,7 @@ try {
     $dbyteosSysinfoRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\sysinfo.dby") -WorkingDirectory $repoRoot
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Userland Prototype" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.7.1" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.8.0" "dbyteos sysinfo version"
 
     $dbyteosHomeRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\home.dby") -WorkingDirectory $repoRoot
     if ($dbyteosHomeRoot.Code -ne 0) { throw "dbyteos home from root failed: $($dbyteosHomeRoot.Text)" }
@@ -1228,7 +1234,7 @@ try {
     # DByteOS file / user environment commands (writes only under tmp/ or home/deadbyte/)
     $dbyteosReadBad = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "tmp/../README.md") -WorkingDirectory $repoRoot
     if ($dbyteosReadBad.Code -ne 0) { throw "dbyteos read escape path exit code: $($dbyteosReadBad.Code)" }
-    Assert-Equal $dbyteosReadBad.Text "error: read: path not allowed: tmp/../README.md" "dbyteos read rejects dot-dot"
+    Assert-Equal $dbyteosReadBad.Text "error: permission denied: path escape tmp/../README.md" "dbyteos read rejects dot-dot"
 
     $dbyteosWriteV32 = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "tmp/verify_v32.txt", "hello", "v32", "smoke") -WorkingDirectory $repoRoot
     if ($dbyteosWriteV32.Code -ne 0) { throw "dbyteos write from root failed: $($dbyteosWriteV32.Text)" }
@@ -1261,7 +1267,7 @@ try {
     if ($dbyteosProfileRoot.Code -ne 0) { throw "dbyteos profile from root failed: $($dbyteosProfileRoot.Text)" }
     Assert-Contains $dbyteosProfileRoot.Text "user: deadbyte" "dbyteos profile user"
     Assert-Contains $dbyteosProfileRoot.Text "home_path: examples/dbyteos/home/deadbyte" "dbyteos profile get_home from root"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.7.1" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.8.0" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -1293,9 +1299,59 @@ try {
     if ($dbyteosReadCwd.Code -ne 0) { throw "dbyteos read from dbyteos cwd failed: $($dbyteosReadCwd.Text)" }
     Assert-Equal $dbyteosReadCwd.Text "cwd ok" "dbyteos read from dbyteos cwd"
 
+    Write-Host "Running DByteOS Security/Permissions (v3.8.0) smoke tests..."
+    $securityLogPath = Join-Path $dbyteosRoot "tmp\security.log"
+    if (Test-Path $securityLogPath) {
+        Remove-Item -Force $securityLogPath
+    }
+    $dbyteosPermPolicy = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\perm.dby", "policy") -WorkingDirectory $repoRoot
+    if ($dbyteosPermPolicy.Code -ne 0) { throw "dbyteos perm policy failed: $($dbyteosPermPolicy.Text)" }
+    Assert-Contains $dbyteosPermPolicy.Text "tmp/             read/write allowed" "perm policy tmp"
+    Assert-Contains $dbyteosPermPolicy.Text "etc/             read allowed, write denied" "perm policy etc"
+    $dbyteosPermReadEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\perm.dby", "read", "etc/system.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosPermReadEtc.Code -ne 0) { throw "dbyteos perm read etc failed: $($dbyteosPermReadEtc.Text)" }
+    Assert-Equal $dbyteosPermReadEtc.Text "ALLOW read etc/system.dby" "perm read etc allowed"
+    $dbyteosPermWriteEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\perm.dby", "write", "etc/system.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosPermWriteEtc.Code -ne 0) { throw "dbyteos perm write etc failed: $($dbyteosPermWriteEtc.Text)" }
+    Assert-Equal $dbyteosPermWriteEtc.Text "DENY write etc/system.dby (policy)" "perm write etc denied"
+    $dbyteosPermEscape = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\perm.dby", "read", "tmp/../etc/system.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosPermEscape.Code -ne 0) { throw "dbyteos perm path escape failed: $($dbyteosPermEscape.Text)" }
+    Assert-Equal $dbyteosPermEscape.Text "DENY read tmp/../etc/system.dby (path escape)" "perm path escape denied"
+    $dbyteosPermAbsolute = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\perm.dby", "read", "C:/Windows/system.ini") -WorkingDirectory $repoRoot
+    if ($dbyteosPermAbsolute.Code -ne 0) { throw "dbyteos perm absolute path failed: $($dbyteosPermAbsolute.Text)" }
+    Assert-Equal $dbyteosPermAbsolute.Text "DENY read C:/Windows/system.ini (absolute path)" "perm absolute denied"
+    $dbyteosPermUnknown = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\perm.dby", "read", "var/log.txt") -WorkingDirectory $repoRoot
+    if ($dbyteosPermUnknown.Code -ne 0) { throw "dbyteos perm unknown root failed: $($dbyteosPermUnknown.Text)" }
+    Assert-Equal $dbyteosPermUnknown.Text "DENY read var/log.txt (policy)" "perm unknown root denied"
+    $dbyteosReadEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "etc/system.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosReadEtc.Code -ne 0) { throw "dbyteos read etc failed: $($dbyteosReadEtc.Text)" }
+    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"3.8.0`"" "read etc allowed"
+    $dbyteosWriteEtcDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "etc/system.dby", "test") -WorkingDirectory $repoRoot
+    if ($dbyteosWriteEtcDenied.Code -ne 0) { throw "dbyteos write etc deny command failed: $($dbyteosWriteEtcDenied.Text)" }
+    Assert-Equal $dbyteosWriteEtcDenied.Text "error: permission denied: write etc/system.dby" "write etc denied"
+    $dbyteosAppendEtcDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\append.dby", "etc/system.dby", "test") -WorkingDirectory $repoRoot
+    if ($dbyteosAppendEtcDenied.Code -ne 0) { throw "dbyteos append etc deny command failed: $($dbyteosAppendEtcDenied.Text)" }
+    Assert-Equal $dbyteosAppendEtcDenied.Text "error: permission denied: append etc/system.dby" "append etc denied"
+    $dbyteosReadEscapeDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "tmp/../etc/system.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosReadEscapeDenied.Code -ne 0) { throw "dbyteos read escape deny command failed: $($dbyteosReadEscapeDenied.Text)" }
+    Assert-Equal $dbyteosReadEscapeDenied.Text "error: permission denied: path escape tmp/../etc/system.dby" "read path escape denied"
+    $dbyteosWriteAbsoluteDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "C:/Windows/system.ini", "test") -WorkingDirectory $repoRoot
+    if ($dbyteosWriteAbsoluteDenied.Code -ne 0) { throw "dbyteos write absolute deny command failed: $($dbyteosWriteAbsoluteDenied.Text)" }
+    Assert-Equal $dbyteosWriteAbsoluteDenied.Text "error: permission denied: write C:/Windows/system.ini" "write absolute denied"
+    $dbyteosReadUnknownDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "var/log.txt") -WorkingDirectory $repoRoot
+    if ($dbyteosReadUnknownDenied.Code -ne 0) { throw "dbyteos read unknown deny command failed: $($dbyteosReadUnknownDenied.Text)" }
+    Assert-Equal $dbyteosReadUnknownDenied.Text "error: permission denied: read var/log.txt" "read unknown root denied"
+    $securityLog = Get-Content $securityLogPath -Raw
+    Assert-Contains $securityLog "DENY write etc/system.dby" "security log write etc"
+    Assert-Contains $securityLog "DENY append etc/system.dby" "security log append etc"
+    Assert-Contains $securityLog "DENY read tmp/../etc/system.dby" "security log path escape"
+    Assert-Contains $securityLog "DENY write C:/Windows/system.ini" "security log absolute"
+    Assert-Contains $securityLog "DENY read var/log.txt" "security log unknown root"
+
     $dbyteosCleanCmdRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\clean.dby") -WorkingDirectory $repoRoot
     if ($dbyteosCleanCmdRoot.Code -ne 0) { throw "dbyteos clean after command set failed: $($dbyteosCleanCmdRoot.Text)" }
     Assert-Contains $dbyteosCleanCmdRoot.Text "workspace sweep complete" "dbyteos clean workspace sweep line"
+    if (Test-Path $securityLogPath) { throw "dbyteos clean did not remove security.log" }
 
     $dbyteosWhoamiCwd = Invoke-Dbyte -Arguments @("run", "bin\whoami.dby") -WorkingDirectory $dbyteosRoot
     if ($dbyteosWhoamiCwd.Code -ne 0) { throw "dbyteos whoami from dbyteos cwd failed: $($dbyteosWhoamiCwd.Text)" }
@@ -1304,17 +1360,17 @@ try {
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.7.1" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.8.0" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.7.1" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.8.0" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
     Assert-Contains $dbyteosCmdShell.Text "mkdir-demo: ok" "dbyteos shell mkdir-demo"
     Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
 
-    Write-Host "Running DByteOS Notes Workflow (v3.7.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v3.8.0) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -1325,7 +1381,7 @@ try {
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v3.7.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v3.8.0) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -1352,7 +1408,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v3.7.1) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v3.8.0) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -1362,7 +1418,7 @@ quit
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
     
-    Write-Host "Running DByteOS Journal/Logger (v3.7.1) smoke tests..."
+    Write-Host "Running DByteOS Journal/Logger (v3.8.0) smoke tests..."
     $journalPath = Join-Path $dbyteosRoot "home\deadbyte\journal.txt"
     if (Test-Path $journalPath) {
         Remove-Item -Force $journalPath
@@ -1560,7 +1616,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "3.7.1"
+$EXPECTED_VERSION = "3.8.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
