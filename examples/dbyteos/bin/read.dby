@@ -1,4 +1,5 @@
 import "../sys/profile.dby" as profile
+import "../sys/security.dby" as security
 import std.fs as fs
 import std.env as env
 
@@ -7,9 +8,10 @@ if len(args) == 0:
     print("usage: read <path>")
 else:
     let raw: str = profile.join_args_from(args, 0)
-    let target: str = profile.resolve_user_data_path(raw)
+    let target: str = security.resolve_allowed_path("read", raw)
     if target == "":
-        print("error: read: path not allowed:", raw)
+        security.log_denied("read", raw)
+        print(security.denied_message("read", raw))
     else:
         if fs.exists(target) == 1:
             print(fs.read_text(target))
