@@ -1,5 +1,6 @@
 import "./sys/profile.dby" as profile
 import "./etc/system.dby" as system
+import "./sys/init.dby" as init
 import std.fs as fs
 
 print("--------------------------------------------------")
@@ -29,6 +30,8 @@ for d in dirs:
         print("  [!!] /" + d + " MISSING")
 
 print("")
+init.run()
+
 print("System initialization complete.")
 let touch_path: str = profile.resolve_path("tmp") + "/.dbyteos_boot_touch"
 fs.write_text(touch_path, "dbyteos boot ok\n")

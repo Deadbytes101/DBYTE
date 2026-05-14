@@ -1,14 +1,23 @@
-NAME
-    boot - initialize the DByteOS userland prototype
+DByteOS Boot Sequence
+=====================
 
-SYNOPSIS
-    boot
+The 'boot' command initializes the DByteOS userland environment.
 
-DESCRIPTION
-    Sets up the initial directory structure for the DByteOS userland
-    prototype (/bin, /etc, /home, /sys, /tmp) and creates the
-    necessary boot marker files. This command is idempotent and safe
-    to run multiple times.
+Usage:
+  boot
 
-AUTHOR
-    DEADBYTE
+Actions:
+  1. Verifies the existence of critical system directories:
+     - /bin (Binaries)
+     - /etc (Configuration)
+     - /sys (System Logic)
+     - /home (User Data)
+     - /tmp  (Session State)
+  2. Runs the Init Service layer (/sys/init.dby):
+     - Registers and starts enabled services.
+     - Creates session initialization markers.
+  3. Sets up the session marker in /tmp/.dbyteos_boot_touch.
+
+Note:
+  This command is designed to be idempotent. Running it multiple
+  times will re-verify the environment without causing data loss.
