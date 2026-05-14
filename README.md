@@ -34,6 +34,33 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
+## DByteOS Alpha Userland (v4.0.1)
+
+DByteOS is a host-runnable personal computing environment built on the DByte runtime.
+
+1. **Launch the DByteOS Shell**:
+
+```powershell
+dbyte shell --rc examples/dbyteos/.dbyterc
+```
+
+This configures the session environment and activates autopath resolving.
+
+2. **Explore the System**:
+- [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
+- [Command Reference](docs/DBYTEOS_COMMANDS.md)
+- [Security Policy](docs/DBYTEOS_SECURITY.md)
+- [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
+
+3. **Initialize & Interact**:
+
+```bash
+dbyte-shell> boot
+dbyte-shell> status
+dbyte-shell> notes list
+dbyte-shell> journal read
+```
+
 ## Quick Start
 
 ```powershell
@@ -223,6 +250,10 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 
 - [INSTALL.md](INSTALL.md)
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
+- [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
+- [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
+- [DByteOS Security](docs/DBYTEOS_SECURITY.md)
+- [DByteOS Boot](docs/DBYTEOS_BOOT.md)
 - [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md)
 
 ## Release Checklist
