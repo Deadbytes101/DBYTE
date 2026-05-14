@@ -1,0 +1,68 @@
+import "../sys/security.dby" as security
+import std.env as env
+
+let args: list[str] = env.args()
+
+fn show_help():
+    print("usage: perm <read|write|append|policy> [path]")
+    print("")
+    print("commands:")
+    print("  read <path>    - simulate read permission")
+    print("  write <path>   - simulate write permission")
+    print("  append <path>  - simulate append permission")
+    print("  policy         - show deterministic policy summary")
+    print("  help           - show this help")
+
+fn show_policy():
+    print("DByteOS permission policy:")
+    print("  tmp/             read/write allowed")
+    print("  home/deadbyte/   read/write allowed")
+    print("  etc/             read allowed, write denied")
+    print("  sys/             read allowed, write denied")
+    print("  bin/             read allowed, write denied")
+    print("  ../              denied")
+    print("  absolute path    denied")
+    print("  unknown root     denied")
+
+if len(args) < 1:
+    show_help()
+else:
+    let cmd: str = args[0]
+    if cmd == "policy":
+        show_policy()
+    else:
+        if cmd == "help":
+            show_help()
+        else:
+            if cmd == "read":
+                if len(args) < 2:
+                    print("usage: perm read <path>")
+                else:
+                    let raw: str = args[1]
+                    if security.is_allowed("read", raw) == 1:
+                        print("ALLOW read " + raw)
+                    else:
+                        print("DENY read " + raw + " (" + security.denial_reason(raw) + ")")
+            else:
+                if cmd == "write":
+                    if len(args) < 2:
+                        print("usage: perm write <path>")
+                    else:
+                        let raw: str = args[1]
+                        if security.is_allowed("write", raw) == 1:
+                            print("ALLOW write " + raw)
+                        else:
+                            print("DENY write " + raw + " (" + security.denial_reason(raw) + ")")
+                else:
+                    if cmd == "append":
+                        if len(args) < 2:
+                            print("usage: perm append <path>")
+                        else:
+                            let raw: str = args[1]
+                            if security.is_allowed("append", raw) == 1:
+                                print("ALLOW append " + raw)
+                            else:
+                                print("DENY append " + raw + " (" + security.denial_reason(raw) + ")")
+                    else:
+                        print("error: unknown perm command: " + cmd)
+                        show_help()

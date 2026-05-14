@@ -1,0 +1,55 @@
+import std.fs as fs
+
+# Session / PATH model for DByteOS userland.
+# Command roots must match examples/dbyteos/etc/cmd_path_roots.txt and the Rust
+# shell autopath resolver in crates/dbyte_cli/src/main.rs.
+#
+# Path resolution mirrors examples/dbyteos/sys/profile.dby (kept local so the VM
+# engine does not rely on nested file-module imports for these helpers).
+
+pub fn resolve_path(p: str) -> str:
+    if fs.exists("examples/dbyteos") == 1:
+        return "examples/dbyteos/" + p
+    return p
+
+pub fn resolve_os_file(name: str) -> str:
+    if fs.exists(name) == 1:
+        return name
+    if fs.exists("examples/dbyteos/" + name) == 1:
+        return "examples/dbyteos/" + name
+    return name
+
+pub fn command_search_roots() -> list[str]:
+    return ["bin", "tmp", "home/deadbyte"]
+pub fn path_display() -> str:
+    return "PATH=/bin:/tmp:/home/deadbyte"
+
+pub fn command_file_stem(name: str) -> str:
+    let out: str = ""
+    for c in name:
+        if c == "-":
+            out = out + "_"
+        else:
+            out = out + c
+    return out
+
+pub fn lookup_command(name: str) -> str:
+    if len(name) == 0:
+        return ""
+    let stem: str = command_file_stem(name)
+    for root in command_search_roots():
+        let rel_a: str = root + "/" + name + ".dby"
+        let pa: str = resolve_os_file(rel_a)
+        if fs.exists(pa) == 1:
+            return pa
+        if stem != name:
+            let rel_b: str = root + "/" + stem + ".dby"
+            let pb: str = resolve_os_file(rel_b)
+            if fs.exists(pb) == 1:
+                return pb
+    return ""
+
+pub fn print_resolved_command_roots():
+    for root in command_search_roots():
+        let p: str = resolve_os_file(root)
+        print("COMMAND_ROOT=" + p)

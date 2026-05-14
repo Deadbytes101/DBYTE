@@ -1,0 +1,24 @@
+DByteOS Services Manager
+=======================
+
+The 'services' command manages the lifecycle of simulated userland
+services in DByteOS.
+
+Usage:
+  services list           - List all services defined in /etc/services.dby
+  services status         - Show whether services are currently active
+  services run <name>     - Manually trigger a service action
+  services help           - Show the usage summary
+
+Details:
+  Services in DByteOS are strictly userland-based. They are 
+  initialized during the 'boot' sequence via /sys/init.dby.
+  The service registry is located at /etc/services.dby.
+
+  Status will report 'Not Initialized' if the boot sequence has
+  not been run in the current session.
+
+Persistence:
+  Service state (active/inactive) is tracked via session markers
+  in the /tmp/ directory. Cleaning the workspace will reset
+  all services to their default state.

@@ -1,0 +1,41 @@
+import "./profile.dby" as profile
+import std.fs as fs
+
+pub fn write_event(target_file: str, text: str):
+    let full_path = profile.resolve_path(target_file)
+    let content = ""
+    if fs.exists(full_path) == 1:
+        content = fs.read_text(full_path)
+    
+    let entry = "[EVENT] " + text + "\n"
+    fs.write_text(full_path, content + entry)
+
+pub fn write_boot_event(text: str):
+    write_event("tmp/boot.log", text)
+
+pub fn write_service_event(text: str):
+    write_event("tmp/services.log", text)
+
+pub fn read_log(target_file: str) -> str:
+    let full_path = profile.resolve_path(target_file)
+    if fs.exists(full_path) == 1:
+        return fs.read_text(full_path)
+    return "error: log file not found: " + target_file
+
+pub fn clear_session_logs():
+    let boot_log = profile.resolve_path("tmp/boot.log")
+    let services_log = profile.resolve_path("tmp/services.log")
+    if fs.exists(boot_log) == 1:
+        fs.remove(boot_log)
+        print("  [LOG] boot.log cleared.")
+    if fs.exists(services_log) == 1:
+        fs.remove(services_log)
+        print("  [LOG] services.log cleared.")
+
+pub fn reset_boot_session_logs():
+    let boot_log = profile.resolve_path("tmp/boot.log")
+    let services_log = profile.resolve_path("tmp/services.log")
+    if fs.exists(boot_log) == 1:
+        fs.remove(boot_log)
+    if fs.exists(services_log) == 1:
+        fs.remove(services_log)

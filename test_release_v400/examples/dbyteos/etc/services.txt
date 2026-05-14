@@ -1,0 +1,6 @@
+# DByteOS Service Registry
+# This file lists the names of services that should be initialized at boot.
+# Each service name corresponds to a script or functional unit.
+
+notes
+sysinfo

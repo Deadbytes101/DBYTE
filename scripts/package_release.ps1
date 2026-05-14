@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "3.3.0"
+    [string]$Version = "4.0.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +38,12 @@ Copy-Item ".\LANGUAGE_SPEC.md" $releaseDir
 Copy-Item ".\LICENSE" $releaseDir
 Copy-Item ".\scripts\install.ps1" (Join-Path $releaseDir "scripts\install.ps1")
 Copy-Item ".\benchmarks\BENCHMARKS.md" (Join-Path $releaseDir "benchmarks\BENCHMARKS.md")
-Copy-Item ".\examples" (Join-Path $releaseDir "examples") -Recurse
+
+# Use robust copy to avoid nesting
+New-Item -ItemType Directory -Path (Join-Path $releaseDir "examples") -Force | Out-Null
+Copy-Item ".\examples\*" (Join-Path $releaseDir "examples") -Recurse -Force
+New-Item -ItemType Directory -Path (Join-Path $releaseDir "docs") -Force | Out-Null
+Copy-Item ".\docs\*" (Join-Path $releaseDir "docs") -Recurse -Force
 
 git bundle create $bundlePath --all
 Copy-Item $bundlePath (Join-Path $releaseDir (Split-Path $bundlePath -Leaf))

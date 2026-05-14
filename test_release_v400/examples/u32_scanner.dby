@@ -1,0 +1,25 @@
+import std.binary as bin
+import std.buffer as buf
+import std.fs as fs
+
+let path: str = "example_u32_sample.bin"
+let target: int = 305419896
+
+if fs.exists(path) == 0:
+    fs.write_bytes(path, b"\x78\x56\x34\x12\x00\x78\x56\x34\x12")
+
+let b: buffer = buf.load(path)
+let data: bytes = buf.to_bytes(b)
+let size: int = len(data)
+let count: int = 0
+let i: int = 0
+let limit: int = size - 3
+
+while i < limit:
+    let current: int = bin.u32_le(data, i)
+    if current == target:
+        print("match", i)
+        count = count + 1
+    i = i + 1
+
+print(count)
