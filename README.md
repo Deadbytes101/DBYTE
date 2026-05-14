@@ -9,7 +9,7 @@ language and standard library may still change before a stable 2.x release.
 
 ![DByte Logo](assets/logo/dbyte-logo.png)
 
-Website: https://dbytelang.22web.org
+Website: https://dbytelang.site
 
 DByte — a fast personal low-level scripting language for binary tools, shell
 workflows, and system experiments.
