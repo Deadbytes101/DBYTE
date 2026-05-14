@@ -3,7 +3,10 @@
 
 @shell dbyteos_autopath on
 
+@shell alias help = run bin/help.dby
+
 @shell alias boot = run boot.dby
+
 
 # Navigation/Info (simulated)
 @shell alias dir = ls

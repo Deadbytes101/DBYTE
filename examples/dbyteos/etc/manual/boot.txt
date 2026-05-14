@@ -1,0 +1,14 @@
+NAME
+    boot - initialize the DByteOS userland prototype
+
+SYNOPSIS
+    boot
+
+DESCRIPTION
+    Sets up the initial directory structure for the DByteOS userland
+    prototype (/bin, /etc, /home, /sys, /tmp) and creates the
+    necessary boot marker files. This command is idempotent and safe
+    to run multiple times.
+
+AUTHOR
+    DEADBYTE

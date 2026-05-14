@@ -11,7 +11,7 @@ use dbyte_parser::Parser;
 use dbyte_project::{create_project, find_project_root, load_project, ProjectError};
 use dbyte_typeck::TypeChecker;
 use dbyte_vm::Vm;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
@@ -544,10 +544,6 @@ const SHELL_COMMANDS: &[ShellCommand] = &[
 
 const ALIAS_EXPANSION_LIMIT: usize = 16;
 
-fn shell_builtin_names() -> HashSet<&'static str> {
-    SHELL_COMMANDS.iter().map(|command| command.name).collect()
-}
-
 fn shell_command(name: &str) -> Option<&'static ShellCommand> {
     SHELL_COMMANDS.iter().find(|command| command.name == name)
 }
@@ -566,7 +562,7 @@ fn print_shell_help() {
 struct ShellSession {
     runtime: DByteRuntime,
     aliases: HashMap<String, String>,
-    builtins: HashSet<&'static str>,
+
     dbyteos_autopath: bool,
 }
 
@@ -575,7 +571,6 @@ impl ShellSession {
         Ok(Self {
             runtime: DByteRuntime::with_current_dir(cwd)?,
             aliases: HashMap::new(),
-            builtins: shell_builtin_names(),
             dbyteos_autopath: false,
         })
     }
@@ -652,9 +647,7 @@ impl ShellSession {
 
     fn set_alias(&mut self, name: String, command: String) -> Result<(), String> {
         validate_alias_name(&name)?;
-        if self.builtins.contains(name.as_str()) {
-            return Err(format!("alias cannot override built-in command: {}", name));
-        }
+
         self.aliases.insert(name, command);
         Ok(())
     }

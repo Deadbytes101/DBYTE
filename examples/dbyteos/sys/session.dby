@@ -21,7 +21,6 @@ pub fn resolve_os_file(name: str) -> str:
 
 pub fn command_search_roots() -> list[str]:
     return ["bin", "tmp", "home/deadbyte"]
-
 pub fn path_display() -> str:
     return "PATH=/bin:/tmp:/home/deadbyte"
 
