@@ -1,0 +1,20 @@
+import std.fs as fs
+
+fn resolve(p: str) -> str:
+    if fs.exists("examples/sanctum") == 1:
+        return "examples/sanctum/" + p
+    return p
+
+print("Cleaning workspace artifacts...")
+
+let files: list[str] = ["workspace/sample.bin", "workspace/sample.bin.patched"]
+
+let count: int = 0
+for f in files:
+    let path: str = resolve(f)
+    if fs.exists(path) == 1:
+        print("Removing: " + path)
+        fs.remove(path)
+        count = count + 1
+
+print("Done. Removed", count, "files.")

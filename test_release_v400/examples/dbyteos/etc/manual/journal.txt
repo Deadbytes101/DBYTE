@@ -1,0 +1,26 @@
+DByteOS User Journal
+====================
+
+The 'journal' command provides a persistent text-based log for
+user thoughts and system notes.
+
+Usage:
+  journal read              - Display all recorded entries
+  journal add <text...>     - Create a new entry with the given text
+  journal append <text...>  - Add text to the journal
+  journal clear-demo        - Wipe the entire journal file
+  journal help              - Show this usage summary
+
+Storage:
+  The journal is stored in the user's home directory:
+  /home/deadbyte/journal.txt
+
+Behavior:
+  - Each entry is prefixed with [JOURNAL].
+  - Multiple words in 'add' are automatically joined.
+  - Empty text is rejected.
+
+Persistence:
+  Unlike session logs, the journal is intended for user data.
+  However, for the prototype, it is included in the 'clean' 
+  command's sweep list.

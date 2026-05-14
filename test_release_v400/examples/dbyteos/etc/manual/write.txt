@@ -1,0 +1,13 @@
+NAME
+    write - write text to a file
+
+SYNOPSIS
+    write <file> <text> [text...]
+
+DESCRIPTION
+    Writes the provided text arguments to the specified file,
+    separated by spaces. Like read, it enforces path isolation
+    in the DByteOS userland.
+
+AUTHOR
+    DEADBYTE

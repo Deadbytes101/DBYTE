@@ -1,0 +1,12 @@
+NAME
+    whoami - print the current user name
+
+SYNOPSIS
+    whoami
+
+DESCRIPTION
+    Prints the username of the current session owner.
+    In the DByteOS prototype, this is hardcoded to "deadbyte".
+
+AUTHOR
+    DEADBYTE

@@ -1,0 +1,12 @@
+NAME
+    sysinfo - display system information
+
+SYNOPSIS
+    sysinfo
+
+DESCRIPTION
+    Prints an overview of the current DByteOS environment,
+    including the OS version and prototype status.
+
+AUTHOR
+    DEADBYTE

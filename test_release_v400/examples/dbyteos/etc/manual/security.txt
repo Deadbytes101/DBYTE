@@ -1,0 +1,17 @@
+DByteOS Security Policy
+=======================
+
+DByteOS v3.8.0 adds a deterministic userland permission simulation layer.
+
+Policy:
+  tmp/             read/write allowed
+  home/deadbyte/   read/write allowed
+  etc/             read allowed, write denied
+  sys/             read allowed, write denied
+  bin/             read allowed, write denied
+  ../              denied
+  absolute path    denied
+  unknown root     denied
+
+Denied access is logged to tmp/security.log as deterministic DENY events.
+This is a userland simulation, not kernel security or host OS passthrough.

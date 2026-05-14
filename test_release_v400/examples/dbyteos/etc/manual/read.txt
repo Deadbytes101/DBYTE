@@ -1,0 +1,13 @@
+NAME
+    read - read and print the contents of a file
+
+SYNOPSIS
+    read <file>
+
+DESCRIPTION
+    Reads the file at the specified path and prints its content
+    to standard output. In DByteOS, this command strictly enforces
+    path isolation and prevents escaping the userland sandbox.
+
+AUTHOR
+    DEADBYTE

@@ -1,0 +1,27 @@
+import "../sys/profile.dby" as profile
+import "../sys/security.dby" as security
+import std.fs as fs
+import std.env as env
+
+let args: list[str] = env.args()
+if len(args) == 0:
+    print("usage: touch <path>")
+else:
+    let raw: str = profile.join_args_from(args, 0)
+    
+    if security.is_allowed("write", raw) == 1:
+        let target: str = profile.resolve_user_data_path(raw)
+        if target == "":
+            print("error: touch: path resolution failed:", raw)
+        else:
+            let par: str = profile.parent_rel_prefix(raw)
+            if par != "":
+                let par_full: str = profile.resolve_user_data_path(par)
+                if par_full != "":
+                    if fs.exists(par_full) == 0:
+                        fs.mkdir(par_full)
+            fs.write_text(target, "")
+            print("touch: ok")
+    else:
+        security.log_denied("touch", raw)
+        print(security.denied_message("touch", raw))

@@ -1,0 +1,21 @@
+import std.buffer as buf
+import std.encoding as enc
+import std.fs as fs
+
+let input_path: str = "example_firmware.bin"
+let output_path: str = "example_firmware.patched.bin"
+
+fs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
+
+let image: buffer = buf.load(input_path)
+let offset: int = buf.find(image, b"\xDE\xAD\xBE\xEF")
+
+if offset >= 0:
+    buf.replace(image, offset, b"\x90\x90\x90\x90")
+    buf.save(output_path, image)
+    print("patched", offset)
+else:
+    print("pattern not found")
+
+let patched: bytes = fs.read_bytes(output_path)
+print(enc.hex_encode(patched))

@@ -1,0 +1,10 @@
+import std.fs as fs
+import std.hash as hash
+import std.encoding as enc
+
+let data = b"DByte hashing test"
+fs.write_bytes("test.bin", data)
+
+let content = fs.read_bytes("test.bin")
+let h = hash.sha256(content)
+print("SHA256:", enc.hex_encode(h))

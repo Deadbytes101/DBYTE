@@ -1,0 +1,20 @@
+DByteOS Session Logs
+====================
+
+The 'log' command allows users to inspect the internal events of the 
+current DByteOS session.
+
+Usage:
+  log boot           - Show events recorded during the last boot
+  log services       - Show service initialization and state changes
+  log clear-demo     - Reset session logs (delete from /tmp)
+  log help           - Show this help summary
+
+Persistence:
+  Logs are session-based and stored in the /tmp/ directory. 
+  They are cleared whenever the 'clean' command is run or when
+  manually reset via 'log clear-demo'.
+
+Determinism:
+  Timestamps are omitted to ensure deterministic output across
+  all test environments. Events are recorded in order of occurrence.

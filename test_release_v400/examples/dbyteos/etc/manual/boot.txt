@@ -1,0 +1,23 @@
+DByteOS Boot Sequence
+=====================
+
+The 'boot' command initializes the DByteOS userland environment.
+
+Usage:
+  boot
+
+Actions:
+  1. Verifies the existence of critical system directories:
+     - /bin (Binaries)
+     - /etc (Configuration)
+     - /sys (System Logic)
+     - /home (User Data)
+     - /tmp  (Session State)
+  2. Runs the Init Service layer (/sys/init.dby):
+     - Registers and starts enabled services.
+     - Creates session initialization markers.
+  3. Sets up the session marker in /tmp/.dbyteos_boot_touch.
+
+Note:
+  This command is designed to be idempotent. Running it multiple
+  times will re-verify the environment without causing data loss.

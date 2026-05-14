@@ -1,0 +1,21 @@
+import std.fs as fs
+import std.binary as bin
+import std.env as env
+
+let target: str = "workspace/sample.bin"
+if fs.exists(target) == 0:
+    if fs.exists("examples/sanctum/workspace/sample.bin") == 1:
+        target = "examples/sanctum/workspace/sample.bin"
+
+if fs.exists(target) == 0:
+    fs.write_bytes(target, b"\x78\x56\x34\x12\xEF\xBE\xAD\xDE")
+
+let data: bytes = fs.read_bytes(target)
+if len(data) >= 4:
+    print("u32 dump for:", target)
+    let offset: int = 0
+    while offset + 4 <= len(data):
+        print(offset, "-> 0x", bin.u32_le(data, offset))
+        offset = offset + 4
+else:
+    print("File too small for u32 dump")
