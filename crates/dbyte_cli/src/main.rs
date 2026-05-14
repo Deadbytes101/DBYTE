@@ -423,23 +423,31 @@ fn split_shell_command(line: &str) -> Result<Vec<String>, String> {
     let mut args = Vec::new();
     let mut current = String::new();
     let mut in_quotes = false;
+    let mut word_has_content = false;
 
     for ch in line.chars() {
         match ch {
-            '"' => in_quotes = !in_quotes,
+            '"' => {
+                in_quotes = !in_quotes;
+                word_has_content = true;
+            }
             c if c.is_whitespace() && !in_quotes => {
-                if !current.is_empty() {
+                if word_has_content || !current.is_empty() {
                     args.push(std::mem::take(&mut current));
+                    word_has_content = false;
                 }
             }
-            c => current.push(c),
+            c => {
+                current.push(c);
+                word_has_content = true;
+            }
         }
     }
 
     if in_quotes {
         return Err("unterminated quote".into());
     }
-    if !current.is_empty() {
+    if word_has_content || !current.is_empty() {
         args.push(current);
     }
     Ok(args)

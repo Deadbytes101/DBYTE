@@ -7,7 +7,7 @@ print("Known tmp artifacts only (deterministic sweep list).")
 let tmp_path: str = profile.resolve_path("tmp")
 if fs.exists(tmp_path) == 1:
     print("Cleaning /tmp directory...")
-    let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin", "write_demo.txt", "path with spaces.txt", "verify_v32.txt", "append_test.txt", "mkdir_demo/.mkdir_demo_ok", "touched.txt", "shell_chain.txt", "cwd_write.txt"]
+    let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin", "write_demo.txt", "path with spaces.txt", "verify_v32.txt", "append_test.txt", "mkdir_demo/.mkdir_demo_ok", "touched.txt", "shell_chain.txt", "cwd_write.txt", "../home/deadbyte/notes.txt"]
     for n in sweep:
         let p: str = tmp_path + "/" + n
         if fs.exists(p) == 1:
