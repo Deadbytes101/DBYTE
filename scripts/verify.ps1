@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 3.4.0") {
-    throw "Version mismatch: expected 'DByte 3.4.0', got '$versionOut'"
+if ($versionOut -ne "DByte 3.4.1") {
+    throw "Version mismatch: expected 'DByte 3.4.1', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 3.4.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 3.4.1" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1030,7 +1030,7 @@ Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out ou
 
 Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
-Write-Host "Running Sanctum System Workspace (v3.4.0) smoke tests..."
+Write-Host "Running Sanctum System Workspace (v3.4.1) smoke tests..."
 try {
     $sanctumRoot = Join-Path $repoRoot "examples\sanctum"
     $sanctumStatus = Git-Status-Short
@@ -1079,7 +1079,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v3.4.0) smoke tests..."
+Write-Host "Running DByteOS Command Set (v3.4.1) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 try {
@@ -1136,6 +1136,9 @@ try {
     if ($dbyteosShellManMissing.Code -ne 0) { throw "dbyteos shell man missing failed: $($dbyteosShellManMissing.Text)" }
     Assert-Contains $dbyteosShellManMissing.Text "No manual entry for does-not-exist" "dbyteos shell man missing output"
 
+    $dbyteosShellManTraversal = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man ../sys/session`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellManTraversal.Text "Error: invalid manual topic name '../sys/session'" "dbyteos shell man traversal reject"
+
 
     $dbyteosShellRcFromRoot = Invoke-DbyteInput -Arguments @("shell", "--rc", "examples\dbyteos\.dbyterc") -InputText "status`nquit`n" -WorkingDirectory $repoRoot
     if ($dbyteosShellRcFromRoot.Code -ne 0) { throw "dbyteos shell --rc from repo root failed: $($dbyteosShellRcFromRoot.Text)" }
@@ -1186,7 +1189,7 @@ try {
     $dbyteosSysinfoRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\sysinfo.dby") -WorkingDirectory $repoRoot
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Userland Prototype" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.4.0" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.4.1" "dbyteos sysinfo version"
 
     $dbyteosHomeRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\home.dby") -WorkingDirectory $repoRoot
     if ($dbyteosHomeRoot.Code -ne 0) { throw "dbyteos home from root failed: $($dbyteosHomeRoot.Text)" }
@@ -1258,7 +1261,7 @@ try {
     if ($dbyteosProfileRoot.Code -ne 0) { throw "dbyteos profile from root failed: $($dbyteosProfileRoot.Text)" }
     Assert-Contains $dbyteosProfileRoot.Text "user: deadbyte" "dbyteos profile user"
     Assert-Contains $dbyteosProfileRoot.Text "home_path: examples/dbyteos/home/deadbyte" "dbyteos profile get_home from root"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.4.0" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.4.1" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -1301,10 +1304,10 @@ try {
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.4.0" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.4.1" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.4.0" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.4.1" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
     Assert-Contains $dbyteosCmdShell.Text "mkdir-demo: ok" "dbyteos shell mkdir-demo"
@@ -1421,7 +1424,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "3.4.0"
+$EXPECTED_VERSION = "3.4.1"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
