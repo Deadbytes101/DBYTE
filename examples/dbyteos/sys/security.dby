@@ -48,6 +48,10 @@ pub fn root_allowed_read(raw: str) -> int:
         return 1
     if raw == "bin":
         return 1
+    if raw == "boot.dby":
+        return 1
+    if raw == ".dbyterc":
+        return 1
     if has_prefix(raw, "tmp/") == 1:
         return 1
     if has_prefix(raw, "home/deadbyte/") == 1:

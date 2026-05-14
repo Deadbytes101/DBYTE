@@ -1,4 +1,5 @@
 import "../sys/profile.dby" as profile
+import "../sys/security.dby" as security
 import std.fs as fs
 import std.env as env
 
@@ -11,8 +12,13 @@ else:
     while i < len(args):
         raw = raw + " " + args[i]
         i = i + 1
-    let target: str = profile.resolve_os_file(raw)
-    if fs.exists(target) == 1:
-        print(fs.read_text(target))
+    
+    if security.is_allowed("read", raw) == 1:
+        let target: str = profile.resolve_os_file(raw)
+        if fs.exists(target) == 1:
+            print(fs.read_text(target))
+        else:
+            print("error: cat: no such file or directory:", raw)
     else:
-        print("error: cat: no such file or directory:", raw)
+        security.log_denied("cat", raw)
+        print(security.denied_message("cat", raw))
