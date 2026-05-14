@@ -99,6 +99,8 @@ pub fn denied_message(op: str, raw: str) -> str:
     let reason: str = denial_reason(raw)
     if reason == "path escape":
         return "error: permission denied: path escape " + raw
+    if reason == "absolute path":
+        return "error: permission denied: absolute path " + raw
     return "error: permission denied: " + op + " " + raw
 
 pub fn log_denied(op: str, raw: str):

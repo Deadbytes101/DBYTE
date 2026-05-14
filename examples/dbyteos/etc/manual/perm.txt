@@ -15,3 +15,7 @@ Examples:
   perm read tmp/../etc/system.dby
 
 The command reports ALLOW or DENY without changing file contents.
+
+The following commands are enforced by the system security policy:
+- read, write, append
+- cat, touch, inspect
