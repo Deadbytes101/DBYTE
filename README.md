@@ -5,7 +5,7 @@ byte search, typed integer workloads, and automation scripts that need simple
 syntax with predictable performance.
 
 Public alpha status: DByte is usable for experiments and small tools, but the
-language and standard library may still change before a stable 2.x release.
+language and standard library may still change before a stable x.x.x release.
 
 ![DByte Logo](assets/logo/dbyte-logo.png)
 
