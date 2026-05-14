@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "4.0.0"
+    [string]$Version = "4.0.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +42,13 @@ Copy-Item ".\benchmarks\BENCHMARKS.md" (Join-Path $releaseDir "benchmarks\BENCHM
 # Use robust copy to avoid nesting
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "examples") -Force | Out-Null
 Copy-Item ".\examples\*" (Join-Path $releaseDir "examples") -Recurse -Force
+
+# Clean up examples/dbyteos/tmp junk in the release dir
+$releaseTmp = Join-Path $releaseDir "examples\dbyteos\tmp"
+if (Test-Path $releaseTmp) {
+    Get-ChildItem -Path $releaseTmp -Exclude ".gitignore", ".gitkeep" | Remove-Item -Recurse -Force
+}
+
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "docs") -Force | Out-Null
 Copy-Item ".\docs\*" (Join-Path $releaseDir "docs") -Recurse -Force
 
