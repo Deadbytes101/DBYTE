@@ -1,0 +1,36 @@
+NAME
+    notes - DByteOS basic note manager
+
+SYNOPSIS
+    notes <command> [args...]
+
+DESCRIPTION
+    The notes command provides a simple way to manage text notes
+    within the DByteOS userland environment. All notes are stored
+    in 'home/deadbyte/notes.txt'.
+
+COMMANDS
+    list
+        Display the status and size of the notes file.
+
+    read
+        Output the full contents of the notes file.
+
+    add <text...>
+        Overwrite the notes file with the specified text.
+        A newline is automatically added at the end.
+
+    append <text...>
+        Append the specified text to the end of the notes file.
+        A newline is automatically added at the end.
+
+    clear-demo
+        Reset the notes file to its initial seed state.
+
+    help
+        Display the command usage summary.
+
+EXAMPLES
+    notes add Buy some milk
+    notes append Remember the eggs
+    notes read
