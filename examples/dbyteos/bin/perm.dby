@@ -4,11 +4,12 @@ import std.env as env
 let args: list[str] = env.args()
 
 fn show_help():
-    print("usage: perm <read|write|policy> [path]")
+    print("usage: perm <read|write|append|policy> [path]")
     print("")
     print("commands:")
     print("  read <path>    - simulate read permission")
     print("  write <path>   - simulate write permission")
+    print("  append <path>  - simulate append permission")
     print("  policy         - show deterministic policy summary")
     print("  help           - show this help")
 
@@ -53,5 +54,15 @@ else:
                         else:
                             print("DENY write " + raw + " (" + security.denial_reason(raw) + ")")
                 else:
-                    print("error: unknown perm command: " + cmd)
-                    show_help()
+                    if cmd == "append":
+                        if len(args) < 2:
+                            print("usage: perm append <path>")
+                        else:
+                            let raw: str = args[1]
+                            if security.is_allowed("append", raw) == 1:
+                                print("ALLOW append " + raw)
+                            else:
+                                print("DENY append " + raw + " (" + security.denial_reason(raw) + ")")
+                    else:
+                        print("error: unknown perm command: " + cmd)
+                        show_help()
