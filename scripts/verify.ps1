@@ -1117,7 +1117,16 @@ try {
 
     $dbyteosShellHelp = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "help`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellHelp.Code -ne 0) { throw "dbyteos shell help failed: $($dbyteosShellHelp.Text)" }
-    Assert-Contains $dbyteosShellHelp.Text "--- DByteOS Manual ---" "dbyteos shell help output"
+    Assert-Contains $dbyteosShellHelp.Text "--- DByteOS Manual ---" "dbyteos shell help output (aliased)"
+
+    $dbyteosShellWhichHelpAliased = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellWhichHelpAliased.Text "help: alias -> run bin/help.dby" "which help with alias"
+
+    $dbyteosShellNoRcHelp = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "help`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellNoRcHelp.Text "DByte shell commands:" "shell --no-rc help remains built-in"
+
+    $dbyteosShellNoRcWhichHelp = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellNoRcWhichHelp.Text "help: built-in" "which help without alias remains built-in (autopath blocked)"
 
     $dbyteosShellManWhoami = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man whoami`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellManWhoami.Code -ne 0) { throw "dbyteos shell man whoami failed: $($dbyteosShellManWhoami.Text)" }

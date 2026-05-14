@@ -902,10 +902,10 @@ impl ShellSession {
             return;
         }
         let name = &args[1];
-        if shell_command(name).is_some() {
-            println!("{}: built-in", name);
-        } else if let Some(command) = self.aliases.get(name) {
+        if let Some(command) = self.aliases.get(name) {
             println!("{}: alias -> {}", name, command);
+        } else if shell_command(name).is_some() {
+            println!("{}: built-in", name);
         } else if self.dbyteos_autopath {
             if let Some(script) = resolve_dbyteos_command_script(self.runtime.current_dir(), name) {
                 println!("{}: dbyteos -> {}", name, format_shell_path(&script));
