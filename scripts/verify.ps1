@@ -1136,6 +1136,9 @@ try {
     if ($dbyteosShellManMissing.Code -ne 0) { throw "dbyteos shell man missing failed: $($dbyteosShellManMissing.Text)" }
     Assert-Contains $dbyteosShellManMissing.Text "No manual entry for does-not-exist" "dbyteos shell man missing output"
 
+    $dbyteosShellManTraversal = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man ../sys/session`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellManTraversal.Text "Error: invalid manual topic name '../sys/session'" "dbyteos shell man traversal reject"
+
 
     $dbyteosShellRcFromRoot = Invoke-DbyteInput -Arguments @("shell", "--rc", "examples\dbyteos\.dbyterc") -InputText "status`nquit`n" -WorkingDirectory $repoRoot
     if ($dbyteosShellRcFromRoot.Code -ne 0) { throw "dbyteos shell --rc from repo root failed: $($dbyteosShellRcFromRoot.Text)" }
