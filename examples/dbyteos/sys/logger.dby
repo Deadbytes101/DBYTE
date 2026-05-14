@@ -31,3 +31,11 @@ pub fn clear_session_logs():
     if fs.exists(services_log) == 1:
         fs.remove(services_log)
         print("  [LOG] services.log cleared.")
+
+pub fn reset_boot_session_logs():
+    let boot_log = profile.resolve_path("tmp/boot.log")
+    let services_log = profile.resolve_path("tmp/services.log")
+    if fs.exists(boot_log) == 1:
+        fs.remove(boot_log)
+    if fs.exists(services_log) == 1:
+        fs.remove(services_log)

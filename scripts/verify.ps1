@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 3.7.0") {
-    throw "Version mismatch: expected 'DByte 3.7.0', got '$versionOut'"
+if ($versionOut -ne "DByte 3.7.1") {
+    throw "Version mismatch: expected 'DByte 3.7.1', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 3.7.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 3.7.1" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1079,7 +1079,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v3.7.0) smoke tests..."
+Write-Host "Running DByteOS Command Set (v3.7.1) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 try {
@@ -1189,7 +1189,7 @@ try {
     $dbyteosSysinfoRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\sysinfo.dby") -WorkingDirectory $repoRoot
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Userland Prototype" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.7.0" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.7.1" "dbyteos sysinfo version"
 
     $dbyteosHomeRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\home.dby") -WorkingDirectory $repoRoot
     if ($dbyteosHomeRoot.Code -ne 0) { throw "dbyteos home from root failed: $($dbyteosHomeRoot.Text)" }
@@ -1261,7 +1261,7 @@ try {
     if ($dbyteosProfileRoot.Code -ne 0) { throw "dbyteos profile from root failed: $($dbyteosProfileRoot.Text)" }
     Assert-Contains $dbyteosProfileRoot.Text "user: deadbyte" "dbyteos profile user"
     Assert-Contains $dbyteosProfileRoot.Text "home_path: examples/dbyteos/home/deadbyte" "dbyteos profile get_home from root"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.7.0" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.7.1" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -1304,17 +1304,17 @@ try {
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.7.0" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.7.1" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.7.0" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.7.1" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
     Assert-Contains $dbyteosCmdShell.Text "mkdir-demo: ok" "dbyteos shell mkdir-demo"
     Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
 
-    Write-Host "Running DByteOS Notes Workflow (v3.7.0) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v3.7.1) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -1325,7 +1325,7 @@ try {
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v3.7.0) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v3.7.1) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -1352,7 +1352,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v3.7.0) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v3.7.1) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -1362,13 +1362,74 @@ quit
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
     
-    Write-Host "Running DByteOS Journal/Logger (v3.7.0) smoke tests..."
+    Write-Host "Running DByteOS Journal/Logger (v3.7.1) smoke tests..."
+    $journalPath = Join-Path $dbyteosRoot "home\deadbyte\journal.txt"
+    if (Test-Path $journalPath) {
+        Remove-Item -Force $journalPath
+    }
+    $dbyteosLogClearForMissing = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "clear-demo") -WorkingDirectory $repoRoot
+    if ($dbyteosLogClearForMissing.Code -ne 0) { throw "dbyteos log clear for missing failed: $($dbyteosLogClearForMissing.Text)" }
+    $dbyteosLogMissingBoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "boot") -WorkingDirectory $repoRoot
+    if ($dbyteosLogMissingBoot.Code -ne 0) { throw "dbyteos log boot missing failed: $($dbyteosLogMissingBoot.Text)" }
+    Assert-Contains $dbyteosLogMissingBoot.Text "error: log file not found: tmp/boot.log" "log boot missing deterministic"
+    $dbyteosLogMissingServices = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "services") -WorkingDirectory $repoRoot
+    if ($dbyteosLogMissingServices.Code -ne 0) { throw "dbyteos log services missing failed: $($dbyteosLogMissingServices.Text)" }
+    Assert-Contains $dbyteosLogMissingServices.Text "error: log file not found: tmp/services.log" "log services missing deterministic"
+    $dbyteosJournalMissing = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "read") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalMissing.Code -ne 0) { throw "dbyteos journal read missing failed: $($dbyteosJournalMissing.Text)" }
+    Assert-Equal $dbyteosJournalMissing.Text "error: journal file not found: home/deadbyte/journal.txt" "journal read missing deterministic"
+    $dbyteosJournalClearA = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "clear-demo") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalClearA.Code -ne 0) { throw "dbyteos journal clear first failed: $($dbyteosJournalClearA.Text)" }
+    $dbyteosJournalClearB = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "clear-demo") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalClearB.Code -ne 0) { throw "dbyteos journal clear second failed: $($dbyteosJournalClearB.Text)" }
+    Assert-Equal $dbyteosJournalClearA.Text "journal: reset to seed state." "journal clear-demo banner"
+    Assert-Equal $dbyteosJournalClearA.Text $dbyteosJournalClearB.Text "journal clear-demo idempotent output"
+    Assert-Equal (Get-Content $journalPath -Raw) "[JOURNAL] dbyteos journal seed`n" "journal clear-demo writes seed file"
+    $dbyteosJournalAddMissing = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "add") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalAddMissing.Code -ne 0) { throw "dbyteos journal add missing failed: $($dbyteosJournalAddMissing.Text)" }
+    Assert-Equal $dbyteosJournalAddMissing.Text "usage: journal add <text...>" "journal add missing usage"
+    $dbyteosJournalAppendMissing = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "append") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalAppendMissing.Code -ne 0) { throw "dbyteos journal append missing failed: $($dbyteosJournalAppendMissing.Text)" }
+    Assert-Equal $dbyteosJournalAppendMissing.Text "usage: journal append <text...>" "journal append missing usage"
+    $dbyteosJournalPreserveAdd = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "add", "Preserve", "Me") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalPreserveAdd.Code -ne 0) { throw "dbyteos journal preserve add failed: $($dbyteosJournalPreserveAdd.Text)" }
+    $dbyteosCleanPreserveJournal = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\clean.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosCleanPreserveJournal.Code -ne 0) { throw "dbyteos clean preserve journal failed: $($dbyteosCleanPreserveJournal.Text)" }
+    $dbyteosJournalPreserved = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\journal.dby", "read") -WorkingDirectory $repoRoot
+    if ($dbyteosJournalPreserved.Code -ne 0) { throw "dbyteos journal preserved read failed: $($dbyteosJournalPreserved.Text)" }
+    Assert-Contains $dbyteosJournalPreserved.Text "[JOURNAL] Preserve Me" "clean preserves journal data"
+    $dbyteosBootOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\boot.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosBootOnce.Code -ne 0) { throw "dbyteos deterministic boot first failed: $($dbyteosBootOnce.Text)" }
+    $dbyteosBootLogOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "boot") -WorkingDirectory $repoRoot
+    if ($dbyteosBootLogOnce.Code -ne 0) { throw "dbyteos deterministic boot log first failed: $($dbyteosBootLogOnce.Text)" }
+    $dbyteosServicesLogOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "services") -WorkingDirectory $repoRoot
+    if ($dbyteosServicesLogOnce.Code -ne 0) { throw "dbyteos deterministic services log first failed: $($dbyteosServicesLogOnce.Text)" }
+    $dbyteosBootTwice = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\boot.dby") -WorkingDirectory $repoRoot
+    if ($dbyteosBootTwice.Code -ne 0) { throw "dbyteos deterministic boot second failed: $($dbyteosBootTwice.Text)" }
+    $dbyteosBootLogTwice = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "boot") -WorkingDirectory $repoRoot
+    if ($dbyteosBootLogTwice.Code -ne 0) { throw "dbyteos deterministic boot log second failed: $($dbyteosBootLogTwice.Text)" }
+    $dbyteosServicesLogTwice = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\log.dby", "services") -WorkingDirectory $repoRoot
+    if ($dbyteosServicesLogTwice.Code -ne 0) { throw "dbyteos deterministic services log second failed: $($dbyteosServicesLogTwice.Text)" }
+    Assert-Equal $dbyteosBootLogOnce.Text $dbyteosBootLogTwice.Text "boot repeat boot log deterministic"
+    Assert-Equal $dbyteosServicesLogOnce.Text $dbyteosServicesLogTwice.Text "boot repeat services log deterministic"
+    $dbyteosShellAutopathJournalLog = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which log`nwhich journal`nlog boot`njournal read`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellAutopathJournalLog.Code -ne 0) { throw "dbyteos shell log/journal autopath failed: $($dbyteosShellAutopathJournalLog.Text)" }
+    Assert-Contains $dbyteosShellAutopathJournalLog.Text "log: dbyteos ->" "dbyteos shell log autopath"
+    Assert-Contains $dbyteosShellAutopathJournalLog.Text "journal: dbyteos ->" "dbyteos shell journal autopath"
+    Assert-Contains $dbyteosShellAutopathJournalLog.Text "--- Boot Log ---" "dbyteos shell log boot via autopath"
+    Assert-Contains $dbyteosShellAutopathJournalLog.Text "[JOURNAL] Preserve Me" "dbyteos shell journal read via autopath"
+    $dbyteosShellNoRcJournalLog = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "log boot`njournal read`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellNoRcJournalLog.Code -ne 0) { throw "dbyteos shell no-rc log/journal failed: $($dbyteosShellNoRcJournalLog.Text)" }
+    Assert-Contains $dbyteosShellNoRcJournalLog.Text "ShellError: unknown command: log" "dbyteos shell --no-rc hides log"
+    Assert-Contains $dbyteosShellNoRcJournalLog.Text "ShellError: unknown command: journal" "dbyteos shell --no-rc hides journal"
     $journalInput = @"
 clean
 boot
 log boot
 log services
 journal clear-demo
+journal add ""
+journal append ""
 journal add Hello Journal
 journal read
 journal add Second Entry
@@ -1381,6 +1442,8 @@ quit
     if ($dbyteosJournal.Code -ne 0) { throw "dbyteos journal/logger failed: $($dbyteosJournal.Text)" }
     Assert-Contains $dbyteosJournal.Text "[EVENT] Boot sequence started" "log boot content"
     Assert-Contains $dbyteosJournal.Text "[EVENT] Starting service: notes" "log services content"
+    Assert-Contains $dbyteosJournal.Text "error: cannot add empty journal entry." "journal add quoted empty reject"
+    Assert-Contains $dbyteosJournal.Text "error: cannot append empty journal entry." "journal append quoted empty reject"
     Assert-Contains $dbyteosJournal.Text "journal: entry recorded" "journal add success"
     Assert-Contains $dbyteosJournal.Text "[JOURNAL] Hello Journal" "journal read hello"
     Assert-Contains $dbyteosJournal.Text "[JOURNAL] Second Entry" "journal read second"
@@ -1497,7 +1560,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "3.7.0"
+$EXPECTED_VERSION = "3.7.1"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"

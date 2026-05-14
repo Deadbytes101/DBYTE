@@ -5,6 +5,7 @@ import "./sys/logger.dby" as logger
 import std.fs as fs
 
 print("--------------------------------------------------")
+logger.reset_boot_session_logs()
 logger.write_boot_event("Boot sequence started.")
 print("  ____  ____        _             ___  ____  ")
 print(" |  _ \\| __ ) _   _| |_ ___      / _ \\/ ___| ")
