@@ -505,7 +505,7 @@ $shellRoot = Join-Path $interactiveRoot "shell"
 New-Item -ItemType Directory -Path $shellRoot | Out-Null
 Set-Content -Path (Join-Path $shellRoot "hello.dby") -Value "print(`"shell file ok`")" -NoNewline
 Set-Content -Path (Join-Path $shellRoot "defs.dby") -Value "pub fn from_file(x: int) -> int:`n    return x + 22`n" -NoNewline
-$shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun hello.dby`ncheck hello.dby`nrun defs.dby`n: let y: int = 40`n: print(y + 2)`n: print(from_file(20))`nalias hi = run hello.dby`nwhich help`nwhich hi`nwhich missing`naliases`nhi`nalias run = ls`nunalias hi`nhi`nnot_a_real_cmd`nquit`n"
+$shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun hello.dby`ncheck hello.dby`nrun defs.dby`n: let y: int = 40`n: print(y + 2)`n: print(from_file(20))`nalias hi = run hello.dby`nwhich help`nwhich hi`nwhich missing`naliases`nhi`nunalias hi`nhi`nnot_a_real_cmd`nquit`n"
 $shellBasic = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellInput
 if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.Text)" }
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
@@ -521,7 +521,7 @@ Assert-Contains $shellBasic.Text "help: built-in" "shell which built-in"
 Assert-Contains $shellBasic.Text "hi: alias -> run hello.dby" "shell which alias"
 Assert-Contains $shellBasic.Text "missing: not found" "shell which missing"
 Assert-Contains $shellBasic.Text "hi = run hello.dby" "shell aliases list"
-Assert-Contains $shellBasic.Text "ShellError: alias cannot override built-in command: run" "shell alias built-in collision"
+
 Assert-Contains $shellBasic.Text "ShellError: unknown command: hi" "shell unalias removes alias"
 Assert-Contains $shellBasic.Text "ShellError: unknown command: not_a_real_cmd" "shell unknown command"
 
@@ -576,13 +576,7 @@ if ($shellNoRc.Code -ne 0) { throw "shell no-rc command failed: $($shellNoRc.Tex
 Assert-Contains $shellNoRc.Text "ShellError: unknown command: hello" "shell no-rc skips aliases"
 Assert-Contains $shellNoRc.Text "undefined variable" "shell no-rc skips rc"
 
-$shellBadAliasRoot = Join-Path $interactiveRoot "shell-bad-alias-rc"
-New-Item -ItemType Directory -Path $shellBadAliasRoot | Out-Null
-Set-Content -Path (Join-Path $shellBadAliasRoot ".dbyterc") -Value "let ok: int = 1`n@shell alias cd = ls" -NoNewline
-$shellBadAlias = Invoke-DbyteInput -Arguments @("shell") -InputText "quit`n" -WorkingDirectory $shellBadAliasRoot
-if ($shellBadAlias.Code -eq 0) { throw "shell bad alias rc unexpectedly passed: $($shellBadAlias.Text)" }
-Assert-Contains $shellBadAlias.Text "ShellError:" "shell rc alias collision"
-Assert-Contains $shellBadAlias.Text "line 2: alias cannot override built-in command: cd" "shell rc alias collision line number"
+
 
 $shellExamples = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cd examples`nrun hello.dby`ncheck hello.dby`nquit`n"
 if ($shellExamples.Code -ne 0) { throw "shell examples cwd command failed: $($shellExamples.Text)" }
@@ -1121,6 +1115,28 @@ try {
     Assert-Contains $dbyteosShell.Text "--- DByteOS System Status ---" "dbyteos shell status alias"
     Assert-Contains $dbyteosShell.Text "sweep complete" "dbyteos shell clean alias sweep"
 
+    $dbyteosShellHelp = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "help`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellHelp.Code -ne 0) { throw "dbyteos shell help failed: $($dbyteosShellHelp.Text)" }
+    Assert-Contains $dbyteosShellHelp.Text "--- DByteOS Manual ---" "dbyteos shell help output (aliased)"
+
+    $dbyteosShellWhichHelpAliased = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellWhichHelpAliased.Text "help: alias -> run bin/help.dby" "which help with alias"
+
+    $dbyteosShellNoRcHelp = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "help`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellNoRcHelp.Text "DByte shell commands:" "shell --no-rc help remains built-in"
+
+    $dbyteosShellNoRcWhichHelp = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosShellNoRcWhichHelp.Text "help: built-in" "which help without alias remains built-in (autopath blocked)"
+
+    $dbyteosShellManWhoami = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man whoami`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellManWhoami.Code -ne 0) { throw "dbyteos shell man whoami failed: $($dbyteosShellManWhoami.Text)" }
+    Assert-Contains $dbyteosShellManWhoami.Text "NAME`n    whoami - print the current user name" "dbyteos shell man whoami output"
+
+    $dbyteosShellManMissing = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man does-not-exist`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellManMissing.Code -ne 0) { throw "dbyteos shell man missing failed: $($dbyteosShellManMissing.Text)" }
+    Assert-Contains $dbyteosShellManMissing.Text "No manual entry for does-not-exist" "dbyteos shell man missing output"
+
+
     $dbyteosShellRcFromRoot = Invoke-DbyteInput -Arguments @("shell", "--rc", "examples\dbyteos\.dbyterc") -InputText "status`nquit`n" -WorkingDirectory $repoRoot
     if ($dbyteosShellRcFromRoot.Code -ne 0) { throw "dbyteos shell --rc from repo root failed: $($dbyteosShellRcFromRoot.Text)" }
     Assert-Contains $dbyteosShellRcFromRoot.Text "--- DByteOS System Status ---" "dbyteos shell rc from repo root"
@@ -1130,9 +1146,9 @@ try {
     Assert-Contains $dbyteosShellWhichCat.Text "cat: dbyteos ->" "dbyteos shell which cat autopath"
     Assert-Contains $dbyteosShellWhichCat.Text "examples/dbyteos/bin/cat.dby" "dbyteos shell which cat resolved path"
 
-    $dbyteosShellWhichHelp = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
-    if ($dbyteosShellWhichHelp.Code -ne 0) { throw "dbyteos shell which help failed: $($dbyteosShellWhichHelp.Text)" }
-    Assert-Contains $dbyteosShellWhichHelp.Text "help: built-in" "dbyteos shell which built-in"
+    $dbyteosShellWhichCd = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which cd`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellWhichCd.Code -ne 0) { throw "dbyteos shell which cd failed: $($dbyteosShellWhichCd.Text)" }
+    Assert-Contains $dbyteosShellWhichCd.Text "cd: built-in" "dbyteos shell which built-in"
 
     $dbyteosShellInspectArgs = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "inspect boot.dby`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellInspectArgs.Code -ne 0) { throw "dbyteos shell inspect args failed: $($dbyteosShellInspectArgs.Text)" }

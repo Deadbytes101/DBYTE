@@ -34,6 +34,45 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
+## DByteOS Userland Workflow
+
+1. **Launch the DByteOS Shell**:
+
+```powershell
+dbyte shell --rc examples/dbyteos/.dbyterc
+```
+
+This configures the session environment and activates autopath resolving.
+
+2. **Explore the Manual**:
+
+```bash
+# See the list of available commands
+dbyte-shell> help
+
+# Read the manual for a specific command
+dbyte-shell> man boot
+dbyte-shell> man whoami
+```
+
+3. **Initialize the Environment**:
+
+```bash
+# Setup /bin, /etc, /home, /sys, /tmp and config/workspace
+dbyte-shell> boot
+```
+
+4. **Interact**:
+
+```bash
+dbyte-shell> whoami
+dbyte-shell> sysinfo
+dbyte-shell> path
+dbyte-shell> env
+dbyte-shell> mkdir-demo
+dbyte-shell> ls-sys
+```
+
 ## Quick Start
 
 ```powershell
