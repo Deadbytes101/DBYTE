@@ -5,11 +5,11 @@ byte search, typed integer workloads, and automation scripts that need simple
 syntax with predictable performance.
 
 Public alpha status: DByte is usable for experiments and small tools, but the
-language and standard library may still change before a stable 2.x release.
+language and standard library may still change before a stable x.x.x release.
 
 ![DByte Logo](assets/logo/dbyte-logo.png)
 
-Website: https://dbytelang.22web.org
+Website: https://dbytelang.site
 
 DByte — a fast personal low-level scripting language for binary tools, shell
 workflows, and system experiments.
@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.0.0)
+## DByteOS Alpha Userland (v4.0.1)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
