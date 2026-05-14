@@ -426,5 +426,3 @@ Date: 2026-05-11
 v2.2.1 is not a performance release. It hardens the embeddable runtime API,
 including capture isolation, `.dbyterc` behavior, cwd handling, and rollback
 coverage.
-
-
