@@ -1,9 +1,11 @@
 import "./sys/profile.dby" as profile
 import "./etc/system.dby" as system
 import "./sys/init.dby" as init
+import "./sys/logger.dby" as logger
 import std.fs as fs
 
 print("--------------------------------------------------")
+logger.write_boot_event("Boot sequence started.")
 print("  ____  ____        _             ___  ____  ")
 print(" |  _ \\| __ ) _   _| |_ ___      / _ \\/ ___| ")
 print(" | | | |  _ \\| | | | __/ _ \\    | | | \\___ \\ ")
@@ -21,6 +23,7 @@ print("--------------------------------------------------")
 
 # Boot checks
 print("Checking system integrity...")
+logger.write_boot_event("Integrity check initiated.")
 let dirs: list[str] = ["bin", "etc", "sys", "home", "tmp"]
 for d in dirs:
     let path: str = profile.resolve_path(d)
@@ -30,9 +33,11 @@ for d in dirs:
         print("  [!!] /" + d + " MISSING")
 
 print("")
+logger.write_boot_event("Handing over to init system.")
 init.run()
 
 print("System initialization complete.")
+logger.write_boot_event("Boot sequence completed successfully.")
 let touch_path: str = profile.resolve_path("tmp") + "/.dbyteos_boot_touch"
 fs.write_text(touch_path, "dbyteos boot ok\n")
 print("  [OK] /tmp/.dbyteos_boot_touch (session marker)")

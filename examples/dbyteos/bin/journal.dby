@@ -1,0 +1,68 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+import std.env as env
+
+let args = env.args()
+let journal_path = profile.resolve_path("home/deadbyte/journal.txt")
+
+fn show_help():
+    print("usage: journal <command> [args...]")
+    print("")
+    print("commands:")
+    print("  read              - read all journal entries")
+    print("  add <text...>     - add a new entry")
+    print("  append <text...>  - append text to last entry (simulated as add for now)")
+    print("  clear-demo        - clear the journal")
+    print("  help              - show this help")
+
+if len(args) < 1:
+    show_help()
+else:
+    let cmd = args[0]
+    if cmd == "read":
+        if fs.exists(journal_path) == 1:
+            print("--- User Journal ---")
+            print(fs.read_text(journal_path))
+        else:
+            print("error: journal file not found.")
+    else:
+        let is_write = 0
+        if cmd == "add":
+            is_write = 1
+        if cmd == "append":
+            is_write = 1
+            
+        if is_write == 1:
+            if len(args) < 2:
+                print("error: journal " + cmd + " expects text content.")
+            else:
+                let text = ""
+                let i = 1
+                while i < len(args):
+                    if i > 1:
+                        text = text + " "
+                    text = text + args[i]
+                    i = i + 1
+                
+                if text == "":
+                    print("error: cannot add empty journal entry.")
+                else:
+                    let content = ""
+                    if fs.exists(journal_path) == 1:
+                        content = fs.read_text(journal_path)
+                    
+                    let entry = "[JOURNAL] " + text + "\n"
+                    fs.write_text(journal_path, content + entry)
+                    print("journal: entry recorded.")
+        else:
+            if cmd == "clear-demo":
+                if fs.exists(journal_path) == 1:
+                    fs.remove(journal_path)
+                    print("journal: file removed.")
+                print("journal: reset to empty state.")
+            else:
+                if cmd == "help":
+                    show_help()
+                else:
+                    print("error: unknown journal command: " + cmd)
+                    show_help()

@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 3.6.0") {
-    throw "Version mismatch: expected 'DByte 3.6.0', got '$versionOut'"
+if ($versionOut -ne "DByte 3.7.0") {
+    throw "Version mismatch: expected 'DByte 3.7.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -511,7 +511,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 3.6.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 3.7.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1030,7 +1030,7 @@ Assert-Equal (Bytes-Hex $patchOffOutDst) "00cafebabe00" "patch --offset --out ou
 
 Assert-GitStatus-Unchanged $personalUxStatus "personal tools UX cleanliness"
 
-Write-Host "Running Sanctum System Workspace (v3.6.0) smoke tests..."
+Write-Host "Running Sanctum System Workspace (v3.7.0) smoke tests..."
 try {
     $sanctumRoot = Join-Path $repoRoot "examples\sanctum"
     $sanctumStatus = Git-Status-Short
@@ -1079,7 +1079,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v3.6.0) smoke tests..."
+Write-Host "Running DByteOS Command Set (v3.7.0) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 try {
@@ -1189,7 +1189,7 @@ try {
     $dbyteosSysinfoRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\sysinfo.dby") -WorkingDirectory $repoRoot
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Userland Prototype" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.6.0" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 3.7.0" "dbyteos sysinfo version"
 
     $dbyteosHomeRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\home.dby") -WorkingDirectory $repoRoot
     if ($dbyteosHomeRoot.Code -ne 0) { throw "dbyteos home from root failed: $($dbyteosHomeRoot.Text)" }
@@ -1261,7 +1261,7 @@ try {
     if ($dbyteosProfileRoot.Code -ne 0) { throw "dbyteos profile from root failed: $($dbyteosProfileRoot.Text)" }
     Assert-Contains $dbyteosProfileRoot.Text "user: deadbyte" "dbyteos profile user"
     Assert-Contains $dbyteosProfileRoot.Text "home_path: examples/dbyteos/home/deadbyte" "dbyteos profile get_home from root"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.6.0" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 3.7.0" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -1304,17 +1304,17 @@ try {
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.6.0" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 3.7.0" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.6.0" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 3.7.0" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
     Assert-Contains $dbyteosCmdShell.Text "mkdir-demo: ok" "dbyteos shell mkdir-demo"
     Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
 
-    Write-Host "Running DByteOS Notes Workflow (v3.6.0) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v3.7.0) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -1325,7 +1325,7 @@ try {
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v3.6.0) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v3.7.0) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -1352,7 +1352,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v3.6.0) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v3.7.0) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -1361,6 +1361,30 @@ quit
     Assert-Contains $dbyteosInitServices.Text "System State: Initialized" "services status ok"
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
+    
+    Write-Host "Running DByteOS Journal/Logger (v3.7.0) smoke tests..."
+    $journalInput = @"
+clean
+boot
+log boot
+log services
+journal clear-demo
+journal add Hello Journal
+journal read
+journal add Second Entry
+journal read
+journal clear-demo
+clean
+quit
+"@
+    $dbyteosJournal = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "$journalInput`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosJournal.Code -ne 0) { throw "dbyteos journal/logger failed: $($dbyteosJournal.Text)" }
+    Assert-Contains $dbyteosJournal.Text "[EVENT] Boot sequence started" "log boot content"
+    Assert-Contains $dbyteosJournal.Text "[EVENT] Starting service: notes" "log services content"
+    Assert-Contains $dbyteosJournal.Text "journal: entry recorded" "journal add success"
+    Assert-Contains $dbyteosJournal.Text "[JOURNAL] Hello Journal" "journal read hello"
+    Assert-Contains $dbyteosJournal.Text "[JOURNAL] Second Entry" "journal read second"
+    Assert-Contains $dbyteosJournal.Text "workspace sweep complete" "journal clean sweep"
 
     Assert-Contains $dbyteosCmdShell.Text "workspace sweep complete" "dbyteos shell clean sweep"
 
@@ -1473,7 +1497,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "3.6.0"
+$EXPECTED_VERSION = "3.7.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
