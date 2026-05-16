@@ -35,4 +35,4 @@ which <cmd>
 ```
 
 ---
-[Home](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/README.md) | [Alpha Status](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_ALPHA.md) | [Commands](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_COMMANDS.md) | [Security](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_SECURITY.md)
+[Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Commands](DBYTEOS_COMMANDS.md) | [Security](DBYTEOS_SECURITY.md)
