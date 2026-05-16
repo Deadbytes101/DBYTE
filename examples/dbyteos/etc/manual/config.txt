@@ -20,3 +20,4 @@ Keys:
 Notes:
   Values are loaded from committed DByte scripts.
   config does not write files or persist changes.
+  system.prompt is applied to the DByteOS shell when .dbyterc is loaded.

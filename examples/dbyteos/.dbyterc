@@ -2,6 +2,7 @@
 # Command lookup uses @shell dbyteos_autopath (see examples/dbyteos/sys/session.dby).
 
 @shell dbyteos_autopath on
+@shell dbyteos_prompt on
 
 @shell alias help = run bin/help.dby
 

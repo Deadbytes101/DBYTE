@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.8.1)
+## DByteOS Alpha Userland (v4.9.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -44,7 +44,8 @@ DByteOS is a host-runnable personal computing environment built on the DByte run
 dbyte shell --rc examples/dbyteos/.dbyterc
 ```
 
-This configures the session environment and activates autopath resolving.
+This configures the session environment, activates autopath resolving, and
+loads the DByteOS prompt from `system.prompt`.
 
 2. **Explore the System**:
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)

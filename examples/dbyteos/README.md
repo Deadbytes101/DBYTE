@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.8.1)
+# DByteOS Alpha Userland (v4.9.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -39,6 +39,7 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
    ```
 2. Run `welcome` to see the onboarding entry point.
 3. Type `profile show`, `config show`, `snapshot`, `getting-started`, `commands`, `man-index`, or `man <topic>` to explore the environment.
+4. Use `prefs set system.prompt dbyteos>` to change the next shell prompt, and `prefs reset-demo` to restore the default demo state.
 
 ## Package Smoke
 
