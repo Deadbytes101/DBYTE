@@ -29,6 +29,7 @@ Inside the DByte shell:
 welcome
 profile show
 config show
+snapshot
 getting-started
 commands
 man-index
@@ -48,6 +49,7 @@ quit
 - `welcome` prints the onboarding entry point.
 - `profile show` prints the deterministic profile summary.
 - `config show` prints read-only preferences.
+- `snapshot` prints the read-only system summary.
 - `getting-started` prints the first-run checklist.
 - `commands` prints commands grouped by category.
 - `man-index` lists manual topics.
