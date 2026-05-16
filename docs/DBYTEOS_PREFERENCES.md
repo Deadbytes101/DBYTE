@@ -1,0 +1,37 @@
+# DByteOS Mutable Preferences
+
+**Version:** 4.7.0
+**Subsystem:** User Configuration
+
+## Overview
+DByteOS `v4.7.0` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
+
+Because DByteOS emphasizes determinism and strict security boundaries, standard configurations (`etc/config.dby`, `etc/system.dby`) remain read-only. The Mutable Preferences subsystem is strictly sandboxed.
+
+## Storage
+User preferences are stored as a DByte-native module at:
+`home/deadbyte/preferences.dby`
+
+This file is part of the user's workspace and is preserved during `clean` operations. It is written dynamically by the `sys/preferences.dby` API.
+
+## Safe Writable Keys
+To prevent arbitrary configuration injection and maintain system health, preferences are restricted to a strict allowlist of keys and values.
+
+| Key | Description | Allowed Values |
+| --- | --- | --- |
+| `ui.theme` | Visual theme | `default`, `dark`, `light` |
+| `system.prompt` | CLI prompt (Overlay) | `dbyte-shell>`, `dbyteos>`, `deadbyte>` |
+| `user.display_name` | Name shown in profile | `deadbyte`, `guest`, `operator` |
+
+*Note: Writable `system.prompt` is currently an overlay variable; the actual interactive shell prompt will not dynamically change until parser rules support it.*
+
+## Command Line Interface
+The `prefs` command manages these settings:
+- `prefs show` - View all preferences
+- `prefs get <key>` - Get a specific preference
+- `prefs set <key> <value>` - Set a safe preference
+- `prefs reset-demo` - Reset preferences to their default state
+
+## Security and Diagnostics
+- **Anti-Injection:** `sys/preferences.dby` validates all sets against the strict allowlist before generating the `preferences.dby` file.
+- **Diagnostics:** `doctor` and `check-system` now verify the existence and integrity of the preferences file.

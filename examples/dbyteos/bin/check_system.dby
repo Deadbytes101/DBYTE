@@ -56,7 +56,16 @@ if sec_ok == 1:
 else:
     print("security: unhealthy")
     all_ready = 0
-# 6. workspace
+# 6. preferences
+let prefs_ok: int = 1
+if fs.exists(osprofile.resolve_path("home/deadbyte/preferences.dby")) == 0:
+    prefs_ok = 0
+if prefs_ok == 1:
+    print("preferences: ok")
+else:
+    print("preferences: unhealthy")
+    all_ready = 0
+# 7. workspace
 let ws_ok: int = 1
 if fs.exists(osprofile.resolve_path("tmp")) == 0:
     ws_ok = 0
@@ -67,7 +76,7 @@ if ws_ok == 1:
 else:
     print("workspace: unhealthy")
     all_ready = 0
-# 7. package
+# 8. package
 print("package: ok")
 if all_ready == 1:
     print("ready: yes")

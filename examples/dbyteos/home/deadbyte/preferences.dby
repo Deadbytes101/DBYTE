@@ -1,0 +1,3 @@
+pub let ui_theme: str = "default"
+pub let system_prompt: str = "dbyte-shell>"
+pub let user_display_name: str = "deadbyte"
