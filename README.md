@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.1.1)
+## DByteOS Alpha Userland (v4.2.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -49,6 +49,7 @@ This configures the session environment and activates autopath resolving.
 2. **Explore the System**:
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
+- [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
@@ -56,6 +57,10 @@ This configures the session environment and activates autopath resolving.
 3. **Initialize & Interact**:
 
 ```bash
+dbyte-shell> welcome
+dbyte-shell> getting-started
+dbyte-shell> commands
+dbyte-shell> man-index
 dbyte-shell> boot
 dbyte-shell> help
 dbyte-shell> status
@@ -74,11 +79,16 @@ dbyte-shell> journal read
 Expected first commands inside the package shell:
 
 ```txt
+welcome
+getting-started
+commands
+man-index
 boot
 help
 status
 sysinfo
 which read
+man index
 man perm
 quit
 ```

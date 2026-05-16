@@ -26,11 +26,16 @@ From the extracted package root:
 Inside the DByte shell:
 
 ```txt
+welcome
+getting-started
+commands
+man-index
 boot
 help
 status
 sysinfo
 which read
+man index
 man perm
 quit
 ```
@@ -38,10 +43,15 @@ quit
 ## Expected success signals
 
 - `dbyte.exe --version` prints the packaged version.
+- `welcome` prints the onboarding entry point.
+- `getting-started` prints the first-run checklist.
+- `commands` prints commands grouped by category.
+- `man-index` lists manual topics.
 - `boot` prints the DByteOS banner and first-run guide.
 - `help` shows grouped command discovery.
 - `status` shows the system summary and filesystem integrity.
 - `which read` resolves through DByteOS autopath.
+- `man index` opens the manual topic index.
 - `man perm` opens the permission command manual.
 
 ## Determinism notes

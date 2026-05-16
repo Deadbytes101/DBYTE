@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.1.1)
+# DByteOS Alpha Userland (v4.2.0)
 
 Welcome to the Alpha release of DByteOS.
 

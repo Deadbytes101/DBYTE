@@ -1,0 +1,17 @@
+DByteOS Getting Started
+
+The getting-started command prints a deterministic first-run checklist.
+It guides a new user through boot, discovery, files, notes, security, and services.
+
+Usage:
+  getting-started
+
+Recommended flow:
+  boot
+  status
+  commands
+  man-index
+  which read
+  man perm
+  notes list
+  services status

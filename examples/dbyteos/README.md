@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.1.1)
+# DByteOS Alpha Userland (v4.2.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -17,6 +17,10 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
 | `touch` | Create/update files |
 | `inspect` | View file metadata |
 | `man` | View manual pages |
+| `welcome` | Show onboarding entry point |
+| `getting-started` | Show first-run checklist |
+| `commands` | Browse commands by category |
+| `man-index` | List manual topics |
 | `notes` | Manage personal notes |
 | `journal` | Personal event logger |
 | `services` | Manage system services |
@@ -30,8 +34,8 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
    ```powershell
    ./dbyte.exe shell --rc examples/dbyteos/.dbyterc
    ```
-2. Run `boot` to see the first-run guide.
-3. Type `help`, `status`, `which read`, or `man <topic>` to explore the environment.
+2. Run `welcome` to see the onboarding entry point.
+3. Type `getting-started`, `commands`, `man-index`, or `man <topic>` to explore the environment.
 
 ## Package Smoke
 
@@ -45,11 +49,16 @@ From an extracted zip release:
 Inside the shell, run:
 
 ```txt
+welcome
+getting-started
+commands
+man-index
 boot
 help
 status
 sysinfo
 which read
+man index
 man perm
 quit
 ```
@@ -60,4 +69,4 @@ quit
 - **Determinism**: All system logs (`boot.log`, `security.log`) are reproducible.
 
 ---
-[Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
+[Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
