@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.3.1)
+# DByteOS Alpha Userland (v4.4.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -26,6 +26,7 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
 | `services` | Manage system services |
 | `status` | Show system summary |
 | `profile` | Show profile identity |
+| `config` | Show read-only preferences |
 | `clean` | Purge temporary artifacts |
 | `boot` | Re-run system boot |
 
@@ -36,7 +37,7 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
    ./dbyte.exe shell --rc examples/dbyteos/.dbyterc
    ```
 2. Run `welcome` to see the onboarding entry point.
-3. Type `profile show`, `getting-started`, `commands`, `man-index`, or `man <topic>` to explore the environment.
+3. Type `profile show`, `config show`, `getting-started`, `commands`, `man-index`, or `man <topic>` to explore the environment.
 
 ## Package Smoke
 
@@ -52,6 +53,7 @@ Inside the shell, run:
 ```txt
 welcome
 profile show
+config show
 getting-started
 commands
 man-index
@@ -71,4 +73,4 @@ quit
 - **Determinism**: All system logs (`boot.log`, `security.log`) are reproducible.
 
 ---
-[Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
+[Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Config](../../docs/DBYTEOS_CONFIG.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)

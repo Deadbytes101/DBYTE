@@ -1,34 +1,30 @@
+import "./config.dby" as config
 import std.fs as fs
 
 # Environment Helper
 pub fn resolve_path(p: str) -> str:
-    # If running from repo root
-    if fs.exists("examples/dbyteos") == 1:
-        return "examples/dbyteos/" + p
-    # If running from inside dbyteos
-    return p
+    return config.resolve_path(p)
 
 pub fn get_user() -> str:
-    return "deadbyte"
+    return config.get("user.name")
 
 pub fn get_home() -> str:
-    let p: str = "home/deadbyte"
-    return resolve_path(p)
+    return config.get("user.home")
 
 pub fn get_home_rel() -> str:
-    return "home/deadbyte"
+    return config.get_raw("user.home")
 
 pub fn get_shell() -> str:
     return "dbyte shell"
 
 pub fn get_mode() -> str:
-    return "alpha-userland"
+    return config.get("system.mode")
 
 pub fn get_theme() -> str:
-    return "default"
+    return config.get("ui.theme")
 
 pub fn get_prompt() -> str:
-    return "dbyte-shell>"
+    return config.get("system.prompt")
 
 pub fn resolve_os_file(name: str) -> str:
     if fs.exists(name) == 1:

@@ -4,7 +4,7 @@ DByteOS provides a set of userland tools accessible via the shell autopath.
 
 ## Start Here
 
-Use `welcome` for the first screen, `profile show` for identity, `getting-started` for the first-run checklist, `commands` for grouped discovery, `man-index` for manual topics, and `which <command>` to inspect autopath resolution.
+Use `welcome` for the first screen, `profile show` for identity, `config show` for read-only preferences, `getting-started` for the first-run checklist, `commands` for grouped discovery, `man-index` for manual topics, and `which <command>` to inspect autopath resolution.
 
 ## Stable Command Set
 
@@ -30,12 +30,14 @@ Use `welcome` for the first screen, `profile show` for identity, `getting-starte
 | `boot` | Re-run system boot | No |
 | `status` | Show system summary | No |
 | `profile` | Show profile identity | No |
+| `config` | Show read-only preferences | No |
 
 ## Discovery Flow
 
 ```txt
 welcome
 profile show
+config show
 getting-started
 commands
 man-index
@@ -66,4 +68,4 @@ Common aliases are defined in `.dbyterc` to provide a familiar experience:
 ```
 
 ---
-[Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)
+[Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Config](DBYTEOS_CONFIG.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)
