@@ -3,9 +3,11 @@ import "../etc/system.dby" as system
 import std.fs as fs
 
 print("--- DByteOS System Status ---")
-print("OS:      ", system.os_version)
-print("Host:    ", system.hostname)
-print("User:    ", profile.get_user())
+print("Summary:")
+print("  OS:      DByte ", system.os_version)
+print("  Host:    ", system.hostname)
+print("  User:    ", profile.get_user())
+print("  Home:    ", profile.get_home())
 print("")
 
 let dirs: list[str] = ["bin", "etc", "sys", "home", "tmp"]
@@ -20,4 +22,5 @@ for d in dirs:
 print("")
 print("Memory:  Simulated")
 print("Uptime:  Simulated")
+print("Next:    help | man <topic> | which <command>")
 print("-----------------------------")

@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.0.1)
+## DByteOS Alpha Userland (v4.1.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -51,14 +51,36 @@ This configures the session environment and activates autopath resolving.
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
+- [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
 
 3. **Initialize & Interact**:
 
 ```bash
 dbyte-shell> boot
+dbyte-shell> help
 dbyte-shell> status
+dbyte-shell> which read
 dbyte-shell> notes list
 dbyte-shell> journal read
+```
+
+4. **Smoke-test a zip release**:
+
+```powershell
+.\dbyte.exe --version
+.\dbyte.exe shell --rc examples/dbyteos/.dbyterc
+```
+
+Expected first commands inside the package shell:
+
+```txt
+boot
+help
+status
+sysinfo
+which read
+man perm
+quit
 ```
 
 ## Quick Start

@@ -2,6 +2,10 @@
 
 DByteOS provides a set of userland tools accessible via the shell autopath.
 
+## Start Here
+
+Use `boot` for the first-run guide, `help` for grouped command discovery, `status` for a system summary, and `which <command>` to inspect autopath resolution.
+
 ## Stable Command Set
 
 | Command | Purpose | Enforcement |
@@ -20,7 +24,17 @@ DByteOS provides a set of userland tools accessible via the shell autopath.
 | `perm` | Check security policy | No |
 | `clean` | Purge temporary artifacts | No |
 | `boot` | Re-run system boot | No |
-| `status` | Show system information | No |
+| `status` | Show system summary | No |
+
+## Discovery Flow
+
+```txt
+help
+status
+which read
+man perm
+path which notes
+```
 
 ## Shell Interaction
 
