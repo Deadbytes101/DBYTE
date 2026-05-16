@@ -1,6 +1,6 @@
-# DByteOS Package Smoke Guide
+# DByteOS Personal Alpha Package Smoke Guide
 
-DByteOS release packages include the DByte executable, examples, documentation, and the Alpha userland so a zip download can be smoke-tested without a source checkout.
+DByteOS release packages include the DByte executable, examples, documentation, and the Personal Alpha userland so a zip download can be smoke-tested without a source checkout.
 
 ## Package contents
 
@@ -26,10 +26,15 @@ From the extracted package root:
 Inside the DByte shell:
 
 ```txt
+boot
 welcome
+check-system
+doctor
+prefs set system.prompt dbyteos>
+snapshot
+prefs reset-demo
 profile show
 config show
-snapshot
 getting-started
 commands
 man-index
@@ -46,12 +51,15 @@ quit
 ## Expected success signals
 
 - `dbyte.exe --version` prints the packaged version.
+- `boot` initializes the userland and writes deterministic session logs.
 - `welcome` prints the onboarding entry point.
-- `profile show` prints the deterministic profile summary.
-- `config show` prints read-only preferences.
+- `check-system` verifies the package is ready for interactive use.
+- `doctor` prints the full system health report.
 - `prefs set system.prompt dbyteos>` changes the next DByteOS shell prompt.
 - `prefs reset-demo` restores the default DByteOS shell prompt.
 - `snapshot` prints the read-only system summary.
+- `profile show` prints the deterministic profile summary.
+- `config show` prints read-only preferences.
 - `getting-started` prints the first-run checklist.
 - `commands` prints commands grouped by category.
 - `man-index` lists manual topics.

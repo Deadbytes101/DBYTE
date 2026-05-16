@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.9.1)
+# DByteOS Personal Alpha (v5.0.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -53,10 +53,15 @@ From an extracted zip release:
 Inside the shell, run:
 
 ```txt
+boot
 welcome
+check-system
+doctor
+prefs set system.prompt dbyteos>
+snapshot
+prefs reset-demo
 profile show
 config show
-snapshot
 getting-started
 commands
 man-index
@@ -76,4 +81,4 @@ quit
 - **Determinism**: All system logs (`boot.log`, `security.log`) are reproducible.
 
 ---
-[Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Config](../../docs/DBYTEOS_CONFIG.md) | [Snapshot](../../docs/DBYTEOS_SNAPSHOT.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
+[Personal Alpha](../../docs/DBYTEOS_PERSONAL_ALPHA.md) | [Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Config](../../docs/DBYTEOS_CONFIG.md) | [Snapshot](../../docs/DBYTEOS_SNAPSHOT.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
