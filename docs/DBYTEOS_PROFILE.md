@@ -28,7 +28,7 @@ profile prompt
 `profile` and `profile show` print the full summary. The other modes print one
 field for scripting and package smoke tests.
 
-The profile is read-only in v4.3.0. It does not write config files, persist
+The profile is read-only in v4.3.1. It does not write config files, persist
 settings, change security policy, or invoke the host OS.
 
 ---
