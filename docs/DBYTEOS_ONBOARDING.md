@@ -21,6 +21,7 @@ status
 - `welcome` gives the first screen and next commands.
 - `profile show` prints the deterministic user profile.
 - `config show` prints read-only system preferences.
+- `prefs set system.prompt dbyteos>` updates the next DByteOS shell prompt.
 - `snapshot` prints a read-only system summary for debugging.
 - `getting-started` prints the first-run checklist.
 - `commands` lists commands by category.

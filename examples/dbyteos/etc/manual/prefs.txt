@@ -30,6 +30,7 @@ Safe Writable Keys
     (Allowed: default, dark, light)
   - system.prompt
     (Allowed: dbyte-shell>, dbyteos>, deadbyte>)
+    Controls the next DByteOS shell prompt when launched with .dbyterc.
   - user.display_name
     (Allowed: deadbyte, guest, operator)
 

@@ -13,6 +13,9 @@ use dbyte_typeck::TypeChecker;
 use dbyte_vm::Vm;
 use std::collections::HashMap;
 
+const DEFAULT_SHELL_PROMPT: &str = "dbyte-shell>";
+const FORCE_SHELL_PROMPT_ENV: &str = "DBYTE_SHELL_FORCE_PROMPT";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Engine {
     Tree,
@@ -572,6 +575,7 @@ struct ShellSession {
     aliases: HashMap<String, String>,
 
     dbyteos_autopath: bool,
+    dbyteos_prompt_root: Option<PathBuf>,
 }
 
 impl ShellSession {
@@ -580,6 +584,7 @@ impl ShellSession {
             runtime: DByteRuntime::with_current_dir(cwd)?,
             aliases: HashMap::new(),
             dbyteos_autopath: false,
+            dbyteos_prompt_root: None,
         })
     }
 
@@ -605,7 +610,7 @@ impl ShellSession {
         for (idx, line) in src.lines().enumerate() {
             let trimmed = line.trim_start();
             if let Some(directive) = trimmed.strip_prefix("@shell ") {
-                if let Err(e) = self.apply_shell_directive(directive) {
+                if let Err(e) = self.apply_shell_directive(directive, &rc_path) {
                     eprintln!(
                         "ShellError: {} line {}: {}\n  {}",
                         rc_path.display(),
@@ -636,7 +641,7 @@ impl ShellSession {
         }
     }
 
-    fn apply_shell_directive(&mut self, directive: &str) -> Result<(), String> {
+    fn apply_shell_directive(&mut self, directive: &str, rc_path: &Path) -> Result<(), String> {
         let d = directive.trim();
         if let Some(alias_def) = d.strip_prefix("alias ") {
             let args = split_shell_command(alias_def)?;
@@ -648,9 +653,48 @@ impl ShellSession {
         } else if d == "dbyteos_autopath off" {
             self.dbyteos_autopath = false;
             Ok(())
+        } else if d == "dbyteos_prompt on" {
+            let root = rc_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| self.runtime.current_dir().to_path_buf());
+            self.dbyteos_prompt_root = Some(root);
+            Ok(())
+        } else if d == "dbyteos_prompt off" {
+            self.dbyteos_prompt_root = None;
+            Ok(())
         } else {
             Err(format!("unknown shell directive: {}", d))
         }
+    }
+
+    fn prompt_text(&self) -> String {
+        let value = self
+            .read_dbyteos_prompt()
+            .unwrap_or_else(|| DEFAULT_SHELL_PROMPT.to_string());
+        format!("{value} ")
+    }
+
+    fn read_dbyteos_prompt(&self) -> Option<String> {
+        let root = self.dbyteos_prompt_root.as_ref()?;
+        let path = root.join("home").join("deadbyte").join("preferences.dby");
+        let src = fs::read_to_string(path).ok()?;
+        for line in src.lines() {
+            let trimmed = line.trim();
+            let Some(rest) = trimmed.strip_prefix("pub let system_prompt: str = \"") else {
+                continue;
+            };
+            let end = rest.find('"')?;
+            if !rest[end + 1..].trim().is_empty() {
+                return None;
+            }
+            let value = &rest[..end];
+            if is_allowed_shell_prompt(value) {
+                return Some(value.to_string());
+            }
+            return None;
+        }
+        None
     }
 
     fn set_alias(&mut self, name: String, command: String) -> Result<(), String> {
@@ -955,12 +999,13 @@ fn validate_alias_name(name: &str) -> Result<(), String> {
 
 fn shell_loop(session: &mut ShellSession) {
     let interactive = io::stdin().is_terminal();
+    let force_prompt = std::env::var_os(FORCE_SHELL_PROMPT_ENV).is_some();
     let stdin = io::stdin();
     let mut reader = stdin.lock();
 
     loop {
-        if interactive {
-            print!("dbyte-shell> ");
+        if interactive || force_prompt {
+            print!("{}", session.prompt_text());
             let _ = io::stdout().flush();
         }
 
@@ -986,6 +1031,10 @@ fn shell_loop(session: &mut ShellSession) {
             break;
         }
     }
+}
+
+fn is_allowed_shell_prompt(value: &str) -> bool {
+    matches!(value, "dbyte-shell>" | "dbyteos>" | "deadbyte>")
 }
 
 fn cmd_repl(no_rc: bool, rc_path: Option<&Path>) {

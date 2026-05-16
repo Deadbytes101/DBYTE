@@ -1,10 +1,10 @@
 # DByteOS Mutable Preferences
 
-**Version:** 4.8.1
+**Version:** 4.9.0
 **Subsystem:** User Configuration
 
 ## Overview
-DByteOS `v4.8.1` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
+DByteOS `v4.9.0` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
 
 Because DByteOS emphasizes determinism and strict security boundaries, standard configurations (`etc/config.dby`, `etc/system.dby`) remain read-only. The Mutable Preferences subsystem is strictly sandboxed.
 
@@ -20,10 +20,12 @@ To prevent arbitrary configuration injection and maintain system health, prefere
 | Key | Description | Allowed Values |
 | --- | --- | --- |
 | `ui.theme` | Visual theme | `default`, `dark`, `light` |
-| `system.prompt` | CLI prompt (Overlay) | `dbyte-shell>`, `dbyteos>`, `deadbyte>` |
+| `system.prompt` | DByteOS shell prompt | `dbyte-shell>`, `dbyteos>`, `deadbyte>` |
 | `user.display_name` | Name shown in profile | `deadbyte`, `guest`, `operator` |
 
-*Note: Writable `system.prompt` is currently an overlay variable; the actual interactive shell prompt will not dynamically change until parser rules support it.*
+When the shell is launched with the DByteOS rc file, `system.prompt` controls
+the interactive shell prompt. The shell falls back to `dbyte-shell>` if the
+preferences file is missing, malformed, or contains an unsupported prompt.
 
 ## Command Line Interface
 The `prefs` command manages these settings:

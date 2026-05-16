@@ -49,6 +49,8 @@ quit
 - `welcome` prints the onboarding entry point.
 - `profile show` prints the deterministic profile summary.
 - `config show` prints read-only preferences.
+- `prefs set system.prompt dbyteos>` changes the next DByteOS shell prompt.
+- `prefs reset-demo` restores the default DByteOS shell prompt.
 - `snapshot` prints the read-only system summary.
 - `getting-started` prints the first-run checklist.
 - `commands` prints commands grouped by category.
