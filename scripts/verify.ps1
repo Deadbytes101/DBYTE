@@ -1741,7 +1741,16 @@ try {
     Assert-Equal $dbyteosConfigGetDark.Text "dark" "dbyteos config get overlaid theme"
 
     $dbyteosPrefsSetUnsafeKey = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "set", "user.home", "dark") -WorkingDirectory $dbyteosRoot
-    Assert-Contains $dbyteosPrefsSetUnsafeKey.Text "error: permission denied" "dbyteos prefs set unsafe key reject"
+    Assert-Contains $dbyteosPrefsSetUnsafeKey.Text "error: permission denied" "dbyteos prefs set user.home reject"
+
+    $dbyteosPrefsSetSystemMode = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "set", "system.mode", "gui") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosPrefsSetSystemMode.Text "error: permission denied" "dbyteos prefs set system.mode reject"
+
+    $dbyteosPrefsSetSecurityMode = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "set", "security.mode", "open") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosPrefsSetSecurityMode.Text "error: permission denied" "dbyteos prefs set security.mode reject"
+
+    $dbyteosPrefsSetInvalidKey = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "set", "random.key", "value") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosPrefsSetInvalidKey.Text "error: permission denied" "dbyteos prefs set invalid key reject"
 
     $dbyteosPrefsSetInvalidValue = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "set", "ui.theme", "rainbow") -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosPrefsSetInvalidValue.Text "error: invalid value" "dbyteos prefs set invalid value reject"
@@ -1749,6 +1758,10 @@ try {
     $dbyteosPrefsReset = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "reset-demo") -WorkingDirectory $dbyteosRoot
     if ($dbyteosPrefsReset.Code -ne 0) { throw "dbyteos prefs reset failed: $($dbyteosPrefsReset.Text)" }
     Assert-Equal $dbyteosPrefsReset.Text "preferences reset to default seed state." "dbyteos prefs reset-demo"
+
+    $dbyteosPrefsResetIdempotent = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "reset-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsResetIdempotent.Code -ne 0) { throw "dbyteos prefs reset idempotent failed: $($dbyteosPrefsResetIdempotent.Text)" }
+    Assert-Equal $dbyteosPrefsResetIdempotent.Text "preferences reset to default seed state." "dbyteos prefs reset-demo idempotent"
 
     $dbyteosPrefsGetAfterReset = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "get", "ui.theme") -WorkingDirectory $dbyteosRoot
     if ($dbyteosPrefsGetAfterReset.Code -ne 0) { throw "dbyteos prefs get after reset failed: $($dbyteosPrefsGetAfterReset.Text)" }
@@ -1762,6 +1775,30 @@ try {
     if ($dbyteosSnapshotSystem.Code -ne 0) { throw "dbyteos snapshot system failed: $($dbyteosSnapshotSystem.Text)" }
     Assert-NormalizedEqual $dbyteosSnapshotSystem.Text $expectedDbyteosSnapshot "dbyteos snapshot system snapshot"
     Assert-Equal (Normalize-Output $dbyteosSnapshotDirect.Text) (Normalize-Output $dbyteosSnapshotSystem.Text) "dbyteos snapshot no args equals system"
+
+    # --- Missing Recovery and Malformed Behavior Tests ---
+    $prefsFilePath = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
+    Remove-Item -Path $prefsFilePath -Force
+
+    $dbyteosDiagnoseMissing = Invoke-Dbyte -Arguments @("run", "bin\diagnose.dby", "preferences") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosDiagnoseMissing.Text "ImportError: local module not found: ../home/deadbyte/preferences.dby" "dbyteos diagnose malformed deterministic crash"
+
+    $dbyteosCheckSystemMissing = Invoke-Dbyte -Arguments @("run", "bin\check_system.dby") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosCheckSystemMissing.Text "ImportError: local module not found: ../home/deadbyte/preferences.dby" "dbyteos check_system malformed deterministic crash"
+
+    $dbyteosDoctorMissing = Invoke-Dbyte -Arguments @("run", "bin\doctor.dby") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosDoctorMissing.Text "preferences: unhealthy" "dbyteos doctor preferences unhealthy"
+
+    $dbyteosBootMissing = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosBootMissing.Text "ImportError: local module not found: ../home/deadbyte/preferences.dby" "dbyteos boot malformed deterministic crash"
+
+    $dbyteosRecover = Invoke-Dbyte -Arguments @("run", "bin\prefs-recover.dby") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosRecover.Code -ne 0) { throw "dbyteos recover failed: $($dbyteosRecover.Text)" }
+    Assert-Contains $dbyteosRecover.Text "status: recovered factory defaults" "dbyteos preferences recovery"
+
+    $dbyteosDoctorRecovered = Invoke-Dbyte -Arguments @("run", "bin\doctor.dby") -WorkingDirectory $dbyteosRoot
+    Assert-Contains $dbyteosDoctorRecovered.Text "preferences: ok" "dbyteos doctor preferences recovered"
+    # -----------------------------------------------------
 
     $dbyteosSnapshotProfile = Invoke-Dbyte -Arguments @("run", "bin\snapshot.dby", "profile") -WorkingDirectory $dbyteosRoot
     if ($dbyteosSnapshotProfile.Code -ne 0) { throw "dbyteos snapshot profile failed: $($dbyteosSnapshotProfile.Text)" }
@@ -1814,7 +1851,7 @@ try {
     $dbyteosShellNoRcWhichHelp = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosShellNoRcWhichHelp.Text "help: built-in" "which help without alias remains built-in (autopath blocked)"
 
-    $dbyteosShellNoRcOnboarding = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "welcome`nprofile`nconfig`nsnapshot`ngetting-started`ncommands`nman-index`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosShellNoRcOnboarding = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "welcome`nprofile`nconfig`nsnapshot`ngetting-started`ncommands`nman-index`nprefs`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellNoRcOnboarding.Code -ne 0) { throw "dbyteos shell --no-rc onboarding guard failed: $($dbyteosShellNoRcOnboarding.Text)" }
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: welcome" "dbyteos shell --no-rc hides welcome"
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: profile" "dbyteos shell --no-rc hides profile"
@@ -1823,6 +1860,7 @@ try {
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: getting-started" "dbyteos shell --no-rc hides getting-started"
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: commands" "dbyteos shell --no-rc hides commands"
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: man-index" "dbyteos shell --no-rc hides man-index"
+    Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: prefs" "dbyteos shell --no-rc hides prefs"
 
     $dbyteosShellManWhoami = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man whoami`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellManWhoami.Code -ne 0) { throw "dbyteos shell man whoami failed: $($dbyteosShellManWhoami.Text)" }
