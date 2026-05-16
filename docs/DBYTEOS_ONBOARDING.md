@@ -1,14 +1,19 @@
 # DByteOS Onboarding
 
-DByteOS onboarding is a deterministic first-run flow for users opening a release zip or entering the DByteOS shell for the first time.
+DByteOS onboarding is a deterministic Personal Alpha first-run flow for users opening a release zip or entering the DByteOS shell for the first time.
 
 ## First commands
 
 ```txt
+boot
 welcome
+check-system
+doctor
+prefs set system.prompt dbyteos>
+snapshot
+prefs reset-demo
 profile show
 config show
-snapshot
 getting-started
 commands
 man-index
@@ -18,11 +23,15 @@ status
 
 ## Discovery path
 
+- `boot` initializes the userland session.
 - `welcome` gives the first screen and next commands.
-- `profile show` prints the deterministic user profile.
-- `config show` prints read-only system preferences.
+- `check-system` verifies the package is ready.
+- `doctor` prints the full subsystem health report.
 - `prefs set system.prompt dbyteos>` updates the next DByteOS shell prompt.
 - `snapshot` prints a read-only system summary for debugging.
+- `prefs reset-demo` restores deterministic demo preferences.
+- `profile show` prints the deterministic user profile.
+- `config show` prints read-only system preferences.
 - `getting-started` prints the first-run checklist.
 - `commands` lists commands by category.
 - `man-index` lists manual topics.

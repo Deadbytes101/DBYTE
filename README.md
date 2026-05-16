@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.9.1)
+## DByteOS Personal Alpha (v5.0.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -48,6 +48,7 @@ This configures the session environment, activates autopath resolving, and
 loads the DByteOS prompt from `system.prompt`.
 
 2. **Explore the System**:
+- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
 - [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
@@ -62,9 +63,13 @@ loads the DByteOS prompt from `system.prompt`.
 
 ```bash
 dbyte-shell> welcome
+dbyte-shell> check-system
+dbyte-shell> doctor
 dbyte-shell> profile show
 dbyte-shell> config show
+dbyte-shell> prefs set system.prompt dbyteos>
 dbyte-shell> snapshot
+dbyteos> prefs reset-demo
 dbyte-shell> getting-started
 dbyte-shell> commands
 dbyte-shell> man-index
@@ -86,10 +91,15 @@ dbyte-shell> journal read
 Expected first commands inside the package shell:
 
 ```txt
+boot
 welcome
+check-system
+doctor
+prefs set system.prompt dbyteos>
+snapshot
+prefs reset-demo
 profile show
 config show
-snapshot
 getting-started
 commands
 man-index
@@ -293,6 +303,7 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 - [INSTALL.md](INSTALL.md)
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
 - [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
+- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
 - [DByteOS Profile](docs/DBYTEOS_PROFILE.md)
 - [DByteOS Config](docs/DBYTEOS_CONFIG.md)
