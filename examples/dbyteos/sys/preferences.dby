@@ -80,11 +80,9 @@ pub fn set(key: str, value: str) -> int:
         return 0
     if is_valid_value(key, value) == 0:
         return 0
-    
     let cur_theme: str = raw_prefs.ui_theme
     let cur_prompt: str = raw_prefs.system_prompt
     let cur_display: str = raw_prefs.user_display_name
-
     if key == "ui.theme":
         cur_theme = value
     else:
@@ -95,7 +93,6 @@ pub fn set(key: str, value: str) -> int:
                 cur_display = value
             else:
                 return 0
-    
     _write_prefs(cur_theme, cur_prompt, cur_display)
     return 1
 
