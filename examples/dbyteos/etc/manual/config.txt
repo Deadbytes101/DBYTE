@@ -1,0 +1,22 @@
+DByteOS Config
+
+The config command prints deterministic read-only preferences for DByteOS Alpha.
+It is a foundation for central system values, not a mutable settings store.
+
+Usage:
+  config
+  config show
+  config keys
+  config get <key>
+
+Keys:
+  system.mode
+  system.prompt
+  user.name
+  user.home
+  ui.theme
+  security.mode
+
+Notes:
+  Values are loaded from committed DByte scripts.
+  config does not write files or persist changes.

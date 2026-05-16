@@ -10,6 +10,7 @@ Manual topics:
   sysinfo
   whoami
   profile
+  config
   env
   path
   read

@@ -1,0 +1,45 @@
+import "../etc/config.dby" as prefs
+import std.fs as fs
+
+pub fn resolve_path(p: str) -> str:
+    if fs.exists("examples/dbyteos") == 1:
+        return "examples/dbyteos/" + p
+    return p
+
+pub fn keys() -> list[str]:
+    return ["system.mode", "system.prompt", "user.name", "user.home", "ui.theme", "security.mode"]
+
+pub fn has_key(key: str) -> int:
+    if key == "system.mode":
+        return 1
+    if key == "system.prompt":
+        return 1
+    if key == "user.name":
+        return 1
+    if key == "user.home":
+        return 1
+    if key == "ui.theme":
+        return 1
+    if key == "security.mode":
+        return 1
+    return 0
+
+pub fn get_raw(key: str) -> str:
+    if key == "system.mode":
+        return prefs.system_mode
+    if key == "system.prompt":
+        return prefs.system_prompt
+    if key == "user.name":
+        return prefs.user_name
+    if key == "user.home":
+        return prefs.user_home
+    if key == "ui.theme":
+        return prefs.ui_theme
+    if key == "security.mode":
+        return prefs.security_mode
+    return ""
+
+pub fn get(key: str) -> str:
+    if key == "user.home":
+        return resolve_path(prefs.user_home)
+    return get_raw(key)

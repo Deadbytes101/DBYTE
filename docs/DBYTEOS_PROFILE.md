@@ -28,8 +28,9 @@ profile prompt
 `profile` and `profile show` print the full summary. The other modes print one
 field for scripting and package smoke tests.
 
-The profile is read-only in v4.3.1. It does not write config files, persist
-settings, change security policy, or invoke the host OS.
+Profile values are sourced from the read-only DByteOS config layer in v4.4.0.
+The profile command does not write config files, persist settings, change
+security policy, or invoke the host OS.
 
 ---
-[Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Security](DBYTEOS_SECURITY.md)
+[Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Config](DBYTEOS_CONFIG.md) | [Security](DBYTEOS_SECURITY.md)
