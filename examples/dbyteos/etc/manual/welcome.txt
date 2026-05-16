@@ -1,0 +1,14 @@
+DByteOS Welcome
+
+The welcome command is the first screen for a new DByteOS session.
+It explains the userland purpose and points to the safest next commands.
+
+Usage:
+  welcome
+
+Next:
+  getting-started
+  commands
+  man-index
+  help
+  status
