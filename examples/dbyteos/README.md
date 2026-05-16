@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.0.1)
+# DByteOS Alpha Userland (v4.1.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -20,7 +20,7 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
 | `notes` | Manage personal notes |
 | `journal` | Personal event logger |
 | `services` | Manage system services |
-| `status` | Show system information |
+| `status` | Show system summary |
 | `clean` | Purge temporary artifacts |
 | `boot` | Re-run system boot |
 
@@ -30,8 +30,29 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
    ```powershell
    ./dbyte.exe shell --rc examples/dbyteos/.dbyterc
    ```
-2. The system will autostart core services and provide the Alpha Userland banner.
-3. Type `help` or `man <topic>` to explore the environment.
+2. Run `boot` to see the first-run guide.
+3. Type `help`, `status`, `which read`, or `man <topic>` to explore the environment.
+
+## Package Smoke
+
+From an extracted zip release:
+
+```powershell
+.\dbyte.exe --version
+.\dbyte.exe shell --rc examples/dbyteos/.dbyterc
+```
+
+Inside the shell, run:
+
+```txt
+boot
+help
+status
+sysinfo
+which read
+man perm
+quit
+```
 
 ## Security & Persistence
 - **Enforcement**: File operations on `etc/`, `bin/`, and `sys/` are read-only.

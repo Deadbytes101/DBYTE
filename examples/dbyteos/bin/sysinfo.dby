@@ -2,3 +2,7 @@ import "../etc/system.dby" as system
 
 print("DByteOS Alpha Userland")
 print("version: DByte " + system.os_version)
+print("codename: " + system.os_codename)
+print("host: " + system.hostname)
+print("kernel: " + system.kernel_mode)
+print("guide: run help, status, or man <topic>")
