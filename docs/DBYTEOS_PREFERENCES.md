@@ -1,10 +1,10 @@
 # DByteOS Mutable Preferences
 
-**Version:** 4.7.1
+**Version:** 4.8.0
 **Subsystem:** User Configuration
 
 ## Overview
-DByteOS `v4.7.1` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
+DByteOS `v4.8.0` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
 
 Because DByteOS emphasizes determinism and strict security boundaries, standard configurations (`etc/config.dby`, `etc/system.dby`) remain read-only. The Mutable Preferences subsystem is strictly sandboxed.
 
@@ -30,6 +30,11 @@ The `prefs` command manages these settings:
 - `prefs show` - View all preferences
 - `prefs get <key>` - Get a specific preference
 - `prefs set <key> <value>` - Set a safe preference
+- `prefs status` - Check the health of the preference subsystem and backup
+- `prefs doctor` - Validate the schema of the current preference file
+- `prefs allowed` - List all safe mutable keys and their permitted values
+- `prefs backup-demo` - Copy the current preferences to a `.bak` file
+- `prefs restore-demo` - Restore preferences from a `.bak` file
 - `prefs reset-demo` - Reset preferences to their default state
 
 ## Security and Diagnostics

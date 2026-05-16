@@ -40,6 +40,21 @@ pub fn get_raw(key: str) -> str:
         return prefs.security_mode
     return ""
 
+pub fn get_base(key: str) -> str:
+    if key == "system.mode":
+        return prefs.system_mode
+    if key == "system.prompt":
+        return prefs.system_prompt
+    if key == "user.name":
+        return prefs.user_name
+    if key == "user.home":
+        return resolve_path(prefs.user_home)
+    if key == "ui.theme":
+        return prefs.ui_theme
+    if key == "security.mode":
+        return prefs.security_mode
+    return ""
+
 pub fn get(key: str) -> str:
     if key == "user.home":
         return resolve_path(prefs.user_home)

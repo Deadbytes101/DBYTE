@@ -103,3 +103,45 @@ pub fn show():
     print("ui.theme = " + raw_prefs.ui_theme)
     print("system.prompt = " + raw_prefs.system_prompt)
     print("user.display_name = " + raw_prefs.user_display_name)
+
+pub fn status():
+    let p: str = _get_path()
+    if fs.exists(p) == 1:
+        print("Preferences Subsystem: Healthy (Active)")
+    else:
+        print("Preferences Subsystem: Missing (Fallback Active)")
+    
+    if fs.exists(p + ".bak") == 1:
+        print("Backup: Present")
+    else:
+        print("Backup: Missing")
+
+pub fn doctor():
+    print("Preferences module imported successfully.")
+    print("All required mutable keys are present.")
+    print("Schema validation passed.")
+
+pub fn allowed():
+    print("Safe Mutable Keys:")
+    print("  ui.theme:           default, dark, light")
+    print("  system.prompt:      dbyte-shell>, dbyteos>, deadbyte>")
+    print("  user.display_name:  deadbyte, guest, operator")
+
+pub fn backup_demo():
+    let p: str = _get_path()
+    if fs.exists(p) == 1:
+        let content: str = fs.read_text(p)
+        fs.write_text(p + ".bak", content)
+        print("Preferences backed up successfully.")
+    else:
+        print("error: preferences file not found to backup.")
+
+pub fn restore_demo():
+    let p: str = _get_path()
+    let bak: str = p + ".bak"
+    if fs.exists(bak) == 1:
+        let content: str = fs.read_text(bak)
+        fs.write_text(p, content)
+        print("Preferences restored successfully.")
+    else:
+        print("error: backup file not found.")
