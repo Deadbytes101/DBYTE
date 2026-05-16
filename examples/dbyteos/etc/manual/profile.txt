@@ -1,7 +1,7 @@
 DByteOS Profile
 
 The profile command prints the current deterministic DByteOS profile.
-It is read-only in v4.7.0 and does not write configuration files.
+It is read-only in v5.0.1 and does not write configuration files.
 
 Usage:
   profile
