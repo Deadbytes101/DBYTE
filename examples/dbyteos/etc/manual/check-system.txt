@@ -1,0 +1,8 @@
+NAME
+    check-system - readiness check
+
+SYNOPSIS
+    check-system
+
+DESCRIPTION
+    Perform a quick readiness check of the DByteOS userland.

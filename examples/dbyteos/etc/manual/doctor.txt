@@ -1,0 +1,8 @@
+NAME
+    doctor - perform top-level health checks
+
+SYNOPSIS
+    doctor
+
+DESCRIPTION
+    Checks the health of all subsystems.

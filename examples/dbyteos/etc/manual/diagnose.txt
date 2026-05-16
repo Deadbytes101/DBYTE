@@ -1,0 +1,8 @@
+NAME
+    diagnose - diagnose specific subsystems
+
+SYNOPSIS
+    diagnose [subsystem]
+
+DESCRIPTION
+    Diagnose a specific subsystem (profile, config, security, logs, manual, package).
