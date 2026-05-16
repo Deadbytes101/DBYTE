@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 4.2.1") {
-    throw "Version mismatch: expected 'DByte 4.2.1', got '$versionOut'"
+if ($versionOut -ne "DByte 4.3.0") {
+    throw "Version mismatch: expected 'DByte 4.3.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -519,7 +519,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 4.2.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 4.3.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1087,7 +1087,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v4.2.1) smoke tests..."
+Write-Host "Running DByteOS Command Set (v4.3.0) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosStatus = Git-Status-Short
 $expectedDbyteosBoot = @"
@@ -1102,7 +1102,7 @@ $expectedDbyteosBoot = @"
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  4.2.1  ( Userland Prototype )
+  Version:    DByte  4.3.0  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -1137,6 +1137,7 @@ System:
   status           - summarize system state
   sysinfo          - display version and identity
   whoami           - print the current user
+  profile          - show profile identity
 
 Discovery:
   welcome          - show the onboarding entry point
@@ -1171,15 +1172,20 @@ Services/Logs:
   services         - manage system services
   log              - read DByteOS session logs
 
-Try: welcome, getting-started, commands, man-index
+Try: welcome, profile show, getting-started, commands, man-index
 "@
 $expectedDbyteosStatus = @"
 --- DByteOS System Status ---
 Summary:
-  OS:      DByte  4.2.1
+  OS:      DByte  4.3.0
   Host:     DByte-Alpha
   User:     deadbyte
   Home:     home/deadbyte
+
+Profile:
+  Mode:     alpha-userland
+  Theme:    default
+  Prompt:   dbyte-shell>
 
 Filesystem Integrity:
   bin: [PRESENT]
@@ -1195,17 +1201,30 @@ Next:    help | man <topic> | which <command>
 "@
 $expectedDbyteosSysinfo = @"
 DByteOS Alpha Userland
-version: DByte 4.2.1
+version: DByte 4.3.0
 codename: Userland Prototype
 host: DByte-Alpha
 kernel: Simulated (Host)
+user: deadbyte
+home: examples/dbyteos/home/deadbyte
+shell: dbyte shell
+mode: alpha-userland
+theme: default
+prompt: dbyte-shell>
 guide: run help, status, or man <topic>
 "@
 $expectedDbyteosWelcome = @"
 --- Welcome to DByteOS Alpha ---
 DByteOS is a personal userland built on the DByte runtime.
 
+Profile:
+  user:    deadbyte
+  home:    home/deadbyte
+  mode:    alpha-userland
+  prompt:  dbyte-shell>
+
 Start here:
+  profile show    - inspect current profile
   getting-started - follow the first-run checklist
   commands        - browse commands by category
   man-index       - list manual topics
@@ -1214,6 +1233,7 @@ Start here:
 
 Suggested first session:
   boot
+  profile show
   getting-started
   commands
   man-index
@@ -1247,6 +1267,7 @@ System:
   status           - summarize system state
   sysinfo          - display version and identity
   whoami           - print the current user
+  profile          - show profile identity
 
 Discovery:
   welcome          - show the onboarding entry point
@@ -1294,6 +1315,7 @@ System:
   status
   sysinfo
   whoami
+  profile
   env
   path
 
@@ -1312,6 +1334,16 @@ Workspace:
   log
 
 Use: man <topic>
+"@
+$expectedDbyteosProfile = @"
+--- DByteOS Profile ---
+user: deadbyte
+home: home/deadbyte
+shell: dbyte shell
+mode: alpha-userland
+theme: default
+prompt: dbyte-shell>
+os_version: 4.3.0
 "@
 try {
     $dbyteosBoot = Invoke-Dbyte -Arguments @("run", "boot.dby") -WorkingDirectory $dbyteosRoot
@@ -1345,6 +1377,7 @@ try {
     Assert-NormalizedEqual $dbyteosStatusReport.Text $expectedDbyteosStatus "dbyteos status snapshot"
     Assert-Contains $dbyteosStatusReport.Text "--- DByteOS System Status ---" "dbyteos status banner"
     Assert-Contains $dbyteosStatusReport.Text "Summary:" "dbyteos status summary"
+    Assert-Contains $dbyteosStatusReport.Text "Profile:" "dbyteos status profile summary"
     Assert-Contains $dbyteosStatusReport.Text "Next:    help | man <topic> | which <command>" "dbyteos status next hint"
     Assert-Contains $dbyteosStatusReport.Text "bin: [PRESENT]" "dbyteos status bin ok"
 
@@ -1368,6 +1401,30 @@ try {
     if ($dbyteosManIndexDirect.Code -ne 0) { throw "dbyteos man-index failed: $($dbyteosManIndexDirect.Text)" }
     Assert-NormalizedEqual $dbyteosManIndexDirect.Text $expectedDbyteosManIndex "dbyteos man-index snapshot"
 
+    $dbyteosProfileDirect = Invoke-Dbyte -Arguments @("run", "bin\profile.dby") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProfileDirect.Code -ne 0) { throw "dbyteos profile failed: $($dbyteosProfileDirect.Text)" }
+    Assert-NormalizedEqual $dbyteosProfileDirect.Text $expectedDbyteosProfile "dbyteos profile default snapshot"
+
+    $dbyteosProfileShow = Invoke-Dbyte -Arguments @("run", "bin\profile.dby", "show") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProfileShow.Code -ne 0) { throw "dbyteos profile show failed: $($dbyteosProfileShow.Text)" }
+    Assert-NormalizedEqual $dbyteosProfileShow.Text $expectedDbyteosProfile "dbyteos profile show snapshot"
+
+    $dbyteosProfileWhoami = Invoke-Dbyte -Arguments @("run", "bin\profile.dby", "whoami") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProfileWhoami.Code -ne 0) { throw "dbyteos profile whoami failed: $($dbyteosProfileWhoami.Text)" }
+    Assert-Equal $dbyteosProfileWhoami.Text "deadbyte" "dbyteos profile whoami"
+
+    $dbyteosProfileHome = Invoke-Dbyte -Arguments @("run", "bin\profile.dby", "home") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProfileHome.Code -ne 0) { throw "dbyteos profile home failed: $($dbyteosProfileHome.Text)" }
+    Assert-Equal $dbyteosProfileHome.Text "home/deadbyte" "dbyteos profile home"
+
+    $dbyteosProfileTheme = Invoke-Dbyte -Arguments @("run", "bin\profile.dby", "theme") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProfileTheme.Code -ne 0) { throw "dbyteos profile theme failed: $($dbyteosProfileTheme.Text)" }
+    Assert-Equal $dbyteosProfileTheme.Text "default" "dbyteos profile theme"
+
+    $dbyteosProfilePrompt = Invoke-Dbyte -Arguments @("run", "bin\profile.dby", "prompt") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProfilePrompt.Code -ne 0) { throw "dbyteos profile prompt failed: $($dbyteosProfilePrompt.Text)" }
+    Assert-Equal $dbyteosProfilePrompt.Text "dbyte-shell>" "dbyteos profile prompt"
+
     $dbyteosShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "status`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShell.Code -ne 0) { throw "dbyteos shell failed: $($dbyteosShell.Text)" }
     Assert-Contains $dbyteosShell.Text "--- DByteOS System Status ---" "dbyteos shell status alias"
@@ -1380,7 +1437,8 @@ try {
     Assert-Contains $dbyteosShellHelp.Text "System:" "dbyteos shell help system"
     Assert-Contains $dbyteosShellHelp.Text "Discovery:" "dbyteos shell help discovery"
     Assert-Contains $dbyteosShellHelp.Text "perm             - inspect permission policy" "dbyteos shell help perm"
-    Assert-Contains $dbyteosShellHelp.Text "Try: welcome, getting-started, commands, man-index" "dbyteos shell help try line"
+    Assert-Contains $dbyteosShellHelp.Text "profile          - show profile identity" "dbyteos shell help profile"
+    Assert-Contains $dbyteosShellHelp.Text "Try: welcome, profile show, getting-started, commands, man-index" "dbyteos shell help try line"
 
     $dbyteosShellWhichHelpAliased = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosShellWhichHelpAliased.Text "help: alias -> run bin/help.dby" "which help with alias"
@@ -1391,9 +1449,10 @@ try {
     $dbyteosShellNoRcWhichHelp = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "which help`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosShellNoRcWhichHelp.Text "help: built-in" "which help without alias remains built-in (autopath blocked)"
 
-    $dbyteosShellNoRcOnboarding = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "welcome`ngetting-started`ncommands`nman-index`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosShellNoRcOnboarding = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "welcome`nprofile`ngetting-started`ncommands`nman-index`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellNoRcOnboarding.Code -ne 0) { throw "dbyteos shell --no-rc onboarding guard failed: $($dbyteosShellNoRcOnboarding.Text)" }
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: welcome" "dbyteos shell --no-rc hides welcome"
+    Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: profile" "dbyteos shell --no-rc hides profile"
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: getting-started" "dbyteos shell --no-rc hides getting-started"
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: commands" "dbyteos shell --no-rc hides commands"
     Assert-Contains $dbyteosShellNoRcOnboarding.Text "ShellError: unknown command: man-index" "dbyteos shell --no-rc hides man-index"
@@ -1414,17 +1473,23 @@ try {
     Assert-Contains $dbyteosShellManPerm.Text "DByteOS Permission Command" "dbyteos man perm"
     Assert-Contains $dbyteosShellManPerm.Text "DByteOS Security Policy" "dbyteos man security"
 
-    $dbyteosOnboardingShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "welcome`ngetting-started`ncommands`nman-index`nhelp`nman index`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosOnboardingShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`ngetting-started`ncommands`nman-index`nhelp`nman index`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosOnboardingShell.Code -ne 0) { throw "dbyteos onboarding shell failed: $($dbyteosOnboardingShell.Text)" }
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosWelcome) "dbyteos shell welcome"
+    Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosProfile) "dbyteos shell profile show"
+    Assert-Contains $dbyteosOnboardingShell.Text "deadbyte" "dbyteos shell profile whoami"
+    Assert-Contains $dbyteosOnboardingShell.Text "home/deadbyte" "dbyteos shell profile home"
+    Assert-Contains $dbyteosOnboardingShell.Text "default" "dbyteos shell profile theme"
+    Assert-Contains $dbyteosOnboardingShell.Text "dbyte-shell>" "dbyteos shell profile prompt"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosGettingStarted) "dbyteos shell getting-started"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosCommands) "dbyteos shell commands"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosManIndex) "dbyteos shell man-index"
     Assert-Contains $dbyteosOnboardingShell.Text "Manual topics:" "dbyteos shell man index"
 
-    $dbyteosOnboardingManuals = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man welcome`nman getting-started`nman commands`nman index`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosOnboardingManuals = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "man welcome`nman profile`nman getting-started`nman commands`nman index`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosOnboardingManuals.Code -ne 0) { throw "dbyteos onboarding manuals failed: $($dbyteosOnboardingManuals.Text)" }
     Assert-Contains $dbyteosOnboardingManuals.Text "DByteOS Welcome" "dbyteos man welcome"
+    Assert-Contains $dbyteosOnboardingManuals.Text "DByteOS Profile" "dbyteos man profile"
     Assert-Contains $dbyteosOnboardingManuals.Text "DByteOS Getting Started" "dbyteos man getting-started"
     Assert-Contains $dbyteosOnboardingManuals.Text "DByteOS Commands" "dbyteos man commands"
     Assert-Contains $dbyteosOnboardingManuals.Text "DByteOS Manual Index" "dbyteos man index"
@@ -1486,7 +1551,7 @@ try {
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-NormalizedEqual $dbyteosSysinfoRoot.Text $expectedDbyteosSysinfo "dbyteos sysinfo snapshot"
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Alpha Userland" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 4.2.1" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 4.3.0" "dbyteos sysinfo version"
     Assert-Contains $dbyteosSysinfoRoot.Text "codename: Userland Prototype" "dbyteos sysinfo codename"
     Assert-Contains $dbyteosSysinfoRoot.Text "guide: run help, status, or man <topic>" "dbyteos sysinfo guide"
 
@@ -1558,9 +1623,14 @@ try {
 
     $dbyteosProfileRoot = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\profile.dby") -WorkingDirectory $repoRoot
     if ($dbyteosProfileRoot.Code -ne 0) { throw "dbyteos profile from root failed: $($dbyteosProfileRoot.Text)" }
+    Assert-Contains $dbyteosProfileRoot.Text "--- DByteOS Profile ---" "dbyteos profile banner"
     Assert-Contains $dbyteosProfileRoot.Text "user: deadbyte" "dbyteos profile user"
-    Assert-Contains $dbyteosProfileRoot.Text "home_path: examples/dbyteos/home/deadbyte" "dbyteos profile get_home from root"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 4.2.1" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "home: examples/dbyteos/home/deadbyte" "dbyteos profile get_home from root"
+    Assert-Contains $dbyteosProfileRoot.Text "shell: dbyte shell" "dbyteos profile shell"
+    Assert-Contains $dbyteosProfileRoot.Text "mode: alpha-userland" "dbyteos profile mode"
+    Assert-Contains $dbyteosProfileRoot.Text "theme: default" "dbyteos profile theme"
+    Assert-Contains $dbyteosProfileRoot.Text "prompt: dbyte-shell>" "dbyteos profile prompt"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 4.3.0" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -1592,7 +1662,7 @@ try {
     if ($dbyteosReadCwd.Code -ne 0) { throw "dbyteos read from dbyteos cwd failed: $($dbyteosReadCwd.Text)" }
     Assert-Equal $dbyteosReadCwd.Text "cwd ok" "dbyteos read from dbyteos cwd"
 
-    Write-Host "Running DByteOS Security/Permissions (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Security/Permissions (v4.3.0) smoke tests..."
     $securityLogPath = Join-Path $dbyteosRoot "tmp\security.log"
     if (Test-Path $securityLogPath) {
         Remove-Item -Force $securityLogPath
@@ -1644,7 +1714,7 @@ try {
     Assert-Equal $dbyteosPermUnknown.Text "DENY read var/log.txt (policy)" "perm unknown root denied"
     $dbyteosReadEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosReadEtc.Code -ne 0) { throw "dbyteos read etc failed: $($dbyteosReadEtc.Text)" }
-    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"4.2.1`"" "read etc allowed"
+    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"4.3.0`"" "read etc allowed"
     $dbyteosWriteEtcDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "etc/system.dby", "test") -WorkingDirectory $repoRoot
     if ($dbyteosWriteEtcDenied.Code -ne 0) { throw "dbyteos write etc deny command failed: $($dbyteosWriteEtcDenied.Text)" }
     Assert-Equal $dbyteosWriteEtcDenied.Text "error: permission denied: write etc/system.dby" "write etc denied"
@@ -1702,7 +1772,7 @@ try {
     $catSource = Get-Content (Join-Path $dbyteosRoot "bin\cat.dby") -Raw
     $touchSource = Get-Content (Join-Path $dbyteosRoot "bin\touch.dby") -Raw
     
-    Write-Host "Running DByteOS Security Enforcement Expansion (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Expansion (v4.3.0) smoke tests..."
     $enforcementInput = @"
 clean
 cat etc/system.dby
@@ -1717,7 +1787,7 @@ quit
 "@
     $dbyteosEnforcement = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "$enforcementInput`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosEnforcement.Code -ne 0) { throw "dbyteos security enforcement failed: $($dbyteosEnforcement.Text)" }
-    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"4.2.1`"" "cat etc allowed"
+    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"4.3.0`"" "cat etc allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: path escape tmp/../etc/system.dby" "cat escape denied"
     Assert-Contains $dbyteosEnforcement.Text "touch: ok" "touch tmp allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: touch etc/security_touch.txt" "touch etc denied"
@@ -1728,7 +1798,7 @@ quit
     Assert-Contains $dbyteosEnforcement.Text "DENY inspect unknown/file" "security log inspect denied"
     Assert-Contains $dbyteosEnforcement.Text "workspace sweep complete" "enforcement clean sweep"
 
-    Write-Host "Running DByteOS Security Enforcement Hardening (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Hardening (v4.3.0) smoke tests..."
     $hardeningInput = @"
 clean
 cat boot.dby
@@ -1755,36 +1825,40 @@ quit
     $dbyteosNoRcScoping = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cat etc/system.dby`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosNoRcScoping.Text "ShellError: unknown command: cat" "shell --no-rc hides cat autopath"
 
-    Write-Host "Verifying DByteOS Alpha Userland (v4.2.1) documentation..."
-    $dbyteDocs = @("DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md")
+    Write-Host "Verifying DByteOS Alpha Userland (v4.3.0) documentation..."
+    $dbyteDocs = @("DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md", "DBYTEOS_PROFILE.md")
     foreach ($doc in $dbyteDocs) {
         $p = Join-Path $repoRoot "docs/$doc"
         if (-not (Test-Path $p)) { throw "DByteOS doc missing: $doc" }
     }
     $mainReadme = Get-Content (Join-Path $repoRoot "README.md") -Raw
-    Assert-Contains $mainReadme "DByteOS Alpha Userland (v4.2.1)" "README alpha positioning"
+    Assert-Contains $mainReadme "DByteOS Alpha Userland (v4.3.0)" "README alpha positioning"
     Assert-Contains $mainReadme "docs/DBYTEOS_ALPHA.md" "README alpha link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ONBOARDING.md" "README onboarding link"
+    Assert-Contains $mainReadme "docs/DBYTEOS_PROFILE.md" "README profile link"
     Assert-Contains $mainReadme "docs/DBYTEOS_PACKAGE.md" "README package guide link"
     Assert-Contains $mainReadme "Smoke-test a zip release" "README zip quickstart"
     Assert-Contains $mainReadme "dbyte shell --rc examples/dbyteos/.dbyterc" "README shell quickstart command"
     Assert-Contains $mainReadme "welcome" "README onboarding welcome command"
+    Assert-Contains $mainReadme "profile show" "README profile show command"
     Assert-Contains $mainReadme "getting-started" "README onboarding getting-started command"
     Assert-Contains $mainReadme "commands" "README onboarding commands command"
     Assert-Contains $mainReadme "man-index" "README onboarding man-index command"
-    Assert-Contains (Normalize-Output $mainReadme) "welcome`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nman index`nman perm`nquit" "README package quickstart command sequence"
+    Assert-Contains (Normalize-Output $mainReadme) "welcome`nprofile show`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nman index`nman perm`nquit" "README package quickstart command sequence"
     Assert-Contains $mainReadme "which read" "README package quickstart which command"
     Assert-Contains $mainReadme "man perm" "README package quickstart man command"
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_ALPHA.md"))) { throw "README alpha link target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_ONBOARDING.md"))) { throw "README onboarding link target missing" }
+    if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_PROFILE.md"))) { throw "README profile link target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_PACKAGE.md"))) { throw "README package link target missing" }
     
     $osReadme = Get-Content (Join-Path $repoRoot "examples/dbyteos/README.md") -Raw
-    Assert-Contains $osReadme "DByteOS Alpha Userland (v4.2.1)" "OS README alpha positioning"
+    Assert-Contains $osReadme "DByteOS Alpha Userland (v4.3.0)" "OS README alpha positioning"
     Assert-Contains $osReadme '| `cat` | View file contents |' "OS README command table"
     Assert-Contains $osReadme "Package Smoke" "OS README package smoke"
     Assert-Contains $osReadme ".\dbyte.exe --version" "OS README package version smoke"
     Assert-Contains $osReadme ".\dbyte.exe shell --rc examples/dbyteos/.dbyterc" "OS README package shell smoke"
+    Assert-Contains $osReadme "profile show" "OS README profile smoke"
     Assert-Contains $osReadme "sysinfo" "OS README package sysinfo smoke"
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_SECURITY.md"))) { throw "OS README security link target missing" }
     $packageGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PACKAGE.md") -Raw
@@ -1792,6 +1866,7 @@ quit
     Assert-Contains $packageGuide ".\dbyte.exe --version" "package guide version smoke"
     Assert-Contains $packageGuide ".\dbyte.exe shell --rc examples/dbyteos/.dbyterc" "package guide shell quickstart"
     Assert-Contains $packageGuide "welcome" "package guide welcome command"
+    Assert-Contains $packageGuide "profile show" "package guide profile show command"
     Assert-Contains $packageGuide "getting-started" "package guide getting-started command"
     Assert-Contains $packageGuide "commands" "package guide commands command"
     Assert-Contains $packageGuide "man-index" "package guide man-index command"
@@ -1804,8 +1879,13 @@ quit
     $onboardingGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_ONBOARDING.md") -Raw
     Assert-Contains $onboardingGuide "DByteOS Onboarding" "onboarding guide title"
     Assert-Contains $onboardingGuide "welcome" "onboarding guide welcome"
+    Assert-Contains $onboardingGuide "profile show" "onboarding guide profile show"
     Assert-Contains $onboardingGuide "getting-started" "onboarding guide getting-started"
     Assert-Contains $onboardingGuide "man-index" "onboarding guide man-index"
+    $profileGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PROFILE.md") -Raw
+    Assert-Contains $profileGuide "DByteOS Profile" "profile guide title"
+    Assert-Contains $profileGuide "profile show" "profile guide show"
+    Assert-Contains $profileGuide "alpha-userland" "profile guide mode"
 
     $alphaGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_ALPHA.md") -Raw
     $bootGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_BOOT.md") -Raw
@@ -1819,7 +1899,7 @@ quit
 
 
     $inspectSource = Get-Content (Join-Path $dbyteosRoot "bin\inspect.dby") -Raw
-    # v4.2.1 enforcement confirmed via smoke tests above
+    # v4.3.0 enforcement confirmed via smoke tests above
     $dbyteosCatGuard = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\cat.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosCatGuard.Code -ne 0) { throw "dbyteos cat guard failed: $($dbyteosCatGuard.Text)" }
     Assert-Contains $dbyteosCatGuard.Text "pub let os_version" "cat enforced allowed"
@@ -1858,17 +1938,18 @@ quit
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 4.2.1" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 4.3.0" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 4.2.1" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 4.3.0" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "mode: alpha-userland" "dbyteos shell profile mode"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
     Assert-Contains $dbyteosCmdShell.Text "mkdir-demo: ok" "dbyteos shell mkdir-demo"
     Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
 
-    Write-Host "Running DByteOS Notes Workflow (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v4.3.0) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -1879,7 +1960,7 @@ quit
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v4.3.0) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -1906,7 +1987,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v4.3.0) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -1916,7 +1997,7 @@ quit
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
     
-    Write-Host "Running DByteOS Journal/Logger (v4.2.1) smoke tests..."
+    Write-Host "Running DByteOS Journal/Logger (v4.3.0) smoke tests..."
     $journalPath = Join-Path $dbyteosRoot "home\deadbyte\journal.txt"
     if (Test-Path $journalPath) {
         Remove-Item -Force $journalPath
@@ -2114,7 +2195,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "4.2.1"
+$EXPECTED_VERSION = "4.3.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -2202,15 +2283,15 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha (v4.2.1) Package Smoke Tests..."
+Write-Host "Running DByteOS Alpha (v4.3.0) Package Smoke Tests..."
 $packageSmokeStatus = Git-Status-Short
 $smokeRoot = Join-Path $repoRoot "tmp\package_smoke"
 if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "4.2.1"
-$zipFile = Join-Path $repoRoot "dbyte-v4.2.1-windows-x64.zip"
+& powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "4.3.0"
+$zipFile = Join-Path $repoRoot "dbyte-v4.3.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -2220,11 +2301,13 @@ $extractedOsRoot = Join-Path $smokeRoot "examples\dbyteos"
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 4.2.1") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 4.3.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
 $expectedPackageStatus = $expectedDbyteosStatus.Replace("Home:     home/deadbyte", "Home:     examples/dbyteos/home/deadbyte")
+$expectedPackageWelcome = $expectedDbyteosWelcome.Replace("  home:    home/deadbyte", "  home:    examples/dbyteos/home/deadbyte")
+$expectedPackageProfile = $expectedDbyteosProfile.Replace("home: home/deadbyte", "home: examples/dbyteos/home/deadbyte")
 $bootOut = & $extractedExe run (Join-Path $extractedOsRoot "boot.dby") 2>&1
 Assert-NormalizedEqual $bootOut $expectedPackageBoot "Package boot snapshot"
 $statusOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\status.dby") 2>&1
@@ -2234,7 +2317,17 @@ Assert-NormalizedEqual $helpOut $expectedDbyteosHelp "Package help snapshot"
 $sysinfoOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\sysinfo.dby") 2>&1
 Assert-NormalizedEqual $sysinfoOut $expectedDbyteosSysinfo "Package sysinfo snapshot"
 $welcomeOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\welcome.dby") 2>&1
-Assert-NormalizedEqual $welcomeOut $expectedDbyteosWelcome "Package welcome snapshot"
+Assert-NormalizedEqual $welcomeOut $expectedPackageWelcome "Package welcome snapshot"
+$profileOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\profile.dby") 2>&1
+Assert-NormalizedEqual $profileOut $expectedPackageProfile "Package profile snapshot"
+$profileWhoamiOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\profile.dby") whoami 2>&1
+Assert-Equal (Normalize-Output $profileWhoamiOut) "deadbyte" "Package profile whoami"
+$profileHomeOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\profile.dby") home 2>&1
+Assert-Equal (Normalize-Output $profileHomeOut) "examples/dbyteos/home/deadbyte" "Package profile home"
+$profileThemeOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\profile.dby") theme 2>&1
+Assert-Equal (Normalize-Output $profileThemeOut) "default" "Package profile theme"
+$profilePromptOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\profile.dby") prompt 2>&1
+Assert-Equal (Normalize-Output $profilePromptOut) "dbyte-shell>" "Package profile prompt"
 $gettingStartedOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\getting_started.dby") 2>&1
 Assert-NormalizedEqual $gettingStartedOut $expectedDbyteosGettingStarted "Package getting-started snapshot"
 $commandsOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\commands.dby") 2>&1
@@ -2243,7 +2336,7 @@ $manIndexOut = & $extractedExe run (Join-Path $extractedOsRoot "bin\man_index.db
 Assert-NormalizedEqual $manIndexOut $expectedDbyteosManIndex "Package man-index snapshot"
 
 Write-Host "  Verifying documentation structure..."
-$expectedDocs = @("DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md")
+$expectedDocs = @("DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md", "DBYTEOS_PROFILE.md")
 foreach ($d in $expectedDocs) {
     if (-not (Test-Path (Join-Path $smokeRoot "docs\$d"))) { throw "Package missing doc: $d" }
 }
@@ -2258,18 +2351,21 @@ $tmpFiles = Get-ChildItem -Path $extractedTmp -Exclude ".gitignore", ".gitkeep"
 if ($tmpFiles.Count -ne 0) { throw "Package contains junk in tmp: $($tmpFiles.Name -join ', ')" }
 
 Write-Host "  Verifying shell RC integration..."
-$shellInput = "welcome`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nman index`nman perm`nquit`n"
+$shellInput = "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nman index`nman profile`nman perm`nquit`n"
 $shellOut = $shellInput | & $extractedExe shell --rc (Join-Path $extractedOsRoot ".dbyterc") 2>&1
-Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosWelcome) "Package shell welcome"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedPackageWelcome) "Package shell welcome"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedPackageProfile) "Package shell profile show"
+Assert-Contains (Normalize-Output $shellOut) "dbyte-shell>" "Package shell profile prompt"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosGettingStarted) "Package shell getting-started"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosCommands) "Package shell commands"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosManIndex) "Package shell man-index"
 Assert-Contains (Normalize-Output $shellOut) "D B Y T E O S   U S E R L A N D" "Package shell boot"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosHelp) "Package shell help"
-Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  4.2.1" "Package shell status version"
-Assert-Contains (Normalize-Output $shellOut) "version: DByte 4.2.1" "Package shell sysinfo version"
+Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  4.3.0" "Package shell status version"
+Assert-Contains (Normalize-Output $shellOut) "version: DByte 4.3.0" "Package shell sysinfo version"
 Assert-Contains (Normalize-Output $shellOut) "read: dbyteos ->" "Package shell which read"
 Assert-Contains (Normalize-Output $shellOut) "Manual topics:" "Package shell man index"
+Assert-Contains (Normalize-Output $shellOut) "DByteOS Profile" "Package shell man profile"
 Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Package shell man perm"
 
 Remove-Item -Recurse -Force $smokeRoot

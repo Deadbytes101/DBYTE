@@ -9,6 +9,7 @@ Manual topics:
   status
   sysinfo
   whoami
+  profile
   env
   path
   read

@@ -1,6 +1,6 @@
 # DByte Language Specification
 
-Version: Public Alpha v4.2.1
+Version: Public Alpha v4.3.0
 
 DByte is a statically checked, Python-like scripting language with a bytecode VM
 and low-level standard library support for binary parsing and buffer patching.

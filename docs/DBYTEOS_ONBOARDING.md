@@ -6,6 +6,7 @@ DByteOS onboarding is a deterministic first-run flow for users opening a release
 
 ```txt
 welcome
+profile show
 getting-started
 commands
 man-index
@@ -16,6 +17,7 @@ status
 ## Discovery path
 
 - `welcome` gives the first screen and next commands.
+- `profile show` prints the deterministic user profile.
 - `getting-started` prints the first-run checklist.
 - `commands` lists commands by category.
 - `man-index` lists manual topics.
