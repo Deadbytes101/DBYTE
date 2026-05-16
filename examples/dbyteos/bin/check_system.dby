@@ -2,18 +2,14 @@ import std.fs as fs
 import "../etc/system.dby" as system
 import "../sys/config.dby" as config
 import "../sys/profile.dby" as osprofile
-
 print("DByteOS readiness check")
-
 let all_ready: int = 1
-
 # 1. version
 if system.os_version != "":
     print("version: ok")
 else:
     print("version: missing")
     all_ready = 0
-
 # 2. profile
 let prof_ok: int = 1
 if osprofile.get_user() == "":
@@ -27,7 +23,6 @@ if prof_ok == 1:
 else:
     print("profile: unhealthy")
     all_ready = 0
-
 # 3. config
 let cfg_ok: int = 1
 if config.get("security.mode") != "simulated":
@@ -37,7 +32,6 @@ if cfg_ok == 1:
 else:
     print("config: unhealthy")
     all_ready = 0
-
 # 4. manual
 let man_ok: int = 1
 if fs.exists(osprofile.resolve_path("etc/manual/doctor.txt")) == 0:
@@ -51,7 +45,6 @@ if man_ok == 1:
 else:
     print("manual: unhealthy")
     all_ready = 0
-
 # 5. security
 let sec_ok: int = 1
 if config.get("security.mode") == "simulated":
@@ -63,7 +56,6 @@ if sec_ok == 1:
 else:
     print("security: unhealthy")
     all_ready = 0
-
 # 6. workspace
 let ws_ok: int = 1
 if fs.exists(osprofile.resolve_path("tmp")) == 0:
@@ -75,10 +67,8 @@ if ws_ok == 1:
 else:
     print("workspace: unhealthy")
     all_ready = 0
-
 # 7. package
 print("package: ok")
-
 if all_ready == 1:
     print("ready: yes")
 else:

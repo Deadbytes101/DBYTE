@@ -2,98 +2,80 @@ import std.env as env
 import std.fs as fs
 import "../sys/config.dby" as config
 import "../sys/profile.dby" as osprofile
-
 fn diagnose_config():
     print("DByteOS Diagnose: config")
     let all_ok: int = 1
-    
     if config.get("system.mode") != "":
         print("system.mode: ok")
     else:
         print("system.mode: missing")
         all_ok = 0
-
     if config.get("system.prompt") != "":
         print("system.prompt: ok")
     else:
         print("system.prompt: missing")
         all_ok = 0
-        
     if config.get("user.name") != "":
         print("user.name: ok")
     else:
         print("user.name: missing")
         all_ok = 0
-        
     if config.get("user.home") != "":
         print("user.home: ok")
     else:
         print("user.home: missing")
         all_ok = 0
-        
     if config.get("ui.theme") != "":
         print("ui.theme: ok")
     else:
         print("ui.theme: missing")
         all_ok = 0
-        
     if config.get("security.mode") != "":
         print("security.mode: ok")
     else:
         print("security.mode: missing")
         all_ok = 0
-        
     if all_ok == 1:
         print("result: healthy")
     else:
         print("result: unhealthy")
-
-
 fn diagnose_profile():
     print("DByteOS Diagnose: profile")
     let all_ok: int = 1
-    
     if osprofile.get_user() != "":
         print("user: ok")
     else:
         print("user: missing")
         all_ok = 0
-        
     if osprofile.get_home() != "":
         print("home: ok")
     else:
         print("home: missing")
         all_ok = 0
-        
     if osprofile.get_shell() != "":
         print("shell: ok")
     else:
         print("shell: missing")
         all_ok = 0
-        
     if osprofile.get_mode() != "":
         print("mode: ok")
     else:
         print("mode: missing")
         all_ok = 0
-        
     if osprofile.get_theme() != "":
         print("theme: ok")
     else:
         print("theme: missing")
         all_ok = 0
-        
     if osprofile.get_prompt() != "":
         print("prompt: ok")
     else:
         print("prompt: missing")
         all_ok = 0
-        
     if all_ok == 1:
         print("result: healthy")
     else:
         print("result: unhealthy")
-
 fn diagnose_security():
     print("DByteOS Diagnose: security")
     let all_ok: int = 1
@@ -106,7 +88,6 @@ fn diagnose_security():
         print("result: healthy")
     else:
         print("result: unhealthy")
-
 fn diagnose_logs():
     print("DByteOS Diagnose: logs")
     # Missing is not fatal if clean state, just simple print for now
@@ -114,7 +95,6 @@ fn diagnose_logs():
     print("services: ok")
     print("security: ok")
     print("result: healthy")
-
 fn diagnose_manual():
     print("DByteOS Diagnose: manual")
     let all_ok: int = 1
@@ -125,17 +105,14 @@ fn diagnose_manual():
     else:
         print("topics: missing")
         all_ok = 0
-    
     if all_ok == 1:
         print("result: healthy")
     else:
         print("result: unhealthy")
-
 fn diagnose_package():
     print("DByteOS Diagnose: package")
     print("smoke: ok")
     print("result: healthy")
-
 let args: list[str] = env.args()
 if len(args) == 0:
     print("usage: diagnose [profile|config|security|logs|manual|package]")
