@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.2.0)
+# DByteOS Alpha Userland (v4.2.1)
 
 Welcome to the Alpha release of DByteOS.
 
@@ -20,4 +20,4 @@ DByteOS is a **Personal Computing Userland** built on top of the DByte programmi
 As an Alpha release, DByteOS features a stable core command set and a robust security model. Future releases will focus on expanding the userland ecosystem, improving the developer experience, and refining the "HolyC-style" interaction model.
 
 ---
-[Home](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/README.md) | [Commands](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_COMMANDS.md) | [Security](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_SECURITY.md) | [Boot](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_BOOT.md)
+[Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)
