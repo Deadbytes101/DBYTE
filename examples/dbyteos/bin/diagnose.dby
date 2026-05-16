@@ -109,13 +109,25 @@ fn diagnose_manual():
         print("result: healthy")
     else:
         print("result: unhealthy")
+fn diagnose_preferences():
+    print("DByteOS Diagnose: preferences")
+    let all_ok: int = 1
+    if fs.exists(osprofile.resolve_path("home/deadbyte/preferences.dby")) == 1:
+        print("file: ok")
+    else:
+        print("file: missing")
+        all_ok = 0
+    if all_ok == 1:
+        print("result: healthy")
+    else:
+        print("result: unhealthy")
 fn diagnose_package():
     print("DByteOS Diagnose: package")
     print("smoke: ok")
     print("result: healthy")
 let args: list[str] = env.args()
 if len(args) == 0:
-    print("usage: diagnose [profile|config|security|logs|manual|package]")
+    print("usage: diagnose [profile|config|preferences|security|logs|manual|package]")
 else:
     let cmd: str = args[0]
     if cmd == "profile":
@@ -127,13 +139,16 @@ else:
             if cmd == "security":
                 diagnose_security()
             else:
-                if cmd == "logs":
-                    diagnose_logs()
+                if cmd == "preferences":
+                    diagnose_preferences()
                 else:
-                    if cmd == "manual":
-                        diagnose_manual()
+                    if cmd == "logs":
+                        diagnose_logs()
                     else:
-                        if cmd == "package":
-                            diagnose_package()
+                        if cmd == "manual":
+                            diagnose_manual()
                         else:
-                            print("usage: diagnose [profile|config|security|logs|manual|package]")
+                            if cmd == "package":
+                                diagnose_package()
+                            else:
+                                print("usage: diagnose [profile|config|preferences|security|logs|manual|package]")

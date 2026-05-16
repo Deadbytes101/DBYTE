@@ -1,0 +1,108 @@
+import std.fs as fs
+import "../home/deadbyte/preferences.dby" as raw_prefs
+
+fn _get_path() -> str:
+    if fs.exists("examples/dbyteos") == 1:
+        return "examples/dbyteos/home/deadbyte/preferences.dby"
+    return "home/deadbyte/preferences.dby"
+
+pub fn get(key: str) -> str:
+    if key == "ui.theme":
+        return raw_prefs.ui_theme
+    else:
+        if key == "system.prompt":
+            return raw_prefs.system_prompt
+        else:
+            if key == "user.display_name":
+                return raw_prefs.user_display_name
+            else:
+                return ""
+
+pub fn is_safe_key(key: str) -> int:
+    if key == "ui.theme":
+        return 1
+    else:
+        if key == "system.prompt":
+            return 1
+        else:
+            if key == "user.display_name":
+                return 1
+            else:
+                return 0
+
+pub fn is_valid_value(key: str, value: str) -> int:
+    if key == "ui.theme":
+        if value == "default":
+            return 1
+        else:
+            if value == "dark":
+                return 1
+            else:
+                if value == "light":
+                    return 1
+                else:
+                    return 0
+    else:
+        if key == "system.prompt":
+            if value == "dbyte-shell>":
+                return 1
+            else:
+                if value == "dbyteos>":
+                    return 1
+                else:
+                    if value == "deadbyte>":
+                        return 1
+                    else:
+                        return 0
+        else:
+            if key == "user.display_name":
+                if value == "deadbyte":
+                    return 1
+                else:
+                    if value == "guest":
+                        return 1
+                    else:
+                        if value == "operator":
+                            return 1
+                        else:
+                            return 0
+            else:
+                return 0
+
+pub fn _write_prefs(theme: str, prompt: str, display: str):
+    let content: str = "pub let ui_theme: str = \"" + theme + "\"\n"
+    content = content + "pub let system_prompt: str = \"" + prompt + "\"\n"
+    content = content + "pub let user_display_name: str = \"" + display + "\"\n"
+    fs.write_text(_get_path(), content)
+
+pub fn set(key: str, value: str) -> int:
+    if is_safe_key(key) == 0:
+        return 0
+    if is_valid_value(key, value) == 0:
+        return 0
+    
+    let cur_theme: str = raw_prefs.ui_theme
+    let cur_prompt: str = raw_prefs.system_prompt
+    let cur_display: str = raw_prefs.user_display_name
+
+    if key == "ui.theme":
+        cur_theme = value
+    else:
+        if key == "system.prompt":
+            cur_prompt = value
+        else:
+            if key == "user.display_name":
+                cur_display = value
+            else:
+                return 0
+    
+    _write_prefs(cur_theme, cur_prompt, cur_display)
+    return 1
+
+pub fn reset_demo():
+    _write_prefs("default", "dbyte-shell>", "deadbyte")
+
+pub fn show():
+    print("ui.theme = " + raw_prefs.ui_theme)
+    print("system.prompt = " + raw_prefs.system_prompt)
+    print("user.display_name = " + raw_prefs.user_display_name)

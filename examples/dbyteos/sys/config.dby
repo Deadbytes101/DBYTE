@@ -1,4 +1,5 @@
 import "../etc/config.dby" as prefs
+import "preferences.dby" as mut_prefs
 import std.fs as fs
 
 pub fn resolve_path(p: str) -> str:
@@ -28,13 +29,13 @@ pub fn get_raw(key: str) -> str:
     if key == "system.mode":
         return prefs.system_mode
     if key == "system.prompt":
-        return prefs.system_prompt
+        return mut_prefs.get("system.prompt")
     if key == "user.name":
-        return prefs.user_name
+        return mut_prefs.get("user.display_name")
     if key == "user.home":
         return prefs.user_home
     if key == "ui.theme":
-        return prefs.ui_theme
+        return mut_prefs.get("ui.theme")
     if key == "security.mode":
         return prefs.security_mode
     return ""
