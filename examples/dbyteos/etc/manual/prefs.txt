@@ -18,6 +18,11 @@ Commands
   get           Display the value of a specific preference key.
   set           Update a preference. Keys and values are strictly validated
                 against an allowlist to prevent injection.
+  status        Check the health of the preference subsystem and backup.
+  doctor        Validate the schema of the current preference file.
+  allowed       List all safe mutable keys and their permitted values.
+  backup-demo   Copy the current preferences to a .bak file.
+  restore-demo  Restore preferences from a .bak file if one exists.
   reset-demo    Restore preferences to their default seed state.
 
 Safe Writable Keys

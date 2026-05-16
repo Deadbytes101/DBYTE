@@ -6,7 +6,11 @@ pub fn resolve_path(p: str) -> str:
     return config.resolve_path(p)
 
 pub fn get_user() -> str:
-    return config.get("user.name")
+    let base: str = config.get_base("user.name")
+    let cur: str = config.get("user.name")
+    if base != cur:
+        return base + " (display: " + cur + ")"
+    return base
 
 pub fn get_home() -> str:
     return config.get("user.home")
@@ -21,10 +25,18 @@ pub fn get_mode() -> str:
     return config.get("system.mode")
 
 pub fn get_theme() -> str:
-    return config.get("ui.theme")
+    let base: str = config.get_base("ui.theme")
+    let cur: str = config.get("ui.theme")
+    if base != cur:
+        return cur + " (base: " + base + ")"
+    return cur
 
 pub fn get_prompt() -> str:
-    return config.get("system.prompt")
+    let base: str = config.get_base("system.prompt")
+    let cur: str = config.get("system.prompt")
+    if base != cur:
+        return cur + " (overridden)"
+    return cur
 
 pub fn resolve_os_file(name: str) -> str:
     if fs.exists(name) == 1:

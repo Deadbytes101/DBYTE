@@ -28,7 +28,12 @@ fn show_profile():
 fn show_config():
     print("Config:")
     for key in config.keys():
-        print("  " + key + " = " + config.get(key))
+        let val: str = config.get(key)
+        let base_val: str = config.get_base(key)
+        if base_val != val:
+            print("  " + key + " = " + val + " (overridden)")
+        else:
+            print("  " + key + " = " + val)
 
 fn show_security():
     print("Security:")

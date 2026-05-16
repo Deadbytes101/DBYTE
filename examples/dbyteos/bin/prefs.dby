@@ -8,6 +8,11 @@ fn show_help():
     print("  show                   - display all user preferences")
     print("  get <key>              - display value for a specific key")
     print("  set <key> <value>      - update value for a safe key")
+    print("  status                 - check preference subsystem health")
+    print("  doctor                 - check configuration schema validity")
+    print("  allowed                - list safe mutable keys and allowed values")
+    print("  backup-demo            - copy preferences to a backup file")
+    print("  restore-demo           - restore preferences from a backup file")
     print("  reset-demo             - restore preferences to deterministic defaults")
 
 let args: list[str] = env.args()
@@ -54,5 +59,20 @@ else:
                     prefs.reset_demo()
                     print("preferences reset to default seed state.")
                 else:
-                    print("error: unknown command: " + cmd)
-                    show_help()
+                    if cmd == "status":
+                        prefs.status()
+                    else:
+                        if cmd == "doctor":
+                            prefs.doctor()
+                        else:
+                            if cmd == "allowed":
+                                prefs.allowed()
+                            else:
+                                if cmd == "backup-demo":
+                                    prefs.backup_demo()
+                                else:
+                                    if cmd == "restore-demo":
+                                        prefs.restore_demo()
+                                    else:
+                                        print("error: unknown command: " + cmd)
+                                        show_help()

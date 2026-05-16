@@ -30,6 +30,11 @@ The `prefs` command manages these settings:
 - `prefs show` - View all preferences
 - `prefs get <key>` - Get a specific preference
 - `prefs set <key> <value>` - Set a safe preference
+- `prefs status` - Check the health of the preference subsystem and backup
+- `prefs doctor` - Validate the schema of the current preference file
+- `prefs allowed` - List all safe mutable keys and their permitted values
+- `prefs backup-demo` - Copy the current preferences to a `.bak` file
+- `prefs restore-demo` - Restore preferences from a `.bak` file
 - `prefs reset-demo` - Reset preferences to their default state
 
 ## Security and Diagnostics
