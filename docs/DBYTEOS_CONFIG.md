@@ -28,8 +28,11 @@ config get system.prompt
 prints the available keys. `config get <key>` prints one value for scripts and
 package smoke tests.
 
-The config layer is read-only in v4.4.1. It does not write config files,
+The config layer is read-only in v4.5.0. It does not write config files,
 persist settings, change security policy, or invoke the host OS.
 
+Use `snapshot config` when you need the same values inside a broader system
+snapshot.
+
 ---
-[Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Security](DBYTEOS_SECURITY.md)
+[Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Snapshot](DBYTEOS_SNAPSHOT.md) | [Security](DBYTEOS_SECURITY.md)

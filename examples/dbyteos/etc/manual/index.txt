@@ -11,6 +11,7 @@ Manual topics:
   whoami
   profile
   config
+  snapshot
   env
   path
   read
