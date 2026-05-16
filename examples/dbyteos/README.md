@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.1.0)
+# DByteOS Alpha Userland (v4.1.1)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -60,4 +60,4 @@ quit
 - **Determinism**: All system logs (`boot.log`, `security.log`) are reproducible.
 
 ---
-[Alpha Positioning](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_ALPHA.md) | [Security Policy](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_SECURITY.md)
+[Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
