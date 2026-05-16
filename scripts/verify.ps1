@@ -1767,6 +1767,95 @@ try {
     if ($dbyteosPrefsGetAfterReset.Code -ne 0) { throw "dbyteos prefs get after reset failed: $($dbyteosPrefsGetAfterReset.Text)" }
     Assert-Equal $dbyteosPrefsGetAfterReset.Text "default" "dbyteos prefs get default after reset"
 
+    # --- v4.8.1 Exact Snapshot Assertions ---
+    # ensure no stale .bak from previous runs
+    $prefsBakCleanup = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby.bak"
+    Remove-Item $prefsBakCleanup -Force -ErrorAction SilentlyContinue
+
+    $expectedPrefsStatus = @"
+Preferences Subsystem: Healthy (Active)
+Backup: Missing
+"@
+    $dbyteosPrefsStatus = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "status") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsStatus.Code -ne 0) { throw "dbyteos prefs status failed: $($dbyteosPrefsStatus.Text)" }
+    Assert-NormalizedEqual $dbyteosPrefsStatus.Text $expectedPrefsStatus "dbyteos prefs status snapshot"
+
+    $expectedPrefsAllowed = @"
+Safe Mutable Keys:
+  ui.theme:           default, dark, light
+  system.prompt:      dbyte-shell>, dbyteos>, deadbyte>
+  user.display_name:  deadbyte, guest, operator
+"@
+    $dbyteosPrefsAllowed = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "allowed") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsAllowed.Code -ne 0) { throw "dbyteos prefs allowed failed: $($dbyteosPrefsAllowed.Text)" }
+    Assert-NormalizedEqual $dbyteosPrefsAllowed.Text $expectedPrefsAllowed "dbyteos prefs allowed snapshot"
+
+    $expectedPrefsDoctor = @"
+Preferences module imported successfully.
+All required mutable keys are present.
+Schema validation passed.
+"@
+    $dbyteosPrefsDoctor = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "doctor") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsDoctor.Code -ne 0) { throw "dbyteos prefs doctor failed: $($dbyteosPrefsDoctor.Text)" }
+    Assert-NormalizedEqual $dbyteosPrefsDoctor.Text $expectedPrefsDoctor "dbyteos prefs doctor snapshot"
+
+    # --- Backup / Restore Lifecycle ---
+    $dbyteosPrefsBackup = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "backup-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsBackup.Code -ne 0) { throw "dbyteos prefs backup-demo failed: $($dbyteosPrefsBackup.Text)" }
+    Assert-Equal $dbyteosPrefsBackup.Text "Preferences backed up successfully." "dbyteos prefs backup-demo"
+
+    $expectedPrefsStatusWithBak = @"
+Preferences Subsystem: Healthy (Active)
+Backup: Present
+"@
+    $dbyteosPrefsStatusBak = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "status") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsStatusBak.Code -ne 0) { throw "dbyteos prefs status after backup failed: $($dbyteosPrefsStatusBak.Text)" }
+    Assert-NormalizedEqual $dbyteosPrefsStatusBak.Text $expectedPrefsStatusWithBak "dbyteos prefs status after backup"
+
+    $dbyteosPrefsBackupIdempotent = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "backup-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsBackupIdempotent.Code -ne 0) { throw "dbyteos prefs backup-demo idempotent failed: $($dbyteosPrefsBackupIdempotent.Text)" }
+    Assert-Equal $dbyteosPrefsBackupIdempotent.Text "Preferences backed up successfully." "dbyteos prefs backup-demo idempotent"
+
+    $dbyteosPrefsRestore = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "restore-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsRestore.Code -ne 0) { throw "dbyteos prefs restore-demo failed: $($dbyteosPrefsRestore.Text)" }
+    Assert-Equal $dbyteosPrefsRestore.Text "Preferences restored successfully." "dbyteos prefs restore-demo"
+
+    $dbyteosPrefsRestoreIdempotent = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "restore-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsRestoreIdempotent.Code -ne 0) { throw "dbyteos prefs restore-demo idempotent failed: $($dbyteosPrefsRestoreIdempotent.Text)" }
+    Assert-Equal $dbyteosPrefsRestoreIdempotent.Text "Preferences restored successfully." "dbyteos prefs restore-demo idempotent"
+
+    # --- prefs set → override display sync ---
+    $dbyteosPrefsSetDark = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "set", "ui.theme", "dark") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosPrefsSetDark.Code -ne 0) { throw "dbyteos prefs set dark failed: $($dbyteosPrefsSetDark.Text)" }
+
+    $dbyteosConfigShowDark = Invoke-Dbyte -Arguments @("run", "bin\config.dby", "show") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosConfigShowDark.Code -ne 0) { throw "dbyteos config show dark failed: $($dbyteosConfigShowDark.Text)" }
+    Assert-Contains $dbyteosConfigShowDark.Text "ui.theme = dark (overridden)" "dbyteos config show dark override marker"
+
+    $dbyteosSnapshotConfigDark = Invoke-Dbyte -Arguments @("run", "bin\snapshot.dby", "config") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosSnapshotConfigDark.Code -ne 0) { throw "dbyteos snapshot config dark failed: $($dbyteosSnapshotConfigDark.Text)" }
+    Assert-Contains $dbyteosSnapshotConfigDark.Text "ui.theme = dark (overridden)" "dbyteos snapshot config dark override marker"
+
+    # restore to defaults before continuing
+    $null = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "reset-demo") -WorkingDirectory $dbyteosRoot
+
+    # --- clean preserves preferences.dby and .bak ---
+    $prefsPath = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
+    $prefsBakPath = $prefsPath + ".bak"
+    $null = Invoke-Dbyte -Arguments @("run", "bin\prefs.dby", "backup-demo") -WorkingDirectory $dbyteosRoot
+    $dbyteosCleanPrefs = Invoke-Dbyte -Arguments @("run", "bin\clean.dby") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosCleanPrefs.Code -ne 0) { throw "dbyteos clean (prefs preservation) failed: $($dbyteosCleanPrefs.Text)" }
+    if (-not (Test-Path $prefsPath)) { throw "clean deleted preferences.dby - must be preserved" }
+    if (-not (Test-Path $prefsBakPath)) { throw "clean deleted preferences.dby.bak - must be preserved" }
+    Assert-Contains $dbyteosCleanPrefs.Text "workspace sweep complete" "dbyteos clean sweep completes after prefs backup"
+
+    # cleanup bak after test
+    Remove-Item $prefsBakPath -Force -ErrorAction SilentlyContinue
+
+    # --- scratch guard: test_import.dby must not exist in repo root ---
+    $scratchGuardPath = Join-Path $repoRoot "test_import.dby"
+    if (Test-Path $scratchGuardPath) { throw "scratch file detected in repo root: test_import.dby - remove before tagging" }
+
     $dbyteosSnapshotDirect = Invoke-Dbyte -Arguments @("run", "bin\snapshot.dby") -WorkingDirectory $dbyteosRoot
     if ($dbyteosSnapshotDirect.Code -ne 0) { throw "dbyteos snapshot failed: $($dbyteosSnapshotDirect.Text)" }
     Assert-NormalizedEqual $dbyteosSnapshotDirect.Text $expectedDbyteosSnapshot "dbyteos snapshot default snapshot"
