@@ -1,4 +1,4 @@
-# DByteOS Alpha Userland (v4.7.0)
+# DByteOS Alpha Userland (v4.7.1)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 

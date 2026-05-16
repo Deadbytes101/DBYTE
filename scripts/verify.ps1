@@ -2275,6 +2275,7 @@ cat etc/../etc/system.dby
 touch tmp/../etc/system.dby
 inspect /etc/system.dby
 man perm
+clean
 quit
 "@
     $dbyteosHardening = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "$hardeningInput`n" -WorkingDirectory $dbyteosRoot
