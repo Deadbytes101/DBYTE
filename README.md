@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.2.1)
+## DByteOS Alpha Userland (v4.3.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -50,6 +50,7 @@ This configures the session environment and activates autopath resolving.
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
 - [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
+- [Profile Guide](docs/DBYTEOS_PROFILE.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
@@ -58,6 +59,7 @@ This configures the session environment and activates autopath resolving.
 
 ```bash
 dbyte-shell> welcome
+dbyte-shell> profile show
 dbyte-shell> getting-started
 dbyte-shell> commands
 dbyte-shell> man-index
@@ -80,6 +82,7 @@ Expected first commands inside the package shell:
 
 ```txt
 welcome
+profile show
 getting-started
 commands
 man-index
@@ -284,6 +287,7 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
 - [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
 - [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
+- [DByteOS Profile](docs/DBYTEOS_PROFILE.md)
 - [DByteOS Security](docs/DBYTEOS_SECURITY.md)
 - [DByteOS Boot](docs/DBYTEOS_BOOT.md)
 - [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md)

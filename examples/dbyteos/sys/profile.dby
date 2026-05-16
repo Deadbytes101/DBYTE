@@ -15,6 +15,21 @@ pub fn get_home() -> str:
     let p: str = "home/deadbyte"
     return resolve_path(p)
 
+pub fn get_home_rel() -> str:
+    return "home/deadbyte"
+
+pub fn get_shell() -> str:
+    return "dbyte shell"
+
+pub fn get_mode() -> str:
+    return "alpha-userland"
+
+pub fn get_theme() -> str:
+    return "default"
+
+pub fn get_prompt() -> str:
+    return "dbyte-shell>"
+
 pub fn resolve_os_file(name: str) -> str:
     if fs.exists(name) == 1:
         return name

@@ -9,6 +9,11 @@ print("  Host:    ", system.hostname)
 print("  User:    ", profile.get_user())
 print("  Home:    ", profile.get_home())
 print("")
+print("Profile:")
+print("  Mode:    ", profile.get_mode())
+print("  Theme:   ", profile.get_theme())
+print("  Prompt:  ", profile.get_prompt())
+print("")
 
 let dirs: list[str] = ["bin", "etc", "sys", "home", "tmp"]
 print("Filesystem Integrity:")

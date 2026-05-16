@@ -27,6 +27,7 @@ Inside the DByte shell:
 
 ```txt
 welcome
+profile show
 getting-started
 commands
 man-index
@@ -44,6 +45,7 @@ quit
 
 - `dbyte.exe --version` prints the packaged version.
 - `welcome` prints the onboarding entry point.
+- `profile show` prints the deterministic profile summary.
 - `getting-started` prints the first-run checklist.
 - `commands` prints commands grouped by category.
 - `man-index` lists manual topics.
