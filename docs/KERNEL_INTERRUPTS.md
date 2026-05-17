@@ -51,6 +51,11 @@ When the CPU executes the one-byte `int3` instruction (`0xCC`), the following ha
 5. **Rust Dispatch**: Calls `breakpoint_handler_rust` which outputs high-level text logs safely to both VGA and Serial console channels.
 6. **State Restoration & Return**: Executes `popad` to restore register values, and executes `iretd` to pop the saved `EIP`, `CS`, and `EFLAGS` off the stack, resuming user shell execution seamlessly without triple faulting.
 
+### Divide-by-Zero Exception Behavior (Vector 0)
+When a division error occurs, the processor normally triggers a **Fault** (Vector 0). In a real fault condition, the return `EIP` pushed onto the stack points to the *offending division instruction*.
+- **The Infinite Loop Gotcha**: If a handler simply executes `iretd` without modifying the pushed stack pointer, the CPU will jump back to the exact same division instruction and trigger the fault again, leading to an infinite exception loop or a Triple Fault.
+- **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
+
 ---
 
 ## 3. The Programmable Interrupt Controller (8259A PIC)
@@ -112,16 +117,17 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.4.0`)
+## 6. Current Milestone Status (`v7.4.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.4.0`, and CPU exception telemetry and handling have been successfully expanded:
-- **Divide-by-Zero Exception (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, which wraps `divide_by_zero_handler_rust`. Preserves register state (`pushad`/`popad`) and returns cleanly via `iretd`.
-- **`div0` Command**: Added a controlled trigger command `div0` using the `int 0` software instruction, allowing safe trap-based return behavior to prevent EIP infinite loops.
-- **Telemetry Synchronized**: Telemetry correctly tracks and increments on divide-by-zero exceptions, setting `LAST_EXCEPTION_VECTOR` to `0` and `LAST_EXCEPTION_NAME` to `"divide-by-zero"`.
-- **Telemetry State Tracking**: Tracks exception counts (`EXCEPTION_COUNT`), last vector (`LAST_EXCEPTION_VECTOR`), and last exception name (`LAST_EXCEPTION_NAME`) under zero-allocation constraints.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.4.1`, and CPU exception telemetry and handling have been successfully hardened:
+- **Hardened Divide-by-Zero Exception (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, which wraps `divide_by_zero_handler_rust`. Preserves register state (`pushad`/`popad`) and returns cleanly via `iretd`.
+- **Trap-Style Trigger Clarified**: Explicitly documented that the `"div0"` command leverages the `int 0` software trap rather than raw hardware division, avoiding infinite EIP collision loops on fault returns.
+- **Idempotent Telemetry Reset**: Verified that `exception-reset` clears telemetry data back to defaults (`0 / none / none`) cleanly, regardless of previous exception counts or vectors.
+- **Dynamic System Status Sync**: Reports active handlers (`breakpoint, divide-by-zero`) and dynamically syncs exception count and vector details on the `system` display.
+- **Explicit Safety Disclaimers**: Verified that Page-Fault exceptions (vector 14) are not stubbed/active, physical `STI` remains uncalled, and PIC IRQ controllers are not remapped yet, protecting memory and polling loop integrity.
 - **`exception` Command**: Displays current telemetry counts and last exception parameters.
 - **`exception-reset` Command**: Resets all exception statistics cleanly back to `0 / none / none`.
-- **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically, reflecting active handlers: `breakpoint, divide-by-zero`.
+- **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically.
 - **Breakpoint Exception (Vector 3)**: Fully active. An assembly wrapper `breakpoint_handler_asm` preserves register state (`pushad`/`popad`) and handles CPU return via `iretd` cleanly, updating telemetry on each call.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
