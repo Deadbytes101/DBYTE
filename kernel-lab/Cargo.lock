@@ -4,4 +4,4 @@ version = 4
 
 [[package]]
 name = "dbyte_kernel"
-version = "7.5.0"
+version = "7.5.1"
