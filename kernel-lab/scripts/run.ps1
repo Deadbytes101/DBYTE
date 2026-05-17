@@ -2,10 +2,13 @@ param(
     [switch]$Serial
 )
 
-$kernelPath = "target\i686-unknown-linux-gnu\debug\dbyte_kernel"
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$kernelLabRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+
+$kernelPath = Join-Path $kernelLabRoot "target\i686-unknown-linux-gnu\debug\dbyte_kernel"
 if (-not (Test-Path $kernelPath)) {
     Write-Host "[ERROR] Kernel binary not found! Run build.ps1 first." -ForegroundColor Red
-    exit 1
+    return
 }
 
 Write-Host "Checking for QEMU emulator installation..." -ForegroundColor Green
