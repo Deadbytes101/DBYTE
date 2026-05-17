@@ -38,6 +38,8 @@ if ($Serial) {
     Write-Host "========================================================================" -ForegroundColor Green
     Write-Host "Launching freestanding DByteOS Kernel Lab under QEMU graphical display..." -ForegroundColor Green
     Write-Host "Executing: $qemuExeName -kernel `"$kernelPath`"" -ForegroundColor Cyan
+    Write-Host "Note: Left-click inside the QEMU graphical display window to redirect keyboard focus!" -ForegroundColor Green
+    Write-Host "Press keys (e.g. 'A') and observe raw make/break scancodes print to the VGA frame buffer." -ForegroundColor Yellow
     Write-Host "========================================================================" -ForegroundColor Green
     & $qemuExeName -kernel $kernelPath
 }
