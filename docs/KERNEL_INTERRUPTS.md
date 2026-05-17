@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.4.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.5.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -41,6 +41,15 @@ To notify the CPU of the IDT location, the standard `lidt` assembly instruction 
 - **`base`** (Offset `2..5`, 4 Bytes): Linear 32-bit base address pointing directly to the contiguous `[IdtEntry; 256]` table array in memory.
 
 During execution, loading this pointer register structure into the processor's IDTR register configures the memory address bounds for CPU exception vectors.
+
+### Exception Handler Status Table
+The following table summarizes the currently registered (active) and planned CPU exception vectors in the IDT:
+
+| Vector | Type | Name | Status | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `0` | Fault / Trap | Divide-by-Zero | **Active** | Controlled via `int 0` trap for shell diagnostics. |
+| `3` | Trap | Breakpoint | **Active** | Standard software breakpoint via `int3`. |
+| `14` | Fault | Page Fault | *Planned* | Unhandled in current version (v7.5.0). |
 
 ### Breakpoint Exception Behavior (`int3` Trap - Vector 3)
 When the CPU executes the one-byte `int3` instruction (`0xCC`), the following hardware sequence is performed:
@@ -97,11 +106,11 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 > The standard `lidt` instruction was successfully called during bootstrap to load the active Interrupt Descriptor Table base address. However, maskable interrupts remain strictly disabled on the processor (no `sti` instruction execution). All external IRQ signals will be completely ignored, keeping CPU hardware interrupt dispatch dormant.
 
 > [!CAUTION]
-> **Only Breakpoint Handler is Active**
-> Although the IDT structure is successfully loaded and Vector 3 (Breakpoint) is fully handled, all other 255 gates remain initialized with a missing/non-present default gate (`IdtEntry::missing()`). 
-> 
-> - **No Divide-by-Zero Handler Yet**: Vector 0 is unhandled. Any division-by-zero executed in kernel space will immediately trigger an unhandled CPU fault, causing a Triple Fault reboot!
-> - **No Page Fault Handler Yet**: Vector 14 is unhandled. Any illegal virtual memory access will immediately trigger a Double/Triple Fault reset!
+> **Only Vector 0 and Vector 3 Handlers are Active**
+> Although the IDT structure is successfully loaded, only Vector 0 (Divide-by-Zero diagnostics via controlled `int 0`) and Vector 3 (Breakpoint via `int3`) are active in this milestone. All other gates remain initialized with a missing/non-present default gate (`IdtEntry::missing()`).
+>
+> - **Raw Divide Faults are Not Used for Shell Diagnostics**: The `div0` command intentionally uses a controlled software trap instead of a raw `div` fault to avoid returning to the same faulting instruction.
+> - **No Page Fault Handler Yet**: Vector 14 is planned but unhandled. Any illegal virtual memory access can still trigger a Double/Triple Fault reset.
 
 > [!IMPORTANT]
 > **No PIC Remapping Dispatch**
@@ -117,19 +126,16 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.4.1`)
+## 6. Current Milestone Status (`v7.5.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.4.1`, and CPU exception telemetry and handling have been successfully hardened:
-- **Hardened Divide-by-Zero Exception (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, which wraps `divide_by_zero_handler_rust`. Preserves register state (`pushad`/`popad`) and returns cleanly via `iretd`.
-- **Trap-Style Trigger Clarified**: Explicitly documented that the `"div0"` command leverages the `int 0` software trap rather than raw hardware division, avoiding infinite EIP collision loops on fault returns.
-- **Idempotent Telemetry Reset**: Verified that `exception-reset` clears telemetry data back to defaults (`0 / none / none`) cleanly, regardless of previous exception counts or vectors.
-- **Dynamic System Status Sync**: Reports active handlers (`breakpoint, divide-by-zero`) and dynamically syncs exception count and vector details on the `system` display.
-- **Explicit Safety Disclaimers**: Verified that Page-Fault exceptions (vector 14) are not stubbed/active, physical `STI` remains uncalled, and PIC IRQ controllers are not remapped yet, protecting memory and polling loop integrity.
-- **`exception` Command**: Displays current telemetry counts and last exception parameters.
-- **`exception-reset` Command**: Resets all exception statistics cleanly back to `0 / none / none`.
-- **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically.
-- **Breakpoint Exception (Vector 3)**: Fully active. An assembly wrapper `breakpoint_handler_asm` preserves register state (`pushad`/`popad`) and handles CPU return via `iretd` cleanly, updating telemetry on each call.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.5.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
+- **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`) and planned handlers (`vector 14: page fault`) in a clean, visual format.
+- **`exception-status` & `exceptions` Command**: Displays detailed exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
+- **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics suite commands.
+- **Exception Handler Status Table**: Added a clear vector registration tracking table mapping Active vs Planned entry gates in Section 2.
+- **Controlled Divide-by-Zero (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, preserving GPRs via `pushad`/`popad` and returning via `iretd`.
+- **Breakpoint Exception (Vector 3)**: Fully active. Registered IDT entry 3 pointing to `breakpoint_handler_asm`, preserving GPRs and returning cleanly via `iretd`.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
-- **Status Reporting**: The `system` command explicitly lists: `idt: loaded`, `exception handlers: breakpoint, divide-by-zero`, and `interrupts: disabled`.
+- **Status Reporting**: The `system` command dynamically syncs exception count and active/planned status information cleanly.
