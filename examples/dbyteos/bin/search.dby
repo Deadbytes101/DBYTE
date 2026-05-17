@@ -12,6 +12,11 @@ fn show_help():
     print("  project search <project> <text>  - search notes and tasks of a project")
     print("  task search <project> <text>     - search tasks of a project")
     print("  daily search <text>              - search daily notes, journal, and tasks")
+    print("  index <text>                     - search workspace index cache")
+    print("  status                           - show search index status")
+    print("  rebuild                          - rebuild workspace index cache")
+    print("  doctor                           - verify search index integrity")
+    print("  clear-cache                      - clear workspace index cache")
     print("  reset-demo                       - reset demo project and workspace seed data")
     print("  help                             - show this help")
 
@@ -286,6 +291,172 @@ fn daily_search(query_dl: str):
         if dl_line != "":
             search_project_tasks(dl_line, query_dl)
 
+fn append_file_records(rebuild_file_type: str, rebuild_proj: str, rebuild_rel_path: str) -> str:
+    let out_records: str = ""
+    let rebuild_full_path: str = profile.resolve_user_data_path(rebuild_rel_path)
+    if fs.exists(rebuild_full_path) == 1:
+        let rebuild_content: str = fs.read_text(rebuild_full_path)
+        let rebuild_line: str = ""
+        let rebuild_line_no: int = 1
+        for rebuild_c in rebuild_content:
+            if rebuild_c == "\n":
+                if rebuild_line != "":
+                    out_records = out_records + rebuild_file_type + "|" + rebuild_proj + "|" + rebuild_rel_path + "|" + int_to_str(rebuild_line_no) + "|" + rebuild_line + "\n"
+                rebuild_line = ""
+                rebuild_line_no = rebuild_line_no + 1
+            else:
+                if rebuild_c != "\r":
+                    rebuild_line = rebuild_line + rebuild_c
+        if rebuild_line != "":
+            out_records = out_records + rebuild_file_type + "|" + rebuild_proj + "|" + rebuild_rel_path + "|" + int_to_str(rebuild_line_no) + "|" + rebuild_line + "\n"
+    return out_records
+
+fn rebuild_index():
+    let accum: str = ""
+    let notes_rec: str = append_file_records("notes", "", "home/deadbyte/notes.txt")
+    accum = accum + notes_rec
+    let journal_rec: str = append_file_records("journal", "", "home/deadbyte/journal.txt")
+    accum = accum + journal_rec
+    
+    let index_rel_rb: str = "home/deadbyte/projects/index.txt"
+    let index_path_rb: str = profile.resolve_user_data_path(index_rel_rb)
+    if fs.exists(index_path_rb) == 1:
+        let content_rb: str = fs.read_text(index_path_rb)
+        let rb_line: str = ""
+        for c_rb in content_rb:
+            if c_rb == "\n":
+                if rb_line != "":
+                    let p_notes: str = append_file_records("proj_note", rb_line, "home/deadbyte/projects/" + rb_line + "/notes.txt")
+                    let p_tasks: str = append_file_records("proj_task", rb_line, "home/deadbyte/projects/" + rb_line + "/tasks.txt")
+                    accum = accum + p_notes + p_tasks
+                rb_line = ""
+            else:
+                if c_rb != "\r":
+                    rb_line = rb_line + c_rb
+        if rb_line != "":
+            let p_notes: str = append_file_records("proj_note", rb_line, "home/deadbyte/projects/" + rb_line + "/notes.txt")
+            let p_tasks: str = append_file_records("proj_task", rb_line, "home/deadbyte/projects/" + rb_line + "/tasks.txt")
+            accum = accum + p_notes + p_tasks
+
+    let rec_count: int = 0
+    for char_rb in accum:
+        if char_rb == "\n":
+            rec_count = rec_count + 1
+            
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    fs.write_text(index_cache_path, accum)
+    print("search: index rebuilt successfully (" + int_to_str(rec_count) + " records indexed)")
+
+fn clear_cache():
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 1:
+        fs.remove(index_cache_path)
+    print("search: index cache cleared successfully")
+
+fn show_status():
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        print("index: missing (use 'search rebuild' to generate)")
+    else:
+        let index_content: str = fs.read_text(index_cache_path)
+        let rec_count: int = 0
+        let bytes_size: int = len(index_content)
+        for c in index_content:
+            if c == "\n":
+                rec_count = rec_count + 1
+        print("index: active (" + int_to_str(rec_count) + " records, " + int_to_str(bytes_size) + " bytes)")
+
+fn is_record_valid(rec_line: str) -> int:
+    let pipe_count: int = 0
+    for c in rec_line:
+        if c == "|":
+            pipe_count = pipe_count + 1
+    if pipe_count < 4:
+        return 0
+    return 1
+
+fn run_doctor():
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        print("error: index: missing (use 'search rebuild' to generate)")
+    else:
+        let index_content: str = fs.read_text(index_cache_path)
+        let doc_line: str = ""
+        let is_healthy: int = 1
+        let rec_count: int = 0
+        for c in index_content:
+            if c == "\n":
+                if doc_line != "":
+                    if is_record_valid(doc_line) == 0:
+                        is_healthy = 0
+                    rec_count = rec_count + 1
+                doc_line = ""
+            else:
+                if c != "\r":
+                    doc_line = doc_line + c
+        if doc_line != "":
+            if is_record_valid(doc_line) == 0:
+                is_healthy = 0
+            rec_count = rec_count + 1
+            
+        if is_healthy == 1:
+            print("index: healthy (all " + int_to_str(rec_count) + " records valid)")
+        else:
+            print("error: index structurally invalid")
+
+fn search_cache_index(query_str: str):
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        print("error: index: missing (use 'search rebuild' to generate)")
+    else:
+        print("DByteOS index search: " + query_str)
+        let index_content: str = fs.read_text(index_cache_path)
+        let rec_line: str = ""
+        for c in index_content:
+            if c == "\n":
+                if rec_line != "":
+                    let pipe_idx: int = 0
+                    let f_type: str = ""
+                    let f_proj: str = ""
+                    let f_file: str = ""
+                    let f_line_no: str = ""
+                    let f_content: str = ""
+                    for rc in rec_line:
+                        if rc == "|":
+                            pipe_idx = pipe_idx + 1
+                        else:
+                            if pipe_idx == 0:
+                                f_type = f_type + rc
+                            if pipe_idx == 1:
+                                f_proj = f_proj + rc
+                            if pipe_idx == 2:
+                                f_file = f_file + rc
+                            if pipe_idx == 3:
+                                f_line_no = f_line_no + rc
+                            if pipe_idx >= 4:
+                                f_content = f_content + rc
+                    
+                    if f_type == "proj_task":
+                        let status_val: str = line_status(f_content)
+                        let text_val: str = line_text(f_content)
+                        if string_contains(text_val, query_str) == 1:
+                            if status_val == "1":
+                                print("project " + f_proj + " task: [x] " + f_line_no + ": " + text_val)
+                            else:
+                                print("project " + f_proj + " task: [ ] " + f_line_no + ": " + text_val)
+                    else:
+                        if string_contains(f_content, query_str) == 1:
+                            if f_type == "notes":
+                                print("notes: " + f_content)
+                            if f_type == "journal":
+                                print("journal: " + f_content)
+                            if f_type == "proj_note":
+                                print("project " + f_proj + " note: " + f_content)
+                rec_line = ""
+            else:
+                if c != "\r":
+                    rec_line = rec_line + c
+
 fn reset_demo():
     let projects_path: str = profile.resolve_user_data_path("home/deadbyte/projects")
     if fs.exists(projects_path) == 0:
@@ -313,84 +484,106 @@ else:
         if cmd == "reset-demo":
             reset_demo()
         else:
-            if cmd == "workspace":
-                if len(args) < 2:
-                    show_help()
-                else:
-                    if args[1] != "search":
-                        print("error: unknown workspace command: " + args[1])
-                    else:
-                        if len(args) < 3:
-                            print("usage: workspace search <text>")
-                        else:
-                            let q: str = args[2]
-                            if valid_search_text(q) == 0:
-                                print("error: search: invalid query")
-                            else:
-                                workspace_search(q)
+            if cmd == "rebuild":
+                rebuild_index()
             else:
-                if cmd == "daily":
-                    if len(args) < 2:
-                        show_help()
-                    else:
-                        if args[1] != "search":
-                            print("error: unknown daily command: " + args[1])
-                        else:
-                            if len(args) < 3:
-                                print("usage: daily search <text>")
-                            else:
-                                let q: str = args[2]
-                                if valid_search_text(q) == 0:
-                                    print("error: search: invalid query")
-                                else:
-                                    daily_search(q)
+                if cmd == "clear-cache":
+                    clear_cache()
                 else:
-                    if cmd == "project":
-                        if len(args) < 2:
-                            show_help()
-                        else:
-                            if args[1] != "search":
-                                print("error: unknown project command: " + args[1])
-                            else:
-                                if len(args) < 4:
-                                    print("usage: project search <project> <text>")
-                                else:
-                                    let p_name: str = args[2]
-                                    let q: str = args[3]
-                                    if valid_name(p_name) == 0:
-                                        print("error: invalid project name: " + p_name)
-                                    else:
-                                        if project_exists_in_index(p_name) == 0:
-                                            print("error: project '" + p_name + "' not found in index")
-                                        else:
-                                            if valid_search_text(q) == 0:
-                                                print("error: search: invalid query")
-                                            else:
-                                                search_project_notes(p_name, q)
-                                                search_project_tasks(p_name, q)
+                    if cmd == "status":
+                        show_status()
                     else:
-                        if cmd == "task":
-                            if len(args) < 2:
-                                show_help()
-                            else:
-                                if args[1] != "search":
-                                    print("error: unknown task command: " + args[1])
+                        if cmd == "doctor":
+                            run_doctor()
+                        else:
+                            if cmd == "index":
+                                if len(args) < 2:
+                                    print("usage: search index <text>")
                                 else:
-                                    if len(args) < 4:
-                                        print("usage: task search <project> <text>")
+                                    let q: str = args[1]
+                                    if valid_search_text(q) == 0:
+                                        print("error: search: invalid query")
                                     else:
-                                        let p_name: str = args[2]
-                                        let q: str = args[3]
-                                        if valid_name(p_name) == 0:
-                                            print("error: invalid project name: " + p_name)
+                                        search_cache_index(q)
+                            else:
+                                if cmd == "workspace":
+                                    if len(args) < 2:
+                                        show_help()
+                                    else:
+                                        if args[1] != "search":
+                                            print("error: unknown workspace command: " + args[1])
                                         else:
-                                            if project_exists_in_index(p_name) == 0:
-                                                print("error: project '" + p_name + "' not found in index")
+                                            if len(args) < 3:
+                                                print("usage: workspace search <text>")
                                             else:
+                                                let q: str = args[2]
                                                 if valid_search_text(q) == 0:
                                                     print("error: search: invalid query")
                                                 else:
-                                                    search_project_tasks(p_name, q)
-                        else:
-                            print("error: unknown search command: " + cmd)
-                            show_help()
+                                                    workspace_search(q)
+                                else:
+                                    if cmd == "daily":
+                                        if len(args) < 2:
+                                            show_help()
+                                        else:
+                                            if args[1] != "search":
+                                                print("error: unknown daily command: " + args[1])
+                                            else:
+                                                if len(args) < 3:
+                                                    print("usage: daily search <text>")
+                                                else:
+                                                    let q: str = args[2]
+                                                    if valid_search_text(q) == 0:
+                                                        print("error: search: invalid query")
+                                                    else:
+                                                        daily_search(q)
+                                    else:
+                                        if cmd == "project":
+                                            if len(args) < 2:
+                                                show_help()
+                                            else:
+                                                if args[1] != "search":
+                                                    print("error: unknown project command: " + args[1])
+                                                else:
+                                                    if len(args) < 4:
+                                                        print("usage: project search <project> <text>")
+                                                    else:
+                                                        let p_name: str = args[2]
+                                                        let q: str = args[3]
+                                                        if valid_name(p_name) == 0:
+                                                            print("error: invalid project name: " + p_name)
+                                                        else:
+                                                            if project_exists_in_index(p_name) == 0:
+                                                                print("error: project '" + p_name + "' not found in index")
+                                                            else:
+                                                                if valid_search_text(q) == 0:
+                                                                    print("error: search: invalid query")
+                                                                else:
+                                                                    search_project_notes(p_name, q)
+                                                                    search_project_tasks(p_name, q)
+                                        else:
+                                            if cmd == "task":
+                                                if len(args) < 2:
+                                                    show_help()
+                                                else:
+                                                    if args[1] != "search":
+                                                        print("error: unknown task command: " + args[1])
+                                                    else:
+                                                        if len(args) < 4:
+                                                            print("usage: task search <project> <text>")
+                                                        else:
+                                                            let p_name: str = args[2]
+                                                            let q: str = args[3]
+                                                            if valid_name(p_name) == 0:
+                                                                print("error: invalid project name: " + p_name)
+                                                            else:
+                                                                if project_exists_in_index(p_name) == 0:
+                                                                    print("error: project '" + p_name + "' not found in index")
+                                                                else:
+                                                                    if valid_search_text(q) == 0:
+                                                                        print("error: search: invalid query")
+                                                                    else:
+                                                                        search_project_tasks(p_name, q)
+                                            else:
+                                                print("error: unknown search command: " + cmd)
+                                                show_help()
