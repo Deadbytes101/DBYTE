@@ -1,0 +1,188 @@
+import "../sys/profile.dby" as profile
+import std.env as env
+import std.fs as fs
+
+let args: list[str] = env.args()
+let projects_rel: str = "home/deadbyte/projects"
+let projects_path: str = profile.resolve_user_data_path(projects_rel)
+let index_rel: str = projects_rel + "/index.txt"
+let index_path: str = profile.resolve_user_data_path(index_rel)
+let notes_rel: str = "home/deadbyte/notes.txt"
+let notes_path: str = profile.resolve_user_data_path(notes_rel)
+let journal_rel: str = "home/deadbyte/journal.txt"
+let journal_path: str = profile.resolve_user_data_path(journal_rel)
+
+fn show_usage():
+    print("usage: daily summary")
+
+fn has_bad_char(name: str) -> int:
+    for c in name:
+        if c == ".":
+            return 1
+        if c == "/":
+            return 1
+        if c == "\\":
+            return 1
+        if c == ":":
+            return 1
+        if c == " ":
+            return 1
+        if c == "\t":
+            return 1
+    return 0
+
+fn valid_name(name: str) -> int:
+    if name == "":
+        return 0
+    if name == ".":
+        return 0
+    if name == "..":
+        return 0
+    if has_bad_char(name) == 1:
+        return 0
+    return 1
+
+fn project_rel(name: str) -> str:
+    return projects_rel + "/" + name
+
+fn task_path(name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name) + "/tasks.txt")
+
+fn line_status(line: str) -> str:
+    let status: str = ""
+    for c in line:
+        if c == "|":
+            return status
+        status = status + c
+    return status
+
+fn digit_to_int(c: str) -> int:
+    if c == "0":
+        return 0
+    if c == "1":
+        return 1
+    if c == "2":
+        return 2
+    if c == "3":
+        return 3
+    if c == "4":
+        return 4
+    if c == "5":
+        return 5
+    if c == "6":
+        return 6
+    if c == "7":
+        return 7
+    if c == "8":
+        return 8
+    if c == "9":
+        return 9
+    return -1
+
+fn int_to_str(n: int) -> str:
+    if n == 0:
+        return "0"
+    let out: str = ""
+    let value: int = n
+    while value > 0:
+        let digit: int = value - ((value / 10) * 10)
+        if digit == 0:
+            out = "0" + out
+        if digit == 1:
+            out = "1" + out
+        if digit == 2:
+            out = "2" + out
+        if digit == 3:
+            out = "3" + out
+        if digit == 4:
+            out = "4" + out
+        if digit == 5:
+            out = "5" + out
+        if digit == 6:
+            out = "6" + out
+        if digit == 7:
+            out = "7" + out
+        if digit == 8:
+            out = "8" + out
+        if digit == 9:
+            out = "9" + out
+        value = value / 10
+    return out
+
+fn count_open_tasks(p_name: str) -> int:
+    let path: str = task_path(p_name)
+    if fs.exists(path) == 0:
+        return 0
+    let content: str = fs.read_text(path)
+    let t_line: str = ""
+    let open_count: int = 0
+    for c in content:
+        if c == "\n":
+            if t_line != "":
+                if line_status(t_line) != "1":
+                    open_count = open_count + 1
+            t_line = ""
+        else:
+            if c != "\r":
+                t_line = t_line + c
+    if t_line != "":
+        if line_status(t_line) != "1":
+            open_count = open_count + 1
+    return open_count
+
+fn print_daily_summary():
+    print("--- DByteOS Daily Summary ---")
+    if fs.exists(notes_path) == 1:
+        print("Notes:   " + notes_rel + " (exists)")
+    else:
+        print("Notes:   " + notes_rel + " (not found)")
+
+    if fs.exists(journal_path) == 1:
+        let j_content: str = fs.read_text(journal_path)
+        let j_count: int = 0
+        for c in j_content:
+            if c == "\n":
+                j_count = j_count + 1
+        print("Journal: " + int_to_str(j_count) + " entries recorded")
+    else:
+        print("Journal: 0 entries recorded")
+    print("")
+    print("Open Tasks:")
+    
+    let has_any_open: int = 0
+    if fs.exists(index_path) == 1:
+        let content: str = fs.read_text(index_path)
+        if content != "":
+            let day_line: str = ""
+            for c in content:
+                if c == "\n":
+                    if day_line != "":
+                        let open_c: int = count_open_tasks(day_line)
+                        if open_c > 0:
+                            print("  " + day_line + ": " + int_to_str(open_c) + " open")
+                            has_any_open = 1
+                    day_line = ""
+                else:
+                    if c != "\r":
+                        day_line = day_line + c
+            if day_line != "":
+                let open_c: int = count_open_tasks(day_line)
+                if open_c > 0:
+                    print("  " + day_line + ": " + int_to_str(open_c) + " open")
+                    has_any_open = 1
+
+    if has_any_open == 0:
+        print("  (none)")
+
+if projects_path == "":
+    print("error: daily: internal path resolution failed")
+else:
+    if len(args) < 1:
+        show_usage()
+    else:
+        let cmd: str = args[0]
+        if cmd == "summary":
+            print_daily_summary()
+        else:
+            print("error: unknown daily command: " + cmd)
+            show_usage()

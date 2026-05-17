@@ -28,7 +28,7 @@ profile prompt
 `profile` and `profile show` print the full summary. The other modes print one
 field for scripting and package smoke tests.
 
-Profile values are sourced from the read-only DByteOS config layer in v5.3.1.
+Profile values are sourced from the read-only DByteOS config layer in v5.4.0.
 The profile command does not write config files, persist settings, change
 security policy, or invoke the host OS.
 
@@ -38,3 +38,4 @@ system snapshot. Workspace projects and tasks use the same profile home,
 
 ---
 [Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Config](DBYTEOS_CONFIG.md) | [Snapshot](DBYTEOS_SNAPSHOT.md) | [Projects](DBYTEOS_PROJECTS.md) | [Tasks](DBYTEOS_TASKS.md) | [Security](DBYTEOS_SECURITY.md)
+

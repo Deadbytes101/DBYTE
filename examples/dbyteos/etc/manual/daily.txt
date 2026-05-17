@@ -1,0 +1,10 @@
+DByteOS Daily Command
+
+Usage:
+  daily summary
+
+Description:
+  The daily command provides compact daily agenda summaries.
+
+Commands:
+  summary  - Summarize personal notes, recent journal logs, and open tasks across the entire workspace.

@@ -1,4 +1,4 @@
-# DByteOS Personal Alpha (v5.3.1)
+# DByteOS Personal Alpha (v5.4.0)
 
 Welcome to the Personal Alpha milestone of DByteOS.
 
@@ -17,7 +17,8 @@ DByteOS is a **Personal Computing Userland** built on top of the DByte programmi
 
 ## Current Status: Personal Alpha
 
-As the v5.3.1 Personal Alpha milestone, DByteOS includes the shell, package flow, manual pages, onboarding, profile/config/preferences, prompt integration, notes, journal, workspace projects, project tasks, services, diagnostics, snapshot, and simulated permission model. Future releases can build on this baseline without redefining the userland boundary.
+As the v5.4.0 Personal Alpha milestone, DByteOS includes the shell, package flow, manual pages, onboarding, profile/config/preferences, prompt integration, notes, journal, workspace projects, project tasks, services, diagnostics, snapshot, and simulated permission model. Future releases can build on this baseline without redefining the userland boundary.
 
 ---
 [Home](../README.md) | [Personal Alpha](DBYTEOS_PERSONAL_ALPHA.md) | [Commands](DBYTEOS_COMMANDS.md) | [Projects](DBYTEOS_PROJECTS.md) | [Tasks](DBYTEOS_TASKS.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)
+

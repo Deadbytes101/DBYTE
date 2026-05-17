@@ -1,0 +1,16 @@
+DByteOS Workspace Command
+
+Usage:
+  workspace report
+  workspace doctor
+  workspace snapshot
+  workspace daily
+
+Description:
+  The workspace command provides aggregated dashboards for the DByteOS Personal Alpha workspace.
+
+Commands:
+  report    - Print a unified workspace overview dashboard including profile and project list.
+  doctor    - Check the integrity of the project index and run individual doctor checks on all projects.
+  snapshot  - Print an aggregated snapshot of all workspace projects and their tasks.
+  daily     - Print a daily agenda summary.

@@ -86,3 +86,4 @@ Common aliases are defined in `.dbyterc` to provide a familiar experience:
 
 ---
 [Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Config](DBYTEOS_CONFIG.md) | [Snapshot](DBYTEOS_SNAPSHOT.md) | [Projects](DBYTEOS_PROJECTS.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)
+
