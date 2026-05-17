@@ -7,6 +7,11 @@ Usage:
   project search <project> <text>
   task search <project> <text>
   daily search <text>
+  search index <text>
+  search status
+  search rebuild
+  search doctor
+  search clear-cache
   search reset-demo
 
 Examples:
@@ -14,3 +19,8 @@ Examples:
   project search demo note
   task search demo tests
   daily search todo
+  search index seed
+  search status
+  search rebuild
+  search doctor
+  search clear-cache
