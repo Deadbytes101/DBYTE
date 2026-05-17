@@ -4,6 +4,14 @@
 //!
 //! Under freestanding constraints, this skeleton defines I/O port addresses
 //! and Initialization Command Words (ICW) used to configure the PIC cascade.
+//!
+//! Port Roles:
+//! - Master PIC Ports (0x20/0x21): Primary interrupt arbiter. Handles hardware IRQs 0-7.
+//! - Slave PIC Ports (0xA0/0xA1): Cascaded secondary arbiter. Handles hardware IRQs 8-15.
+//!
+//! Initialization Cascade:
+//! remap commands are written into Command Ports (Command registers) and Data Ports
+//! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 
 /// I/O Port address for the Master PIC Command/Status register.
 pub const PIC_MASTER_CMD: u16 = 0x20;
