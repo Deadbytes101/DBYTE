@@ -93,5 +93,5 @@ quit
 - Temporary session artifacts live under `examples/dbyteos/tmp/`.
 - `clean` removes session logs such as `tmp/security.log`.
 - User data such as `home/deadbyte/journal.txt` and `home/deadbyte/projects/` is preserved by clean.
-- v7.2.0 hardening keeps workspace project names path-like safe and reports missing projects as `error: project not found: missing`.
+- v7.2.1 hardening keeps workspace project names path-like safe and reports missing projects as `error: project not found: missing`.
 
