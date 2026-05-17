@@ -4,7 +4,7 @@ DByte public alpha ships as a single Windows executable plus docs and examples.
 
 ## Install From Release Zip
 
-1. Download `dbyte-v5.6.1-windows-x64.zip` from the release page.
+1. Download `dbyte-v5.7.0-windows-x64.zip` from the release page.
 2. Extract it to a stable folder.
 3. Run the installer from the extracted folder:
 
@@ -36,7 +36,7 @@ dbyte run --vm examples\hello.dby
 Expected version for this release:
 
 ```txt
-DByte 5.6.1
+DByte 5.7.0
 ```
 
 ## Install From Source
