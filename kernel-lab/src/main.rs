@@ -268,7 +268,7 @@ pub extern "C" fn kernel_main() -> ! {
                                              let mut vga_writer = vga::VgaWriter;
                                              let mut serial_writer = serial::SerialWriter;
                                              vga::print("DByteOS Kernel Lab
-version: 7.3.0
+version: 7.3.1
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -280,7 +280,7 @@ exception handlers: breakpoint
 interrupts: disabled
 ");
                                              serial::print("DByteOS Kernel Lab
-version: 7.3.0
+version: 7.3.1
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
