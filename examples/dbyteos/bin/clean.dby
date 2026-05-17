@@ -19,6 +19,10 @@ else:
     print("  [SKIP] /tmp missing")
 
 print("Cleaning workspace artifacts...")
+let cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+if fs.exists(cache_path) == 1:
+    fs.remove(cache_path)
+    print("  [REMOVED] home/deadbyte/search_index.txt")
 print("  [OK] Artifacts removed.")
 
 print("workspace sweep complete")
