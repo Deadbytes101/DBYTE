@@ -10,6 +10,7 @@ Usage:
   task clear-done <project>
   task doctor <project>
   task snapshot <project>
+  task report <project>
   task reset-demo
 
 Description:

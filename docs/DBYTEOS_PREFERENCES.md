@@ -1,10 +1,10 @@
 # DByteOS Mutable Preferences
 
-**Version:** 5.3.1
+**Version:** 5.4.0
 **Subsystem:** User Configuration
 
 ## Overview
-DByteOS `v5.3.1` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
+DByteOS `v5.4.0` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
 
 Because DByteOS emphasizes determinism and strict security boundaries, standard configurations (`etc/config.dby`, `etc/system.dby`) remain read-only. The Mutable Preferences subsystem is strictly sandboxed.
 
@@ -42,3 +42,4 @@ The `prefs` command manages these settings:
 ## Security and Diagnostics
 - **Anti-Injection:** `sys/preferences.dby` validates all sets against the strict allowlist before generating the `preferences.dby` file.
 - **Diagnostics:** `doctor` and `check-system` now verify the existence and integrity of the preferences file.
+

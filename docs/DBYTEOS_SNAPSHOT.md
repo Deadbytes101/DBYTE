@@ -18,7 +18,7 @@ snapshot logs
 `snapshot` and `snapshot system` print the full summary. The focused modes print
 one subsystem for debugging and package smoke tests.
 
-Snapshot output is read-only in v5.3.1. It does not write config files, persist
+Snapshot output is read-only in v5.4.0. It does not write config files, persist
 settings, change security policy, or invoke the host OS.
 
 Use `project snapshot <name>` for deterministic workspace project state and
@@ -26,3 +26,4 @@ Use `project snapshot <name>` for deterministic workspace project state and
 
 ---
 [Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Config](DBYTEOS_CONFIG.md) | [Projects](DBYTEOS_PROJECTS.md) | [Tasks](DBYTEOS_TASKS.md) | [Security](DBYTEOS_SECURITY.md)
+

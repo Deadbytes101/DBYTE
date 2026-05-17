@@ -57,3 +57,4 @@ status
 ## Boundaries
 
 DByteOS onboarding is userland documentation and command discovery only. It does not add a kernel, bootloader, OS passthrough, language syntax, or security-policy changes.
+

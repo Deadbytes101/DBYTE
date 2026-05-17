@@ -1,6 +1,6 @@
 # DByteOS Personal Alpha
 
-DByteOS Personal Alpha is the v5.3.1 milestone for the host-runnable DByteOS
+DByteOS Personal Alpha is the v5.4.0 milestone for the host-runnable DByteOS
 userland. It marks the point where DByte, the interactive shell, packaged
 examples, DByteOS commands, preferences, diagnostics, and documentation form a
 cohesive personal computing environment.
@@ -53,3 +53,4 @@ the DByte runtime on the host system.
 
 ---
 [Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Projects](DBYTEOS_PROJECTS.md) | [Tasks](DBYTEOS_TASKS.md) | [Package Smoke](DBYTEOS_PACKAGE.md) | [Security](DBYTEOS_SECURITY.md)
+

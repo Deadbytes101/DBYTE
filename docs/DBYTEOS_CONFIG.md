@@ -28,7 +28,7 @@ config get system.prompt
 prints the available keys. `config get <key>` prints one value for scripts and
 package smoke tests.
 
-The config layer is read-only in v5.3.1. It does not write config files,
+The config layer is read-only in v5.4.0. It does not write config files,
 persist settings, change security policy, or invoke the host OS.
 
 When DByteOS is launched with `dbyte shell --rc examples/dbyteos/.dbyterc`,
@@ -41,3 +41,4 @@ snapshot. Workspace projects and tasks store their user data under
 
 ---
 [Home](../README.md) | [Commands](DBYTEOS_COMMANDS.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Snapshot](DBYTEOS_SNAPSHOT.md) | [Projects](DBYTEOS_PROJECTS.md) | [Tasks](DBYTEOS_TASKS.md) | [Security](DBYTEOS_SECURITY.md)
+

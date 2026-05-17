@@ -20,6 +20,7 @@ fn show_usage():
     print("  clear-done <project>  - remove completed tasks")
     print("  doctor <project>      - validate task file")
     print("  snapshot <project>    - print task snapshot")
+    print("  report <project>      - print visual task progress report")
     print("  reset-demo            - reset demo project tasks")
 
 fn has_bad_char(name: str) -> int:
@@ -549,6 +550,106 @@ fn snapshot_tasks(name: str):
             if line != "":
                 print_task_line(line, id)
 
+fn task_report(name: str):
+    if valid_name(name) == 0:
+        print("error: invalid project name: " + name)
+    else:
+        if project_exists(name) == 0:
+            print("error: project not found: " + name)
+        else:
+            let path: str = task_path(name)
+            if fs.exists(path) == 0:
+                print("--- DByteOS Task Report: " + name + " ---")
+                print("Progress: [==========] 100%")
+                print("Open Tasks:")
+                print("  (none)")
+                print("Done Tasks:")
+                print("  (none)")
+            else:
+                let content: str = fs.read_text(path)
+                
+                # Count tasks first to get progress
+                let line: str = ""
+                let open_c: int = 0
+                let done_c: int = 0
+                for c in content:
+                    if c == "\n":
+                        if line != "":
+                            if line_status(line) == "1":
+                                done_c = done_c + 1
+                            else:
+                                open_c = open_c + 1
+                        line = ""
+                    else:
+                        line = line + c
+                if line != "":
+                    if line_status(line) == "1":
+                        done_c = done_c + 1
+                    else:
+                        open_c = open_c + 1
+                
+                let total: int = open_c + done_c
+                let percent: int = 100
+                let bar: str = "========== "
+                if total > 0:
+                    percent = (done_c * 100) / total
+                    let eq_count: int = (done_c * 10) / total
+                    let i: int = 0
+                    bar = ""
+                    while i < 10:
+                        if i < eq_count:
+                            bar = bar + "="
+                        else:
+                            bar = bar + "-"
+                        i = i + 1
+                
+                print("--- DByteOS Task Report: " + name + " ---")
+                print("Progress: [" + bar + "] " + int_to_str(percent) + "%")
+                
+                # Print open tasks
+                print("Open Tasks:")
+                let open_printed: int = 0
+                let id: int = 1
+                line = ""
+                for c in content:
+                    if c == "\n":
+                        if line != "":
+                            if line_status(line) != "1":
+                                print("  [ ] " + int_to_str(id) + ": " + line_text(line))
+                                open_printed = 1
+                            id = id + 1
+                        line = ""
+                    else:
+                        line = line + c
+                if line != "":
+                    if line_status(line) != "1":
+                        print("  [ ] " + int_to_str(id) + ": " + line_text(line))
+                        open_printed = 1
+                if open_printed == 0:
+                    print("  (none)")
+                
+                # Print done tasks
+                print("Done Tasks:")
+                let done_printed: int = 0
+                id = 1
+                line = ""
+                for c in content:
+                    if c == "\n":
+                        if line != "":
+                            if line_status(line) == "1":
+                                print("  [x] " + int_to_str(id) + ": " + line_text(line))
+                                done_printed = 1
+                            id = id + 1
+                        line = ""
+                    else:
+                        line = line + c
+                if line != "":
+                    if line_status(line) == "1":
+                        print("  [x] " + int_to_str(id) + ": " + line_text(line))
+                        done_printed = 1
+                if done_printed == 0:
+                    print("  (none)")
+
 fn reset_demo():
     ensure_demo_project()
     fs.write_text(task_path("demo"), "0|inspect workspace\n0|write project note\n")
@@ -567,59 +668,65 @@ else:
             else:
                 add_task(args[1], profile.join_args_from(args, 2))
         else:
-            if cmd == "list":
+            if cmd == "report":
                 if len(args) != 2:
-                    print("usage: task list <project>")
+                    print("usage: task report <project>")
                 else:
-                    list_tasks(args[1])
+                    task_report(args[1])
             else:
-                if cmd == "done":
-                    if len(args) != 3:
-                        print("usage: task done <project> <id>")
+                if cmd == "list":
+                    if len(args) != 2:
+                        print("usage: task list <project>")
                     else:
-                        done_task(args[1], args[2])
+                        list_tasks(args[1])
                 else:
-                    if cmd == "status":
-                        if len(args) != 2:
-                            print("usage: task status <project>")
+                    if cmd == "done":
+                        if len(args) != 3:
+                            print("usage: task done <project> <id>")
                         else:
-                            status_tasks(args[1])
+                            done_task(args[1], args[2])
                     else:
-                        if cmd == "summary":
+                        if cmd == "status":
                             if len(args) != 2:
-                                print("usage: task summary <project>")
+                                print("usage: task status <project>")
                             else:
-                                summary_tasks(args[1])
+                                status_tasks(args[1])
                         else:
-                            if cmd == "open":
+                            if cmd == "summary":
                                 if len(args) != 2:
-                                    print("usage: task open <project>")
+                                    print("usage: task summary <project>")
                                 else:
-                                    open_tasks(args[1])
+                                    summary_tasks(args[1])
                             else:
-                                if cmd == "clear-done":
+                                if cmd == "open":
                                     if len(args) != 2:
-                                        print("usage: task clear-done <project>")
+                                        print("usage: task open <project>")
                                     else:
-                                        clear_done_tasks(args[1])
+                                        open_tasks(args[1])
                                 else:
-                                    if cmd == "doctor":
+                                    if cmd == "clear-done":
                                         if len(args) != 2:
-                                            print("usage: task doctor <project>")
+                                            print("usage: task clear-done <project>")
                                         else:
-                                            doctor_tasks(args[1])
+                                            clear_done_tasks(args[1])
                                     else:
-                                        if cmd == "snapshot":
+                                        if cmd == "doctor":
                                             if len(args) != 2:
-                                                print("usage: task snapshot <project>")
+                                                print("usage: task doctor <project>")
                                             else:
-                                                snapshot_tasks(args[1])
+                                                doctor_tasks(args[1])
                                         else:
-                                            if cmd == "reset-demo":
-                                                if len(args) != 1:
-                                                    print("usage: task reset-demo")
+                                            if cmd == "snapshot":
+                                                if len(args) != 2:
+                                                    print("usage: task snapshot <project>")
                                                 else:
-                                                    reset_demo()
+                                                    snapshot_tasks(args[1])
                                             else:
-                                                print("error: unknown task command: " + cmd)
-                                                show_usage()
+                                                if cmd == "reset-demo":
+                                                    if len(args) != 1:
+                                                        print("usage: task reset-demo")
+                                                    else:
+                                                        reset_demo()
+                                                else:
+                                                    print("error: unknown task command: " + cmd)
+                                                    show_usage()
