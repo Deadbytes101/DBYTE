@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.5.0)
+# DByteOS QEMU Boot Smoke (v6.5.1)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.5.0
+version: 6.5.1
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Modifier Aware Decoding (v6.5.0)
+## Keyboard Modifier Aware Decoding (v6.5.1)
 
-In version `6.5.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module were implemented. It monitors key events by querying the status register, tracks Shift and CapsLock state transitions, maps lowercase/uppercase toggles using `Shift ^ CapsLock` XOR logic, and provides Shift + number symbol maps.
+In version `6.5.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module were implemented. It monitors key events by querying the status register, tracks Shift and CapsLock state transitions, maps lowercase/uppercase toggles using `Shift ^ CapsLock` XOR logic, and provides Shift + number symbol maps.
 
 ### Register Address Primitives
 - **Keyboard Status Register**: Port `0x64` (Read-only)
@@ -104,13 +104,66 @@ To verify the full end-to-end interactive integrity of the keyboard translation 
 4. The system translates each keypress on-the-fly and echoes the characters to both the VGA screen and the serial console.
 5. Hit **`Backspace`** several times. Observe that characters are cleanly wiped from both screens one-by-one.
 
+### Exact Stateful Keyboard Modifier Mappings
+
+Stateful modifiers allow real-time shifting of characters and number symbols. The following dedicated scancodes are captured and processed by the modifier state machine:
+
+| Modifier Key | Make Code (Hex) | Break Code (Hex) | State Change Action |
+| --- | --- | --- | --- |
+| **`Left Shift`** | `0x2A` | `0xAA` | Set `SHIFT_ACTIVE = true` on Make; `false` on Break |
+| **`Right Shift`** | `0x36` | `0xB6` | Set `SHIFT_ACTIVE = true` on Make; `false` on Break |
+| **`CapsLock`** | `0x3A` | `0xBA` | Toggles `CAPS_LOCK_ACTIVE` on **Make-Only**; Break is ignored |
+
+#### CapsLock Make-Only Toggle Logic
+To prevent accidental double-toggling of the CapsLock state during a single physical key press and release event, the kernel **only** toggles state variables when receiving the Make code (`0x3A`). Any subsequent Break code (`0xBA`) emitted on physical key release is explicitly ignored.
+
+#### Shift XOR CapsLock Casing Algorithm
+Standard text entry applies exclusive OR (`Shift ^ CapsLock`) logic to alphabetical letters:
+- **Lowercase `a`-`z`**: Rendered when both `Shift` and `CapsLock` are inactive, or when **both** are active (Shift cancels CapsLock).
+- **Uppercase `A`-`Z`**: Rendered only when **either** `Shift` or `CapsLock` is active, but not both.
+
+---
+
+### Shifted Numeric Symbol Mappings Table
+
+When `SHIFT_ACTIVE` is true, typing a numeric key redirects the translation mapping to the following US keyboard symbols:
+
+| Numeric Key | Basic Make Code | Normal Output | Shifted Make Code | Shifted Symbol Output |
+| --- | --- | --- | --- | --- |
+| **`1`** | `0x02` | `'1'` | `Shift + 0x02` | **`'!'`** |
+| **`2`** | `0x03` | `'2'` | `Shift + 0x03` | **`'@'`** |
+| **`3`** | `0x04` | `'3'` | `Shift + 0x04` | **`'#'`** |
+| **`4`** | `0x05` | `'4'` | `Shift + 0x05` | **`'$'`** |
+| **`5`** | `0x06` | `'5'` | `Shift + 0x06` | **`'%'`** |
+| **`6`** | `0x07` | `'6'` | `Shift + 0x07` | **`'^'`** |
+| **`7`** | `0x08` | `'7'` | `Shift + 0x08` | **`'&'`** |
+| **`8`** | `0x09` | `'8'` | `Shift + 0x09` | **`'*'`** |
+| **`9`** | `0x0A` | `'9'` | `Shift + 0x0A` | **`'('`** |
+| **`0`** | `0x0B` | `'0'` | `Shift + 0x0B` | **`')'`** |
+
+---
+
+### Serial Telemetry Echo Format
+Every time a modifier state (Shift or CapsLock) transitions, the kernel transmits a dedicated status packet to the COM1 Serial console. The exact layout is formatted as:
+```txt
+[MODIFIER] Shift: <bool>, CapsLock: <bool>
+```
+*Example Capture Log:*
+```txt
+[MODIFIER] Shift: true, CapsLock: false
+[MODIFIER] Shift: false, CapsLock: false
+[MODIFIER] Shift: false, CapsLock: true
+```
+
+---
+
 ### Complete Supported Keyboard Mappings (PS/2 Set 1)
 All other keystrokes not explicitly defined below are currently ignored by the freestanding parser.
 
 | Category | Key | Make Code (Hex) | Decoded ASCII / Action |
 | --- | --- | --- | --- |
-| **Alphabetic** | `A` through `Z` | `0x1E` through `0x2C` (Set 1) | Lowercase character representation (`'a'` - `'z'`) |
-| **Numeric** | `1` through `0` | `0x02` through `0x0B` | Numeric symbol representation (`'1'` - `'0'`) |
+| **Alphabetic** | `A` through `Z` | `0x1E` through `0x2C` (Set 1) | Cased representation (`'a'` - `'z'` / `'A'` - `'Z'`) |
+| **Numeric** | `1` through `0` | `0x02` through `0x0B` | Numeric or symbol representation |
 | **Spacer** | `Space` | `0x39` | Blank space padding byte (`' '`) |
 | **Control** | `Enter` | `0x1C` | Translates to Carriage Return / Newline (`'\n'`) |
 | **Control** | `Backspace` | `0x0E` | Erase previous character trigger (`'\x08'`) |
@@ -133,7 +186,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v6.5.0`) enforces strict technical bounds to maintain lab stability:
+> This release (`v6.5.1`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
-> 2. **Basic Modifiers Only**: The kernel supports Left/Right Shift tracking, CapsLock toggling, and Shift + number symbols. It does **NOT** track Ctrl or Alt modifiers, nor does it support full stateful keyboard layout configurations.
+> 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
