@@ -36,7 +36,7 @@ global_asm!(
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                      DByteOS Kernel Lab (v6.2.1)                       \n");
+    vga::print("                      DByteOS Kernel Lab (v6.2.2)                       \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Stack pointer esp initialized to 16 KiB.\n");
@@ -52,7 +52,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 6.2.1\n");
+    serial::print("version: 6.2.2\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n");
 
