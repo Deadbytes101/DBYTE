@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.6.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.7.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -49,7 +49,7 @@ The following table summarizes the currently registered (active) and planned CPU
 | :--- | :--- | :--- | :--- | :--- |
 | `0` | Fault / Trap | Divide-by-Zero | **Active** | Controlled via `int 0` trap for shell diagnostics. |
 | `3` | Trap | Breakpoint | **Active** | Standard software breakpoint via `int3`. |
-| `14` | Fault | Page Fault | *Planned* | Unhandled in current version (v7.6.1). |
+| `14` | Fault | Page Fault | *Planned* | Unhandled in current version (v7.7.0). |
 
 ### Breakpoint Exception Behavior (`int3` Trap - Vector 3)
 When the CPU executes the one-byte `int3` instruction (`0xCC`), the following hardware sequence is performed:
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Direction Note (Vector 14)
-Page Fault handling remains **planned / disabled** in `v7.6.1`. The `pf-note` command documents the intended direction without installing an IDT gate, reading privileged fault state, or triggering a real memory violation.
+Page Fault handling remains **planned / disabled** in `v7.7.0`. The `pf-note` command documents the intended direction without installing an IDT gate, reading privileged fault state, or triggering a real memory violation.
 
 ```txt
 page fault: planned / disabled
@@ -75,7 +75,35 @@ cr2: unavailable
 error code: documented only
 ```
 
-On x86, a real Page Fault pushes an error code that describes why address translation failed. The relevant fields include whether the page was present, whether the access was a write, whether the access came from user mode, and whether reserved bits or instruction fetch protection were involved. The faulting linear address is reported through the `CR2` register.
+### Page Fault Frame Layout Foundation
+For a same-ring Page Fault frame, the planned documentation struct is:
+
+| Field | Source | Meaning |
+| :--- | :--- | :--- |
+| `error_code` | CPU stack push | Page Fault reason bits. |
+| `eip` | CPU stack push | Faulting instruction pointer. |
+| `cs` | CPU stack push | Saved code-segment selector. |
+| `eflags` | CPU stack push | Saved flags register. |
+| `cr2` | Handler snapshot | Faulting linear address from the CR2 register. |
+
+The kernel skeleton records this planned shape in `PageFaultFrame`, but no live frame is decoded in this release.
+
+### Page Fault Error Code Bits
+On x86, a real Page Fault pushes an error code that describes why address translation failed:
+
+| Bit | Name | Meaning |
+| :--- | :--- | :--- |
+| `0` | `P` | Present/protection violation when set; non-present page when clear. |
+| `1` | `W/R` | Write access when set; read access when clear. |
+| `2` | `U/S` | User-mode access when set; supervisor access when clear. |
+| `3` | `RSVD` | Reserved page-table bit violation. |
+| `4` | `I/D` | Instruction fetch violation. |
+
+The relevant fields include whether the page was present, whether the access was a write, whether the access came from user mode, and whether reserved bits or instruction fetch protection were involved.
+
+Exact bit set tracked for v7.7.0: `P / W/R / U/S / RSVD / I/D`.
+
+CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
 In this milestone, `CR2` is intentionally unavailable because no vector 14 handler is registered and no fault frame is decoded. Page fault is still unhandled; any accidental illegal memory access can still reset the VM through Double/Triple Fault behavior.
 
@@ -140,13 +168,14 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.6.1`)
+## 6. Current Milestone Status (`v7.7.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.6.1`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.7.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
 - **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`) and planned handlers (`vector 14: page fault`) in a clean, visual format.
 - **`exception-status` & `exceptions` Command**: Displays detailed exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
 - **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics suite commands.
 - **`pf-note` Command**: Documents that page fault is planned / disabled, vector 14 is not active, `CR2` is unavailable, and the error code is documented only.
+- **Page Fault Frame Layout Foundation**: Adds compile-time documentation types for `PageFaultFrame` and `PageFaultErrorCode` without registering vector 14.
 - **Exception Handler Status Table**: Added a clear vector registration tracking table mapping Active vs Planned entry gates in Section 2.
 - **Controlled Divide-by-Zero (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, preserving GPRs via `pushad`/`popad` and returning via `iretd`.
 - **Breakpoint Exception (Vector 3)**: Fully active. Registered IDT entry 3 pointing to `breakpoint_handler_asm`, preserving GPRs and returning cleanly via `iretd`.
@@ -154,4 +183,4 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
 - **Status Reporting**: The `system` command dynamically syncs exception count and active/planned status information cleanly.
-- **Page Fault Handler Status**: Planned / disabled. No `entries[14].set_handler` binding, no `int 14` trigger, and no raw page fault trigger are present in this release.
+- **Page Fault Handler Status**: Planned / disabled. No `entries[14].set_handler` binding, no `int 14` trigger, no runtime CR2 read, and no raw page fault trigger are present in this release.
