@@ -36,6 +36,9 @@ global_asm!(
 static mut SHIFT_ACTIVE: bool = false;
 static mut CAPS_LOCK_ACTIVE: bool = false;
 
+static mut LINE_BUFFER: [u8; 128] = [0; 128];
+static mut LINE_LEN: usize = 0;
+
 fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
     match scancode {
         // Letters (using shift ^ caps XOR logic for uppercase/lowercase toggle)
@@ -90,7 +93,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                    DByteOS Modifier Lab (v6.5.1)                   \n");
+    vga::print("                    DByteOS Line Editor Lab (v6.6.0)                    \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -105,12 +108,16 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 6.5.1\n");
+    serial::print("version: 6.6.0\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
     serial::print("DByteOS Keyboard Lab\n");
     serial::print("status: listening\n");
+
+    // Print initial prompt
+    vga::print("dbyte-kernel> ");
+    serial::print("dbyte-kernel> ");
 
     // Flush any stale scancodes to prevent reading initial key state junk
     unsafe {
@@ -164,19 +171,44 @@ pub extern "C" fn kernel_main() -> ! {
                     if scancode != 0x2A && scancode != 0x36 && scancode != 0x3A {
                         if let Some(c) = scancode_to_ascii(scancode, SHIFT_ACTIVE, CAPS_LOCK_ACTIVE) {
                             if c == '\x08' {
-                                // Backspace erase sequence
-                                vga::backspace();
-                                serial::write_byte(0x08);
-                                serial::write_byte(b' ');
-                                serial::write_byte(0x08);
+                                // Backspace: only erase if there is text in the buffer!
+                                if LINE_LEN > 0 {
+                                    LINE_LEN -= 1;
+                                    vga::backspace();
+                                    serial::write_byte(0x08);
+                                    serial::write_byte(b' ');
+                                    serial::write_byte(0x08);
+                                }
                             } else if c == '\n' {
-                                // Newline translation
+                                // Newline/Enter: submit line!
                                 vga::print("\n");
                                 serial::print("\n");
+
+                                // Convert and print submitted line
+                                if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
+                                    vga::print("input: ");
+                                    vga::print(line_str);
+                                    vga::print("\n");
+
+                                    serial::print("input: ");
+                                    serial::print(line_str);
+                                    serial::print("\n");
+                                }
+
+                                // Reset buffer
+                                LINE_LEN = 0;
+
+                                // Print new prompt
+                                vga::print("dbyte-kernel> ");
+                                serial::print("dbyte-kernel> ");
                             } else {
-                                // Normal character output
-                                vga::print_byte(c as u8);
-                                serial::write_byte(c as u8);
+                                // Normal character output: append if buffer is not full!
+                                if LINE_LEN < 128 {
+                                    LINE_BUFFER[LINE_LEN] = c as u8;
+                                    LINE_LEN += 1;
+                                    vga::print_byte(c as u8);
+                                    serial::write_byte(c as u8);
+                                }
                             }
                         }
                     }
