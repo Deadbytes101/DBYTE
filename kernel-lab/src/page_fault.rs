@@ -33,7 +33,7 @@ impl PageFaultErrorCode {
 
 /// Planned same-ring Page Fault frame documentation.
 ///
-/// This is not consumed by a live handler in v7.7.0. It records the intended
+/// This is not consumed by a live handler in v7.7.1. It records the intended
 /// shape for future frame decoding after vector 14 is explicitly enabled.
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
