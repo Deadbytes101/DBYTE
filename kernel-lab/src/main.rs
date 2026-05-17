@@ -93,7 +93,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                    DByteOS Line Editor Lab (v6.6.0)                    \n");
+    vga::print("                    DByteOS Line Editor Lab (v6.6.1)                    \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -108,7 +108,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 6.6.0\n");
+    serial::print("version: 6.6.1\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -184,15 +184,17 @@ pub extern "C" fn kernel_main() -> ! {
                                 vga::print("\n");
                                 serial::print("\n");
 
-                                // Convert and print submitted line
-                                if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
-                                    vga::print("input: ");
-                                    vga::print(line_str);
-                                    vga::print("\n");
+                                if LINE_LEN > 0 {
+                                    // Convert and print submitted line
+                                    if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
+                                        vga::print("input: ");
+                                        vga::print(line_str);
+                                        vga::print("\n");
 
-                                    serial::print("input: ");
-                                    serial::print(line_str);
-                                    serial::print("\n");
+                                        serial::print("input: ");
+                                        serial::print(line_str);
+                                        serial::print("\n");
+                                    }
                                 }
 
                                 // Reset buffer
