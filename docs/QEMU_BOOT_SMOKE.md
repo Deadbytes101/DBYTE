@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.7.0)
+# DByteOS QEMU Boot Smoke (v6.7.1)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.7.0
+version: 6.7.1
 status: booted
 target: i686 multiboot
 ```
@@ -68,22 +68,26 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v6.7.0)
+## Keyboard Line Editor & Command Dispatch Lab (v6.7.1)
 
-In version `6.7.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `6.7.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
 2. **Fixed-Size Buffer**: A static mutable buffer `LINE_BUFFER` tracks up to 128 typed characters. Characters typed past this 128-byte boundary are safely discarded to prevent heap overflows and memory unsafety.
 3. **Prompt Protection Guard**: Keypresses of Backspace (`\x08`) only perform visual erasure and buffer shrinking when `LINE_LEN > 0`. This guarantees the prompt `"dbyte-kernel> "` cannot be deleted.
 4. **Hardened Line Submission**: Pressing Enter (`\n`) outputs `\n`. If `LINE_LEN > 0`, it parses the command dynamically. If `LINE_LEN == 0` (empty line), it simply yields a new prompt without printing anything to preserve console cleanliness.
-5. **Command Dispatcher**:
-   - `help`: Lists all supported built-in commands: `commands: help about version clear echo`
-   - `about`: Prints OS/Kernel introductory metadata: `DByteOS Kernel Lab`
-   - `version`: Prints official Kernel lab version: `DByteOS Kernel Lab 6.7.0`
-   - `clear`: Wipes the VGA character screen completely and places the prompt at the top-left corner.
-   - `echo <text>`: Prints the text following the prefix directly back to the terminal displays.
-   - Any unknown command prints an error message: `error: unknown command`
+5. **Command Dispatcher Table**:
+
+| Command Input | Parameter Handling | Output Response / Behavior |
+| :--- | :--- | :--- |
+| `help` | None | Prints: `commands: help about version clear echo` |
+| `about` | None | Prints: `DByteOS Kernel Lab` |
+| `version` | None | Prints: `DByteOS Kernel Lab 6.7.1` |
+| `clear` | None | Clears the entire VGA console and resets prompt location to top-left. |
+| `echo` | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter. |
+| *`<unknown>`* | Unsupported strings | Prints: `error: unknown command` |
+| *`<empty>`* | `LINE_LEN == 0` | Silent reprompt (cursor moves to new line, prints prompt). |
 
 ### Register Address Primitives
 - **Keyboard Status Register**: Port `0x64` (Read-only)
@@ -104,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
    dbyte-kernel> help
    commands: help about version clear echo
    dbyte-kernel> version
-   DByteOS Kernel Lab 6.7.0
+   DByteOS Kernel Lab 6.7.1
    dbyte-kernel> echo hello deadbyte
    hello deadbyte
    dbyte-kernel> wat
@@ -205,7 +209,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v6.7.0`) enforces strict technical bounds to maintain lab stability:
+> This release (`v6.7.1`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
