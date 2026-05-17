@@ -1,0 +1,67 @@
+#![allow(dead_code)]
+
+//! Interrupt Descriptor Table (IDT) Foundation for x86
+//!
+//! Under freestanding constraints, this skeleton defines Gate Descriptors
+//! (IDT entries) and the base pointer representation to be loaded via LIDT.
+
+/// A standard packed 8-byte x86 Gate Descriptor representing an IDT entry.
+#[derive(Copy, Clone, Debug)]
+#[repr(C, packed)]
+pub struct IdtEntry {
+    /// Low 16 bits of the interrupt service routine (ISR) address.
+    pub offset_low: u16,
+    /// Code segment selector in the Global Descriptor Table (GDT).
+    pub selector: u16,
+    /// Reserved byte, always 0.
+    pub zero: u8,
+    /// Gate type and attributes (e.g. Present flag, Privilege level).
+    pub type_attr: u8,
+    /// High 16 bits of the interrupt service routine (ISR) address.
+    pub offset_high: u16,
+}
+
+impl IdtEntry {
+    /// Create a zero-initialized gate descriptor.
+    pub const fn new() -> Self {
+        Self {
+            offset_low: 0,
+            selector: 0,
+            zero: 0,
+            type_attr: 0,
+            offset_high: 0,
+        }
+    }
+}
+
+/// The IDT Pointer structure loaded into the processor register via the `lidt` assembly instruction.
+#[derive(Copy, Clone, Debug)]
+#[repr(C, packed)]
+pub struct IdtPtr {
+    /// Size of the IDT in bytes minus 1.
+    pub limit: u16,
+    /// Linear base address of the IDT.
+    pub base: u32,
+}
+
+impl IdtPtr {
+    /// Create a zero-initialized pointer descriptor.
+    pub const fn new() -> Self {
+        Self { limit: 0, base: 0 }
+    }
+}
+
+/// The main IDT table structure containing gate descriptors.
+/// For standard x86, we allocate 256 entry gates.
+pub struct InterruptDescriptorTable {
+    pub entries: [IdtEntry; 256],
+}
+
+impl InterruptDescriptorTable {
+    /// Create a new zeroed out Interrupt Descriptor Table.
+    pub const fn new() -> Self {
+        Self {
+            entries: [IdtEntry::new(); 256],
+        }
+    }
+}
