@@ -1,10 +1,14 @@
-# DByteOS Kernel Lab Guide (v6.1.0)
+# DByteOS Kernel Lab Guide (v6.1.1)
+
+> [!WARNING]
+> **DByteOS Kernel Lab is a Bare-Metal Experiment.**
+> It is not a bootable full OS nor a real production kernel. It is a freestanding sandbox prototype containing no memory allocator, process scheduler, interrupt controllers, or standard driver sets.
 
 Welcome to the **DByteOS Kernel Lab**! This laboratory allows you to compile and run a minimal freestanding x86 kernel from a clean Windows development host with zero external assembler or compiler toolchain dependencies.
 
 ## Project Structure
 The laboratory is completely isolated inside the `kernel-lab/` directory:
-- `kernel-lab/i686-unknown-none.json`: Freestanding x86 target configuration.
+- `kernel-lab/.cargo/config.toml`: Configures the standard `i686-unknown-linux-gnu` target.
 - `kernel-lab/boot/linker.ld`: Linker script locating the Multiboot header at `1MB`.
 - `kernel-lab/src/main.rs`: Kernel entry point using Rust `global_asm!`.
 - `kernel-lab/src/vga.rs`: Simple frame buffer output driver mapped to `0xB8000`.
@@ -30,7 +34,7 @@ Compile the freestanding Multiboot ELF binary:
 powershell .\scripts\build.ps1
 ```
 The output ELF binary is generated at:
-`kernel-lab/target/i686-unknown-none/debug/dbyte_kernel`
+`kernel-lab/target/i686-unknown-linux-gnu/debug/dbyte_kernel`
 
 ### 3. Run in QEMU
 Launch the built kernel inside the QEMU emulator:
@@ -38,3 +42,4 @@ Launch the built kernel inside the QEMU emulator:
 powershell .\scripts\run.ps1
 ```
 This executes `qemu-system-i386` with direct kernel loading (`-kernel`), which boots the freestanding ELF file instantly without an external ISO builder!
+
