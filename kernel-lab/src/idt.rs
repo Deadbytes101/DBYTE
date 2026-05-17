@@ -47,6 +47,10 @@ impl IdtEntry {
 }
 
 /// The IDT Pointer structure loaded into the processor register via the `lidt` assembly instruction.
+///
+/// Layout constraints (6 bytes, packed):
+/// - Bytes 0..1 (limit): Size of the IDT table in bytes minus 1 (typically 0x7FF for 256 entries).
+/// - Bytes 2..5 (base): Linear 32-bit memory address pointing to the start of the table array.
 #[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub struct IdtPtr {

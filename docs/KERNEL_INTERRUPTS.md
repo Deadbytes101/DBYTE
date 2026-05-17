@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.0.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.1.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -35,10 +35,12 @@ Each descriptor is defined as follows:
 | `5` | 1 Byte | `type_attr` | Type and attributes (Present, DPL, Gate Type). |
 | `6..7` | 2 Bytes | `offset_high` | High 16 bits of the ISR entry point address. |
 
-### The IDT Pointer (`IdtPtr` - 6 Bytes)
-To notify the CPU of the IDT location, the `lidt` instruction accepts a packed 6-byte pointer:
-- **`limit`** (2 Bytes): Size of the table in bytes minus 1 (typically `(256 * 8) - 1` = `0x7FF`).
-- **`base`** (4 Bytes): Linear base address pointing directly to the table in memory.
+### The IDT Pointer (`IdtPtr` - 6 Bytes Layout)
+To notify the CPU of the IDT location, the standard `lidt` assembly instruction accepts a pointer to a packed 6-byte register layout block in memory:
+- **`limit`** (Offset `0..1`, 2 Bytes): Size of the IDT table in bytes minus 1 (typically `(256 * 8) - 1` = `0x7FF` bytes).
+- **`base`** (Offset `2..5`, 4 Bytes): Linear 32-bit base address pointing directly to the contiguous `[IdtEntry; 256]` table array in memory.
+
+During execution, loading this pointer register structure into the processor's IDTR register configures the memory address bounds for CPU exception vectors.
 
 ---
 
@@ -77,12 +79,20 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 ## 5. Safety Warnings & Active Disclaimers
 
 > [!WARNING]
-> **Active Interrupts are Disabled**
-> Maskable interrupts are strictly disabled on the processor (no `sti` execution). All IRQ lines from the PIC are ignored, keeping CPU interrupt responses dormant.
+> **Active Interrupts are Disabled (No STI)**
+> The standard `lidt` instruction was successfully called during bootstrap to load the active Interrupt Descriptor Table base address. However, maskable interrupts remain strictly disabled on the processor (no `sti` instruction execution). All external IRQ signals will be completely ignored, keeping CPU hardware interrupt dispatch dormant.
+
+> [!CAUTION]
+> **No Active Exception Handlers Yet**
+> Although the IDT structure is loaded, all 256 gates are initialized with a missing/non-present default descriptor (`IdtEntry::missing()`). Any division-by-zero, page fault, or processor exception triggered under these conditions will lead to an immediate unhandled CPU Double Fault / Triple Fault reset!
+
+> [!IMPORTANT]
+> **No PIC Remapping Dispatch**
+> No Initialization Command Words (ICWs) have been sent to ports `0x20` or `0xA0`. The 8259A PIC chips remain configured with default BIOS configurations.
 
 > [!IMPORTANT]
 > **Keyboard Polling Mode is Active**
-> Keyboard event processing remains 100% polling-based (reading VGA and Port `0x60` directly in the polling loop). No IRQ1 interrupt-driven input paths are registered.
+> Keyboard event processing remains 100% polling-based (reading VGA buffer and I/O Port `0x60` directly in the interactive polling loop). No IRQ1 interrupt-driven keyboard input path has been registered or claimed yet.
 
 > [!NOTE]
 > **No System Timer Driver**
@@ -90,10 +100,11 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.1.0`)
+## 6. Current Milestone Status (`v7.1.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.1.0`:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.1.1`:
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
-- **IDT Loading**: Executed and verified.
+- **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
+- **Stubs Isolation**: Stubs are defined but strictly isolated from executing paths to prevent stack frame leakage.
 - **Status Reporting**: The `system` command explicitly lists: `idt: loaded` and `interrupts: disabled`.
