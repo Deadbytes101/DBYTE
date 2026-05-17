@@ -90,10 +90,10 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.0.1`)
+## 6. Current Milestone Status (`v7.1.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts are strictly planned and disabled** in version `7.0.1`:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.1.0`:
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
-- **IDT Loading**: Not executed.
-- **Status Reporting**: The `system` command explicitly lists: `interrupts: planned / disabled`.
+- **IDT Loading**: Executed and verified.
+- **Status Reporting**: The `system` command explicitly lists: `idt: loaded` and `interrupts: disabled`.
