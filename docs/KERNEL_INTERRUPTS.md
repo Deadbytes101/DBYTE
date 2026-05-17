@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.2.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.2.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -42,6 +42,15 @@ To notify the CPU of the IDT location, the standard `lidt` assembly instruction 
 
 During execution, loading this pointer register structure into the processor's IDTR register configures the memory address bounds for CPU exception vectors.
 
+### Breakpoint Exception Behavior (`int3` Trap - Vector 3)
+When the CPU executes the one-byte `int3` instruction (`0xCC`), the following hardware sequence is performed:
+1. **Execution Suspension**: CPU suspends current instruction pipeline execution.
+2. **Hardware Stack Push**: The CPU pushes the EFLAGS register, GDT Code Segment Selector (`CS`), and the return instruction pointer (`EIP`) pointing to the instruction *immediately following* `int3` onto the kernel stack. Note that the Breakpoint exception does *not* push an error code.
+3. **Descriptor Gate Jump**: CPU looks up entry 3 in the IDT, verifies the present bits, jumps privilege levels if necessary (remains Ring 0), and transfers execution control to `breakpoint_handler_asm`.
+4. **General Registers Preservation**: Our assembly stub wrapper executes `pushad` to push all 8 general-purpose registers (32 bytes) onto the stack: `EAX`, `ECX`, `EDX`, `EBX`, `ESP`, `EBP`, `ESI`, and `EDI`.
+5. **Rust Dispatch**: Calls `breakpoint_handler_rust` which outputs high-level text logs safely to both VGA and Serial console channels.
+6. **State Restoration & Return**: Executes `popad` to restore register values, and executes `iretd` to pop the saved `EIP`, `CS`, and `EFLAGS` off the stack, resuming user shell execution seamlessly without triple faulting.
+
 ---
 
 ## 3. The Programmable Interrupt Controller (8259A PIC)
@@ -83,8 +92,11 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 > The standard `lidt` instruction was successfully called during bootstrap to load the active Interrupt Descriptor Table base address. However, maskable interrupts remain strictly disabled on the processor (no `sti` instruction execution). All external IRQ signals will be completely ignored, keeping CPU hardware interrupt dispatch dormant.
 
 > [!CAUTION]
-> **No Active Exception Handlers Yet**
-> Although the IDT structure is loaded, all 256 gates are initialized with a missing/non-present default descriptor (`IdtEntry::missing()`). Any division-by-zero, page fault, or processor exception triggered under these conditions will lead to an immediate unhandled CPU Double Fault / Triple Fault reset!
+> **Only Breakpoint Handler is Active**
+> Although the IDT structure is successfully loaded and Vector 3 (Breakpoint) is fully handled, all other 255 gates remain initialized with a missing/non-present default gate (`IdtEntry::missing()`). 
+> 
+> - **No Divide-by-Zero Handler Yet**: Vector 0 is unhandled. Any division-by-zero executed in kernel space will immediately trigger an unhandled CPU fault, causing a Triple Fault reboot!
+> - **No Page Fault Handler Yet**: Vector 14 is unhandled. Any illegal virtual memory access will immediately trigger a Double/Triple Fault reset!
 
 > [!IMPORTANT]
 > **No PIC Remapping Dispatch**
@@ -100,11 +112,11 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.2.0`)
+## 6. Current Milestone Status (`v7.2.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.2.0`, but CPU exception handling has been successfully initiated:
-- **Breakpoint Exception (Vector 3)**: Registered and active in the IDT. An assembly wrapper `breakpoint_handler_asm` safely manages register state (`pushad`/`popad`) and handles CPU return via `iretd`.
-- **`int3` Trigger Command**: Users can manually trigger a controlled breakpoint exception via the shell by typing `int3`. This executes the instruction inline and returns safely back to the interactive polling loop.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.2.1`, but CPU exception handling has been successfully hardened:
+- **Breakpoint Exception (Vector 3)**: Fully active. An assembly wrapper `breakpoint_handler_asm` preserves register state (`pushad`/`popad`) and handles CPU return via `iretd` cleanly.
+- **`int3` Trigger Command**: Executable manually via shell.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
