@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.5.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.5.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -49,7 +49,7 @@ The following table summarizes the currently registered (active) and planned CPU
 | :--- | :--- | :--- | :--- | :--- |
 | `0` | Fault / Trap | Divide-by-Zero | **Active** | Controlled via `int 0` trap for shell diagnostics. |
 | `3` | Trap | Breakpoint | **Active** | Standard software breakpoint via `int3`. |
-| `14` | Fault | Page Fault | *Planned* | Unhandled in current version (v7.5.0). |
+| `14` | Fault | Page Fault | *Planned* | Unhandled in current version (v7.5.1). |
 
 ### Breakpoint Exception Behavior (`int3` Trap - Vector 3)
 When the CPU executes the one-byte `int3` instruction (`0xCC`), the following hardware sequence is performed:
@@ -126,9 +126,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.5.0`)
+## 6. Current Milestone Status (`v7.5.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.5.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.5.1`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
 - **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`) and planned handlers (`vector 14: page fault`) in a clean, visual format.
 - **`exception-status` & `exceptions` Command**: Displays detailed exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
 - **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics suite commands.
