@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.1.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.2.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -100,11 +100,12 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.1.1`)
+## 6. Current Milestone Status (`v7.2.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.1.1`:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.2.0`, but CPU exception handling has been successfully initiated:
+- **Breakpoint Exception (Vector 3)**: Registered and active in the IDT. An assembly wrapper `breakpoint_handler_asm` safely manages register state (`pushad`/`popad`) and handles CPU return via `iretd`.
+- **`int3` Trigger Command**: Users can manually trigger a controlled breakpoint exception via the shell by typing `int3`. This executes the instruction inline and returns safely back to the interactive polling loop.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
-- **Stubs Isolation**: Stubs are defined but strictly isolated from executing paths to prevent stack frame leakage.
-- **Status Reporting**: The `system` command explicitly lists: `idt: loaded` and `interrupts: disabled`.
+- **Status Reporting**: The `system` command explicitly lists: `idt: loaded`, `exception handlers: breakpoint`, and `interrupts: disabled`.

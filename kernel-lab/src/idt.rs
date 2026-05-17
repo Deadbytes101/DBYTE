@@ -44,6 +44,16 @@ impl IdtEntry {
     pub const fn missing() -> Self {
         Self::new()
     }
+
+    /// Configure this gate descriptor to point to a specific handler function.
+    pub fn set_handler(&mut self, handler: *const ()) {
+        let addr = handler as u32;
+        self.offset_low = (addr & 0xFFFF) as u16;
+        self.selector = 8; // GDT kernel code segment selector (0x08)
+        self.zero = 0;
+        self.type_attr = 0x8E; // Present, Ring 0, 32-bit Interrupt Gate
+        self.offset_high = ((addr >> 16) & 0xFFFF) as u16;
+    }
 }
 
 /// The IDT Pointer structure loaded into the processor register via the `lidt` assembly instruction.
