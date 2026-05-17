@@ -217,6 +217,25 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("\n");
                                         } else if line_str == "int3" {
                                              core::arch::asm!("int3");
+                                         } else if line_str == "exception" {
+                                             let mut vga_writer = vga::VgaWriter;
+                                             let mut serial_writer = serial::SerialWriter;
+                                             let count = interrupts::EXCEPTION_COUNT;
+                                             let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                             let name = interrupts::LAST_EXCEPTION_NAME;
+                                             if vector == -1 {
+                                                 let _ = write!(vga_writer, "exceptions: {}\nlast vector: none\nlast name: none\n", count);
+                                                 let _ = write!(serial_writer, "exceptions: {}\nlast vector: none\nlast name: none\n", count);
+                                             } else {
+                                                 let _ = write!(vga_writer, "exceptions: {}\nlast vector: {}\nlast name: {}\n", count, vector, name);
+                                                 let _ = write!(serial_writer, "exceptions: {}\nlast vector: {}\nlast name: {}\n", count, vector, name);
+                                             }
+                                         } else if line_str == "exception-reset" {
+                                             interrupts::EXCEPTION_COUNT = 0;
+                                             interrupts::LAST_EXCEPTION_VECTOR = -1;
+                                             interrupts::LAST_EXCEPTION_NAME = "none";
+                                             vga::print("exception telemetry: reset successfully\n");
+                                             serial::print("exception telemetry: reset successfully\n");
                                          } else if line_str == "mem" {
                                             vga::print("kernel memory: static lab view\nheap: unavailable\nallocator: unavailable\n");
                                             serial::print("kernel memory: static lab view\nheap: unavailable\nallocator: unavailable\n");
@@ -246,9 +265,51 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("reboot: unavailable (no ACPI/PS2 controller reset implemented)\n");
                                             serial::print("reboot: unavailable (no ACPI/PS2 controller reset implemented)\n");
                                         } else if line_str == "system" {
-                                            vga::print("DByteOS Kernel Lab\nversion: 7.2.1\ninput mode: keyboard polling\ndisplay mode: text-mode VGA (80x25)\nserial mode: COM1 115200 8N1\nfilesystem: none\nprocess model: none\ndbyte vm: none\nidt: loaded\nexception handlers: breakpoint\ninterrupts: disabled\n");
-                                            serial::print("DByteOS Kernel Lab\nversion: 7.2.1\ninput mode: keyboard polling\ndisplay mode: text-mode VGA (80x25)\nserial mode: COM1 115200 8N1\nfilesystem: none\nprocess model: none\ndbyte vm: none\nidt: loaded\nexception handlers: breakpoint\ninterrupts: disabled\n");
-                                        } else if line_str == "status" {
+                                             let mut vga_writer = vga::VgaWriter;
+                                             let mut serial_writer = serial::SerialWriter;
+                                             vga::print("DByteOS Kernel Lab
+version: 7.3.0
+input mode: keyboard polling
+display mode: text-mode VGA (80x25)
+serial mode: COM1 115200 8N1
+filesystem: none
+process model: none
+dbyte vm: none
+idt: loaded
+exception handlers: breakpoint
+interrupts: disabled
+");
+                                             serial::print("DByteOS Kernel Lab
+version: 7.3.0
+input mode: keyboard polling
+display mode: text-mode VGA (80x25)
+serial mode: COM1 115200 8N1
+filesystem: none
+process model: none
+dbyte vm: none
+idt: loaded
+exception handlers: breakpoint
+interrupts: disabled
+");
+                                             let count = interrupts::EXCEPTION_COUNT;
+                                             let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                             let name = interrupts::LAST_EXCEPTION_NAME;
+                                             if vector == -1 {
+                                                 let _ = write!(vga_writer, "exceptions handled: {}
+last exception: none
+", count);
+                                                 let _ = write!(serial_writer, "exceptions handled: {}
+last exception: none
+", count);
+                                             } else {
+                                                 let _ = write!(vga_writer, "exceptions handled: {}
+last exception: {} ({})
+", count, vector, name);
+                                                 let _ = write!(serial_writer, "exceptions handled: {}
+last exception: {} ({})
+", count, vector, name);
+                                             }
+                                         } else if line_str == "status" {
                                             vga::print("status: active\nversion: 7.2.1\nmode: polling\n");
                                             serial::print("status: active\nversion: 7.2.1\nmode: polling\n");
                                         } else if line_str == "mods" {
