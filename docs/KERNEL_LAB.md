@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v7.7.1)
+# DByteOS Kernel Lab Guide (v7.8.0)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**

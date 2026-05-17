@@ -5,6 +5,8 @@
 //! Under freestanding constraints, this skeleton defines layout slots and
 //! stub entry points for future exception and hardware interrupt handlers.
 
+use core::fmt::Write;
+
 /// Stub implementation representing the future Timer Interrupt Handler (IRQ0).
 ///
 /// Boundary restrictions:
@@ -45,7 +47,29 @@ core::arch::global_asm!(
     "    pushad",
     "    call divide_by_zero_handler_rust",
     "    popad",
-    "    iretd"
+    "    iretd",
+    ".global page_fault_handler_asm",
+    "page_fault_handler_asm:",
+    "    pushad",
+    "    mov eax, [esp + 32]",
+    "    mov ebx, [esp + 36]",
+    "    lea ecx, [esp + 36]",
+    "    push ecx",
+    "    push ebx",
+    "    push eax",
+    "    call page_fault_handler_rust",
+    "    add esp, 12",
+    "    popad",
+    "    add esp, 4",
+    "    iretd",
+    ".global pf_smoke_probe_asm",
+    "pf_smoke_probe_asm:",
+    "    mov eax, 0",
+    "    mov eax, [eax]",
+    "    ret",
+    ".global pf_smoke_recovery_asm",
+    "pf_smoke_recovery_asm:",
+    "    ret"
 );
 
 extern "C" {
@@ -53,6 +77,12 @@ extern "C" {
     pub fn breakpoint_handler_asm();
     /// Assembly entry point for divide-by-zero exception handler.
     pub fn divide_by_zero_handler_asm();
+    /// Assembly entry point for Page Fault exception handler.
+    pub fn page_fault_handler_asm();
+    /// Controlled real Page Fault probe used by the pf-smoke command.
+    pub fn pf_smoke_probe_asm();
+    /// Recovery trampoline used after the Page Fault handler rewrites saved EIP.
+    pub fn pf_smoke_recovery_asm();
 }
 
 /// Global exception telemetry count tracking.
@@ -61,6 +91,10 @@ pub static mut EXCEPTION_COUNT: u32 = 0;
 pub static mut LAST_EXCEPTION_VECTOR: i32 = -1;
 /// Global last exception name. "none" represents none.
 pub static mut LAST_EXCEPTION_NAME: &'static str = "none";
+/// True while the controlled Page Fault smoke probe is expected.
+pub static mut PF_SMOKE_ACTIVE: bool = false;
+/// Recovery EIP used to return the controlled Page Fault smoke probe to shell.
+pub static mut PF_SMOKE_RECOVERY_EIP: u32 = 0;
 
 #[no_mangle]
 pub extern "C" fn breakpoint_handler_rust() {
@@ -82,4 +116,40 @@ pub extern "C" fn divide_by_zero_handler_rust() {
     }
     crate::vga::print("\nexception: divide-by-zero\nvector: 0\nstatus: handled\n");
     crate::serial::print("\nexception: divide-by-zero\nvector: 0\nstatus: handled\n");
+}
+
+#[no_mangle]
+pub extern "C" fn page_fault_handler_rust(
+    error_code: u32,
+    _saved_eip: u32,
+    saved_eip_slot: *mut u32,
+) {
+    let cr2: u32;
+    unsafe {
+        core::arch::asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags));
+        EXCEPTION_COUNT += 1;
+        LAST_EXCEPTION_VECTOR = 14;
+        LAST_EXCEPTION_NAME = "page-fault";
+
+        if PF_SMOKE_ACTIVE && PF_SMOKE_RECOVERY_EIP != 0 {
+            *saved_eip_slot = PF_SMOKE_RECOVERY_EIP;
+            PF_SMOKE_ACTIVE = false;
+            PF_SMOKE_RECOVERY_EIP = 0;
+        }
+    }
+
+    let mut vga_writer = crate::vga::VgaWriter;
+    let mut serial_writer = crate::serial::SerialWriter;
+    let _ = write!(
+        vga_writer,
+        "\nexception: page fault\nvector: 14\ncr2: 0x{:08x}\nerror code: 0x{:08x}\nstatus: handled\n",
+        cr2,
+        error_code
+    );
+    let _ = write!(
+        serial_writer,
+        "\nexception: page fault\nvector: 14\ncr2: 0x{:08x}\nerror code: 0x{:08x}\nstatus: handled\n",
+        cr2,
+        error_code
+    );
 }
