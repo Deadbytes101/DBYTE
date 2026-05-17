@@ -1,0 +1,14 @@
+[package]
+name = "dbyte_kernel"
+version = "6.1.0"
+edition = "2021"
+
+[dependencies]
+
+[workspace]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
