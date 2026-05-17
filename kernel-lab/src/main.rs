@@ -93,7 +93,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v6.7.0)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v6.7.1)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -108,7 +108,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 6.7.0\n");
+    serial::print("version: 6.7.1\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -194,8 +194,8 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 6.7.0\n");
-                                            serial::print("DByteOS Kernel Lab 6.7.0\n");
+                                            vga::print("DByteOS Kernel Lab 6.7.1\n");
+                                            serial::print("DByteOS Kernel Lab 6.7.1\n");
                                         } else if line_str == "clear" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
