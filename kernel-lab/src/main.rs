@@ -5,6 +5,7 @@ use core::arch::global_asm;
 use core::panic::PanicInfo;
 
 mod vga;
+mod serial;
 
 // Minimal Multiboot 1 Header and entry point
 global_asm!(
@@ -35,13 +36,26 @@ global_asm!(
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                      DByteOS Kernel Lab (v6.1.0)                       \n");
+    vga::print("                      DByteOS Kernel Lab (v6.2.0)                       \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Stack pointer esp initialized to 16 KiB.\n");
-    vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n\n");
+    vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
+
+    unsafe {
+        serial::init();
+    }
+    vga::print("[OK] Freestanding COM1 serial port driver loaded.\n\n");
+
     vga::print("Status: Boot Successful (beta-userland simulation sandbox)\n\n");
     vga::print("dbyte-kernel-lab> _");
+
+    // Print to serial console for QEMU Boot Smoke automated detection
+    serial::print("DByteOS Kernel Lab\n");
+    serial::print("version: 6.2.0\n");
+    serial::print("status: booted\n");
+    serial::print("target: i686 multiboot\n");
+
     loop {}
 }
 

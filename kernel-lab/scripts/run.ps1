@@ -1,3 +1,7 @@
+param(
+    [switch]$Serial
+)
+
 $kernelPath = "target\i686-unknown-linux-gnu\debug\dbyte_kernel"
 if (-not (Test-Path $kernelPath)) {
     Write-Host "[ERROR] Kernel binary not found! Run build.ps1 first." -ForegroundColor Red
@@ -13,5 +17,10 @@ if (-not $qemu) {
     return
 }
 
-Write-Host "Launching freestanding DByteOS Kernel Lab under QEMU..." -ForegroundColor Green
-& qemu-system-i386 -kernel $kernelPath
+if ($Serial) {
+    Write-Host "Launching freestanding DByteOS Kernel Lab in Serial Mode..." -ForegroundColor Green
+    & qemu-system-i386 -kernel $kernelPath -serial stdio -display none
+} else {
+    Write-Host "Launching freestanding DByteOS Kernel Lab under QEMU..." -ForegroundColor Green
+    & qemu-system-i386 -kernel $kernelPath
+}
