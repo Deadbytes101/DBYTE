@@ -31,6 +31,32 @@ pub fn print(s: &str) {
     }
 }
 
+pub fn print_byte(byte: u8) {
+    unsafe {
+        if byte == b'\n' {
+            CURSOR = (CURSOR / BUFFER_WIDTH + 1) * BUFFER_WIDTH;
+        } else {
+            if CURSOR >= BUFFER_HEIGHT * BUFFER_WIDTH {
+                CURSOR = 0;
+            }
+            *VGA_BUFFER.add(CURSOR * 2) = byte;
+            *VGA_BUFFER.add(CURSOR * 2 + 1) = 0x0a; // Classic DByteOS Light Green
+            CURSOR += 1;
+        }
+    }
+}
+
+pub fn backspace() {
+    unsafe {
+        if CURSOR > 0 {
+            CURSOR -= 1;
+            *VGA_BUFFER.add(CURSOR * 2) = b' ';
+            *VGA_BUFFER.add(CURSOR * 2 + 1) = 0x0f; // White on black
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub struct VgaWriter;
 
 impl core::fmt::Write for VgaWriter {
