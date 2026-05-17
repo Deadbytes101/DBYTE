@@ -21,7 +21,22 @@ Projects are not executable manifests or host OS projects. DByteOS derives all
 project paths from the project name and rejects path-like names. `clean` does
 not remove projects because they are user data.
 
-`project notes <name>` is read-only in v5.1.0. Editing project notes is deferred
+## v5.1.1 hardening
+
+Project names are exact workspace identifiers, not paths. Empty names, `.`, `..`,
+names containing `.`, `/`, `\`, `:`, spaces, or tabs are rejected before any
+project path is derived.
+
+Missing project commands are deterministic:
+
+```txt
+error: project not found: missing
+```
+
+`project reset-demo` is idempotent and always restores the same `demo` project
+files and index entry.
+
+`project notes <name>` is read-only in v5.1.1. Editing project notes is deferred
 to a future release.
 
 ---

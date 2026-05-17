@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 5.1.0") {
-    throw "Version mismatch: expected 'DByte 5.1.0', got '$versionOut'"
+if ($versionOut -ne "DByte 5.1.1") {
+    throw "Version mismatch: expected 'DByte 5.1.1', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -526,7 +526,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 5.1.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 5.1.1" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1094,11 +1094,13 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v5.1.0) smoke tests..."
+Write-Host "Running DByteOS Command Set (v5.1.1) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosProjectsPath = Join-Path $dbyteosRoot "home\deadbyte\projects"
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
 $dbyteosStatus = Git-Status-Short
+$dbyteosPrefsRel = "examples/dbyteos/home/deadbyte/preferences.dby"
+$dbyteosPrefsInitiallyClean = $dbyteosStatus -notmatch [regex]::Escape($dbyteosPrefsRel)
 $expectedDbyteosBoot = @"
 ==================================================
   ____  ____        _             ___  ____  
@@ -1111,7 +1113,7 @@ $expectedDbyteosBoot = @"
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  5.1.0  ( Userland Prototype )
+  Version:    DByte  5.1.1  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -1196,7 +1198,7 @@ Try: welcome, profile show, config show, snapshot, getting-started, commands
 $expectedDbyteosStatus = @"
 --- DByteOS System Status ---
 Summary:
-  OS:      DByte  5.1.0
+  OS:      DByte  5.1.1
   Host:     DByte-Alpha
   User:     deadbyte
   Home:     home/deadbyte
@@ -1220,7 +1222,7 @@ Next:    help | man <topic> | which <command>
 "@
 $expectedDbyteosSysinfo = @"
 DByteOS Alpha Userland
-version: DByte 5.1.0
+version: DByte 5.1.1
 codename: Userland Prototype
 host: DByte-Alpha
 kernel: Simulated (Host)
@@ -1382,7 +1384,7 @@ shell: dbyte shell
 mode: alpha-userland
 theme: default
 prompt: dbyte-shell>
-os_version: 5.1.0
+os_version: 5.1.1
 "@
 $expectedDbyteosProfileUnknown = @"
 error: unknown profile command: unknown
@@ -1484,6 +1486,9 @@ notes: ok
 snapshot: ok
 result: healthy
 "@
+$expectedDbyteosProjectNotFound = @"
+error: project not found: missing
+"@
 $expectedDbyteosProjectUnknown = @"
 error: unknown project command: unknown
 usage: project <command> [name]
@@ -1500,7 +1505,7 @@ commands:
 $expectedDbyteosSnapshot = @"
 --- DByteOS System Snapshot ---
 System:
-  version: DByte 5.1.0
+  version: DByte 5.1.1
   codename: Userland Prototype
   host:    DByte-Alpha
   kernel:  Simulated (Host)
@@ -1740,6 +1745,38 @@ try {
     if ($dbyteosProjectInvalidName.Code -ne 0) { throw "dbyteos project invalid name failed: $($dbyteosProjectInvalidName.Text)" }
     Assert-Equal $dbyteosProjectInvalidName.Text "error: invalid project name: .." "dbyteos project invalid name"
 
+    $dbyteosProjectInvalidDot = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "new", ".") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectInvalidDot.Code -ne 0) { throw "dbyteos project invalid dot failed: $($dbyteosProjectInvalidDot.Text)" }
+    Assert-Equal $dbyteosProjectInvalidDot.Text "error: invalid project name: ." "dbyteos project invalid dot"
+    $dbyteosProjectInvalidSlash = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "new", "demo/bad") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectInvalidSlash.Code -ne 0) { throw "dbyteos project invalid slash failed: $($dbyteosProjectInvalidSlash.Text)" }
+    Assert-Equal $dbyteosProjectInvalidSlash.Text "error: invalid project name: demo/bad" "dbyteos project slash denied"
+    $dbyteosProjectInvalidBackslash = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "new", "demo\bad") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectInvalidBackslash.Code -ne 0) { throw "dbyteos project invalid backslash failed: $($dbyteosProjectInvalidBackslash.Text)" }
+    Assert-Equal $dbyteosProjectInvalidBackslash.Text "error: invalid project name: demo\bad" "dbyteos project backslash denied"
+    $dbyteosProjectInvalidAbsolute = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "new", "/demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectInvalidAbsolute.Code -ne 0) { throw "dbyteos project invalid absolute failed: $($dbyteosProjectInvalidAbsolute.Text)" }
+    Assert-Equal $dbyteosProjectInvalidAbsolute.Text "error: invalid project name: /demo" "dbyteos project absolute denied"
+    $dbyteosProjectInvalidDrive = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "new", "C:demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectInvalidDrive.Code -ne 0) { throw "dbyteos project invalid drive failed: $($dbyteosProjectInvalidDrive.Text)" }
+    Assert-Equal $dbyteosProjectInvalidDrive.Text "error: invalid project name: C:demo" "dbyteos project drive denied"
+    $dbyteosProjectInvalidSpace = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "new", "demo bad") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectInvalidSpace.Code -ne 0) { throw "dbyteos project invalid space failed: $($dbyteosProjectInvalidSpace.Text)" }
+    Assert-Equal $dbyteosProjectInvalidSpace.Text "error: invalid project name: demo bad" "dbyteos project space denied"
+
+    $dbyteosProjectStatusMissing = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "status", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectStatusMissing.Code -ne 0) { throw "dbyteos project status missing failed: $($dbyteosProjectStatusMissing.Text)" }
+    Assert-NormalizedEqual $dbyteosProjectStatusMissing.Text $expectedDbyteosProjectNotFound "dbyteos project status missing"
+    $dbyteosProjectNotesMissing = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "notes", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectNotesMissing.Code -ne 0) { throw "dbyteos project notes missing failed: $($dbyteosProjectNotesMissing.Text)" }
+    Assert-NormalizedEqual $dbyteosProjectNotesMissing.Text $expectedDbyteosProjectNotFound "dbyteos project notes missing"
+    $dbyteosProjectSnapshotMissing = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "snapshot", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectSnapshotMissing.Code -ne 0) { throw "dbyteos project snapshot missing failed: $($dbyteosProjectSnapshotMissing.Text)" }
+    Assert-NormalizedEqual $dbyteosProjectSnapshotMissing.Text $expectedDbyteosProjectNotFound "dbyteos project snapshot missing"
+    $dbyteosProjectDoctorMissing = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "doctor", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectDoctorMissing.Code -ne 0) { throw "dbyteos project doctor missing failed: $($dbyteosProjectDoctorMissing.Text)" }
+    Assert-NormalizedEqual $dbyteosProjectDoctorMissing.Text $expectedDbyteosProjectNotFound "dbyteos project doctor missing"
+
     $dbyteosProjectUnknown = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "unknown") -WorkingDirectory $dbyteosRoot
     if ($dbyteosProjectUnknown.Code -ne 0) { throw "dbyteos project unknown failed: $($dbyteosProjectUnknown.Text)" }
     Assert-NormalizedEqual $dbyteosProjectUnknown.Text $expectedDbyteosProjectUnknown "dbyteos project unknown snapshot"
@@ -1781,6 +1818,10 @@ try {
     if ($dbyteosProjectResetDemo.Code -ne 0) { throw "dbyteos project reset-demo failed: $($dbyteosProjectResetDemo.Text)" }
     Assert-Equal $dbyteosProjectResetDemo.Text "project demo reset." "dbyteos project reset-demo"
     Assert-NormalizedEqual (Get-Content (Join-Path $projectDemoRoot "snapshot.txt") -Raw) $expectedDbyteosProjectSnapshotDemo "dbyteos project reset-demo snapshot file"
+    $dbyteosProjectResetDemoAgain = Invoke-Dbyte -Arguments @("run", "bin\project.dby", "reset-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosProjectResetDemoAgain.Code -ne 0) { throw "dbyteos project reset-demo idempotent failed: $($dbyteosProjectResetDemoAgain.Text)" }
+    Assert-Equal $dbyteosProjectResetDemoAgain.Text "project demo reset." "dbyteos project reset-demo idempotent"
+    Assert-NormalizedEqual (Get-Content (Join-Path $projectDemoRoot "snapshot.txt") -Raw) $expectedDbyteosProjectSnapshotDemo "dbyteos project reset-demo idempotent snapshot file"
 
     $dbyteosCleanProjects = Invoke-Dbyte -Arguments @("run", "bin\clean.dby") -WorkingDirectory $dbyteosRoot
     if ($dbyteosCleanProjects.Code -ne 0) { throw "dbyteos clean project preservation failed: $($dbyteosCleanProjects.Text)" }
@@ -1903,7 +1944,7 @@ try {
     if ($dbyteosPrefsGetAfterReset.Code -ne 0) { throw "dbyteos prefs get after reset failed: $($dbyteosPrefsGetAfterReset.Text)" }
     Assert-Equal $dbyteosPrefsGetAfterReset.Text "default" "dbyteos prefs get default after reset"
 
-    # --- v5.1.0 Exact Snapshot Assertions ---
+    # --- v5.1.1 Exact Snapshot Assertions ---
     # ensure no stale .bak from previous runs
     $prefsBakCleanup = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby.bak"
     Remove-Item $prefsBakCleanup -Force -ErrorAction SilentlyContinue
@@ -2003,6 +2044,7 @@ Backup: Present
 
     # --- Missing Recovery and Malformed Behavior Tests ---
     $prefsFilePath = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
+    $originalPrefsBytes = [System.IO.File]::ReadAllBytes($prefsFilePath)
     Remove-Item -Path $prefsFilePath -Force
 
     $dbyteosDiagnoseMissing = Invoke-Dbyte -Arguments @("run", "bin\diagnose.dby", "preferences") -WorkingDirectory $dbyteosRoot
@@ -2023,6 +2065,7 @@ Backup: Present
 
     $dbyteosDoctorRecovered = Invoke-Dbyte -Arguments @("run", "bin\doctor.dby") -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosDoctorRecovered.Text "preferences: ok" "dbyteos doctor preferences recovered"
+    [System.IO.File]::WriteAllBytes($prefsFilePath, $originalPrefsBytes)
     # -----------------------------------------------------
 
     $dbyteosSnapshotProfile = Invoke-Dbyte -Arguments @("run", "bin\snapshot.dby", "profile") -WorkingDirectory $dbyteosRoot
@@ -2158,6 +2201,16 @@ Backup: Present
     Assert-Contains $dbyteosShellWhichOnboarding.Text "man-index: dbyteos ->" "dbyteos shell which man-index"
     Assert-Contains $dbyteosShellWhichOnboarding.Text "examples/dbyteos/bin/man_index.dby" "dbyteos shell which man-index resolved path"
 
+    $dbyteosShellProjectWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "project reset-demo`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`nwhich project`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellProjectWorkflow.Code -ne 0) { throw "dbyteos shell project workflow failed: $($dbyteosShellProjectWorkflow.Text)" }
+    Assert-Contains $dbyteosShellProjectWorkflow.Text "project demo reset." "dbyteos shell project workflow reset"
+    Assert-Contains $dbyteosShellProjectWorkflow.Text (Normalize-Output $expectedDbyteosProjectStatusDemo) "dbyteos shell project workflow status"
+    Assert-Contains $dbyteosShellProjectWorkflow.Text (Normalize-Output $expectedDbyteosProjectNotesDemo) "dbyteos shell project workflow notes"
+    Assert-Contains $dbyteosShellProjectWorkflow.Text (Normalize-Output $expectedDbyteosProjectSnapshotDemo) "dbyteos shell project workflow snapshot"
+    Assert-Contains $dbyteosShellProjectWorkflow.Text (Normalize-Output $expectedDbyteosProjectDoctorDemo) "dbyteos shell project workflow doctor"
+    Assert-Contains $dbyteosShellProjectWorkflow.Text "project: dbyteos ->" "dbyteos shell which project autopath"
+    Assert-Contains $dbyteosShellProjectWorkflow.Text "examples/dbyteos/bin/project.dby" "dbyteos shell which project resolved path"
+
     $dbyteosShellWhichCd = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "which cd`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellWhichCd.Code -ne 0) { throw "dbyteos shell which cd failed: $($dbyteosShellWhichCd.Text)" }
     Assert-Contains $dbyteosShellWhichCd.Text "cd: built-in" "dbyteos shell which built-in"
@@ -2178,11 +2231,15 @@ Backup: Present
     if ($dbyteosShellNoRcRead.Code -ne 0) { throw "dbyteos shell --no-rc read failed: $($dbyteosShellNoRcRead.Text)" }
     Assert-Contains $dbyteosShellNoRcRead.Text "ShellError: unknown command: read" "dbyteos shell --no-rc hides read alias"
 
+    $dbyteosShellNoRcProject = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "project list`nquit`n" -WorkingDirectory $dbyteosRoot
+    if ($dbyteosShellNoRcProject.Code -ne 0) { throw "dbyteos shell --no-rc project failed: $($dbyteosShellNoRcProject.Text)" }
+    Assert-Contains $dbyteosShellNoRcProject.Text "ShellError: unknown command: project" "dbyteos shell --no-rc hides project autopath"
+
     # Internal verification hook only: force prompt capture for piped shell smoke tests.
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 5.1.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 5.1.1`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -2190,10 +2247,10 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.1.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.1.1`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.1.1`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.1.1`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
-    $originalPrefsForPrompt = Get-Content $prefsFileForPrompt -Raw
+    $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
     try {
         Remove-Item -Path $prefsFileForPrompt -Force
         $dbyteosPromptMissingFallback = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
@@ -2211,7 +2268,7 @@ Backup: Present
         Assert-Equal $dbyteosPromptFallback.Text "dbyte-shell>" "dbyteos shell prompt unsupported prefs fallback"
     }
     finally {
-        Set-Content -Path $prefsFileForPrompt -Value $originalPrefsForPrompt -NoNewline
+        [System.IO.File]::WriteAllBytes($prefsFileForPrompt, $originalPrefsForPrompt)
     }
 
     $dbyteosRcMissingRoot = Join-Path $repoRoot "target\verify-dbyteos-missing-rc"
@@ -2262,7 +2319,7 @@ Backup: Present
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-NormalizedEqual $dbyteosSysinfoRoot.Text $expectedDbyteosSysinfo "dbyteos sysinfo snapshot"
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Alpha Userland" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 5.1.0" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 5.1.1" "dbyteos sysinfo version"
     Assert-Contains $dbyteosSysinfoRoot.Text "codename: Userland Prototype" "dbyteos sysinfo codename"
     Assert-Contains $dbyteosSysinfoRoot.Text "guide: run help, status, or man <topic>" "dbyteos sysinfo guide"
 
@@ -2365,7 +2422,7 @@ Backup: Present
     Assert-Contains $dbyteosProfileRoot.Text "mode: alpha-userland" "dbyteos profile mode"
     Assert-Contains $dbyteosProfileRoot.Text "theme: default" "dbyteos profile theme"
     Assert-Contains $dbyteosProfileRoot.Text "prompt: dbyte-shell>" "dbyteos profile prompt"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 5.1.0" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 5.1.1" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -2397,7 +2454,7 @@ Backup: Present
     if ($dbyteosReadCwd.Code -ne 0) { throw "dbyteos read from dbyteos cwd failed: $($dbyteosReadCwd.Text)" }
     Assert-Equal $dbyteosReadCwd.Text "cwd ok" "dbyteos read from dbyteos cwd"
 
-    Write-Host "Running DByteOS Security/Permissions (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Security/Permissions (v5.1.1) smoke tests..."
     $securityLogPath = Join-Path $dbyteosRoot "tmp\security.log"
     if (Test-Path $securityLogPath) {
         Remove-Item -Force $securityLogPath
@@ -2449,7 +2506,7 @@ Backup: Present
     Assert-Equal $dbyteosPermUnknown.Text "DENY read var/log.txt (policy)" "perm unknown root denied"
     $dbyteosReadEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosReadEtc.Code -ne 0) { throw "dbyteos read etc failed: $($dbyteosReadEtc.Text)" }
-    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"5.1.0`"" "read etc allowed"
+    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"5.1.1`"" "read etc allowed"
     $dbyteosWriteEtcDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "etc/system.dby", "test") -WorkingDirectory $repoRoot
     if ($dbyteosWriteEtcDenied.Code -ne 0) { throw "dbyteos write etc deny command failed: $($dbyteosWriteEtcDenied.Text)" }
     Assert-Equal $dbyteosWriteEtcDenied.Text "error: permission denied: write etc/system.dby" "write etc denied"
@@ -2507,7 +2564,7 @@ Backup: Present
     $catSource = Get-Content (Join-Path $dbyteosRoot "bin\cat.dby") -Raw
     $touchSource = Get-Content (Join-Path $dbyteosRoot "bin\touch.dby") -Raw
     
-    Write-Host "Running DByteOS Security Enforcement Expansion (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Expansion (v5.1.1) smoke tests..."
     $enforcementInput = @"
 clean
 cat etc/system.dby
@@ -2522,7 +2579,7 @@ quit
 "@
     $dbyteosEnforcement = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "$enforcementInput`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosEnforcement.Code -ne 0) { throw "dbyteos security enforcement failed: $($dbyteosEnforcement.Text)" }
-    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"5.1.0`"" "cat etc allowed"
+    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"5.1.1`"" "cat etc allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: path escape tmp/../etc/system.dby" "cat escape denied"
     Assert-Contains $dbyteosEnforcement.Text "touch: ok" "touch tmp allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: touch etc/security_touch.txt" "touch etc denied"
@@ -2533,7 +2590,7 @@ quit
     Assert-Contains $dbyteosEnforcement.Text "DENY inspect unknown/file" "security log inspect denied"
     Assert-Contains $dbyteosEnforcement.Text "workspace sweep complete" "enforcement clean sweep"
 
-    Write-Host "Running DByteOS Security Enforcement Hardening (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Hardening (v5.1.1) smoke tests..."
     $hardeningInput = @"
 clean
 cat boot.dby
@@ -2561,14 +2618,14 @@ quit
     $dbyteosNoRcScoping = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cat etc/system.dby`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosNoRcScoping.Text "ShellError: unknown command: cat" "shell --no-rc hides cat autopath"
 
-    Write-Host "Verifying DByteOS Personal Alpha (v5.1.0) documentation..."
+    Write-Host "Verifying DByteOS Personal Alpha (v5.1.1) documentation..."
     $dbyteDocs = @("DBYTEOS_PERSONAL_ALPHA.md", "DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md", "DBYTEOS_PROFILE.md", "DBYTEOS_CONFIG.md", "DBYTEOS_SNAPSHOT.md", "DBYTEOS_PROJECTS.md")
     foreach ($doc in $dbyteDocs) {
         $p = Join-Path $repoRoot "docs/$doc"
         if (-not (Test-Path $p)) { throw "DByteOS doc missing: $doc" }
     }
     $mainReadme = Get-Content (Join-Path $repoRoot "README.md") -Raw
-    Assert-Contains $mainReadme "DByteOS Personal Alpha (v5.1.0)" "README personal alpha positioning"
+    Assert-Contains $mainReadme "DByteOS Personal Alpha (v5.1.1)" "README personal alpha positioning"
     Assert-Contains $mainReadme "docs/DBYTEOS_PERSONAL_ALPHA.md" "README personal alpha link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ALPHA.md" "README alpha link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ONBOARDING.md" "README onboarding link"
@@ -2600,7 +2657,7 @@ quit
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_PACKAGE.md"))) { throw "README package link target missing" }
     
     $osReadme = Get-Content (Join-Path $repoRoot "examples/dbyteos/README.md") -Raw
-    Assert-Contains $osReadme "DByteOS Personal Alpha (v5.1.0)" "OS README personal alpha positioning"
+    Assert-Contains $osReadme "DByteOS Personal Alpha (v5.1.1)" "OS README personal alpha positioning"
     Assert-Contains $osReadme '| `cat` | View file contents |' "OS README command table"
     Assert-Contains $osReadme "Package Smoke" "OS README package smoke"
     Assert-Contains $osReadme ".\dbyte.exe --version" "OS README package version smoke"
@@ -2625,7 +2682,9 @@ quit
     Assert-Contains $packageGuide "snapshot" "package guide snapshot command"
     Assert-Contains $packageGuide "project new demo" "package guide project new command"
     Assert-Contains $packageGuide "project status demo" "package guide project status command"
+    Assert-Contains $packageGuide "project notes demo" "package guide project notes command"
     Assert-Contains $packageGuide "project snapshot demo" "package guide project snapshot command"
+    Assert-Contains $packageGuide "project doctor demo" "package guide project doctor command"
     Assert-Contains $packageGuide "project reset-demo" "package guide project reset command"
     Assert-Contains $packageGuide "getting-started" "package guide getting-started command"
     Assert-Contains $packageGuide "commands" "package guide commands command"
@@ -2660,16 +2719,18 @@ quit
     Assert-Contains $configGuide "DByteOS Config" "config guide title"
     Assert-Contains $configGuide "config show" "config guide show"
     Assert-Contains $configGuide "system.prompt = dbyte-shell>" "config guide prompt"
-    Assert-Contains $configGuide "read-only in v5.1.0" "config guide read-only"
+    Assert-Contains $configGuide "read-only in v5.1.1" "config guide read-only"
     Assert-Contains $configGuide "snapshot config" "config guide snapshot"
     $snapshotGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_SNAPSHOT.md") -Raw
     Assert-Contains $snapshotGuide "DByteOS Snapshot" "snapshot guide title"
     Assert-Contains $snapshotGuide "snapshot system" "snapshot guide system"
-    Assert-Contains $snapshotGuide "read-only in v5.1.0" "snapshot guide read-only"
+    Assert-Contains $snapshotGuide "read-only in v5.1.1" "snapshot guide read-only"
     $projectsGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PROJECTS.md") -Raw
     Assert-Contains $projectsGuide "DByteOS Workspace Projects" "projects guide title"
     Assert-Contains $projectsGuide "project new demo" "projects guide new demo"
     Assert-Contains $projectsGuide "home/deadbyte/projects/" "projects guide user data path"
+    Assert-Contains $projectsGuide "v5.1.1 hardening" "projects guide hardening"
+    Assert-Contains $projectsGuide "error: project not found: missing" "projects guide missing project"
     $preferencesGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PREFERENCES.md") -Raw
     Assert-Contains $preferencesGuide "DByteOS Mutable Preferences" "preferences guide title"
     Assert-Contains $preferencesGuide "system.prompt" "preferences guide prompt key"
@@ -2733,7 +2794,7 @@ quit
 
 
     $inspectSource = Get-Content (Join-Path $dbyteosRoot "bin\inspect.dby") -Raw
-    # v5.1.0 enforcement confirmed via smoke tests above
+    # v5.1.1 enforcement confirmed via smoke tests above
     $dbyteosCatGuard = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\cat.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosCatGuard.Code -ne 0) { throw "dbyteos cat guard failed: $($dbyteosCatGuard.Text)" }
     Assert-Contains $dbyteosCatGuard.Text "pub let os_version" "cat enforced allowed"
@@ -2772,10 +2833,10 @@ quit
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 5.1.0" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 5.1.1" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 5.1.0" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 5.1.1" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "mode: alpha-userland" "dbyteos shell profile mode"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
@@ -2783,7 +2844,7 @@ quit
     Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
 
-    Write-Host "Running DByteOS Notes Workflow (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v5.1.1) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -2794,7 +2855,7 @@ quit
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v5.1.1) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -2821,7 +2882,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v5.1.1) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -2831,7 +2892,7 @@ quit
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
     
-    Write-Host "Running DByteOS Journal/Logger (v5.1.0) smoke tests..."
+    Write-Host "Running DByteOS Journal/Logger (v5.1.1) smoke tests..."
     $journalPath = Join-Path $dbyteosRoot "home\deadbyte\journal.txt"
     if (Test-Path $journalPath) {
         Remove-Item -Force $journalPath
@@ -2985,6 +3046,9 @@ quit
 
     Assert-Contains $dbyteosCmdShell.Text "workspace sweep complete" "dbyteos shell clean sweep"
 
+    if ($dbyteosPrefsInitiallyClean) {
+        & git checkout -- $dbyteosPrefsRel
+    }
     Assert-GitStatus-Unchanged $dbyteosStatus "dbyteos system cleanliness"
 }
 catch {
@@ -3094,7 +3158,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "5.1.0"
+$EXPECTED_VERSION = "5.1.1"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -3182,7 +3246,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha (v5.1.0) Package Smoke Tests..."
+Write-Host "Running DByteOS Alpha (v5.1.1) Package Smoke Tests..."
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
 $smokeRoot = Join-Path $repoRoot "tmp\package_smoke"
@@ -3190,8 +3254,8 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "5.1.0"
-$zipFile = Join-Path $repoRoot "dbyte-v5.1.0-windows-x64.zip"
+& powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "5.1.1"
+$zipFile = Join-Path $repoRoot "dbyte-v5.1.1-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -3201,7 +3265,7 @@ $extractedOsRoot = Join-Path $smokeRoot "examples\dbyteos"
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 5.1.0") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 5.1.1") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -3308,6 +3372,10 @@ try {
     Assert-NormalizedEqual $projectUsageOut $expectedDbyteosProjectUsage "Package project usage snapshot"
     $projectListEmptyOut = & $extractedExe run "bin\project.dby" list 2>&1
     Assert-NormalizedEqual $projectListEmptyOut $expectedDbyteosProjectListEmpty "Package project list empty snapshot"
+    $projectInvalidOut = & $extractedExe run "bin\project.dby" new "../demo" 2>&1
+    Assert-Equal (Normalize-Output $projectInvalidOut) "error: invalid project name: ../demo" "Package project path escape denied"
+    $projectMissingOut = & $extractedExe run "bin\project.dby" status missing 2>&1
+    Assert-NormalizedEqual $projectMissingOut $expectedDbyteosProjectNotFound "Package project missing status"
     $projectNewOut = & $extractedExe run "bin\project.dby" new demo 2>&1
     Assert-Equal (Normalize-Output $projectNewOut) "project created: demo" "Package project new demo"
     if (-not (Test-Path (Join-Path $extractedOsRoot "home\deadbyte\projects\demo\project.txt"))) { throw "Package project missing project.txt" }
@@ -3325,6 +3393,8 @@ try {
     Assert-NormalizedEqual $projectDoctorOut $expectedDbyteosProjectDoctorDemo "Package project doctor demo snapshot"
     $projectResetOut = & $extractedExe run "bin\project.dby" reset-demo 2>&1
     Assert-Equal (Normalize-Output $projectResetOut) "project demo reset." "Package project reset-demo"
+    $projectResetAgainOut = & $extractedExe run "bin\project.dby" reset-demo 2>&1
+    Assert-Equal (Normalize-Output $projectResetAgainOut) "project demo reset." "Package project reset-demo idempotent"
 }
 finally {
     Pop-Location
@@ -3348,7 +3418,7 @@ $tmpFiles = Get-ChildItem -Path $extractedTmp -Exclude ".gitignore", ".gitkeep"
 if ($tmpFiles.Count -ne 0) { throw "Package contains junk in tmp: $($tmpFiles.Name -join ', ')" }
 
 Write-Host "  Verifying shell RC integration..."
-$shellInput = "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`nconfig show`nconfig keys`nconfig get system.prompt`nsnapshot`nsnapshot profile`nsnapshot config`nsnapshot security`nsnapshot logs`nproject reset-demo`nproject list`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nwhich doctor`nman index`nman profile`nman config`nman snapshot`nman project`nman perm`nquit`n"
+$shellInput = "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`nconfig show`nconfig keys`nconfig get system.prompt`nsnapshot`nsnapshot profile`nsnapshot config`nsnapshot security`nsnapshot logs`nproject reset-demo`nproject list`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nwhich doctor`nwhich project`nman index`nman profile`nman config`nman snapshot`nman project`nman perm`nquit`n"
 $shellOut = $shellInput | & $extractedExe shell --rc (Join-Path $extractedOsRoot ".dbyterc") 2>&1
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedPackageWelcome) "Package shell welcome"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedPackageProfile) "Package shell profile show"
@@ -3371,10 +3441,11 @@ Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosC
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosManIndex) "Package shell man-index"
 Assert-Contains (Normalize-Output $shellOut) "D B Y T E O S   U S E R L A N D" "Package shell boot"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosHelp) "Package shell help"
-Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  5.1.0" "Package shell status version"
-Assert-Contains (Normalize-Output $shellOut) "version: DByte 5.1.0" "Package shell sysinfo version"
+Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  5.1.1" "Package shell status version"
+Assert-Contains (Normalize-Output $shellOut) "version: DByte 5.1.1" "Package shell sysinfo version"
 Assert-Contains (Normalize-Output $shellOut) "read: dbyteos ->" "Package shell which read"
 Assert-Contains (Normalize-Output $shellOut) "doctor: dbyteos ->" "Package shell which doctor"
+Assert-Contains (Normalize-Output $shellOut) "project: dbyteos ->" "Package shell which project"
 Assert-Contains (Normalize-Output $shellOut) "Manual topics:" "Package shell man index"
 Assert-Contains (Normalize-Output $shellOut) "DByteOS Profile" "Package shell man profile"
 Assert-Contains (Normalize-Output $shellOut) "DByteOS Config" "Package shell man config"
@@ -3386,15 +3457,19 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 5.1.0`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 5.1.1`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.1.0`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.1.1`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.1.1`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.1.1`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
 Assert-Equal $packagePromptNoRc.Text "dbyte-shell>" "Package shell --no-rc default prompt snapshot"
+
+$packageNoRcProject = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "project list`nquit`n" -WorkingDirectory $extractedOsRoot
+if ($packageNoRcProject.Code -ne 0) { throw "Package shell --no-rc project failed: $($packageNoRcProject.Text)" }
+Assert-Contains $packageNoRcProject.Text "ShellError: unknown command: project" "Package shell --no-rc hides project autopath"
 
 $packagePrefsForPrompt = Join-Path $extractedOsRoot "home\deadbyte\preferences.dby"
 $originalPackagePrefsForPrompt = Get-Content $packagePrefsForPrompt -Raw
@@ -3446,7 +3521,7 @@ dbyte-shell> ==================================================
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  5.1.0  ( Userland Prototype )
+  Version:    DByte  5.1.1  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -3522,7 +3597,7 @@ result: healthy
 dbyte-shell> preference 'system.prompt' updated successfully.
 dbyteos> --- DByteOS System Snapshot ---
 System:
-  version: DByte 5.1.0
+  version: DByte 5.1.1
   codename: Userland Prototype
   host:    DByte-Alpha
   kernel:  Simulated (Host)
@@ -3573,7 +3648,7 @@ status: active
 files: project.txt, notes.txt, snapshot.txt
 
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 5.1.0
+dbyte-shell> DByte 5.1.1
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Alpha journey exact snapshot"

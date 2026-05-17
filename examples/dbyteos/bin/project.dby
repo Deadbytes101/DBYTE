@@ -21,16 +21,19 @@ fn show_usage():
     print("  reset-demo       - reset the demo project workspace")
 
 fn has_bad_char(name: str) -> int:
-    let prev: str = ""
     for c in name:
+        if c == ".":
+            return 1
         if c == "/":
             return 1
         if c == "\\":
             return 1
-        if prev == ".":
-            if c == ".":
-                return 1
-        prev = c
+        if c == ":":
+            return 1
+        if c == " ":
+            return 1
+        if c == "\t":
+            return 1
     return 0
 
 fn valid_name(name: str) -> int:
@@ -52,6 +55,11 @@ fn project_path(name: str) -> str:
 
 fn project_file(name: str, file_name: str) -> str:
     return profile.resolve_user_data_path(project_rel(name) + "/" + file_name)
+
+fn project_exists(name: str) -> int:
+    if fs.exists(project_path(name)) == 1:
+        return 1
+    return 0
 
 fn ensure_projects_dir():
     if fs.exists(projects_path) == 0:
@@ -140,53 +148,62 @@ fn status_project(name: str):
     if valid_name(name) == 0:
         print("error: invalid project name: " + name)
     else:
-        print("--- DByteOS Project Status ---")
-        print("name: " + name)
-        print_exists("project", project_path(name))
-        print_exists("project.txt", project_file(name, "project.txt"))
-        print_exists("notes.txt", project_file(name, "notes.txt"))
-        print_exists("snapshot.txt", project_file(name, "snapshot.txt"))
+        if project_exists(name) == 0:
+            print("error: project not found: " + name)
+        else:
+            print("--- DByteOS Project Status ---")
+            print("name: " + name)
+            print_exists("project", project_path(name))
+            print_exists("project.txt", project_file(name, "project.txt"))
+            print_exists("notes.txt", project_file(name, "notes.txt"))
+            print_exists("snapshot.txt", project_file(name, "snapshot.txt"))
 
 fn read_project_file(name: str, file_name: str, missing_label: str):
     if valid_name(name) == 0:
         print("error: invalid project name: " + name)
     else:
-        let path: str = project_file(name, file_name)
-        if fs.exists(path) == 1:
-            print(fs.read_text(path))
+        if project_exists(name) == 0:
+            print("error: project not found: " + name)
         else:
-            print("error: project " + missing_label + " not found: " + name)
+            let path: str = project_file(name, file_name)
+            if fs.exists(path) == 1:
+                print(fs.read_text(path))
+            else:
+                print("error: project " + missing_label + " not found: " + name)
 
 fn doctor_project(name: str):
     if valid_name(name) == 0:
         print("error: invalid project name: " + name)
     else:
-        print("DByteOS Project Doctor")
-        let healthy: int = 1
-        if fs.exists(project_path(name)) == 1:
-            print("project: ok")
+        if project_exists(name) == 0:
+            print("error: project not found: " + name)
         else:
-            print("project: missing")
-            healthy = 0
-        if fs.exists(project_file(name, "project.txt")) == 1:
-            print("metadata: ok")
-        else:
-            print("metadata: missing")
-            healthy = 0
-        if fs.exists(project_file(name, "notes.txt")) == 1:
-            print("notes: ok")
-        else:
-            print("notes: missing")
-            healthy = 0
-        if fs.exists(project_file(name, "snapshot.txt")) == 1:
-            print("snapshot: ok")
-        else:
-            print("snapshot: missing")
-            healthy = 0
-        if healthy == 1:
-            print("result: healthy")
-        else:
-            print("result: unhealthy")
+            print("DByteOS Project Doctor")
+            let healthy: int = 1
+            if fs.exists(project_path(name)) == 1:
+                print("project: ok")
+            else:
+                print("project: missing")
+                healthy = 0
+            if fs.exists(project_file(name, "project.txt")) == 1:
+                print("metadata: ok")
+            else:
+                print("metadata: missing")
+                healthy = 0
+            if fs.exists(project_file(name, "notes.txt")) == 1:
+                print("notes: ok")
+            else:
+                print("notes: missing")
+                healthy = 0
+            if fs.exists(project_file(name, "snapshot.txt")) == 1:
+                print("snapshot: ok")
+            else:
+                print("snapshot: missing")
+                healthy = 0
+            if healthy == 1:
+                print("result: healthy")
+            else:
+                print("result: unhealthy")
 
 if projects_path == "":
     print("error: project: internal path resolution failed")
