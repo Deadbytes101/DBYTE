@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.2.2)
+# DByteOS QEMU Boot Smoke (v6.3.0)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.2.2
+version: 6.3.0
 status: booted
 target: i686 multiboot
 ```
@@ -67,4 +67,31 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-i386` | `qemu-system-i386 -kernel ...` | Native 32-bit Emulation |
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
+
+## Keyboard Scancode Listening (v6.3.0)
+
+In version `6.3.0`, a polling-based PS/2 keyboard listener was implemented. It monitors key events by querying the status register and output buffer.
+
+### Register Address Primitives
+- **Keyboard Status Register**: Port `0x64` (Read-only)
+  - **Bit 0 (OBF - Output Buffer Full)**: A value of `1` indicates that data has been received from the keyboard controller and is ready to be fetched from the output buffer (port `0x60`).
+- **Keyboard Output Buffer**: Port `0x60` (Read-only)
+  - Contains the 8-bit scancode byte corresponding to the pressed/released key.
+
+### Expected Live Keyboard Output
+When launching the simulation in graphical mode:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
+```
+
+1. **Left-click** inside the graphical QEMU window to redirect keyboard focus to the virtual machine.
+2. Press keys on your host keyboard. You will see raw scancodes (both *Make* and *Break* codes) print dynamically onto the VGA screen and the serial console:
+   ```txt
+   DByteOS Keyboard Lab
+   status: listening
+   scancode: 0x1E
+   scancode: 0x9E
+   ```
+   *(Note: Scancode `0x1E` represents keypress of 'A', and `0x9E` represents key release of 'A'.)*
+
 
