@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "6.1.0"
+    [string]$Version = "6.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +61,13 @@ if (Test-Path $releaseHome) {
 
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "docs") -Force | Out-Null
 Copy-Item ".\docs\*" (Join-Path $releaseDir "docs") -Recurse -Force
+
+New-Item -ItemType Directory -Path (Join-Path $releaseDir "kernel-lab") -Force | Out-Null
+Copy-Item ".\kernel-lab\*" (Join-Path $releaseDir "kernel-lab") -Recurse -Force
+$releaseKernelLabTarget = Join-Path $releaseDir "kernel-lab\target"
+if (Test-Path $releaseKernelLabTarget) {
+    Remove-Item -Recurse -Force $releaseKernelLabTarget -ErrorAction SilentlyContinue
+}
 
 $targetBundlePath = Join-Path $releaseDir "dbyte-v$Version.bundle"
 git bundle create $targetBundlePath --all

@@ -1,4 +1,8 @@
-# DByteOS Kernel Direction & Architecture (v6.1.0)
+# DByteOS Kernel Direction & Architecture (v6.1.1)
+
+> [!WARNING]
+> **DByteOS Kernel Lab is a Bare-Metal Experiment.**
+> It is not a bootable full OS nor a real production kernel. It is a freestanding sandbox prototype containing no memory allocator, process scheduler, interrupt controllers, or standard driver sets.
 
 This document describes the architectural direction and research roadmap for the **DByteOS Kernel Lab**. It establishes a clear boundary between the production-grade host-runnable personal environment (DByteOS Userland) and the bare-metal kernel prototype experiments (Kernel Lab).
 

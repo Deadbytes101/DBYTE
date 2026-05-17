@@ -10,7 +10,7 @@ if (-not $qemu) {
     Write-Host "[WARNING] qemu-system-i386 is not found in your PATH." -ForegroundColor Yellow
     Write-Host "Please install QEMU or run the built ELF kernel inside a virtualized x86 emulator." -ForegroundColor Yellow
     Write-Host "Kernel ELF is located at: $kernelPath" -ForegroundColor Green
-    exit 0
+    return
 }
 
 Write-Host "Launching freestanding DByteOS Kernel Lab under QEMU..." -ForegroundColor Green
