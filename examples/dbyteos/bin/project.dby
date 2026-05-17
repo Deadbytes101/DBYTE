@@ -70,15 +70,16 @@ fn index_has(name: str) -> int:
     if fs.exists(index_path) == 0:
         return 0
     let content: str = fs.read_text(index_path)
-    let line: str = ""
+    let idx_line: str = ""
     for c in content:
         if c == "\n":
-            if line == name:
+            if idx_line == name:
                 return 1
-            line = ""
+            idx_line = ""
         else:
-            line = line + c
-    if line == name:
+            if c != "\r":
+                idx_line = idx_line + c
+    if idx_line == name:
         return 1
     return 0
 
@@ -126,16 +127,17 @@ fn list_projects():
     if fs.exists(index_path) == 1:
         let content: str = fs.read_text(index_path)
         if content != "":
-            let line: str = ""
+            let idx_line: str = ""
             for c in content:
                 if c == "\n":
-                    if line != "":
-                        print("  " + line)
-                    line = ""
+                    if idx_line != "":
+                        print("  " + idx_line)
+                    idx_line = ""
                 else:
-                    line = line + c
-            if line != "":
-                print("  " + line)
+                    if c != "\r":
+                        idx_line = idx_line + c
+            if idx_line != "":
+                print("  " + idx_line)
         else:
             print("  (none)")
     else:
@@ -281,31 +283,33 @@ fn project_report(name: str):
             let meta_path: str = project_file(name, "project.txt")
             if fs.exists(meta_path) == 1:
                 let content: str = fs.read_text(meta_path)
-                let line: str = ""
+                let p_line: str = ""
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            print("  " + line)
-                        line = ""
+                        if p_line != "":
+                            print("  " + p_line)
+                        p_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    print("  " + line)
+                        if c != "\r":
+                            p_line = p_line + c
+                if p_line != "":
+                    print("  " + p_line)
             
             print("Notes:")
             let notes_path: str = project_file(name, "notes.txt")
             if fs.exists(notes_path) == 1:
                 let content: str = fs.read_text(notes_path)
-                let line: str = ""
+                let p_line: str = ""
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            print("  " + line)
-                        line = ""
+                        if p_line != "":
+                            print("  " + p_line)
+                        p_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    print("  " + line)
+                        if c != "\r":
+                            p_line = p_line + c
+                if p_line != "":
+                    print("  " + p_line)
             
             print("Tasks:")
             let t_path: str = project_file(name, "tasks.txt")
@@ -313,19 +317,20 @@ fn project_report(name: str):
             let done_count: int = 0
             if fs.exists(t_path) == 1:
                 let content: str = fs.read_text(t_path)
-                let line: str = ""
+                let t_line: str = ""
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            if line_status(line) == "1":
+                        if t_line != "":
+                            if line_status(t_line) == "1":
                                 done_count = done_count + 1
                             else:
                                 open_count = open_count + 1
-                        line = ""
+                        t_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    if line_status(line) == "1":
+                        if c != "\r":
+                            t_line = t_line + c
+                if t_line != "":
+                    if line_status(t_line) == "1":
                         done_count = done_count + 1
                     else:
                         open_count = open_count + 1

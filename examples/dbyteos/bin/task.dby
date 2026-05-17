@@ -81,15 +81,16 @@ fn index_has(name: str) -> int:
     if fs.exists(index_path) == 0:
         return 0
     let content: str = fs.read_text(index_path)
-    let line: str = ""
+    let idx_line: str = ""
     for c in content:
         if c == "\n":
-            if line == name:
+            if idx_line == name:
                 return 1
-            line = ""
+            idx_line = ""
         else:
-            line = line + c
-    if line == name:
+            if c != "\r":
+                idx_line = idx_line + c
+    if idx_line == name:
         return 1
     return 0
 
@@ -251,18 +252,19 @@ fn list_tasks(name: str):
         if content == "":
             print("  (none)")
         else:
-            let line: str = ""
+            let t_line: str = ""
             let id: int = 1
             for c in content:
                 if c == "\n":
-                    if line != "":
-                        print_task_line(line, id)
+                    if t_line != "":
+                        print_task_line(t_line, id)
                         id = id + 1
-                    line = ""
+                    t_line = ""
                 else:
-                    line = line + c
-            if line != "":
-                print_task_line(line, id)
+                    if c != "\r":
+                        t_line = t_line + c
+            if t_line != "":
+                print_task_line(t_line, id)
 
 fn add_task(name: str, text: str):
     if validate_project(name) == 1:
@@ -288,19 +290,19 @@ fn done_task(name: str, raw_id: str):
             ensure_tasks(name)
             let content: str = fs.read_text(task_path(name))
             let out: str = ""
-            let line: str = ""
+            let t_line: str = ""
             let id: int = 1
             let found: int = 0
             let already_done: int = 0
             for c in content:
                 if c == "\n":
-                    if line != "":
+                    if t_line != "":
                         if id == wanted:
                             found = 1
                             let status: str = ""
                             let text: str = ""
                             let seen_sep: int = 0
-                            for lc in line:
+                            for lc in t_line:
                                 if seen_sep == 0:
                                     if lc == "|":
                                         seen_sep = 1
@@ -310,22 +312,23 @@ fn done_task(name: str, raw_id: str):
                                     text = text + lc
                             if status == "1":
                                 already_done = 1
-                                out = out + line + "\n"
+                                out = out + t_line + "\n"
                             else:
                                 out = out + "1|" + text + "\n"
                         else:
-                            out = out + line + "\n"
+                            out = out + t_line + "\n"
                         id = id + 1
-                    line = ""
+                    t_line = ""
                 else:
-                    line = line + c
-            if line != "":
+                    if c != "\r":
+                        t_line = t_line + c
+            if t_line != "":
                 if id == wanted:
                     found = 1
                     let status2: str = ""
                     let text2: str = ""
                     let seen_sep2: int = 0
-                    for lc2 in line:
+                    for lc2 in t_line:
                         if seen_sep2 == 0:
                             if lc2 == "|":
                                 seen_sep2 = 1
@@ -334,12 +337,12 @@ fn done_task(name: str, raw_id: str):
                         else:
                             text2 = text2 + lc2
                     if status2 == "1":
-                        already_done = 1
-                        out = out + line + "\n"
+                         already_done = 1
+                         out = out + t_line + "\n"
                     else:
-                        out = out + "1|" + text2 + "\n"
+                         out = out + "1|" + text2 + "\n"
                 else:
-                    out = out + line + "\n"
+                    out = out + t_line + "\n"
             if found == 0:
                 print("error: task not found: " + raw_id)
             else:
@@ -353,26 +356,27 @@ fn status_tasks(name: str):
     if validate_project(name) == 1:
         ensure_tasks(name)
         let content: str = fs.read_text(task_path(name))
-        let line: str = ""
+        let t_line: str = ""
         let open_count: int = 0
         let done_count: int = 0
         for c in content:
             if c == "\n":
-                if line != "":
+                if t_line != "":
                     let first: str = ""
-                    for lc in line:
+                    for lc in t_line:
                         if first == "":
                             first = lc
                     if first == "1":
                         done_count = done_count + 1
                     else:
                         open_count = open_count + 1
-                line = ""
+                t_line = ""
             else:
-                line = line + c
-        if line != "":
+                if c != "\r":
+                    t_line = t_line + c
+        if t_line != "":
             let first2: str = ""
-            for lc2 in line:
+            for lc2 in t_line:
                 if first2 == "":
                     first2 = lc2
             if first2 == "1":
@@ -387,36 +391,38 @@ fn status_tasks(name: str):
 fn count_open(name: str) -> int:
     ensure_tasks(name)
     let content: str = fs.read_text(task_path(name))
-    let line: str = ""
+    let t_line: str = ""
     let open_count: int = 0
     for c in content:
         if c == "\n":
-            if line != "":
-                if line_status(line) != "1":
+            if t_line != "":
+                if line_status(t_line) != "1":
                     open_count = open_count + 1
-            line = ""
+            t_line = ""
         else:
-            line = line + c
-    if line != "":
-        if line_status(line) != "1":
+            if c != "\r":
+                t_line = t_line + c
+    if t_line != "":
+        if line_status(t_line) != "1":
             open_count = open_count + 1
     return open_count
 
 fn count_done(name: str) -> int:
     ensure_tasks(name)
     let content: str = fs.read_text(task_path(name))
-    let line: str = ""
+    let t_line: str = ""
     let done_count: int = 0
     for c in content:
         if c == "\n":
-            if line != "":
-                if line_status(line) == "1":
+            if t_line != "":
+                if line_status(t_line) == "1":
                     done_count = done_count + 1
-            line = ""
+            t_line = ""
         else:
-            line = line + c
-    if line != "":
-        if line_status(line) == "1":
+            if c != "\r":
+                t_line = t_line + c
+    if t_line != "":
+        if line_status(t_line) == "1":
             done_count = done_count + 1
     return done_count
 
@@ -434,22 +440,23 @@ fn open_tasks(name: str):
         ensure_tasks(name)
         print("DByteOS open tasks: " + name)
         let content: str = fs.read_text(task_path(name))
-        let line: str = ""
+        let t_line: str = ""
         let id: int = 1
         let printed: int = 0
         for c in content:
             if c == "\n":
-                if line != "":
-                    if line_status(line) != "1":
-                        print_task_line(line, id)
+                if t_line != "":
+                    if line_status(t_line) != "1":
+                        print_task_line(t_line, id)
                         printed = 1
                     id = id + 1
-                line = ""
+                t_line = ""
             else:
-                line = line + c
-        if line != "":
-            if line_status(line) != "1":
-                print_task_line(line, id)
+                if c != "\r":
+                    t_line = t_line + c
+        if t_line != "":
+            if line_status(t_line) != "1":
+                print_task_line(t_line, id)
                 printed = 1
         if printed == 0:
             print("  (none)")
@@ -458,26 +465,27 @@ fn clear_done_tasks(name: str):
     if validate_project(name) == 1:
         ensure_tasks(name)
         let content: str = fs.read_text(task_path(name))
-        let line: str = ""
+        let t_line: str = ""
         let out: str = ""
         let removed: int = 0
         let remaining: int = 0
         for c in content:
             if c == "\n":
-                if line != "":
-                    if line_status(line) == "1":
+                if t_line != "":
+                    if line_status(t_line) == "1":
                         removed = removed + 1
                     else:
-                        out = out + line + "\n"
+                        out = out + t_line + "\n"
                         remaining = remaining + 1
-                line = ""
+                t_line = ""
             else:
-                line = line + c
-        if line != "":
-            if line_status(line) == "1":
+                if c != "\r":
+                    t_line = t_line + c
+        if t_line != "":
+            if line_status(t_line) == "1":
                 removed = removed + 1
             else:
-                out = out + line + "\n"
+                out = out + t_line + "\n"
                 remaining = remaining + 1
         fs.write_text(task_path(name), out)
         print("task clear-done: " + name)
@@ -500,20 +508,21 @@ fn doctor_tasks(name: str):
             else:
                 print("tasks_file: ok")
                 let content: str = fs.read_text(task_path(name))
-                let line: str = ""
+                let t_line: str = ""
                 let row: int = 1
                 let bad: int = 0
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            if valid_task_line(line) == 0:
+                        if t_line != "":
+                            if valid_task_line(t_line) == 0:
                                 bad = 1
                             row = row + 1
-                        line = ""
+                        t_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    if valid_task_line(line) == 0:
+                        if c != "\r":
+                            t_line = t_line + c
+                if t_line != "":
+                    if valid_task_line(t_line) == 0:
                         bad = 1
                 if bad == 0:
                     print("rows: ok")
@@ -537,18 +546,19 @@ fn snapshot_tasks(name: str):
         if content == "":
             print("  (none)")
         else:
-            let line: str = ""
+            let t_line: str = ""
             let id: int = 1
             for c in content:
                 if c == "\n":
-                    if line != "":
-                        print_task_line(line, id)
+                    if t_line != "":
+                        print_task_line(t_line, id)
                         id = id + 1
-                    line = ""
+                    t_line = ""
                 else:
-                    line = line + c
-            if line != "":
-                print_task_line(line, id)
+                    if c != "\r":
+                        t_line = t_line + c
+            if t_line != "":
+                print_task_line(t_line, id)
 
 fn task_report(name: str):
     if valid_name(name) == 0:
@@ -569,21 +579,22 @@ fn task_report(name: str):
                 let content: str = fs.read_text(path)
                 
                 # Count tasks first to get progress
-                let line: str = ""
+                let rep_line: str = ""
                 let open_c: int = 0
                 let done_c: int = 0
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            if line_status(line) == "1":
+                        if rep_line != "":
+                            if line_status(rep_line) == "1":
                                 done_c = done_c + 1
                             else:
                                 open_c = open_c + 1
-                        line = ""
+                        rep_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    if line_status(line) == "1":
+                        if c != "\r":
+                            rep_line = rep_line + c
+                if rep_line != "":
+                    if line_status(rep_line) == "1":
                         done_c = done_c + 1
                     else:
                         open_c = open_c + 1
@@ -610,20 +621,21 @@ fn task_report(name: str):
                 print("Open Tasks:")
                 let open_printed: int = 0
                 let id: int = 1
-                line = ""
+                rep_line = ""
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            if line_status(line) != "1":
-                                print("  [ ] " + int_to_str(id) + ": " + line_text(line))
+                        if rep_line != "":
+                            if line_status(rep_line) != "1":
+                                print("  [ ] " + int_to_str(id) + ": " + line_text(rep_line))
                                 open_printed = 1
                             id = id + 1
-                        line = ""
+                        rep_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    if line_status(line) != "1":
-                        print("  [ ] " + int_to_str(id) + ": " + line_text(line))
+                        if c != "\r":
+                            rep_line = rep_line + c
+                if rep_line != "":
+                    if line_status(rep_line) != "1":
+                        print("  [ ] " + int_to_str(id) + ": " + line_text(rep_line))
                         open_printed = 1
                 if open_printed == 0:
                     print("  (none)")
@@ -632,20 +644,21 @@ fn task_report(name: str):
                 print("Done Tasks:")
                 let done_printed: int = 0
                 id = 1
-                line = ""
+                rep_line = ""
                 for c in content:
                     if c == "\n":
-                        if line != "":
-                            if line_status(line) == "1":
-                                print("  [x] " + int_to_str(id) + ": " + line_text(line))
+                        if rep_line != "":
+                            if line_status(rep_line) == "1":
+                                print("  [x] " + int_to_str(id) + ": " + line_text(rep_line))
                                 done_printed = 1
                             id = id + 1
-                        line = ""
+                        rep_line = ""
                     else:
-                        line = line + c
-                if line != "":
-                    if line_status(line) == "1":
-                        print("  [x] " + int_to_str(id) + ": " + line_text(line))
+                        if c != "\r":
+                            rep_line = rep_line + c
+                if rep_line != "":
+                    if line_status(rep_line) == "1":
+                        print("  [x] " + int_to_str(id) + ": " + line_text(rep_line))
                         done_printed = 1
                 if done_printed == 0:
                     print("  (none)")
