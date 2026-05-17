@@ -82,7 +82,7 @@ fn scancode_to_ascii(scancode: u8) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                    DByteOS ASCII Decode Lab (v6.4.0)                   \n");
+    vga::print("                    DByteOS ASCII Decode Lab (v6.4.1)                   \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -97,7 +97,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 6.4.0\n");
+    serial::print("version: 6.4.1\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 

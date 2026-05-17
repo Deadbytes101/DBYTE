@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.4.0)
+# DByteOS QEMU Boot Smoke (v6.4.1)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.4.0
+version: 6.4.1
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard ASCII Decoded Listening (v6.4.0)
+## Keyboard ASCII Decoded Listening (v6.4.1)
 
-In version `6.4.0`, a polling-based PS/2 keyboard listener and basic ASCII translation module were implemented. It monitors key events by querying the status register and translates valid Make codes to raw ASCII characters.
+In version `6.4.1`, a polling-based PS/2 keyboard listener and basic ASCII translation module were implemented. It monitors key events by querying the status register and translates valid Make codes to raw ASCII characters.
 
 ### Register Address Primitives
 - **Keyboard Status Register**: Port `0x64` (Read-only)
@@ -94,25 +94,44 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
    ```
    *(Note: Pressing 'A' followed by 'B' will print 'a' and 'b'. All Break codes (key releases) are filtered out to prevent double-typing.)*
 
-### Essential Key Scancode Reference (PS/2 Set 1)
+### Manual Typing Proof: hello deadbyte 1337
+To verify the full end-to-end interactive integrity of the keyboard translation sub-system:
+1. Launch graphical simulation: `powershell -File .\kernel-lab\scripts\run.ps1`
+2. Left-click inside the QEMU graphical display window to grab focus.
+3. Type the string: `hello deadbyte 1337`
+4. The system translates each keypress on-the-fly and echoes the characters to both the VGA screen and the serial console.
+5. Hit **`Backspace`** several times. Observe that characters are cleanly wiped from both screens one-by-one.
 
-The PS/2 keyboard controller inside QEMU emits 8-bit scancodes based on the Set 1 specification. When a key is pressed, it transmits a **Make code**. When a key is released, it transmits a **Break code** (which is usually the Make code bitwise ORed with `0x80`).
+### Complete Supported Keyboard Mappings (PS/2 Set 1)
+All other keystrokes not explicitly defined below are currently ignored by the freestanding parser.
 
-| Key | Make Code (Press) | Break Code (Release) | Key Action |
+| Category | Key | Make Code (Hex) | Decoded ASCII / Action |
 | --- | --- | --- | --- |
-| **`A`** | `0x1E` | `0x9E` | Primary validation keystroke |
-| **`B`** | `0x30` | `0xB0` | Secondary validation keystroke |
-| **`Enter`** | `0x1C` | `0x9C` | Carries carriage return / line break signals |
-| **`Backspace`** | `0x0E` | `0x8E` | Backspace delete buffer cursor trigger |
-| **`Space`** | `0x39` | `0xB9` | Spacebar blank character pad |
-| **`Esc`** | `0x01` | `0x81` | Escape/exit execution frame trigger |
+| **Alphabetic** | `A` through `Z` | `0x1E` through `0x2C` (Set 1) | Lowercase character representation (`'a'` - `'z'`) |
+| **Numeric** | `1` through `0` | `0x02` through `0x0B` | Numeric symbol representation (`'1'` - `'0'`) |
+| **Spacer** | `Space` | `0x39` | Blank space padding byte (`' '`) |
+| **Control** | `Enter` | `0x1C` | Translates to Carriage Return / Newline (`'\n'`) |
+| **Control** | `Backspace` | `0x0E` | Erase previous character trigger (`'\x08'`) |
+
+---
+
+### In-Depth Backspace Visual Erase Behavior
+
+Erase behavior requires synchronizing the local graphical viewport and the external host serial capture terminal:
+1. **Text-Mode VGA Screen**:
+   - The kernel decrements the frame buffer index pointer `CURSOR` by 1 (`CURSOR -= 1`).
+   - Overwrites the character cell with a space character byte (`b' '`) and sets text colors back to white-on-black (`0x0F`) to visually delete the character.
+2. **COM1 Serial Port Redirect**:
+   - The kernel writes the standard ANSI/ASCII backspace control character `\x08` (which moves the host terminal cursor one column left).
+   - Transmits a space character `\x20` (overwriting the character at that column with empty space).
+   - Transmits another backspace character `\x08` (shifting the cursor left again so subsequent typed keys append at the corrected column).
 
 ---
 
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v6.4.0`) has strictly defined architectural scopes to prevent over-complicating the bootstrap lab:
+> This release (`v6.4.1`) enforces strict technical bounds to maintain lab stability:
 >
-> 1. **No Interrupt Service Routines (ISRs)**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Key listening runs completely inside a synchronous, non-blocking polling loop within `kernel_main` querying port `0x64`.
-> 2. **No Complex Modifier Layouts**: The kernel does **NOT** support Shift, CapsLock, Ctrl, or Alt state transitions yet. It maps core alphanumeric characters, Space, Enter, and Backspace as basic un-modified lowercase/numeric codes. Shift and CapsLock key-state handling are slated for version `v6.4.1` or `v6.5.0`.
+> 1. **Polling-Only Keyboard Processing**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
+> 2. **No Stateful Keyboard Modifiers**: The kernel does **NOT** support Shift, CapsLock, Ctrl, or Alt state transitions yet. Alphabetical characters are interpreted strictly as lowercase keys. Shift and CapsLock state-machine integrations are scheduled for the **Keyboard Modifier Lab** (`v6.5.0`).
