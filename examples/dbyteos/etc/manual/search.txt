@@ -1,0 +1,16 @@
+DByteOS Search Command
+
+The search command provides deterministic scanning of workspace resources, project notes/tasks, journals, and agendas.
+
+Usage:
+  workspace search <text>
+  project search <project> <text>
+  task search <project> <text>
+  daily search <text>
+  search reset-demo
+
+Examples:
+  workspace search tests
+  project search demo note
+  task search demo tests
+  daily search todo
