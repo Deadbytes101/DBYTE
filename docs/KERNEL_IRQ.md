@@ -1,6 +1,6 @@
-# DByteOS Kernel PIC/IRQ Direction Foundation (v8.1.0)
+# DByteOS Kernel PIC/IRQ Direction Foundation (v8.1.1)
 
-DByteOS Kernel Lab `v8.1.0` documents the PIC/IRQ direction foundation. This is a direction-only release: PIC/IRQ remains planned / disabled, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.1.1` hardens the PIC/IRQ direction foundation. This is a hardening-only release: PIC/IRQ remains planned / disabled, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 ## PIC Remap Plan
 
@@ -15,11 +15,11 @@ PIC remap is documented only. No Initialization Command Words are dispatched, no
 
 ## IRQ Glossary
 
-- **IRQ0 timer**: planned PIT timer interrupt; disabled in `v8.1.0`.
-- **IRQ1 keyboard**: planned PS/2 keyboard interrupt; disabled in `v8.1.0`.
+- **IRQ0 timer**: planned PIT timer interrupt; disabled in `v8.1.1`.
+- **IRQ1 keyboard**: planned PS/2 keyboard interrupt; disabled in `v8.1.1`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.1.0`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.1.1`.
 
 ## Status UX
 
