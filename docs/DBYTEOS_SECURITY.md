@@ -35,4 +35,4 @@ DENY touch etc/config.txt (policy)
 Selected files in the root directory (`boot.dby`, `.dbyterc`) are granted **Read-Only** access to allow for system initialization and inspection without compromising integrity.
 
 ---
-[Home](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/README.md) | [Alpha Status](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_ALPHA.md) | [Commands](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_COMMANDS.md) | [Boot](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_BOOT.md)
+[Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Commands](DBYTEOS_COMMANDS.md) | [Boot](DBYTEOS_BOOT.md)

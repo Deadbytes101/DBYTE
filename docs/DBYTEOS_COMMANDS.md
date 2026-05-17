@@ -2,6 +2,10 @@
 
 DByteOS provides a set of userland tools accessible via the shell autopath.
 
+## Start Here
+
+Use `welcome` for the first screen, `profile show` for identity, `config show` for read-only preferences, `snapshot` for a read-only system summary, `project list` for workspace projects, `getting-started` for the first-run checklist, `commands` for grouped discovery, `man-index` for manual topics, and `which <command>` to inspect autopath resolution.
+
 ## Stable Command Set
 
 | Command | Purpose | Enforcement |
@@ -13,6 +17,10 @@ DByteOS provides a set of userland tools accessible via the shell autopath.
 | `pwd` | Print working directory | No |
 | `man` | View manual pages | No |
 | `help` | Show system help | No |
+| `welcome` | Show onboarding entry point | No |
+| `getting-started` | Show first-run checklist | No |
+| `commands` | Browse commands by category | No |
+| `man-index` | List manual topics | No |
 | `notes` | Manage personal notes | No |
 | `journal` | Personal event logger | No |
 | `services` | Manage system services | No |
@@ -20,7 +28,33 @@ DByteOS provides a set of userland tools accessible via the shell autopath.
 | `perm` | Check security policy | No |
 | `clean` | Purge temporary artifacts | No |
 | `boot` | Re-run system boot | No |
-| `status` | Show system information | No |
+| `status` | Show system summary | No |
+| `profile` | Show profile identity | No |
+| `config` | Show read-only preferences | No |
+| `snapshot` | Summarize subsystem state | No |
+| `project` | Manage workspace projects | No |
+
+## Discovery Flow
+
+```txt
+welcome
+profile show
+config show
+snapshot
+project new demo
+project status demo
+project snapshot demo
+project reset-demo
+getting-started
+commands
+man-index
+help
+status
+which read
+man index
+man perm
+path which notes
+```
 
 ## Shell Interaction
 
@@ -41,4 +75,4 @@ Common aliases are defined in `.dbyterc` to provide a familiar experience:
 ```
 
 ---
-[Home](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/README.md) | [Alpha Status](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_ALPHA.md) | [Security](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_SECURITY.md) | [Boot](file:///C:/Users/DEADBYTE/Downloads/ProgramingLangPJ/docs/DBYTEOS_BOOT.md)
+[Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Onboarding](DBYTEOS_ONBOARDING.md) | [Profile](DBYTEOS_PROFILE.md) | [Config](DBYTEOS_CONFIG.md) | [Snapshot](DBYTEOS_SNAPSHOT.md) | [Projects](DBYTEOS_PROJECTS.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)

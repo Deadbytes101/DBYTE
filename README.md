@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Alpha Userland (v4.0.1)
+## DByteOS Personal Alpha (v5.1.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -44,21 +44,82 @@ DByteOS is a host-runnable personal computing environment built on the DByte run
 dbyte shell --rc examples/dbyteos/.dbyterc
 ```
 
-This configures the session environment and activates autopath resolving.
+This configures the session environment, activates autopath resolving, and
+loads the DByteOS prompt from `system.prompt`.
 
 2. **Explore the System**:
+- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
+- [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
+- [Profile Guide](docs/DBYTEOS_PROFILE.md)
+- [Config Guide](docs/DBYTEOS_CONFIG.md)
+- [Snapshot Guide](docs/DBYTEOS_SNAPSHOT.md)
+- [Projects Guide](docs/DBYTEOS_PROJECTS.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
+- [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
 
 3. **Initialize & Interact**:
 
 ```bash
+dbyte-shell> welcome
+dbyte-shell> check-system
+dbyte-shell> doctor
+dbyte-shell> profile show
+dbyte-shell> config show
+dbyte-shell> prefs set system.prompt dbyteos>
+dbyte-shell> snapshot
+dbyteos> project new demo
+dbyteos> project status demo
+dbyteos> project snapshot demo
+dbyteos> project reset-demo
+dbyteos> prefs reset-demo
+dbyte-shell> getting-started
+dbyte-shell> commands
+dbyte-shell> man-index
 dbyte-shell> boot
+dbyte-shell> help
 dbyte-shell> status
+dbyte-shell> which read
 dbyte-shell> notes list
 dbyte-shell> journal read
+```
+
+4. **Smoke-test a zip release**:
+
+```powershell
+.\dbyte.exe --version
+.\dbyte.exe shell --rc examples/dbyteos/.dbyterc
+```
+
+Expected first commands inside the package shell:
+
+```txt
+boot
+welcome
+check-system
+doctor
+prefs set system.prompt dbyteos>
+snapshot
+project new demo
+project status demo
+project snapshot demo
+project reset-demo
+prefs reset-demo
+profile show
+config show
+getting-started
+commands
+man-index
+boot
+help
+status
+sysinfo
+which read
+man index
+man perm
+quit
 ```
 
 ## Quick Start
@@ -251,7 +312,10 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 - [INSTALL.md](INSTALL.md)
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
 - [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
+- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
+- [DByteOS Profile](docs/DBYTEOS_PROFILE.md)
+- [DByteOS Config](docs/DBYTEOS_CONFIG.md)
 - [DByteOS Security](docs/DBYTEOS_SECURITY.md)
 - [DByteOS Boot](docs/DBYTEOS_BOOT.md)
 - [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md)

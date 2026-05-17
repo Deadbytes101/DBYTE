@@ -1,6 +1,6 @@
 # DByte Website
 
-Website: https://dbytelang.site
+Website: https://dbytelang.22web.org
 
 Tagline:
 
