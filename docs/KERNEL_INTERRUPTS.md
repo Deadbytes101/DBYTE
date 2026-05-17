@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.0.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.0.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -61,9 +61,38 @@ Remapping requires sending 4 Initialization Command Words (ICW) to the command a
 
 ---
 
-## 4. Current Milestone Status (`v7.0.0`)
+## 4. Architectural Glossary
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts are strictly planned and disabled** in version `7.0.0`:
+To ensure precise terminology and strict alignment across the DByteOS system, the following standard glossary is defined:
+
+- **IDT (Interrupt Descriptor Table)**: An architecture-defined array of 256 gate descriptors representing handler hooks for CPU exceptions and external IRQs.
+- **ISR (Interrupt Service Routine)**: A specialized, freestanding low-level handler routine triggered immediately by the CPU upon encountering an interrupt vector.
+- **IRQ (Interrupt Request)**: An physical hardware line (numbered 0 to 15 on dual 8259A PICs) signaling external hardware requests to the programmable controller.
+- **PIC (Programmable Interrupt Controller)**: An 8259A chip duo mapping physical IRQs to configurable CPU interrupt vectors via Initialization Command Words.
+- **STI (Set Interrupt Flag)**: The x86 instruction enabling maskable external interrupts on the processor by setting the IF (Interrupt Flag) flag in the EFLAGS register.
+- **CLI (Clear Interrupt Flag)**: The x86 instruction disabling maskable external interrupts on the processor by clearing the IF flag, forcing the CPU to ignore incoming IRQ signals.
+
+---
+
+## 5. Safety Warnings & Active Disclaimers
+
+> [!WARNING]
+> **Active Interrupts are Disabled**
+> Maskable interrupts are strictly disabled on the processor (no `sti` execution). All IRQ lines from the PIC are ignored, keeping CPU interrupt responses dormant.
+
+> [!IMPORTANT]
+> **Keyboard Polling Mode is Active**
+> Keyboard event processing remains 100% polling-based (reading VGA and Port `0x60` directly in the polling loop). No IRQ1 interrupt-driven input paths are registered.
+
+> [!NOTE]
+> **No System Timer Driver**
+> Uptime measurements are unavailable because no Programmable Interval Timer (PIT) IRQ0 handler is initialized or activated.
+
+---
+
+## 6. Current Milestone Status (`v7.0.1`)
+
+To preserve absolute stability and maintain polling-based shell input, **Interrupts are strictly planned and disabled** in version `7.0.1`:
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Not executed.

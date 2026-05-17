@@ -6,6 +6,13 @@
 //! (IDT entries) and the base pointer representation to be loaded via LIDT.
 
 /// A standard packed 8-byte x86 Gate Descriptor representing an IDT entry.
+///
+/// Layout constraints (8 bytes, packed):
+/// - Bytes 0..1: Offset low bits (0..15 of target handler address)
+/// - Bytes 2..3: GDT segment selector (typically code selector 0x08)
+/// - Byte 4: Reserved/Zero (always 0x00)
+/// - Byte 5: Type attributes (Present flag, DPL privilege levels, Gate type details)
+/// - Bytes 6..7: Offset high bits (16..31 of target handler address)
 #[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub struct IdtEntry {
