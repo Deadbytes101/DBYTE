@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.2.0)
+# DByteOS QEMU Boot Smoke (v6.2.1)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
