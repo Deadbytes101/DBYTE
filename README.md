@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Workspace Beta Foundation (v7.9.1)
+## DByteOS Personal Workspace Beta Foundation (v8.0.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -60,6 +60,7 @@ loads the DByteOS prompt from `system.prompt`.
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
+- [Kernel Exception Subsystem Foundation](docs/KERNEL_EXCEPTIONS.md)
 
 3. **Initialize & Interact**:
 
