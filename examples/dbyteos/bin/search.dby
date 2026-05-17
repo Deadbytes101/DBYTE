@@ -325,7 +325,7 @@ else:
                         else:
                             let q: str = args[2]
                             if valid_search_text(q) == 0:
-                                print("error: invalid search text")
+                                print("error: search: invalid query")
                             else:
                                 workspace_search(q)
             else:
@@ -341,7 +341,7 @@ else:
                             else:
                                 let q: str = args[2]
                                 if valid_search_text(q) == 0:
-                                    print("error: invalid search text")
+                                    print("error: search: invalid query")
                                 else:
                                     daily_search(q)
                 else:
@@ -364,7 +364,7 @@ else:
                                             print("error: project '" + p_name + "' not found in index")
                                         else:
                                             if valid_search_text(q) == 0:
-                                                print("error: invalid search text")
+                                                print("error: search: invalid query")
                                             else:
                                                 search_project_notes(p_name, q)
                                                 search_project_tasks(p_name, q)
@@ -388,7 +388,7 @@ else:
                                                 print("error: project '" + p_name + "' not found in index")
                                             else:
                                                 if valid_search_text(q) == 0:
-                                                    print("error: invalid search text")
+                                                    print("error: search: invalid query")
                                                 else:
                                                     search_project_tasks(p_name, q)
                         else:
