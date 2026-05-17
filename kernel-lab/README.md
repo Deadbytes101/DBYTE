@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab (v6.8.0)
+# DByteOS Kernel Lab (v6.8.1)
 
 Welcome to the **DByteOS Kernel Lab**! This sandbox is a bare-metal experimental laboratory separated entirely from the stable `dbyteos` userland computing environment.
 
