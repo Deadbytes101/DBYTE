@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.3.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.3.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -112,10 +112,13 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.3.0`)
+## 6. Current Milestone Status (`v7.3.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.3.0`, but CPU exception telemetry and diagnostics are fully implemented:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.3.1`, and CPU exception telemetry has been successfully hardened:
 - **Telemetry State Tracking**: Tracks exception counts (`EXCEPTION_COUNT`), last vector (`LAST_EXCEPTION_VECTOR`), and last exception name (`LAST_EXCEPTION_NAME`) under zero-allocation constraints.
+- **Diagnostics Telemetry Hardened**: Verified correct exact wording formats for `exception` and dynamic sync on `system` commands.
+- **Idempotency Checked**: Calling `exception-reset` multiple times remains perfectly safe, leaving stats at zero/none.
+- **Explicit Warnings Extended**: Checked and reinforced that divide-by-zero (vector 0) and page-fault (vector 14) exceptions remain dangerous and unhandled, protected only by manual QEMU shell diagnostics boundary control in `v7.3.1`.
 - **`exception` Command**: Displays current telemetry counts and last exception parameters.
 - **`exception-reset` Command**: Resets all exception statistics cleanly back to `0 / none / none`.
 - **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically.
