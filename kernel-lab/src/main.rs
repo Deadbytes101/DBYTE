@@ -93,7 +93,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v6.8.1)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v6.9.0)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -108,7 +108,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 6.8.1\n");
+    serial::print("version: 6.9.0\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -188,15 +188,15 @@ pub extern "C" fn kernel_main() -> ! {
                                     // Convert and process submitted line
                                     if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 6.8.1\n");
-                                            serial::print("DByteOS Kernel Lab 6.8.1\n");
-                                        } else if line_str == "clear" {
+                                            vga::print("DByteOS Kernel Lab 6.9.0\n");
+                                            serial::print("DByteOS Kernel Lab 6.9.0\n");
+                                        } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
                                             vga::print("\n");
@@ -215,10 +215,10 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("uptime: unavailable (no timer driver)\n");
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
-                                            vga::print("                   DByteOS Command Dispatch Lab (v6.8.1)                \n");
+                                            vga::print("                   DByteOS Command Dispatch Lab (v6.9.0)                \n");
                                             vga::print("========================================================================\n");
                                             serial::print("========================================================================\n");
-                                            serial::print("                   DByteOS Command Dispatch Lab (v6.8.1)                \n");
+                                            serial::print("                   DByteOS Command Dispatch Lab (v6.9.0)                \n");
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
@@ -236,8 +236,27 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("reboot: unavailable (no ACPI/PS2 controller reset implemented)\n");
                                             serial::print("reboot: unavailable (no ACPI/PS2 controller reset implemented)\n");
                                         } else if line_str == "system" {
-                                            vga::print("DByteOS Kernel Lab\nversion: 6.8.1\ninput mode: keyboard polling\ndisplay mode: text-mode VGA (80x25)\nserial mode: COM1 115200 8N1\nfilesystem: none\nprocess model: none\ndbyte vm: none\n");
-                                            serial::print("DByteOS Kernel Lab\nversion: 6.8.1\ninput mode: keyboard polling\ndisplay mode: text-mode VGA (80x25)\nserial mode: COM1 115200 8N1\nfilesystem: none\nprocess model: none\ndbyte vm: none\n");
+                                            vga::print("DByteOS Kernel Lab\nversion: 6.9.0\ninput mode: keyboard polling\ndisplay mode: text-mode VGA (80x25)\nserial mode: COM1 115200 8N1\nfilesystem: none\nprocess model: none\ndbyte vm: none\n");
+                                            serial::print("DByteOS Kernel Lab\nversion: 6.9.0\ninput mode: keyboard polling\ndisplay mode: text-mode VGA (80x25)\nserial mode: COM1 115200 8N1\nfilesystem: none\nprocess model: none\ndbyte vm: none\n");
+                                        } else if line_str == "status" {
+                                            vga::print("status: active\nversion: 6.9.0\nmode: polling\n");
+                                            serial::print("status: active\nversion: 6.9.0\nmode: polling\n");
+                                        } else if line_str == "mods" {
+                                            vga::print("shift active: ");
+                                            vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
+                                            vga::print("capslock active: ");
+                                            vga::print(if CAPS_LOCK_ACTIVE { "true\n" } else { "false\n" });
+
+                                            serial::print("shift active: ");
+                                            serial::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
+                                            serial::print("capslock active: ");
+                                            serial::print(if CAPS_LOCK_ACTIVE { "true\n" } else { "false\n" });
+                                        } else if line_str == "keys" {
+                                            vga::print("keyboard mode: polling\nsupported keymap: ASCII (US Layout)\ncasing: Shift ^ CapsLock XOR\n");
+                                            serial::print("keyboard mode: polling\nsupported keymap: ASCII (US Layout)\ncasing: Shift ^ CapsLock XOR\n");
+                                        } else if line_str == "prompt" {
+                                            vga::print("current prompt: dbyte-kernel>\n");
+                                            serial::print("current prompt: dbyte-kernel>\n");
                                         } else {
                                             vga::print("error: unknown command\n");
                                             serial::print("error: unknown command\n");
