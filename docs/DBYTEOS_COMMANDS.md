@@ -33,7 +33,7 @@ Use `welcome` for the first screen, `profile show` for identity, `config show` f
 | `config` | Show read-only preferences | No |
 | `snapshot` | Summarize subsystem state | No |
 | `project` | Manage workspace projects | No |
-| `task` | Manage project tasks | No |
+| `task` | Manage project tasks and task UX | No |
 
 ## Discovery Flow
 
@@ -48,6 +48,11 @@ task list demo
 task add demo write tests
 task done demo 1
 task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
 project status demo
 project snapshot demo
 getting-started

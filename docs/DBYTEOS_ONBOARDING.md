@@ -17,6 +17,11 @@ task list demo
 task add demo write tests
 task done demo 1
 task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
 project status demo
 project snapshot demo
 prefs reset-demo

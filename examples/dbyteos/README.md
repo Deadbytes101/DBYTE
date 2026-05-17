@@ -1,4 +1,4 @@
-# DByteOS Personal Alpha (v5.2.1)
+# DByteOS Personal Alpha (v5.3.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -66,6 +66,11 @@ task list demo
 task add demo write tests
 task done demo 1
 task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
 project status demo
 project snapshot demo
 prefs reset-demo

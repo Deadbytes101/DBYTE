@@ -15,6 +15,11 @@ fn show_usage():
     print("  list <project>        - list project tasks")
     print("  done <project> <id>   - mark a task done")
     print("  status <project>      - summarize project task state")
+    print("  summary <project>     - print compact task counts")
+    print("  open <project>        - list open project tasks")
+    print("  clear-done <project>  - remove completed tasks")
+    print("  doctor <project>      - validate task file")
+    print("  snapshot <project>    - print task snapshot")
     print("  reset-demo            - reset demo project tasks")
 
 fn has_bad_char(name: str) -> int:
@@ -208,6 +213,35 @@ fn print_task_line(line: str, id: int):
     else:
         print("[ ] " + int_to_str(id) + ": " + text)
 
+fn line_status(line: str) -> str:
+    let status: str = ""
+    for c in line:
+        if c == "|":
+            return status
+        status = status + c
+    return status
+
+fn line_text(line: str) -> str:
+    let text: str = ""
+    let seen_sep: int = 0
+    for c in line:
+        if seen_sep == 0:
+            if c == "|":
+                seen_sep = 1
+        else:
+            text = text + c
+    return text
+
+fn valid_task_line(line: str) -> int:
+    let status: str = line_status(line)
+    let text: str = line_text(line)
+    if status != "0":
+        if status != "1":
+            return 0
+    if text == "":
+        return 0
+    return 1
+
 fn list_tasks(name: str):
     if validate_project(name) == 1:
         ensure_tasks(name)
@@ -349,6 +383,172 @@ fn status_tasks(name: str):
         print("done: " + int_to_str(done_count))
         print("total: " + int_to_str(open_count + done_count))
 
+fn count_open(name: str) -> int:
+    ensure_tasks(name)
+    let content: str = fs.read_text(task_path(name))
+    let line: str = ""
+    let open_count: int = 0
+    for c in content:
+        if c == "\n":
+            if line != "":
+                if line_status(line) != "1":
+                    open_count = open_count + 1
+            line = ""
+        else:
+            line = line + c
+    if line != "":
+        if line_status(line) != "1":
+            open_count = open_count + 1
+    return open_count
+
+fn count_done(name: str) -> int:
+    ensure_tasks(name)
+    let content: str = fs.read_text(task_path(name))
+    let line: str = ""
+    let done_count: int = 0
+    for c in content:
+        if c == "\n":
+            if line != "":
+                if line_status(line) == "1":
+                    done_count = done_count + 1
+            line = ""
+        else:
+            line = line + c
+    if line != "":
+        if line_status(line) == "1":
+            done_count = done_count + 1
+    return done_count
+
+fn summary_tasks(name: str):
+    if validate_project(name) == 1:
+        let open_count: int = count_open(name)
+        let done_count: int = count_done(name)
+        print("Task Summary: " + name)
+        print("open: " + int_to_str(open_count))
+        print("done: " + int_to_str(done_count))
+        print("total: " + int_to_str(open_count + done_count))
+
+fn open_tasks(name: str):
+    if validate_project(name) == 1:
+        ensure_tasks(name)
+        print("DByteOS open tasks: " + name)
+        let content: str = fs.read_text(task_path(name))
+        let line: str = ""
+        let id: int = 1
+        let printed: int = 0
+        for c in content:
+            if c == "\n":
+                if line != "":
+                    if line_status(line) != "1":
+                        print_task_line(line, id)
+                        printed = 1
+                    id = id + 1
+                line = ""
+            else:
+                line = line + c
+        if line != "":
+            if line_status(line) != "1":
+                print_task_line(line, id)
+                printed = 1
+        if printed == 0:
+            print("  (none)")
+
+fn clear_done_tasks(name: str):
+    if validate_project(name) == 1:
+        ensure_tasks(name)
+        let content: str = fs.read_text(task_path(name))
+        let line: str = ""
+        let out: str = ""
+        let removed: int = 0
+        let remaining: int = 0
+        for c in content:
+            if c == "\n":
+                if line != "":
+                    if line_status(line) == "1":
+                        removed = removed + 1
+                    else:
+                        out = out + line + "\n"
+                        remaining = remaining + 1
+                line = ""
+            else:
+                line = line + c
+        if line != "":
+            if line_status(line) == "1":
+                removed = removed + 1
+            else:
+                out = out + line + "\n"
+                remaining = remaining + 1
+        fs.write_text(task_path(name), out)
+        print("task clear-done: " + name)
+        print("removed: " + int_to_str(removed))
+        print("remaining: " + int_to_str(remaining))
+
+fn doctor_tasks(name: str):
+    if valid_name(name) == 0:
+        print("error: invalid project name: " + name)
+    else:
+        if project_exists(name) == 0:
+            print("error: project not found: " + name)
+        else:
+            print("Task Doctor: " + name)
+            print("project: ok")
+            if fs.exists(task_path(name)) == 0:
+                print("tasks_file: missing")
+                print("rows: skipped")
+                print("result: unhealthy")
+            else:
+                print("tasks_file: ok")
+                let content: str = fs.read_text(task_path(name))
+                let line: str = ""
+                let row: int = 1
+                let bad: int = 0
+                for c in content:
+                    if c == "\n":
+                        if line != "":
+                            if valid_task_line(line) == 0:
+                                bad = 1
+                            row = row + 1
+                        line = ""
+                    else:
+                        line = line + c
+                if line != "":
+                    if valid_task_line(line) == 0:
+                        bad = 1
+                if bad == 0:
+                    print("rows: ok")
+                    print("result: healthy")
+                else:
+                    print("rows: malformed")
+                    print("result: unhealthy")
+
+fn snapshot_tasks(name: str):
+    if validate_project(name) == 1:
+        let open_count: int = count_open(name)
+        let done_count: int = count_done(name)
+        print("--- DByteOS Task Snapshot ---")
+        print("project: " + name)
+        print("open: " + int_to_str(open_count))
+        print("done: " + int_to_str(done_count))
+        print("total: " + int_to_str(open_count + done_count))
+        print("tasks:")
+        ensure_tasks(name)
+        let content: str = fs.read_text(task_path(name))
+        if content == "":
+            print("  (none)")
+        else:
+            let line: str = ""
+            let id: int = 1
+            for c in content:
+                if c == "\n":
+                    if line != "":
+                        print_task_line(line, id)
+                        id = id + 1
+                    line = ""
+                else:
+                    line = line + c
+            if line != "":
+                print_task_line(line, id)
+
 fn reset_demo():
     ensure_demo_project()
     fs.write_text(task_path("demo"), "0|inspect workspace\n0|write project note\n")
@@ -385,11 +585,41 @@ else:
                         else:
                             status_tasks(args[1])
                     else:
-                        if cmd == "reset-demo":
-                            if len(args) != 1:
-                                print("usage: task reset-demo")
+                        if cmd == "summary":
+                            if len(args) != 2:
+                                print("usage: task summary <project>")
                             else:
-                                reset_demo()
+                                summary_tasks(args[1])
                         else:
-                            print("error: unknown task command: " + cmd)
-                            show_usage()
+                            if cmd == "open":
+                                if len(args) != 2:
+                                    print("usage: task open <project>")
+                                else:
+                                    open_tasks(args[1])
+                            else:
+                                if cmd == "clear-done":
+                                    if len(args) != 2:
+                                        print("usage: task clear-done <project>")
+                                    else:
+                                        clear_done_tasks(args[1])
+                                else:
+                                    if cmd == "doctor":
+                                        if len(args) != 2:
+                                            print("usage: task doctor <project>")
+                                        else:
+                                            doctor_tasks(args[1])
+                                    else:
+                                        if cmd == "snapshot":
+                                            if len(args) != 2:
+                                                print("usage: task snapshot <project>")
+                                            else:
+                                                snapshot_tasks(args[1])
+                                        else:
+                                            if cmd == "reset-demo":
+                                                if len(args) != 1:
+                                                    print("usage: task reset-demo")
+                                                else:
+                                                    reset_demo()
+                                            else:
+                                                print("error: unknown task command: " + cmd)
+                                                show_usage()
