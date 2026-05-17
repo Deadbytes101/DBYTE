@@ -32,6 +32,10 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
+project new demo
+project status demo
+project snapshot demo
+project reset-demo
 prefs reset-demo
 profile show
 config show
@@ -58,6 +62,9 @@ quit
 - `prefs set system.prompt dbyteos>` changes the next DByteOS shell prompt.
 - `prefs reset-demo` restores the default DByteOS shell prompt.
 - `snapshot` prints the read-only system summary.
+- `project new demo` creates a deterministic workspace project.
+- `project status demo` and `project snapshot demo` verify project state.
+- `project reset-demo` restores deterministic project demo data.
 - `profile show` prints the deterministic profile summary.
 - `config show` prints read-only preferences.
 - `getting-started` prints the first-run checklist.
@@ -74,4 +81,4 @@ quit
 
 - Temporary session artifacts live under `examples/dbyteos/tmp/`.
 - `clean` removes session logs such as `tmp/security.log`.
-- User data such as `home/deadbyte/journal.txt` is preserved by clean.
+- User data such as `home/deadbyte/journal.txt` and `home/deadbyte/projects/` is preserved by clean.

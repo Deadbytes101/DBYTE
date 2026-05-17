@@ -9,5 +9,6 @@ tests/patching/fs_exists_tmp.bin
 personal_tools_scratch_*.bin
 
 examples/dbyteos/home/deadbyte/journal.txt
+examples/dbyteos/home/deadbyte/projects/
 examples/dbyteos/home/deadbyte/preferences.dby.bak
 test_import.dby

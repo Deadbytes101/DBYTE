@@ -3,7 +3,7 @@ import std.fs as fs
 
 print("DByteOS: Cleaning /tmp and artifacts...")
 print("Known tmp artifacts only (deterministic sweep list).")
-# Note: home/deadbyte/journal.txt and home/deadbyte/preferences.dby are intentionally preserved.
+# Note: journal, preferences, and projects are intentionally preserved as user data.
 
 let tmp_path: str = profile.resolve_path("tmp")
 if fs.exists(tmp_path) == 1:

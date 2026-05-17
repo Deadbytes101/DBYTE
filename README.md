@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Alpha (v5.0.1)
+## DByteOS Personal Alpha (v5.1.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -55,6 +55,7 @@ loads the DByteOS prompt from `system.prompt`.
 - [Profile Guide](docs/DBYTEOS_PROFILE.md)
 - [Config Guide](docs/DBYTEOS_CONFIG.md)
 - [Snapshot Guide](docs/DBYTEOS_SNAPSHOT.md)
+- [Projects Guide](docs/DBYTEOS_PROJECTS.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
@@ -69,6 +70,10 @@ dbyte-shell> profile show
 dbyte-shell> config show
 dbyte-shell> prefs set system.prompt dbyteos>
 dbyte-shell> snapshot
+dbyteos> project new demo
+dbyteos> project status demo
+dbyteos> project snapshot demo
+dbyteos> project reset-demo
 dbyteos> prefs reset-demo
 dbyte-shell> getting-started
 dbyte-shell> commands
@@ -97,6 +102,10 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
+project new demo
+project status demo
+project snapshot demo
+project reset-demo
 prefs reset-demo
 profile show
 config show

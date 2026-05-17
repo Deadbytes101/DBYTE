@@ -1,0 +1,23 @@
+DByteOS Project Command
+
+Usage:
+  project new <name>
+  project list
+  project status <name>
+  project notes <name>
+  project snapshot <name>
+  project doctor <name>
+  project reset-demo
+
+Description:
+  The project command manages deterministic workspace projects under
+  home/deadbyte/projects/.
+
+Safety:
+  Project names are single arguments. Names containing '/', '\', or '..'
+  are rejected. Project paths are derived by DByteOS and are not raw host
+  filesystem paths.
+
+Notes:
+  project notes <name> is read-only in this release.
+  project reset-demo restores the deterministic demo project workspace.
