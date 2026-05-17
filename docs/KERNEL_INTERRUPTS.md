@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.8.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.8.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,24 +66,35 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v7.8.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v7.8.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
-```txt
-page fault: active smoke
-vector: 14
-cr2: available after pf-smoke
-error code: available after pf-smoke
-```
-
-The `pf-smoke` output is:
-
-```txt
-exception: page fault
-vector: 14
-cr2: 0x........
-error code: 0x........
-status: handled
-```
+#### Exact Runtime Execution Flow
+When the user types the `pf-smoke` command:
+1. **State Arming**: The kernel sets `interrupts::PF_SMOKE_ACTIVE = true` and records the entry address of `pf_smoke_recovery_asm` into `interrupts::PF_SMOKE_RECOVERY_EIP`.
+2. **Controlled Probe**: The kernel calls `pf_smoke_probe_asm()`, which performs a raw pointer dereference of address `0x00000000`:
+   ```asm
+   mov eax, 0
+   mov eax, [eax]  ; triggers a real Page Fault!
+   ret
+   ```
+3. **MMU Fault & CPU Stack Frame**: The Memory Management Unit (MMU) detects a non-present page translation at address `0x0`, interrupts instruction execution, and pushes the x86 Exception Frame onto the kernel stack:
+   - `EFLAGS`
+   - `CS` (Code Segment)
+   - `EIP` (faulting instruction pointer, pointing directly to the `mov eax, [eax]` probe instruction)
+   - **Error Code** (32-bit CPU-pushed fault description)
+4. **Assembly Wrapper Entry**: The CPU transfers control to `page_fault_handler_asm` via IDT entry 14. Our wrapper pushes all general-purpose registers via `pushad`.
+5. **Rust Dispatching & EIP Rewriting**:
+   - The wrapper extracts the error code (`[esp + 32]`) and the address of the saved `EIP` slot on the stack (`[esp + 36]`).
+   - It invokes `page_fault_handler_rust(error_code, saved_eip, saved_eip_slot)`.
+   - The Rust handler reads `CR2` using inline assembly (`mov {}, cr2`), capturing `0x00000000`.
+   - It prints full telemetry logs to VGA and Serial console.
+   - Finding `PF_SMOKE_ACTIVE` armed, the handler rewrites the stack value at `saved_eip_slot` with `PF_SMOKE_RECOVERY_EIP` (the recovery trampoline address) and clears `PF_SMOKE_ACTIVE`.
+6. **Frame Discard & Trampoline Jump**:
+   - The Rust handler returns, and `page_fault_handler_asm` restores general registers via `popad`.
+   - The assembly stub executes `add esp, 4` to discard the CPU-pushed error code from the stack frame.
+   - It executes `iretd` to return to the caller.
+   - Because we rewrote the saved `EIP` on the stack to point to `pf_smoke_recovery_asm`, `iretd` jumps there instead of jumping back to the faulting `mov eax, [eax]` instruction.
+   - `pf_smoke_recovery_asm` simply executes `ret`, taking us cleanly back to the dispatch shell loop!
 
 ### Page Fault Frame Layout Foundation
 For a same-ring Page Fault frame, the planned documentation struct is:
@@ -100,8 +111,8 @@ The kernel records this shape in `PageFaultFrame`; the smoke handler consumes th
 
 After `pushad`, the Page Fault wrapper treats `[esp + 32]` as the CPU-pushed error code and `[esp + 36]` as the saved EIP slot. It calls Rust diagnostics, restores registers, executes `add esp, 4` to discard the error code, and then uses `iretd` to return through the corrected frame.
 
-### Page Fault Error Code Bits
-On x86, a real Page Fault pushes an error code that describes why address translation failed:
+### Page Fault Error Code Bits & CR2 Decoding
+On x86, a real Page Fault pushes an error code that describes why address translation failed. The error code contains flags indicating whether the page was present, whether the access was a write, whether the access came from user mode, whether a reserved bit was set, or whether the fault was an instruction fetch:
 
 | Bit | Name | Meaning |
 | :--- | :--- | :--- |
@@ -111,9 +122,17 @@ On x86, a real Page Fault pushes an error code that describes why address transl
 | `3` | `RSVD` | Reserved page-table bit violation. |
 | `4` | `I/D` | Instruction fetch violation. |
 
-The relevant fields include whether the page was present, whether the access was a write, whether the access came from user mode, and whether reserved bits or instruction fetch protection were involved.
+#### CR2 & Error Code Decoding under `pf-smoke`
+- **`CR2` (Control Register 2)**: Contains the exact linear memory address that triggered the page fault. For our controlled probe, `CR2` decodes to `0x00000000` (NULL).
+- **Error Code Fields**:
+  - `P` (Bit 0) is `0`: The page at `0x00000000` is non-present in the page tables.
+  - `W/R` (Bit 1) is `0`: The operation was a memory read.
+  - `U/S` (Bit 2) is `0`: The fault originated from supervisor mode (Ring 0).
+  - `RSVD` (Bit 3) is `0`: No reserved write bit violation occurred.
+  - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
+  - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v7.8.0: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v7.8.1: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -180,9 +199,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.8.0`)
+## 6. Current Milestone Status (`v7.8.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.8.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.8.1`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
 - **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`) and planned handlers (`vector 14: page fault`) in a clean, visual format.
 - **`exception-status` & `exceptions` Command**: Displays detailed exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
 - **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics suite commands.

@@ -98,7 +98,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v7.8.0)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v7.8.1)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -119,7 +119,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 7.8.0\n");
+    serial::print("version: 7.8.1\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -205,8 +205,8 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 7.8.0\n");
-                                            serial::print("DByteOS Kernel Lab 7.8.0\n");
+                                            vga::print("DByteOS Kernel Lab 7.8.1\n");
+                                            serial::print("DByteOS Kernel Lab 7.8.1\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
@@ -278,10 +278,10 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("uptime: unavailable (no timer driver)\n");
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
-                                            vga::print("                   DByteOS Command Dispatch Lab (v7.8.0)                \n");
+                                            vga::print("                   DByteOS Command Dispatch Lab (v7.8.1)                \n");
                                             vga::print("========================================================================\n");
                                             serial::print("========================================================================\n");
-                                            serial::print("                   DByteOS Command Dispatch Lab (v7.8.0)                \n");
+                                            serial::print("                   DByteOS Command Dispatch Lab (v7.8.1)                \n");
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
@@ -302,7 +302,7 @@ pub extern "C" fn kernel_main() -> ! {
                                              let mut vga_writer = vga::VgaWriter;
                                              let mut serial_writer = serial::SerialWriter;
                                              vga::print("DByteOS Kernel Lab
-version: 7.8.0
+version: 7.8.1
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -315,7 +315,7 @@ page fault handler: active smoke
 interrupts: disabled
 ");
                                              serial::print("DByteOS Kernel Lab
-version: 7.8.0
+version: 7.8.1
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -346,8 +346,8 @@ last exception: {} ({})
 ", count, vector, name);
                                              }
                                          } else if line_str == "status" {
-                                            vga::print("status: active\nversion: 7.8.0\nmode: polling\n");
-                                            serial::print("status: active\nversion: 7.8.0\nmode: polling\n");
+                                            vga::print("status: active\nversion: 7.8.1\nmode: polling\n");
+                                            serial::print("status: active\nversion: 7.8.1\nmode: polling\n");
                                         } else if line_str == "mods" {
                                             vga::print("shift active: ");
                                             vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
