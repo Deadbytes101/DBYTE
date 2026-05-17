@@ -1,4 +1,4 @@
-# DByteOS Personal Alpha (v5.2.0)
+# DByteOS Personal Alpha (v5.2.1)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
