@@ -32,3 +32,23 @@ impl ExceptionHandlers {
         // Exception registrations are planned but disabled in v7.0.1.
     }
 }
+
+core::arch::global_asm!(
+    ".global breakpoint_handler_asm",
+    "breakpoint_handler_asm:",
+    "    pushad",
+    "    call breakpoint_handler_rust",
+    "    popad",
+    "    iretd"
+);
+
+extern "C" {
+    /// Assembly entry point that preserves register state and performs an interrupt return.
+    pub fn breakpoint_handler_asm();
+}
+
+#[no_mangle]
+pub extern "C" fn breakpoint_handler_rust() {
+    crate::vga::print("\nexception: breakpoint\nvector: 3\nstatus: handled\n");
+    crate::serial::print("\nexception: breakpoint\nvector: 3\nstatus: handled\n");
+}
