@@ -258,6 +258,7 @@ impl<'src> Lexer<'src> {
                 Some((_, '"')) => break,
                 Some((_, '\\')) => match self.advance() {
                     Some((_, 'n')) => s.push('\n'),
+                    Some((_, 'r')) => s.push('\r'),
                     Some((_, 't')) => s.push('\t'),
                     Some((_, '"')) => s.push('"'),
                     Some((_, '\\')) => s.push('\\'),
@@ -376,7 +377,7 @@ impl<'src> Lexer<'src> {
                     }
                 }
                 match self.peek_char() {
-                    None | Some('\n') | Some('#') => {}
+                    None | Some('\n') | Some('\r') | Some('#') => {}
                     _ => {
                         let mut ind_toks = self.handle_indent(indent);
                         tokens.append(&mut ind_toks);

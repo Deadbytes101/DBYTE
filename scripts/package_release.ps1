@@ -1,11 +1,11 @@
 param(
-    [string]$Version = "5.4.0"
+    [string]$Version = "5.4.1"
 )
 
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Resolve-Path (Join-Path $scriptDir "..")
+$repoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
 Set-Location $repoRoot
 
 $cargo = "$env:USERPROFILE\.cargo\bin\cargo.exe"
@@ -52,8 +52,9 @@ if (Test-Path $releaseTmp) {
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "docs") -Force | Out-Null
 Copy-Item ".\docs\*" (Join-Path $releaseDir "docs") -Recurse -Force
 
-git bundle create $bundlePath --all
-Copy-Item $bundlePath (Join-Path $releaseDir (Split-Path $bundlePath -Leaf))
+git bundle create "dbyte-v$Version.bundle" --all
+Copy-Item "dbyte-v$Version.bundle" (Join-Path $releaseDir "dbyte-v$Version.bundle")
+Remove-Item "dbyte-v$Version.bundle" -Force
 
 Compress-Archive -Path (Join-Path $releaseDir "*") -DestinationPath $zipPath
 

@@ -6,32 +6,86 @@ fn _get_path() -> str:
         return "examples/dbyteos/home/deadbyte/preferences.dby"
     return "home/deadbyte/preferences.dby"
 
-pub fn get(key: str) -> str:
-    if key == "ui.theme":
-        return raw_prefs.ui_theme
+fn _parse_val(content: str, p_key: str) -> str:
+    let prefix: str = ""
+    if p_key == "ui.theme":
+        prefix = "pub let ui_theme: str = \""
     else:
-        if key == "system.prompt":
-            return raw_prefs.system_prompt
+        if p_key == "system.prompt":
+            prefix = "pub let system_prompt: str = \""
         else:
-            if key == "user.display_name":
-                return raw_prefs.user_display_name
+            if p_key == "user.display_name":
+                prefix = "pub let user_display_name: str = \""
+    
+    let line: str = ""
+    for c in content:
+        if c == "\n":
+            let is_match: int = 1
+            if len(line) < len(prefix):
+                is_match = 0
             else:
-                return ""
+                let temp_line: str = line
+                for p_char in prefix:
+                    let first: str = ""
+                    let got_first: int = 0
+                    for ch in temp_line:
+                        if got_first == 0:
+                            first = ch
+                            got_first = 1
+                    
+                    if first != p_char:
+                        is_match = 0
+                    
+                    let rest: str = ""
+                    let idx: int = 0
+                    for ch in temp_line:
+                        if idx > 0:
+                            rest = rest + ch
+                        idx = idx + 1
+                    temp_line = rest
+                
+                if is_match == 1:
+                    let val: str = ""
+                    for ch in temp_line:
+                        if ch == "\"":
+                            return val
+                        val = val + ch
+            line = ""
+        else:
+            if c != "\r":
+                line = line + c
+    return ""
 
-pub fn is_safe_key(key: str) -> int:
-    if key == "ui.theme":
+pub fn get(g_key: str) -> str:
+    let path: str = _get_path()
+    if fs.exists(path) == 0:
+        if g_key == "ui.theme":
+            return "default"
+        else:
+            if g_key == "system.prompt":
+                return "dbyte-shell>"
+            else:
+                if g_key == "user.display_name":
+                    return "deadbyte"
+                else:
+                    return ""
+    let content: str = fs.read_text(path)
+    return _parse_val(content, g_key)
+
+pub fn is_safe_key(s_key: str) -> int:
+    if s_key == "ui.theme":
         return 1
     else:
-        if key == "system.prompt":
+        if s_key == "system.prompt":
             return 1
         else:
-            if key == "user.display_name":
+            if s_key == "user.display_name":
                 return 1
             else:
                 return 0
 
-pub fn is_valid_value(key: str, value: str) -> int:
-    if key == "ui.theme":
+pub fn is_valid_value(v_key: str, value: str) -> int:
+    if v_key == "ui.theme":
         if value == "default":
             return 1
         else:
@@ -43,7 +97,7 @@ pub fn is_valid_value(key: str, value: str) -> int:
                 else:
                     return 0
     else:
-        if key == "system.prompt":
+        if v_key == "system.prompt":
             if value == "dbyte-shell>":
                 return 1
             else:
@@ -55,7 +109,7 @@ pub fn is_valid_value(key: str, value: str) -> int:
                     else:
                         return 0
         else:
-            if key == "user.display_name":
+            if v_key == "user.display_name":
                 if value == "deadbyte":
                     return 1
                 else:
@@ -80,9 +134,9 @@ pub fn set(key: str, value: str) -> int:
         return 0
     if is_valid_value(key, value) == 0:
         return 0
-    let cur_theme: str = raw_prefs.ui_theme
-    let cur_prompt: str = raw_prefs.system_prompt
-    let cur_display: str = raw_prefs.user_display_name
+    let cur_theme: str = get("ui.theme")
+    let cur_prompt: str = get("system.prompt")
+    let cur_display: str = get("user.display_name")
     if key == "ui.theme":
         cur_theme = value
     else:
@@ -100,9 +154,9 @@ pub fn reset_demo():
     _write_prefs("default", "dbyte-shell>", "deadbyte")
 
 pub fn show():
-    print("ui.theme = " + raw_prefs.ui_theme)
-    print("system.prompt = " + raw_prefs.system_prompt)
-    print("user.display_name = " + raw_prefs.user_display_name)
+    print("ui.theme = " + get("ui.theme"))
+    print("system.prompt = " + get("system.prompt"))
+    print("user.display_name = " + get("user.display_name"))
 
 pub fn status():
     let p: str = _get_path()
