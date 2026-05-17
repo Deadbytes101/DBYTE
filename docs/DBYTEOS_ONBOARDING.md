@@ -1,6 +1,6 @@
 # DByteOS Onboarding
 
-DByteOS onboarding is a deterministic Personal Alpha first-run flow for users opening a release zip or entering the DByteOS shell for the first time.
+DByteOS onboarding is a deterministic Personal Workspace Beta Foundation first-run flow for users opening a release zip or entering the DByteOS shell for the first time.
 
 ## First commands
 

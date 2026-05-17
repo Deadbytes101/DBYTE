@@ -1,6 +1,6 @@
-# DByteOS Personal Alpha
+# DByteOS Personal Workspace Beta Foundation
 
-DByteOS Personal Alpha is the v5.9.1 milestone for the host-runnable DByteOS
+DByteOS Personal Workspace Beta Foundation is the v6.0.0 milestone for the host-runnable DByteOS
 userland. It marks the point where DByte, the interactive shell, packaged
 examples, DByteOS commands, preferences, diagnostics, and documentation form a
 cohesive personal computing environment.
@@ -46,7 +46,7 @@ project tasks, and restores demo state.
 
 ## Boundaries
 
-DByteOS Personal Alpha is not a standalone operating system. It does not add a
+DByteOS Personal Workspace Beta Foundation is not a standalone operating system. It does not add a
 kernel, bootloader, hardware drivers, OS passthrough, new language syntax, or
 new security semantics. It remains a deterministic userland that runs through
 the DByte runtime on the host system.
