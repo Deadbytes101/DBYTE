@@ -1,6 +1,6 @@
-# DByteOS Kernel Exception Subsystem Foundation (v8.0.0)
+# DByteOS Kernel Exception Subsystem Foundation (v8.0.1)
 
-DByteOS Kernel Lab `v8.0.0` declares the exception subsystem foundation. This is a foundation/declaration release: it documents and verifies the existing exception stack without adding new exception vectors, changing Page Fault smoke mechanics, enabling STI, touching PIC/IRQ, or replacing keyboard polling.
+DByteOS Kernel Lab `v8.0.1` hardens the exception subsystem foundation. This is a hardening-only release: it documents and verifies the existing exception stack without adding new exception vectors, changing Page Fault smoke mechanics, enabling STI, touching PIC/IRQ, or replacing keyboard polling.
 
 ## Active Vectors
 
@@ -20,6 +20,7 @@ Planned handlers are currently `none`.
 - **Handler UX**: `handlers`, `handlers --active`, and `exception-about`.
 - **Reset UX**: `exception-reset` and `fault-reset`.
 - **Safety Guards**: no `asm!("int 14")`, no `asm!("sti")`, no PIC/IRQ enable/remap, and keyboard input remains polling-based.
+- **Page Fault Smoke Mechanics**: `pf-smoke` sets `PF_SMOKE_ACTIVE`, sets `PF_SMOKE_RECOVERY_EIP`, calls `pf_smoke_probe_asm`, and keeps vector 14 bound to `page_fault_handler_asm`.
 
 ## Full Exception Journey Smoke
 

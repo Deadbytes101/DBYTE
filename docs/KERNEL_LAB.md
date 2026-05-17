@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v8.0.0)
+# DByteOS Kernel Lab Guide (v8.0.1)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**
@@ -17,7 +17,7 @@ The laboratory is completely isolated inside the `kernel-lab/` directory:
 
 ## Exception Subsystem Foundation
 
-Version `8.0.0` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
+Version `8.0.1` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
 
 This milestone does not add a new exception vector, does not change `pf-smoke`, does not enable STI, does not touch PIC/IRQ, and keeps keyboard input polling-based.
 

@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v8.0.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v8.0.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v8.0.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v8.0.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 #### Exact Runtime Execution Flow
 When the user types the `pf-smoke` command:
@@ -132,7 +132,7 @@ On x86, a real Page Fault pushes an error code that describes why address transl
   - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
   - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v8.0.0: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v8.0.1: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -199,9 +199,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v8.0.0`)
+## 6. Current Milestone Status (`v8.0.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.0.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded. This is a Kernel Exception Subsystem Foundation release: it declares the existing IDT handlers, telemetry, recovery UX, status UX, docs, and verify guards as the stable exception foundation without changing `pf-smoke` mechanics, adding new exception vectors, enabling STI, touching PIC/IRQ, or replacing the keyboard polling path. See `KERNEL_EXCEPTIONS.md` for the foundation overview and full exception journey smoke.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.0.1`, and CPU exception diagnostics and user experience (UX) have been successfully expanded. This is a Kernel Exception Subsystem Foundation release: it declares the existing IDT handlers, telemetry, recovery UX, status UX, docs, and verify guards as the stable exception foundation without changing `pf-smoke` mechanics, adding new exception vectors, enabling STI, touching PIC/IRQ, or replacing the keyboard polling path. See `KERNEL_EXCEPTIONS.md` for the foundation overview and full exception journey smoke.
 - **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`, `vector 14: page fault`) and planned handlers (`none`) in a clean, visual format.
 - **`handlers --active` Command**: Lists only currently active exception handlers.
 - **`exception-status` & `exceptions` Command**: Displays concise exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
