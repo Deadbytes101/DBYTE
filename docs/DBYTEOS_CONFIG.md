@@ -28,7 +28,7 @@ config get system.prompt
 prints the available keys. `config get <key>` prints one value for scripts and
 package smoke tests.
 
-The config layer is read-only in v8.0.0. It does not write config files,
+The config layer is read-only in v8.0.1. It does not write config files,
 persist settings, change security policy, or invoke the host OS.
 
 When DByteOS is launched with `dbyte shell --rc examples/dbyteos/.dbyterc`,
