@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.7.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.8.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -49,7 +49,7 @@ The following table summarizes the currently registered (active) and planned CPU
 | :--- | :--- | :--- | :--- | :--- |
 | `0` | Fault / Trap | Divide-by-Zero | **Active** | Controlled via `int 0` trap for shell diagnostics. |
 | `3` | Trap | Breakpoint | **Active** | Standard software breakpoint via `int3`. |
-| `14` | Fault | Page Fault | *Planned* | Unhandled in current version (v7.7.1). |
+| `14` | Fault | Page Fault | **Active Smoke** | Controlled real fault via `pf-smoke` with CR2 and error-code diagnostics. |
 
 ### Breakpoint Exception Behavior (`int3` Trap - Vector 3)
 When the CPU executes the one-byte `int3` instruction (`0xCC`), the following hardware sequence is performed:
@@ -65,14 +65,24 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **The Infinite Loop Gotcha**: If a handler simply executes `iretd` without modifying the pushed stack pointer, the CPU will jump back to the exact same division instruction and trigger the fault again, leading to an infinite exception loop or a Triple Fault.
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
-### Page Fault Direction Note (Vector 14)
-Page Fault handling remains **planned / disabled** in `v7.7.1`. The `pf-note` command documents the intended direction without installing an IDT gate, reading privileged fault state, or triggering a real memory violation.
+### Page Fault Handler Smoke (Vector 14)
+Page Fault handling is **active smoke** in `v7.8.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 ```txt
-page fault: planned / disabled
+page fault: active smoke
 vector: 14
-cr2: unavailable
-error code: documented only
+cr2: available after pf-smoke
+error code: available after pf-smoke
+```
+
+The `pf-smoke` output is:
+
+```txt
+exception: page fault
+vector: 14
+cr2: 0x........
+error code: 0x........
+status: handled
 ```
 
 ### Page Fault Frame Layout Foundation
@@ -86,7 +96,9 @@ For a same-ring Page Fault frame, the planned documentation struct is:
 | `eflags` | CPU stack push | Saved flags register. |
 | `cr2` | Handler snapshot | Faulting linear address from the CR2 register. |
 
-The kernel skeleton records this planned shape in `PageFaultFrame`, but no live frame is decoded in this release.
+The kernel records this shape in `PageFaultFrame`; the smoke handler consumes the CPU-pushed error code and captures `CR2` at runtime.
+
+After `pushad`, the Page Fault wrapper treats `[esp + 32]` as the CPU-pushed error code and `[esp + 36]` as the saved EIP slot. It calls Rust diagnostics, restores registers, executes `add esp, 4` to discard the error code, and then uses `iretd` to return through the corrected frame.
 
 ### Page Fault Error Code Bits
 On x86, a real Page Fault pushes an error code that describes why address translation failed:
@@ -101,11 +113,11 @@ On x86, a real Page Fault pushes an error code that describes why address transl
 
 The relevant fields include whether the page was present, whether the access was a write, whether the access came from user mode, and whether reserved bits or instruction fetch protection were involved.
 
-Exact bit set tracked for v7.7.1: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v7.8.0: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
-In this milestone, `CR2` is intentionally unavailable because no vector 14 handler is registered and no fault frame is decoded. Page fault is still unhandled; any accidental illegal memory access can still reset the VM through Double/Triple Fault behavior.
+In this milestone, `CR2` is available after `pf-smoke` because vector 14 is registered for a controlled handler smoke path. Page Fault is not a general recovery subsystem yet; unexpected illegal memory access outside the smoke probe can still reset the VM through Double/Triple Fault behavior.
 
 ---
 
@@ -148,11 +160,11 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 > The standard `lidt` instruction was successfully called during bootstrap to load the active Interrupt Descriptor Table base address. However, maskable interrupts remain strictly disabled on the processor (no `sti` instruction execution). All external IRQ signals will be completely ignored, keeping CPU hardware interrupt dispatch dormant.
 
 > [!CAUTION]
-> **Only Vector 0 and Vector 3 Handlers are Active**
-> Although the IDT structure is successfully loaded, only Vector 0 (Divide-by-Zero diagnostics via controlled `int 0`) and Vector 3 (Breakpoint via `int3`) are active in this milestone. All other gates remain initialized with a missing/non-present default gate (`IdtEntry::missing()`).
+> **Only Vector 0, Vector 3, and Vector 14 Smoke Handlers are Active**
+> Although the IDT structure is successfully loaded, only Vector 0 (Divide-by-Zero diagnostics via controlled `int 0`), Vector 3 (Breakpoint via `int3`), and Vector 14 (Page Fault smoke via `pf-smoke`) are active in this milestone. All other gates remain initialized with a missing/non-present default gate (`IdtEntry::missing()`).
 >
 > - **Raw Divide Faults are Not Used for Shell Diagnostics**: The `div0` command intentionally uses a controlled software trap instead of a raw `div` fault to avoid returning to the same faulting instruction.
-> - **No Page Fault Handler Yet**: Vector 14 is planned but unhandled. Any illegal virtual memory access can still trigger a Double/Triple Fault reset.
+> - **Page Fault Smoke is Controlled Only**: Vector 14 is active for `pf-smoke`; arbitrary illegal virtual memory access is still outside the supported recovery contract.
 
 > [!IMPORTANT]
 > **No PIC Remapping Dispatch**
@@ -168,19 +180,22 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.7.1`)
+## 6. Current Milestone Status (`v7.8.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.7.1`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.8.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
 - **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`) and planned handlers (`vector 14: page fault`) in a clean, visual format.
 - **`exception-status` & `exceptions` Command**: Displays detailed exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
 - **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics suite commands.
-- **`pf-note` Command**: Documents that page fault is planned / disabled, vector 14 is not active, `CR2` is unavailable, and the error code is documented only.
-- **Page Fault Frame Layout Foundation**: Adds compile-time documentation types for `PageFaultFrame` and `PageFaultErrorCode` without registering vector 14.
+- **`pf-note` Command**: Documents that Page Fault is active smoke, vector 14 is active, and `CR2` / error code are available after `pf-smoke`.
+- **`pf-smoke` Command**: Triggers a controlled real Page Fault and recovers through a trampoline after the handler records diagnostics.
+- **Page Fault Frame Layout Foundation**: Keeps compile-time documentation types for `PageFaultFrame` and `PageFaultErrorCode` while vector 14 is registered for smoke handling.
 - **Exception Handler Status Table**: Added a clear vector registration tracking table mapping Active vs Planned entry gates in Section 2.
 - **Controlled Divide-by-Zero (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, preserving GPRs via `pushad`/`popad` and returning via `iretd`.
 - **Breakpoint Exception (Vector 3)**: Fully active. Registered IDT entry 3 pointing to `breakpoint_handler_asm`, preserving GPRs and returning cleanly via `iretd`.
+- **Page Fault Smoke (Vector 14)**: Active smoke. Registered IDT entry 14 pointing to `page_fault_handler_asm`, preserving GPRs, reading `CR2`, discarding the CPU-pushed error code with `add esp, 4`, and returning via `iretd`.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
 - **Status Reporting**: The `system` command dynamically syncs exception count and active/planned status information cleanly.
-- **Page Fault Handler Status**: Planned / disabled. No `entries[14].set_handler` binding, no `int 14` trigger, no runtime CR2 read, and no raw page fault trigger are present in this release.
+- **Page Fault Handler Status**: Active smoke. `entries[14].set_handler` is bound to `page_fault_handler_asm`; `pf-smoke` uses a controlled null read probe and never uses `int 14`.
+- **Software Vector 14 Trigger**: No `asm!("int 14")` trigger is used.

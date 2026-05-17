@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v7.7.1)
+# DByteOS QEMU Boot Smoke (v7.8.0)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 7.7.1
+version: 7.8.0
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v7.7.1)
+## Keyboard Line Editor & Command Dispatch Lab (v7.8.0)
 
-In version `7.7.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `7.8.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
@@ -81,9 +81,9 @@ In version `7.7.1`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 
 | Command Input | Parameter Handling | Output Response / Behavior |
 | :--- | :--- | :--- |
-| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers exception-status exceptions exception-help pf-note` |
+| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers exception-status exceptions exception-help pf-note pf-smoke` |
 | `about` | None | Prints: `DByteOS Kernel Lab` |
-| `version` | None | Prints: `DByteOS Kernel Lab 7.7.1` |
+| `version` | None | Prints: `DByteOS Kernel Lab 7.8.0` |
 | `clear` | None | Clears the entire VGA console and resets prompt location to top-left. |
 | `cls` | None | Clears the entire VGA console (alias of `clear`). |
 | `echo` | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter. |
@@ -92,7 +92,7 @@ In version `7.7.1`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 | `banner` | None | Renders the beautiful three-line DByteOS logo banner. |
 | `keyboard` | None | Prints live state telemetry (Shift active, CapsLock active, polling mode). |
 | `reboot-note` | None | Prints reboot ACPI/PS2 driver warning (`unavailable`). |
-| `system` | None | Prints overall system summary (version, input, display, COM1 serial settings, `filesystem: none`, `process model: none`, `dbyte vm: none`, `idt: loaded`, active exception handlers, `page fault handler: planned / disabled`, `interrupts: disabled`, exception count, and last exception). |
+| `system` | None | Prints overall system summary (version, input, display, COM1 serial settings, `filesystem: none`, `process model: none`, `dbyte vm: none`, `idt: loaded`, active exception handlers, `page fault handler: active smoke`, `interrupts: disabled`, exception count, and last exception). |
 | `status` | None | Prints quick system status (active, version, input mode). |
 | `mods` | None | Prints live modifier states (Shift, CapsLock active statuses). |
 | `keys` | None | Prints keyboard mode and casing casing layout definitions. |
@@ -101,11 +101,12 @@ In version `7.7.1`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 | `div0` | None | Executes the active divide-by-zero diagnostics path through controlled `int 0`, not raw `div`. |
 | `exception` | None | Prints legacy telemetry fields: count, last vector, last name. |
 | `exception-reset` | None | Resets exception telemetry to `0 / none / none`; safe to run repeatedly. |
-| `handlers` | None | Lists active handlers for vector 0 and 3, plus planned vector 14 page fault. |
+| `handlers` | None | Lists active handlers for vector 0, 3, and 14. |
 | `exception-status` | None | Prints concise exception count, last exception, and interrupt state. |
 | `exceptions` | None | Alias for `exception-status`. |
 | `exception-help` | None | Prints exception diagnostics command help. |
-| `pf-note` | None | Prints the planned / disabled page fault direction note without enabling vector 14 or triggering a real page fault. |
+| `pf-note` | None | Prints the active smoke page fault note and explains that CR2/error code are available after `pf-smoke`. |
+| `pf-smoke` | None | Triggers a controlled real Page Fault smoke probe and returns to the shell through the recovery trampoline. |
 | *`<unknown>`* | Unsupported strings | Prints: `error: unknown command` |
 | *`<empty>`* | `LINE_LEN == 0` | Silent reprompt (cursor moves to new line, prints prompt). |
 
@@ -126,24 +127,31 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 3. Type commands and press Enter to execute them. For example:
    ```txt
    dbyte-kernel> help
-   commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers exception-status exceptions exception-help pf-note
+   commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers exception-status exceptions exception-help pf-note pf-smoke
    dbyte-kernel> version
-   DByteOS Kernel Lab 7.7.1
+   DByteOS Kernel Lab 7.8.0
    dbyte-kernel> handlers
    active handlers:
    vector 0: divide-by-zero
    vector 3: breakpoint
-   planned handlers:
    vector 14: page fault
+   planned handlers:
+   none
    dbyte-kernel> exception-status
    exceptions handled: 0
    last exception: none
    interrupts: disabled
    dbyte-kernel> pf-note
-   page fault: planned / disabled
+   page fault: active smoke
    vector: 14
-   cr2: unavailable
-   error code: documented only
+   cr2: available after pf-smoke
+   error code: available after pf-smoke
+   dbyte-kernel> pf-smoke
+   exception: page fault
+   vector: 14
+   cr2: 0x........
+   error code: 0x........
+   status: handled
    dbyte-kernel> echo hello deadbyte
    hello deadbyte
    dbyte-kernel> wat
@@ -244,8 +252,8 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v7.7.1`) enforces strict technical bounds to maintain lab stability:
+> This release (`v7.8.0`) enforces strict technical bounds to maintain lab stability:
 >
-> 1. **Polling-Only Keyboard Processing**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
+> 1. **Polling-Only Keyboard Processing**: The system does **NOT** remap/enable the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
-> 3. **Page Fault Direction Only**: Vector 14 remains planned / disabled. The `pf-note` command is documentation output only; it does not bind `entries[14]`, read `CR2`, decode a real error code, or trigger a real page fault.
+> 3. **Page Fault Smoke Only**: Vector 14 is bound only for controlled `pf-smoke` diagnostics. The smoke path reads `CR2`, reports the raw CPU error code, rewrites saved EIP to a recovery trampoline, and never uses `int 14`.

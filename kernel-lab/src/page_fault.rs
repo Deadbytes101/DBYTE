@@ -2,8 +2,8 @@
 
 //! Page Fault frame layout foundation.
 //!
-//! This module documents the planned vector 14 data shape without installing an
-//! IDT entry, reading CR2 at runtime, or exposing a handler entry point.
+//! This module documents the vector 14 data shape used by the controlled
+//! Page Fault handler smoke path.
 
 /// x86 exception vector reserved for Page Fault.
 pub const PAGE_FAULT_VECTOR: u8 = 14;
@@ -33,8 +33,8 @@ impl PageFaultErrorCode {
 
 /// Planned same-ring Page Fault frame documentation.
 ///
-/// This is not consumed by a live handler in v7.7.1. It records the intended
-/// shape for future frame decoding after vector 14 is explicitly enabled.
+/// This records the same-ring frame shape used by the v7.8.0 Page Fault smoke
+/// handler after vector 14 is explicitly enabled.
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct PageFaultFrame {
@@ -46,6 +46,6 @@ pub struct PageFaultFrame {
     pub cs: u32,
     /// Saved EFLAGS value.
     pub eflags: u32,
-    /// CR2 faulting linear address snapshot, unavailable until a real handler reads CR2.
+    /// CR2 faulting linear address snapshot captured by the handler.
     pub cr2: u32,
 }
