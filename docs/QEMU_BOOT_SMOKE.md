@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.6.1)
+# DByteOS QEMU Boot Smoke (v6.7.0)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.6.1
+version: 6.7.0
 status: booted
 target: i686 multiboot
 ```
@@ -68,15 +68,22 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Modifier Decoding (v6.6.1)
+## Keyboard Line Editor & Command Dispatch Lab (v6.7.0)
 
-In version `6.6.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Line Editor**. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and echoes submitted text back to the display.
+In version `6.7.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
-### Key Line Editor Features
+### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
 2. **Fixed-Size Buffer**: A static mutable buffer `LINE_BUFFER` tracks up to 128 typed characters. Characters typed past this 128-byte boundary are safely discarded to prevent heap overflows and memory unsafety.
 3. **Prompt Protection Guard**: Keypresses of Backspace (`\x08`) only perform visual erasure and buffer shrinking when `LINE_LEN > 0`. This guarantees the prompt `"dbyte-kernel> "` cannot be deleted.
-4. **Hardened Line Submission**: Pressing Enter (`\n`) outputs `\n`. If `LINE_LEN > 0`, it prints `"input: <line_content>"` on both screen and serial, resets `LINE_LEN = 0`, and renders a fresh `dbyte-kernel> ` prompt. If `LINE_LEN == 0` (empty line), it simply yields a new prompt without printing `"input: "` to preserve console cleanliness.
+4. **Hardened Line Submission**: Pressing Enter (`\n`) outputs `\n`. If `LINE_LEN > 0`, it parses the command dynamically. If `LINE_LEN == 0` (empty line), it simply yields a new prompt without printing anything to preserve console cleanliness.
+5. **Command Dispatcher**:
+   - `help`: Lists all supported built-in commands: `commands: help about version clear echo`
+   - `about`: Prints OS/Kernel introductory metadata: `DByteOS Kernel Lab`
+   - `version`: Prints official Kernel lab version: `DByteOS Kernel Lab 6.7.0`
+   - `clear`: Wipes the VGA character screen completely and places the prompt at the top-left corner.
+   - `echo <text>`: Prints the text following the prefix directly back to the terminal displays.
+   - Any unknown command prints an error message: `error: unknown command`
 
 ### Register Address Primitives
 - **Keyboard Status Register**: Port `0x64` (Read-only)
@@ -92,21 +99,29 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 
 1. **Left-click** inside the graphical QEMU window to redirect keyboard focus to the virtual machine.
 2. Observe the interactive prompt: `dbyte-kernel> `
-3. Press keys on your host keyboard. You will see translated ASCII characters print dynamically. When hitting Enter, the typed line is echoed:
+3. Type commands and press Enter to execute them. For example:
    ```txt
-   dbyte-kernel> hello deadbyte
-   input: hello deadbyte
+   dbyte-kernel> help
+   commands: help about version clear echo
+   dbyte-kernel> version
+   DByteOS Kernel Lab 6.7.0
+   dbyte-kernel> echo hello deadbyte
+   hello deadbyte
+   dbyte-kernel> wat
+   error: unknown command
    dbyte-kernel> 
    ```
 
-### Manual Typing Proof: hello deadbyte 1337
-To verify the full end-to-end interactive integrity of the keyboard translation sub-system:
+### Manual Typing Proof: Command Dispatching
+To verify the full end-to-end interactive integrity of the command dispatching sub-system:
 1. Launch graphical simulation: `powershell -File .\kernel-lab\scripts\run.ps1`
 2. Left-click inside the QEMU graphical display window to grab focus.
-3. Type the string: `hello deadbyte 1337`
-4. The system translates each keypress on-the-fly and echoes the characters to both the VGA screen and the serial console.
-5. Hit **`Backspace`** several times. Observe that characters are cleanly wiped from both screens one-by-one, but the erasure halts exactly when reaching the prompt boundary.
-6. Hit **`Enter`**. Observe that it echoes `input: hello deadbyte 13` (or the remainder string after backspacing) and starts a new input line with `dbyte-kernel> `.
+3. Type: `help`
+4. Hit **`Enter`**. Verify that the list of commands is cleanly output to both VGA and Serial.
+5. Hit **`Enter`** on a blank line. Observe that it simply advances the line and shows the prompt again.
+6. Type: `echo hello`
+7. Hit **`Backspace`** several times to erase `hello` and the space, then type ` version` (yielding `echo version`).
+8. Hit **`Enter`**. Observe that it echoes `version` as raw text rather than executing it as a nested command (verifying the prefix parsing works strictly).
 
 ### Exact Stateful Keyboard Modifier Mappings
 
@@ -190,7 +205,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v6.6.1`) enforces strict technical bounds to maintain lab stability:
+> This release (`v6.7.0`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
