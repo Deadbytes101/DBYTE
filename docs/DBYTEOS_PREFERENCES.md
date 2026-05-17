@@ -1,10 +1,10 @@
 # DByteOS Mutable Preferences
 
-**Version:** 6.4.1
+**Version:** 6.5.0
 **Subsystem:** User Configuration
 
 ## Overview
-DByteOS `v6.4.1` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
+DByteOS `v6.5.0` introduces **Mutable Preferences**, an overlay configuration system that allows users to persist safe configuration changes across sessions.
 
 Because DByteOS emphasizes determinism and strict security boundaries, standard configurations (`etc/config.dby`, `etc/system.dby`) remain read-only. The Mutable Preferences subsystem is strictly sandboxed.
 

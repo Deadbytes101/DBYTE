@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.4.1)
+# DByteOS QEMU Boot Smoke (v6.5.0)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.4.1
+version: 6.5.0
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard ASCII Decoded Listening (v6.4.1)
+## Keyboard Modifier Aware Decoding (v6.5.0)
 
-In version `6.4.1`, a polling-based PS/2 keyboard listener and basic ASCII translation module were implemented. It monitors key events by querying the status register and translates valid Make codes to raw ASCII characters.
+In version `6.5.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module were implemented. It monitors key events by querying the status register, tracks Shift and CapsLock state transitions, maps lowercase/uppercase toggles using `Shift ^ CapsLock` XOR logic, and provides Shift + number symbol maps.
 
 ### Register Address Primitives
 - **Keyboard Status Register**: Port `0x64` (Read-only)
@@ -85,14 +85,16 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 ```
 
 1. **Left-click** inside the graphical QEMU window to redirect keyboard focus to the virtual machine.
-2. Press keys on your host keyboard. You will see translated ASCII characters print dynamically onto the VGA screen and the serial console:
+2. Press keys on your host keyboard. You will see translated ASCII characters print dynamically onto the VGA screen and stateful modifier logs print on the serial console:
    ```txt
    DByteOS Keyboard Lab
    status: listening
+   [MODIFIER] Shift: true, CapsLock: false
+   A
+   [MODIFIER] Shift: false, CapsLock: false
    a
-   b
    ```
-   *(Note: Pressing 'A' followed by 'B' will print 'a' and 'b'. All Break codes (key releases) are filtered out to prevent double-typing.)*
+   *(Note: Pressing Shift + 'A' prints '[MODIFIER] Shift: true, CapsLock: false' to Serial and echoes uppercase 'A' to the screen, while releasing Shift outputs '[MODIFIER] Shift: false, CapsLock: false' and subsequent keypresses yield lowercase 'a'.)*
 
 ### Manual Typing Proof: hello deadbyte 1337
 To verify the full end-to-end interactive integrity of the keyboard translation sub-system:
@@ -131,7 +133,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v6.4.1`) enforces strict technical bounds to maintain lab stability:
+> This release (`v6.5.0`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
-> 2. **No Stateful Keyboard Modifiers**: The kernel does **NOT** support Shift, CapsLock, Ctrl, or Alt state transitions yet. Alphabetical characters are interpreted strictly as lowercase keys. Shift and CapsLock state-machine integrations are scheduled for the **Keyboard Modifier Lab** (`v6.5.0`).
+> 2. **Basic Modifiers Only**: The kernel supports Left/Right Shift tracking, CapsLock toggling, and Shift + number symbols. It does **NOT** track Ctrl or Alt modifiers, nor does it support full stateful keyboard layout configurations.
