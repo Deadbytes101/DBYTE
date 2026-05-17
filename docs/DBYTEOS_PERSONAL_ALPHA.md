@@ -1,6 +1,6 @@
 # DByteOS Personal Workspace Beta Foundation
 
-DByteOS Personal Workspace Beta Foundation is the v6.3.0 milestone for the host-runnable DByteOS
+DByteOS Personal Workspace Beta Foundation is the v6.3.1 milestone for the host-runnable DByteOS
 userland. It marks the point where DByte, the interactive shell, packaged
 examples, DByteOS commands, preferences, diagnostics, and documentation form a
 cohesive personal computing environment.

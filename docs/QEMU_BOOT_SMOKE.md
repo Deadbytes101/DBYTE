@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v6.3.0)
+# DByteOS QEMU Boot Smoke (v6.3.1)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 6.3.0
+version: 6.3.1
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Scancode Listening (v6.3.0)
+## Keyboard Scancode Listening (v6.3.1)
 
-In version `6.3.0`, a polling-based PS/2 keyboard listener was implemented. It monitors key events by querying the status register and output buffer.
+In version `6.3.1`, a polling-based PS/2 keyboard listener was implemented. It monitors key events by querying the status register and output buffer.
 
 ### Register Address Primitives
 - **Keyboard Status Register**: Port `0x64` (Read-only)
@@ -93,5 +93,29 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
    scancode: 0x9E
    ```
    *(Note: Scancode `0x1E` represents keypress of 'A', and `0x9E` represents key release of 'A'.)*
+
+### Essential Key Scancode Reference (PS/2 Set 1)
+
+The PS/2 keyboard controller inside QEMU emits 8-bit scancodes based on the Set 1 specification. When a key is pressed, it transmits a **Make code**. When a key is released, it transmits a **Break code** (which is usually the Make code bitwise ORed with `0x80`).
+
+| Key | Make Code (Press) | Break Code (Release) | Key Action |
+| --- | --- | --- | --- |
+| **`A`** | `0x1E` | `0x9E` | Primary validation keystroke |
+| **`B`** | `0x30` | `0xB0` | Secondary validation keystroke |
+| **`Enter`** | `0x1C` | `0x9C` | Carries carriage return / line break signals |
+| **`Backspace`** | `0x0E` | `0x8E` | Backspace delete buffer cursor trigger |
+| **`Space`** | `0x39` | `0xB9` | Spacebar blank character pad |
+| **`Esc`** | `0x01` | `0x81` | Escape/exit execution frame trigger |
+
+---
+
+### Architectural Boundaries & Explicit Exclusions
+
+> [!WARNING]
+> This release (`v6.3.1`) has strictly defined architectural scopes to prevent over-complicating the bootstrap lab:
+>
+> 1. **No Interrupt Service Routines (ISRs)**: The system does **NOT** configure the Interrupt Descriptor Table (IDT) or map the Programmable Interrupt Controller (PIC/8259). Key listening runs completely inside a synchronous, non-blocking polling loop within `kernel_main` querying port `0x64`.
+> 2. **No Full Keyboard Layout Translators**: The kernel does **NOT** translate raw hex scancodes to standard ASCII/UTF-8 character layouts yet. Full ASCII decryption mapping (`A` -> `'a'`, etc.) is slated for implementation in version `v6.4.0`.
+
 
 
