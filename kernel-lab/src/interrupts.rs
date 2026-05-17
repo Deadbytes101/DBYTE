@@ -39,12 +39,20 @@ core::arch::global_asm!(
     "    pushad",
     "    call breakpoint_handler_rust",
     "    popad",
+    "    iretd",
+    ".global divide_by_zero_handler_asm",
+    "divide_by_zero_handler_asm:",
+    "    pushad",
+    "    call divide_by_zero_handler_rust",
+    "    popad",
     "    iretd"
 );
 
 extern "C" {
     /// Assembly entry point that preserves register state and performs an interrupt return.
     pub fn breakpoint_handler_asm();
+    /// Assembly entry point for divide-by-zero exception handler.
+    pub fn divide_by_zero_handler_asm();
 }
 
 /// Global exception telemetry count tracking.
@@ -63,4 +71,15 @@ pub extern "C" fn breakpoint_handler_rust() {
     }
     crate::vga::print("\nexception: breakpoint\nvector: 3\nstatus: handled\n");
     crate::serial::print("\nexception: breakpoint\nvector: 3\nstatus: handled\n");
+}
+
+#[no_mangle]
+pub extern "C" fn divide_by_zero_handler_rust() {
+    unsafe {
+        EXCEPTION_COUNT += 1;
+        LAST_EXCEPTION_VECTOR = 0;
+        LAST_EXCEPTION_NAME = "divide-by-zero";
+    }
+    crate::vga::print("\nexception: divide-by-zero\nvector: 0\nstatus: handled\n");
+    crate::serial::print("\nexception: divide-by-zero\nvector: 0\nstatus: handled\n");
 }
