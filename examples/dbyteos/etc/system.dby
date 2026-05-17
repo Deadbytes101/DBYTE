@@ -1,5 +1,5 @@
 # DByteOS System Configuration
-pub let os_version: str = "8.1.0"
+pub let os_version: str = "8.1.1"
 pub let os_codename: str = "Userland Prototype"
 pub let hostname: str = "DByte-Alpha"
 pub let kernel_mode: str = "Simulated (Host)"

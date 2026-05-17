@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v8.1.0)
+# DByteOS Kernel Lab Guide (v8.1.1)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**
@@ -18,9 +18,9 @@ The laboratory is completely isolated inside the `kernel-lab/` directory:
 
 ## Exception Subsystem Foundation
 
-Version `8.1.0` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
+Version `8.1.1` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
 
-Version `8.1.0` adds the PIC/IRQ Direction Foundation. PIC/IRQ remains planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, and keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`.
+Version `8.1.1` adds the PIC/IRQ Direction Foundation. PIC/IRQ remains planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, and keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`.
 
 This milestone does not add a new exception vector, does not change `pf-smoke`, does not enable STI, does not remap PIC, does not bind IRQ vectors, and keeps keyboard input polling-based.
 
