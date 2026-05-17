@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.8.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.9.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v7.8.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v7.9.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 #### Exact Runtime Execution Flow
 When the user types the `pf-smoke` command:
@@ -132,7 +132,7 @@ On x86, a real Page Fault pushes an error code that describes why address transl
   - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
   - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v7.8.1: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v7.9.0: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -199,12 +199,17 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.8.1`)
+## 6. Current Milestone Status (`v7.9.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.8.1`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
-- **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`) and planned handlers (`vector 14: page fault`) in a clean, visual format.
-- **`exception-status` & `exceptions` Command**: Displays detailed exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
-- **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics suite commands.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.9.0`, and CPU exception diagnostics and user experience (UX) have been successfully expanded:
+- **`handlers` Command**: Lists active handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`, `vector 14: page fault`) and planned handlers (`none`) in a clean, visual format.
+- **`handlers --active` Command**: Lists only currently active exception handlers.
+- **`exception-status` & `exceptions` Command**: Displays concise exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
+- **`exceptions --verbose` Command**: Displays telemetry plus active, smoke, and planned handler groups.
+- **`fault-status` Command**: Displays fault recovery status, recovery mode, Page Fault smoke armed state, and interrupt state.
+- **`fault-reset` Command**: Resets exception telemetry plus Page Fault smoke recovery state idempotently.
+- **`pf-status` Command**: Displays vector 14 handler, trigger, CR2/error-code availability, and recovery trampoline status.
+- **`exception-help` Command**: Displays a comprehensive help guide for all exception diagnostics and recovery commands.
 - **`pf-note` Command**: Documents that Page Fault is active smoke, vector 14 is active, and `CR2` / error code are available after `pf-smoke`.
 - **`pf-smoke` Command**: Triggers a controlled real Page Fault and recovers through a trampoline after the handler records diagnostics.
 - **Page Fault Frame Layout Foundation**: Keeps compile-time documentation types for `PageFaultFrame` and `PageFaultErrorCode` while vector 14 is registered for smoke handling.
@@ -215,6 +220,6 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
-- **Status Reporting**: The `system` command dynamically syncs exception count and active/planned status information cleanly.
+- **Status Reporting**: The `system` command dynamically syncs exception count, active/smoke recovery status, Page Fault smoke state, and last exception cleanly.
 - **Page Fault Handler Status**: Active smoke. `entries[14].set_handler` is bound to `page_fault_handler_asm`; `pf-smoke` uses a controlled null read probe and never uses `int 14`.
 - **Software Vector 14 Trigger**: No `asm!("int 14")` trigger is used.
