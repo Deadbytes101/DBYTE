@@ -12,6 +12,7 @@ Manual topics:
   profile
   config
   snapshot
+  project
   env
   path
   read
@@ -22,6 +23,7 @@ Manual topics:
   security
   notes
   journal
+  project
   services
   log
 

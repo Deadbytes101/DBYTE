@@ -1,4 +1,4 @@
-# DByteOS Personal Alpha (v5.0.1)
+# DByteOS Personal Alpha (v5.1.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
@@ -28,6 +28,7 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
 | `profile` | Show profile identity |
 | `config` | Show read-only preferences |
 | `snapshot` | Summarize subsystem state |
+| `project` | Manage workspace projects |
 | `clean` | Purge temporary artifacts |
 | `boot` | Re-run system boot |
 
@@ -38,7 +39,7 @@ Welcome to **DByteOS**: a personal computing userland built on the DByte runtime
    ./dbyte.exe shell --rc examples/dbyteos/.dbyterc
    ```
 2. Run `welcome` to see the onboarding entry point.
-3. Type `profile show`, `config show`, `snapshot`, `getting-started`, `commands`, `man-index`, or `man <topic>` to explore the environment.
+3. Type `profile show`, `config show`, `snapshot`, `project list`, `getting-started`, `commands`, `man-index`, or `man <topic>` to explore the environment.
 4. Use `prefs set system.prompt dbyteos>` to change the next shell prompt, and `prefs reset-demo` to restore the default demo state.
 
 ## Package Smoke
@@ -59,6 +60,10 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
+project new demo
+project status demo
+project snapshot demo
+project reset-demo
 prefs reset-demo
 profile show
 config show
@@ -77,8 +82,8 @@ quit
 
 ## Security & Persistence
 - **Enforcement**: File operations on `etc/`, `bin/`, and `sys/` are read-only.
-- **Persistence**: User data in `home/deadbyte/journal.txt` is persistent.
+- **Persistence**: User data in `home/deadbyte/journal.txt` and `home/deadbyte/projects/` is persistent.
 - **Determinism**: All system logs (`boot.log`, `security.log`) are reproducible.
 
 ---
-[Personal Alpha](../../docs/DBYTEOS_PERSONAL_ALPHA.md) | [Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Config](../../docs/DBYTEOS_CONFIG.md) | [Snapshot](../../docs/DBYTEOS_SNAPSHOT.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
+[Personal Alpha](../../docs/DBYTEOS_PERSONAL_ALPHA.md) | [Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Config](../../docs/DBYTEOS_CONFIG.md) | [Snapshot](../../docs/DBYTEOS_SNAPSHOT.md) | [Projects](../../docs/DBYTEOS_PROJECTS.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
