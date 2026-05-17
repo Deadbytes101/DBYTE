@@ -9,7 +9,7 @@ Alpha userland.
 user: deadbyte
 home: home/deadbyte
 shell: dbyte shell
-mode: alpha-userland
+mode: beta-userland
 theme: default
 prompt: dbyte-shell>
 ```
@@ -28,7 +28,7 @@ profile prompt
 `profile` and `profile show` print the full summary. The other modes print one
 field for scripting and package smoke tests.
 
-Profile values are sourced from the read-only DByteOS config layer in v5.9.1.
+Profile values are sourced from the read-only DByteOS config layer in v6.0.0.
 The profile command does not write config files, persist settings, change
 security policy, or invoke the host OS.
 

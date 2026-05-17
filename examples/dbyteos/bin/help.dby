@@ -1,6 +1,6 @@
 import "../sys/session.dby" as sess
 
-print("--- DByteOS Alpha Help ---")
+print("--- DByteOS Beta Help ---")
 print("System:")
 print("  boot             - initialize the DByteOS userland")
 print("  status           - summarize system state")

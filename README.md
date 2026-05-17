@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Alpha (v5.9.1)
+## DByteOS Personal Workspace Beta Foundation (v6.0.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -48,7 +48,7 @@ This configures the session environment, activates autopath resolving, and
 loads the DByteOS prompt from `system.prompt`.
 
 2. **Explore the System**:
-- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
+- [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
 - [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
@@ -331,7 +331,7 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 - [INSTALL.md](INSTALL.md)
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
 - [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
-- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
+- [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
 - [DByteOS Profile](docs/DBYTEOS_PROFILE.md)
 - [DByteOS Config](docs/DBYTEOS_CONFIG.md)

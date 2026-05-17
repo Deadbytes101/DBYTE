@@ -46,7 +46,7 @@ renumbered after clear-done.
 ## Boundaries
 
 Tasks are not executable build steps or host OS jobs. They are simple user data
-for the Personal Alpha workspace. `clean` preserves projects and tasks.
+for the Personal Workspace Beta Foundation workspace. `clean` preserves projects and tasks.
 
-Related docs: [Projects](DBYTEOS_PROJECTS.md), [Personal Alpha](DBYTEOS_PERSONAL_ALPHA.md), [Package Guide](DBYTEOS_PACKAGE.md).
+Related docs: [Projects](DBYTEOS_PROJECTS.md), [Personal Workspace Beta Foundation](DBYTEOS_PERSONAL_ALPHA.md), [Package Guide](DBYTEOS_PACKAGE.md).
 
