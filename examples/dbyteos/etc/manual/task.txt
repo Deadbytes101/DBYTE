@@ -5,6 +5,11 @@ Usage:
   task list <project>
   task done <project> <id>
   task status <project>
+  task summary <project>
+  task open <project>
+  task clear-done <project>
+  task doctor <project>
+  task snapshot <project>
   task reset-demo
 
 Description:
@@ -18,4 +23,9 @@ Safety:
 
 Demo:
   task reset-demo restores deterministic demo tasks.
+  task summary demo prints compact counts.
+  task open demo lists only open tasks.
+  task doctor demo validates task file shape.
+  task snapshot demo prints a readable task snapshot.
+  task clear-done demo removes completed tasks deterministically.
   clean preserves project task data because it is user data.

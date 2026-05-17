@@ -1,6 +1,6 @@
 # DByteOS Personal Alpha
 
-DByteOS Personal Alpha is the v5.2.1 milestone for the host-runnable DByteOS
+DByteOS Personal Alpha is the v5.3.0 milestone for the host-runnable DByteOS
 userland. It marks the point where DByte, the interactive shell, packaged
 examples, DByteOS commands, preferences, diagnostics, and documentation form a
 cohesive personal computing environment.
@@ -29,6 +29,11 @@ task list demo
 task add demo write tests
 task done demo 1
 task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
 project status demo
 project snapshot demo
 prefs reset-demo

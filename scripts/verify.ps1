@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 5.2.1") {
-    throw "Version mismatch: expected 'DByte 5.2.1', got '$versionOut'"
+if ($versionOut -ne "DByte 5.3.0") {
+    throw "Version mismatch: expected 'DByte 5.3.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -558,7 +558,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 5.2.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 5.3.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1126,7 +1126,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v5.2.1) smoke tests..."
+Write-Host "Running DByteOS Command Set (v5.3.0) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosProjectsPath = Join-Path $dbyteosRoot "home\deadbyte\projects"
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -1145,7 +1145,7 @@ $expectedDbyteosBoot = @"
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  5.2.1  ( Userland Prototype )
+  Version:    DByte  5.3.0  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -1185,7 +1185,7 @@ System:
   prefs            - manage mutable user preferences
   snapshot         - summarize DByteOS subsystem state
   project          - manage workspace projects
-  task             - manage project tasks
+  task             - manage project tasks and task UX
 
 Discovery:
   welcome          - show the onboarding entry point
@@ -1218,7 +1218,7 @@ Journal/Workspace:
   notes            - manage text notes
   journal          - manage user journal
   project          - manage workspace projects
-  task             - manage project tasks
+  task             - manage project tasks and task UX
   home             - print home path
   tmp              - print temp path
   env              - display environment variables
@@ -1232,7 +1232,7 @@ Try: welcome, profile show, config show, snapshot, getting-started, commands
 $expectedDbyteosStatus = @"
 --- DByteOS System Status ---
 Summary:
-  OS:      DByte  5.2.1
+  OS:      DByte  5.3.0
   Host:     DByte-Alpha
   User:     deadbyte
   Home:     home/deadbyte
@@ -1256,7 +1256,7 @@ Next:    help | man <topic> | which <command>
 "@
 $expectedDbyteosSysinfo = @"
 DByteOS Alpha Userland
-version: DByte 5.2.1
+version: DByte 5.3.0
 codename: Userland Prototype
 host: DByte-Alpha
 kernel: Simulated (Host)
@@ -1327,7 +1327,7 @@ System:
   prefs            - manage mutable user preferences
   snapshot         - summarize subsystem state
   project          - manage workspace projects
-  task             - manage project tasks
+  task             - manage project tasks and task UX
 
 Discovery:
   welcome          - show the onboarding entry point
@@ -1360,7 +1360,7 @@ Journal and workspace:
   notes            - manage personal notes
   journal          - manage journal entries
   project          - manage workspace projects
-  task             - manage project tasks
+  task             - manage project tasks and task UX
   home             - print the home path
   tmp              - print the temp path
   env              - show environment settings
@@ -1422,7 +1422,7 @@ shell: dbyte shell
 mode: alpha-userland
 theme: default
 prompt: dbyte-shell>
-os_version: 5.2.1
+os_version: 5.3.0
 "@
 $expectedDbyteosProfileUnknown = @"
 error: unknown profile command: unknown
@@ -1548,6 +1548,11 @@ commands:
   list <project>        - list project tasks
   done <project> <id>   - mark a task done
   status <project>      - summarize project task state
+  summary <project>     - print compact task counts
+  open <project>        - list open project tasks
+  clear-done <project>  - remove completed tasks
+  doctor <project>      - validate task file
+  snapshot <project>    - print task snapshot
   reset-demo            - reset demo project tasks
 "@
 $expectedDbyteosTaskListDemo = @"
@@ -1573,6 +1578,68 @@ open: 2
 done: 1
 total: 3
 "@
+$expectedDbyteosTaskSummaryAfterDone = @"
+Task Summary: demo
+open: 2
+done: 1
+total: 3
+"@
+$expectedDbyteosTaskOpenAfterDone = @"
+DByteOS open tasks: demo
+[ ] 2: write project note
+[ ] 3: write tests
+"@
+$expectedDbyteosTaskDoctorHealthy = @"
+Task Doctor: demo
+project: ok
+tasks_file: ok
+rows: ok
+result: healthy
+"@
+$expectedDbyteosTaskDoctorMalformed = @"
+Task Doctor: demo
+project: ok
+tasks_file: ok
+rows: malformed
+result: unhealthy
+"@
+$expectedDbyteosTaskSnapshotAfterDone = @"
+--- DByteOS Task Snapshot ---
+project: demo
+open: 2
+done: 1
+total: 3
+tasks:
+[x] 1: inspect workspace
+[ ] 2: write project note
+[ ] 3: write tests
+"@
+$expectedDbyteosTaskClearDone = @"
+task clear-done: demo
+removed: 1
+remaining: 2
+"@
+$expectedDbyteosTaskListAfterClearDone = @"
+DByteOS project tasks: demo
+[ ] 1: write project note
+[ ] 2: write tests
+"@
+$expectedDbyteosTaskStatusAfterClearDone = @"
+Task Status: demo
+open: 2
+done: 0
+total: 2
+"@
+$expectedDbyteosTaskSnapshotAfterClearDone = @"
+--- DByteOS Task Snapshot ---
+project: demo
+open: 2
+done: 0
+total: 2
+tasks:
+[ ] 1: write project note
+[ ] 2: write tests
+"@
 $expectedDbyteosTaskUnknown = @"
 error: unknown task command: unknown
 usage: task <command> [project] [args...]
@@ -1582,12 +1649,17 @@ commands:
   list <project>        - list project tasks
   done <project> <id>   - mark a task done
   status <project>      - summarize project task state
+  summary <project>     - print compact task counts
+  open <project>        - list open project tasks
+  clear-done <project>  - remove completed tasks
+  doctor <project>      - validate task file
+  snapshot <project>    - print task snapshot
   reset-demo            - reset demo project tasks
 "@
 $expectedDbyteosSnapshot = @"
 --- DByteOS System Snapshot ---
 System:
-  version: DByte 5.2.1
+  version: DByte 5.3.0
   codename: Userland Prototype
   host:    DByte-Alpha
   kernel:  Simulated (Host)
@@ -1987,6 +2059,68 @@ try {
     if ($dbyteosTaskStatusDemo.Code -ne 0) { throw "dbyteos task status demo failed: $($dbyteosTaskStatusDemo.Text)" }
     Assert-NormalizedEqual $dbyteosTaskStatusDemo.Text $expectedDbyteosTaskStatusAfterDone "dbyteos task status demo snapshot"
 
+    $dbyteosTaskSummaryDemo = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "summary", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskSummaryDemo.Code -ne 0) { throw "dbyteos task summary demo failed: $($dbyteosTaskSummaryDemo.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskSummaryDemo.Text $expectedDbyteosTaskSummaryAfterDone "dbyteos task summary demo snapshot"
+    $dbyteosTaskOpenDemo = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "open", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskOpenDemo.Code -ne 0) { throw "dbyteos task open demo failed: $($dbyteosTaskOpenDemo.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskOpenDemo.Text $expectedDbyteosTaskOpenAfterDone "dbyteos task open demo snapshot"
+    $dbyteosTaskDoctorDemo = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "doctor", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskDoctorDemo.Code -ne 0) { throw "dbyteos task doctor demo failed: $($dbyteosTaskDoctorDemo.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskDoctorDemo.Text $expectedDbyteosTaskDoctorHealthy "dbyteos task doctor demo snapshot"
+    $dbyteosTaskSnapshotDemo = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "snapshot", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskSnapshotDemo.Code -ne 0) { throw "dbyteos task snapshot demo failed: $($dbyteosTaskSnapshotDemo.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskSnapshotDemo.Text $expectedDbyteosTaskSnapshotAfterDone "dbyteos task snapshot demo snapshot"
+
+    $dbyteosTaskSummaryMissing = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "summary", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskSummaryMissing.Code -ne 0) { throw "dbyteos task summary missing failed: $($dbyteosTaskSummaryMissing.Text)" }
+    Assert-Equal $dbyteosTaskSummaryMissing.Text "error: project not found: missing" "dbyteos task summary missing project"
+    $dbyteosTaskOpenMissing = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "open", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskOpenMissing.Code -ne 0) { throw "dbyteos task open missing failed: $($dbyteosTaskOpenMissing.Text)" }
+    Assert-Equal $dbyteosTaskOpenMissing.Text "error: project not found: missing" "dbyteos task open missing project"
+    $dbyteosTaskDoctorMissing = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "doctor", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskDoctorMissing.Code -ne 0) { throw "dbyteos task doctor missing failed: $($dbyteosTaskDoctorMissing.Text)" }
+    Assert-Equal $dbyteosTaskDoctorMissing.Text "error: project not found: missing" "dbyteos task doctor missing project"
+    $dbyteosTaskSnapshotMissing = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "snapshot", "missing") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskSnapshotMissing.Code -ne 0) { throw "dbyteos task snapshot missing failed: $($dbyteosTaskSnapshotMissing.Text)" }
+    Assert-Equal $dbyteosTaskSnapshotMissing.Text "error: project not found: missing" "dbyteos task snapshot missing project"
+    $dbyteosTaskClearDoneInvalid = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "clear-done", "bad/name") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskClearDoneInvalid.Code -ne 0) { throw "dbyteos task clear-done invalid failed: $($dbyteosTaskClearDoneInvalid.Text)" }
+    Assert-Equal $dbyteosTaskClearDoneInvalid.Text "error: invalid project name: bad/name" "dbyteos task clear-done invalid project"
+
+    Set-Content -Path $projectDemoTasks -Value "0|inspect workspace`n2|bad marker`n1|done task`n" -NoNewline
+    $dbyteosTaskDoctorMalformed = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "doctor", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskDoctorMalformed.Code -ne 0) { throw "dbyteos task doctor malformed failed: $($dbyteosTaskDoctorMalformed.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskDoctorMalformed.Text $expectedDbyteosTaskDoctorMalformed "dbyteos task doctor malformed snapshot"
+    $dbyteosTaskResetAfterMalformed = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "reset-demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskResetAfterMalformed.Code -ne 0) { throw "dbyteos task reset after malformed failed: $($dbyteosTaskResetAfterMalformed.Text)" }
+    Assert-Equal $dbyteosTaskResetAfterMalformed.Text "task demo reset." "dbyteos task reset after malformed"
+    $dbyteosTaskAddAfterMalformedReset = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "add", "demo", "write", "tests") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskAddAfterMalformedReset.Code -ne 0) { throw "dbyteos task add after malformed reset failed: $($dbyteosTaskAddAfterMalformedReset.Text)" }
+    Assert-Equal $dbyteosTaskAddAfterMalformedReset.Text "task added: demo #3" "dbyteos task add after malformed reset"
+    $dbyteosTaskDoneAfterMalformedReset = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "done", "demo", "1") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskDoneAfterMalformedReset.Code -ne 0) { throw "dbyteos task done after malformed reset failed: $($dbyteosTaskDoneAfterMalformedReset.Text)" }
+    Assert-Equal $dbyteosTaskDoneAfterMalformedReset.Text "task done: demo #1" "dbyteos task done after malformed reset"
+
+    $dbyteosTaskClearDone = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "clear-done", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskClearDone.Code -ne 0) { throw "dbyteos task clear-done demo failed: $($dbyteosTaskClearDone.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskClearDone.Text $expectedDbyteosTaskClearDone "dbyteos task clear-done demo snapshot"
+    $dbyteosTaskClearDoneAgain = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "clear-done", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskClearDoneAgain.Code -ne 0) { throw "dbyteos task clear-done idempotent failed: $($dbyteosTaskClearDoneAgain.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskClearDoneAgain.Text "task clear-done: demo`nremoved: 0`nremaining: 2" "dbyteos task clear-done idempotent"
+    $dbyteosTaskListAfterClearDone = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "list", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskListAfterClearDone.Code -ne 0) { throw "dbyteos task list after clear-done failed: $($dbyteosTaskListAfterClearDone.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskListAfterClearDone.Text $expectedDbyteosTaskListAfterClearDone "dbyteos task list after clear-done snapshot"
+    $dbyteosTaskStatusAfterClearDone = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "status", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskStatusAfterClearDone.Code -ne 0) { throw "dbyteos task status after clear-done failed: $($dbyteosTaskStatusAfterClearDone.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskStatusAfterClearDone.Text $expectedDbyteosTaskStatusAfterClearDone "dbyteos task status after clear-done snapshot"
+    $dbyteosTaskSnapshotAfterClearDone = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "snapshot", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskSnapshotAfterClearDone.Code -ne 0) { throw "dbyteos task snapshot after clear-done failed: $($dbyteosTaskSnapshotAfterClearDone.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskSnapshotAfterClearDone.Text $expectedDbyteosTaskSnapshotAfterClearDone "dbyteos task snapshot after clear-done snapshot"
+    $dbyteosTaskDoctorAfterClearDone = Invoke-Dbyte -Arguments @("run", "bin\task.dby", "doctor", "demo") -WorkingDirectory $dbyteosRoot
+    if ($dbyteosTaskDoctorAfterClearDone.Code -ne 0) { throw "dbyteos task doctor after clear-done failed: $($dbyteosTaskDoctorAfterClearDone.Text)" }
+    Assert-NormalizedEqual $dbyteosTaskDoctorAfterClearDone.Text $expectedDbyteosTaskDoctorHealthy "dbyteos task doctor after clear-done"
+
     $dbyteosCleanProjects = Invoke-Dbyte -Arguments @("run", "bin\clean.dby") -WorkingDirectory $dbyteosRoot
     if ($dbyteosCleanProjects.Code -ne 0) { throw "dbyteos clean project preservation failed: $($dbyteosCleanProjects.Text)" }
     if (-not (Test-Path (Join-Path $projectDemoRoot "project.txt"))) { throw "clean deleted project data - must be preserved" }
@@ -2109,7 +2243,7 @@ try {
     if ($dbyteosPrefsGetAfterReset.Code -ne 0) { throw "dbyteos prefs get after reset failed: $($dbyteosPrefsGetAfterReset.Text)" }
     Assert-Equal $dbyteosPrefsGetAfterReset.Text "default" "dbyteos prefs get default after reset"
 
-    # --- v5.2.1 Exact Snapshot Assertions ---
+    # --- v5.3.0 Exact Snapshot Assertions ---
     # ensure no stale .bak from previous runs
     $prefsBakCleanup = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby.bak"
     Remove-Item $prefsBakCleanup -Force -ErrorAction SilentlyContinue
@@ -2313,7 +2447,7 @@ Backup: Present
     Assert-Contains $dbyteosShellManPerm.Text "DByteOS Permission Command" "dbyteos man perm"
     Assert-Contains $dbyteosShellManPerm.Text "DByteOS Security Policy" "dbyteos man security"
 
-    $dbyteosOnboardingShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`nconfig show`nconfig keys`nconfig get system.prompt`nsnapshot`nsnapshot profile`nsnapshot config`nsnapshot security`nsnapshot logs`nproject reset-demo`nproject list`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask done demo 1`ntask status demo`ngetting-started`ncommands`nman-index`nhelp`nman index`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosOnboardingShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`nconfig show`nconfig keys`nconfig get system.prompt`nsnapshot`nsnapshot profile`nsnapshot config`nsnapshot security`nsnapshot logs`nproject reset-demo`nproject list`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask done demo 1`ntask status demo`ntask summary demo`ntask open demo`ntask doctor demo`ntask snapshot demo`ntask clear-done demo`ngetting-started`ncommands`nman-index`nhelp`nman index`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosOnboardingShell.Code -ne 0) { throw "dbyteos onboarding shell failed: $($dbyteosOnboardingShell.Text)" }
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosWelcome) "dbyteos shell welcome"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosProfile) "dbyteos shell profile show"
@@ -2341,6 +2475,11 @@ Backup: Present
     Assert-Contains $dbyteosOnboardingShell.Text "task done: demo #1" "dbyteos shell task done"
     Assert-Contains $dbyteosOnboardingShell.Text "task already done: demo #1" "dbyteos shell task already done"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosTaskStatusAfterDone) "dbyteos shell task status"
+    Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosTaskSummaryAfterDone) "dbyteos shell task summary"
+    Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosTaskOpenAfterDone) "dbyteos shell task open"
+    Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosTaskDoctorHealthy) "dbyteos shell task doctor"
+    Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosTaskSnapshotAfterDone) "dbyteos shell task snapshot"
+    Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosTaskClearDone) "dbyteos shell task clear-done"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosGettingStarted) "dbyteos shell getting-started"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosCommands) "dbyteos shell commands"
     Assert-Contains $dbyteosOnboardingShell.Text (Normalize-Output $expectedDbyteosManIndex) "dbyteos shell man-index"
@@ -2384,7 +2523,7 @@ Backup: Present
     Assert-Contains $dbyteosShellProjectWorkflow.Text "project: dbyteos ->" "dbyteos shell which project autopath"
     Assert-Contains $dbyteosShellProjectWorkflow.Text "examples/dbyteos/bin/project.dby" "dbyteos shell which project resolved path"
 
-    $dbyteosShellTaskWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "project reset-demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask done demo 1`ntask status demo`nwhich task`nman task`nquit`n" -WorkingDirectory $dbyteosRoot
+    $dbyteosShellTaskWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "project reset-demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask done demo 1`ntask status demo`ntask summary demo`ntask open demo`ntask doctor demo`ntask snapshot demo`ntask clear-done demo`nwhich task`nman task`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosShellTaskWorkflow.Code -ne 0) { throw "dbyteos shell task workflow failed: $($dbyteosShellTaskWorkflow.Text)" }
     Assert-Contains $dbyteosShellTaskWorkflow.Text "task demo reset." "dbyteos shell task workflow reset"
     Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskListDemo) "dbyteos shell task workflow list"
@@ -2392,6 +2531,11 @@ Backup: Present
     Assert-Contains $dbyteosShellTaskWorkflow.Text "task done: demo #1" "dbyteos shell task workflow done"
     Assert-Contains $dbyteosShellTaskWorkflow.Text "task already done: demo #1" "dbyteos shell task workflow already done"
     Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskStatusAfterDone) "dbyteos shell task workflow status"
+    Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskSummaryAfterDone) "dbyteos shell task workflow summary"
+    Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskOpenAfterDone) "dbyteos shell task workflow open"
+    Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskDoctorHealthy) "dbyteos shell task workflow doctor"
+    Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskSnapshotAfterDone) "dbyteos shell task workflow snapshot"
+    Assert-Contains $dbyteosShellTaskWorkflow.Text (Normalize-Output $expectedDbyteosTaskClearDone) "dbyteos shell task workflow clear-done"
     Assert-Contains $dbyteosShellTaskWorkflow.Text "task: dbyteos ->" "dbyteos shell which task autopath"
     Assert-Contains $dbyteosShellTaskWorkflow.Text "examples/dbyteos/bin/task.dby" "dbyteos shell which task resolved path"
     Assert-Contains $dbyteosShellTaskWorkflow.Text "DByteOS Task Command" "dbyteos shell task workflow manual"
@@ -2424,7 +2568,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 5.2.1`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 5.3.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -2432,7 +2576,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.2.1`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.2.1`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.2.1`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.3.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.3.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.3.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -2504,7 +2648,7 @@ Backup: Present
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-NormalizedEqual $dbyteosSysinfoRoot.Text $expectedDbyteosSysinfo "dbyteos sysinfo snapshot"
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Alpha Userland" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 5.2.1" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 5.3.0" "dbyteos sysinfo version"
     Assert-Contains $dbyteosSysinfoRoot.Text "codename: Userland Prototype" "dbyteos sysinfo codename"
     Assert-Contains $dbyteosSysinfoRoot.Text "guide: run help, status, or man <topic>" "dbyteos sysinfo guide"
 
@@ -2607,7 +2751,7 @@ Backup: Present
     Assert-Contains $dbyteosProfileRoot.Text "mode: alpha-userland" "dbyteos profile mode"
     Assert-Contains $dbyteosProfileRoot.Text "theme: default" "dbyteos profile theme"
     Assert-Contains $dbyteosProfileRoot.Text "prompt: dbyte-shell>" "dbyteos profile prompt"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 5.2.1" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 5.3.0" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -2639,7 +2783,7 @@ Backup: Present
     if ($dbyteosReadCwd.Code -ne 0) { throw "dbyteos read from dbyteos cwd failed: $($dbyteosReadCwd.Text)" }
     Assert-Equal $dbyteosReadCwd.Text "cwd ok" "dbyteos read from dbyteos cwd"
 
-    Write-Host "Running DByteOS Security/Permissions (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Security/Permissions (v5.3.0) smoke tests..."
     $securityLogPath = Join-Path $dbyteosRoot "tmp\security.log"
     if (Test-Path $securityLogPath) {
         Remove-Item -Force $securityLogPath
@@ -2691,7 +2835,7 @@ Backup: Present
     Assert-Equal $dbyteosPermUnknown.Text "DENY read var/log.txt (policy)" "perm unknown root denied"
     $dbyteosReadEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosReadEtc.Code -ne 0) { throw "dbyteos read etc failed: $($dbyteosReadEtc.Text)" }
-    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"5.2.1`"" "read etc allowed"
+    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"5.3.0`"" "read etc allowed"
     $dbyteosWriteEtcDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "etc/system.dby", "test") -WorkingDirectory $repoRoot
     if ($dbyteosWriteEtcDenied.Code -ne 0) { throw "dbyteos write etc deny command failed: $($dbyteosWriteEtcDenied.Text)" }
     Assert-Equal $dbyteosWriteEtcDenied.Text "error: permission denied: write etc/system.dby" "write etc denied"
@@ -2749,7 +2893,7 @@ Backup: Present
     $catSource = Get-Content (Join-Path $dbyteosRoot "bin\cat.dby") -Raw
     $touchSource = Get-Content (Join-Path $dbyteosRoot "bin\touch.dby") -Raw
     
-    Write-Host "Running DByteOS Security Enforcement Expansion (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Expansion (v5.3.0) smoke tests..."
     $enforcementInput = @"
 clean
 cat etc/system.dby
@@ -2764,7 +2908,7 @@ quit
 "@
     $dbyteosEnforcement = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "$enforcementInput`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosEnforcement.Code -ne 0) { throw "dbyteos security enforcement failed: $($dbyteosEnforcement.Text)" }
-    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"5.2.1`"" "cat etc allowed"
+    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"5.3.0`"" "cat etc allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: path escape tmp/../etc/system.dby" "cat escape denied"
     Assert-Contains $dbyteosEnforcement.Text "touch: ok" "touch tmp allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: touch etc/security_touch.txt" "touch etc denied"
@@ -2775,7 +2919,7 @@ quit
     Assert-Contains $dbyteosEnforcement.Text "DENY inspect unknown/file" "security log inspect denied"
     Assert-Contains $dbyteosEnforcement.Text "workspace sweep complete" "enforcement clean sweep"
 
-    Write-Host "Running DByteOS Security Enforcement Hardening (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Hardening (v5.3.0) smoke tests..."
     $hardeningInput = @"
 clean
 cat boot.dby
@@ -2803,14 +2947,14 @@ quit
     $dbyteosNoRcScoping = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cat etc/system.dby`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosNoRcScoping.Text "ShellError: unknown command: cat" "shell --no-rc hides cat autopath"
 
-    Write-Host "Verifying DByteOS Personal Alpha (v5.2.1) documentation..."
+    Write-Host "Verifying DByteOS Personal Alpha (v5.3.0) documentation..."
     $dbyteDocs = @("DBYTEOS_PERSONAL_ALPHA.md", "DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md", "DBYTEOS_PROFILE.md", "DBYTEOS_CONFIG.md", "DBYTEOS_SNAPSHOT.md", "DBYTEOS_PROJECTS.md", "DBYTEOS_TASKS.md")
     foreach ($doc in $dbyteDocs) {
         $p = Join-Path $repoRoot "docs/$doc"
         if (-not (Test-Path $p)) { throw "DByteOS doc missing: $doc" }
     }
     $mainReadme = Get-Content (Join-Path $repoRoot "README.md") -Raw
-    Assert-Contains $mainReadme "DByteOS Personal Alpha (v5.2.1)" "README personal alpha positioning"
+    Assert-Contains $mainReadme "DByteOS Personal Alpha (v5.3.0)" "README personal alpha positioning"
     Assert-Contains $mainReadme "docs/DBYTEOS_PERSONAL_ALPHA.md" "README personal alpha link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ALPHA.md" "README alpha link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ONBOARDING.md" "README onboarding link"
@@ -2832,10 +2976,15 @@ quit
     Assert-Contains $mainReadme "task add demo write tests" "README task add command"
     Assert-Contains $mainReadme "task done demo 1" "README task done command"
     Assert-Contains $mainReadme "task status demo" "README task status command"
+    Assert-Contains $mainReadme "task summary demo" "README task summary command"
+    Assert-Contains $mainReadme "task open demo" "README task open command"
+    Assert-Contains $mainReadme "task doctor demo" "README task doctor command"
+    Assert-Contains $mainReadme "task snapshot demo" "README task snapshot command"
+    Assert-Contains $mainReadme "task clear-done demo" "README task clear-done command"
     Assert-Contains $mainReadme "getting-started" "README onboarding getting-started command"
     Assert-Contains $mainReadme "commands" "README onboarding commands command"
     Assert-Contains $mainReadme "man-index" "README onboarding man-index command"
-    Assert-Contains (Normalize-Output $mainReadme) "boot`nwelcome`ncheck-system`ndoctor`nprefs set system.prompt dbyteos>`nsnapshot`nproject reset-demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask status demo`nproject status demo`nproject snapshot demo`nprefs reset-demo`nprofile show`nconfig show`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nman index`nman perm`nquit" "README package quickstart command sequence"
+    Assert-Contains (Normalize-Output $mainReadme) "boot`nwelcome`ncheck-system`ndoctor`nprefs set system.prompt dbyteos>`nsnapshot`nproject reset-demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask status demo`ntask summary demo`ntask open demo`ntask doctor demo`ntask snapshot demo`ntask clear-done demo`nproject status demo`nproject snapshot demo`nprefs reset-demo`nprofile show`nconfig show`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nman index`nman perm`nquit" "README package quickstart command sequence"
     Assert-Contains $mainReadme "which read" "README package quickstart which command"
     Assert-Contains $mainReadme "man perm" "README package quickstart man command"
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_PERSONAL_ALPHA.md"))) { throw "README personal alpha link target missing" }
@@ -2849,7 +2998,7 @@ quit
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_PACKAGE.md"))) { throw "README package link target missing" }
     
     $osReadme = Get-Content (Join-Path $repoRoot "examples/dbyteos/README.md") -Raw
-    Assert-Contains $osReadme "DByteOS Personal Alpha (v5.2.1)" "OS README personal alpha positioning"
+    Assert-Contains $osReadme "DByteOS Personal Alpha (v5.3.0)" "OS README personal alpha positioning"
     Assert-Contains $osReadme '| `cat` | View file contents |' "OS README command table"
     Assert-Contains $osReadme "Package Smoke" "OS README package smoke"
     Assert-Contains $osReadme ".\dbyte.exe --version" "OS README package version smoke"
@@ -2880,6 +3029,11 @@ quit
     Assert-Contains $packageGuide "task add demo write tests" "package guide task add command"
     Assert-Contains $packageGuide "task done demo 1" "package guide task done command"
     Assert-Contains $packageGuide "task status demo" "package guide task status command"
+    Assert-Contains $packageGuide "task summary demo" "package guide task summary command"
+    Assert-Contains $packageGuide "task open demo" "package guide task open command"
+    Assert-Contains $packageGuide "task doctor demo" "package guide task doctor command"
+    Assert-Contains $packageGuide "task snapshot demo" "package guide task snapshot command"
+    Assert-Contains $packageGuide "task clear-done demo" "package guide task clear-done command"
     Assert-Contains $packageGuide "project status demo" "package guide project status command"
     Assert-Contains $packageGuide "project notes demo" "package guide project notes command"
     Assert-Contains $packageGuide "project snapshot demo" "package guide project snapshot command"
@@ -2907,6 +3061,11 @@ quit
     Assert-Contains $onboardingGuide "project reset-demo" "onboarding guide project reset"
     Assert-Contains $onboardingGuide "task reset-demo" "onboarding guide task reset"
     Assert-Contains $onboardingGuide "task status demo" "onboarding guide task status"
+    Assert-Contains $onboardingGuide "task summary demo" "onboarding guide task summary"
+    Assert-Contains $onboardingGuide "task open demo" "onboarding guide task open"
+    Assert-Contains $onboardingGuide "task doctor demo" "onboarding guide task doctor"
+    Assert-Contains $onboardingGuide "task snapshot demo" "onboarding guide task snapshot"
+    Assert-Contains $onboardingGuide "task clear-done demo" "onboarding guide task clear-done"
     Assert-Contains $onboardingGuide "getting-started" "onboarding guide getting-started"
     Assert-Contains $onboardingGuide "man-index" "onboarding guide man-index"
     $profileGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PROFILE.md") -Raw
@@ -2919,22 +3078,24 @@ quit
     Assert-Contains $configGuide "DByteOS Config" "config guide title"
     Assert-Contains $configGuide "config show" "config guide show"
     Assert-Contains $configGuide "system.prompt = dbyte-shell>" "config guide prompt"
-    Assert-Contains $configGuide "read-only in v5.2.1" "config guide read-only"
+    Assert-Contains $configGuide "read-only in v5.3.0" "config guide read-only"
     Assert-Contains $configGuide "snapshot config" "config guide snapshot"
     $snapshotGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_SNAPSHOT.md") -Raw
     Assert-Contains $snapshotGuide "DByteOS Snapshot" "snapshot guide title"
     Assert-Contains $snapshotGuide "snapshot system" "snapshot guide system"
-    Assert-Contains $snapshotGuide "read-only in v5.2.1" "snapshot guide read-only"
+    Assert-Contains $snapshotGuide "read-only in v5.3.0" "snapshot guide read-only"
     $projectsGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PROJECTS.md") -Raw
     Assert-Contains $projectsGuide "DByteOS Workspace Projects" "projects guide title"
     Assert-Contains $projectsGuide "project new demo" "projects guide new demo"
     Assert-Contains $projectsGuide "home/deadbyte/projects/" "projects guide user data path"
-    Assert-Contains $projectsGuide "v5.2.1 hardening" "projects guide hardening"
+    Assert-Contains $projectsGuide "v5.3.0 hardening" "projects guide hardening"
     Assert-Contains $projectsGuide "error: project not found: missing" "projects guide missing project"
     $tasksGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_TASKS.md") -Raw
     Assert-Contains $tasksGuide "DByteOS Workspace Tasks" "tasks guide title"
     Assert-Contains $tasksGuide "task reset-demo" "tasks guide reset"
     Assert-Contains $tasksGuide "task add demo write tests" "tasks guide add"
+    Assert-Contains $tasksGuide "task summary demo" "tasks guide summary"
+    Assert-Contains $tasksGuide "task clear-done demo" "tasks guide clear-done"
     Assert-Contains $tasksGuide "home/deadbyte/projects/<name>/tasks.txt" "tasks guide storage"
     $preferencesGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PREFERENCES.md") -Raw
     Assert-Contains $preferencesGuide "DByteOS Mutable Preferences" "preferences guide title"
@@ -2958,9 +3119,9 @@ quit
     Assert-Contains $securityGuide "[Boot](DBYTEOS_BOOT.md)" "security guide relative boot link"
 
     $staleReleasePatterns = @(
-        ("v5.2." + "0"),
-        ("DByte 5.2." + "0"),
-        ("dbyte-v5.2." + "0"),
+        ("v5.2." + "1"),
+        ("DByte 5.2." + "1"),
+        ("dbyte-v5.2." + "1"),
         ("v4.7." + "0"),
         ("DByte 4.7." + "0"),
         ("dbyte-v4.7." + "0")
@@ -3001,7 +3162,7 @@ quit
 
 
     $inspectSource = Get-Content (Join-Path $dbyteosRoot "bin\inspect.dby") -Raw
-    # v5.2.1 enforcement confirmed via smoke tests above
+    # v5.3.0 enforcement confirmed via smoke tests above
     $dbyteosCatGuard = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\cat.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosCatGuard.Code -ne 0) { throw "dbyteos cat guard failed: $($dbyteosCatGuard.Text)" }
     Assert-Contains $dbyteosCatGuard.Text "pub let os_version" "cat enforced allowed"
@@ -3040,10 +3201,10 @@ quit
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 5.2.1" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 5.3.0" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 5.2.1" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 5.3.0" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "mode: alpha-userland" "dbyteos shell profile mode"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
@@ -3051,7 +3212,7 @@ quit
     Assert-Contains $dbyteosCmdShell.Text "shell chain ok" "dbyteos shell read after write"
     Assert-Contains $dbyteosCmdShell.Text "dbyteos write_demo ok" "dbyteos shell cat"
 
-    Write-Host "Running DByteOS Notes Workflow (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v5.3.0) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -3062,7 +3223,7 @@ quit
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v5.3.0) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -3089,7 +3250,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v5.3.0) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -3099,7 +3260,7 @@ quit
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
     
-    Write-Host "Running DByteOS Journal/Logger (v5.2.1) smoke tests..."
+    Write-Host "Running DByteOS Journal/Logger (v5.3.0) smoke tests..."
     $journalPath = Join-Path $dbyteosRoot "home\deadbyte\journal.txt"
     if (Test-Path $journalPath) {
         Remove-Item -Force $journalPath
@@ -3365,7 +3526,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "5.2.1"
+$EXPECTED_VERSION = "5.3.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -3453,7 +3614,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha (v5.2.1) Package Smoke Tests..."
+Write-Host "Running DByteOS Alpha (v5.3.0) Package Smoke Tests..."
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
 $smokeRoot = Join-Path $repoRoot "tmp\package_smoke"
@@ -3461,8 +3622,8 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "5.2.1"
-$zipFile = Join-Path $repoRoot "dbyte-v5.2.1-windows-x64.zip"
+& powershell -ExecutionPolicy Bypass -File .\scripts\package_release.ps1 -Version "5.3.0"
+$zipFile = Join-Path $repoRoot "dbyte-v5.3.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -3472,7 +3633,7 @@ $extractedOsRoot = Join-Path $smokeRoot "examples\dbyteos"
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 5.2.1") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 5.3.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -3634,6 +3795,31 @@ try {
     Assert-Equal (Normalize-Output $taskDoneMissingOut) "error: task not found: 99" "Package task missing id"
     $taskStatusOut = & $extractedExe run "bin\task.dby" status demo 2>&1
     Assert-NormalizedEqual $taskStatusOut $expectedDbyteosTaskStatusAfterDone "Package task status demo snapshot"
+    $taskSummaryOut = & $extractedExe run "bin\task.dby" summary demo 2>&1
+    Assert-NormalizedEqual $taskSummaryOut $expectedDbyteosTaskSummaryAfterDone "Package task summary demo snapshot"
+    $taskOpenOut = & $extractedExe run "bin\task.dby" open demo 2>&1
+    Assert-NormalizedEqual $taskOpenOut $expectedDbyteosTaskOpenAfterDone "Package task open demo snapshot"
+    $taskDoctorOut = & $extractedExe run "bin\task.dby" doctor demo 2>&1
+    Assert-NormalizedEqual $taskDoctorOut $expectedDbyteosTaskDoctorHealthy "Package task doctor demo snapshot"
+    $taskSnapshotOut = & $extractedExe run "bin\task.dby" snapshot demo 2>&1
+    Assert-NormalizedEqual $taskSnapshotOut $expectedDbyteosTaskSnapshotAfterDone "Package task snapshot demo snapshot"
+    Set-Content -Path (Join-Path $extractedOsRoot "home\deadbyte\projects\demo\tasks.txt") -Value "0|inspect workspace`n2|bad marker`n1|done task`n" -NoNewline
+    $taskDoctorMalformedOut = & $extractedExe run "bin\task.dby" doctor demo 2>&1
+    Assert-NormalizedEqual $taskDoctorMalformedOut $expectedDbyteosTaskDoctorMalformed "Package task doctor malformed snapshot"
+    $taskResetAfterMalformedOut = & $extractedExe run "bin\task.dby" reset-demo 2>&1
+    Assert-Equal (Normalize-Output $taskResetAfterMalformedOut) "task demo reset." "Package task reset after malformed"
+    $taskAddAfterMalformedOut = & $extractedExe run "bin\task.dby" add demo write tests 2>&1
+    Assert-Equal (Normalize-Output $taskAddAfterMalformedOut) "task added: demo #3" "Package task add after malformed"
+    $taskDoneAfterMalformedOut = & $extractedExe run "bin\task.dby" done demo 1 2>&1
+    Assert-Equal (Normalize-Output $taskDoneAfterMalformedOut) "task done: demo #1" "Package task done after malformed"
+    $taskClearDoneOut = & $extractedExe run "bin\task.dby" clear-done demo 2>&1
+    Assert-NormalizedEqual $taskClearDoneOut $expectedDbyteosTaskClearDone "Package task clear-done demo snapshot"
+    $taskClearDoneAgainOut = & $extractedExe run "bin\task.dby" clear-done demo 2>&1
+    Assert-NormalizedEqual $taskClearDoneAgainOut "task clear-done: demo`nremoved: 0`nremaining: 2" "Package task clear-done idempotent"
+    $taskListAfterClearDoneOut = & $extractedExe run "bin\task.dby" list demo 2>&1
+    Assert-NormalizedEqual $taskListAfterClearDoneOut $expectedDbyteosTaskListAfterClearDone "Package task list after clear-done"
+    $taskSnapshotAfterClearDoneOut = & $extractedExe run "bin\task.dby" snapshot demo 2>&1
+    Assert-NormalizedEqual $taskSnapshotAfterClearDoneOut $expectedDbyteosTaskSnapshotAfterClearDone "Package task snapshot after clear-done"
     $taskListMissingProjectOut = & $extractedExe run "bin\task.dby" list missing 2>&1
     Assert-Equal (Normalize-Output $taskListMissingProjectOut) "error: project not found: missing" "Package task list missing project"
     $taskMissingProjectOut = & $extractedExe run "bin\task.dby" status missing 2>&1
@@ -3664,7 +3850,7 @@ $tmpFiles = Get-ChildItem -Path $extractedTmp -Exclude ".gitignore", ".gitkeep"
 if ($tmpFiles.Count -ne 0) { throw "Package contains junk in tmp: $($tmpFiles.Name -join ', ')" }
 
 Write-Host "  Verifying shell RC integration..."
-$shellInput = "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`nconfig show`nconfig keys`nconfig get system.prompt`nsnapshot`nsnapshot profile`nsnapshot config`nsnapshot security`nsnapshot logs`nproject reset-demo`nproject list`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask done demo 1`ntask status demo`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nwhich doctor`nwhich project`nwhich task`nman index`nman profile`nman config`nman snapshot`nman project`nman task`nman perm`nquit`n"
+$shellInput = "welcome`nprofile show`nprofile whoami`nprofile home`nprofile theme`nprofile prompt`nconfig show`nconfig keys`nconfig get system.prompt`nsnapshot`nsnapshot profile`nsnapshot config`nsnapshot security`nsnapshot logs`nproject reset-demo`nproject list`nproject status demo`nproject notes demo`nproject snapshot demo`nproject doctor demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask done demo 1`ntask status demo`ntask summary demo`ntask open demo`ntask doctor demo`ntask snapshot demo`ntask clear-done demo`ngetting-started`ncommands`nman-index`nboot`nhelp`nstatus`nsysinfo`nwhich read`nwhich doctor`nwhich project`nwhich task`nman index`nman profile`nman config`nman snapshot`nman project`nman task`nman perm`nquit`n"
 $shellOut = $shellInput | & $extractedExe shell --rc (Join-Path $extractedOsRoot ".dbyterc") 2>&1
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedPackageWelcome) "Package shell welcome"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedPackageProfile) "Package shell profile show"
@@ -3688,13 +3874,18 @@ Assert-Contains (Normalize-Output $shellOut) "task added: demo #3" "Package shel
 Assert-Contains (Normalize-Output $shellOut) "task done: demo #1" "Package shell task done"
 Assert-Contains (Normalize-Output $shellOut) "task already done: demo #1" "Package shell task already done"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosTaskStatusAfterDone) "Package shell task status"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosTaskSummaryAfterDone) "Package shell task summary"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosTaskOpenAfterDone) "Package shell task open"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosTaskDoctorHealthy) "Package shell task doctor"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosTaskSnapshotAfterDone) "Package shell task snapshot"
+Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosTaskClearDone) "Package shell task clear-done"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosGettingStarted) "Package shell getting-started"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosCommands) "Package shell commands"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosManIndex) "Package shell man-index"
 Assert-Contains (Normalize-Output $shellOut) "D B Y T E O S   U S E R L A N D" "Package shell boot"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosHelp) "Package shell help"
-Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  5.2.1" "Package shell status version"
-Assert-Contains (Normalize-Output $shellOut) "version: DByte 5.2.1" "Package shell sysinfo version"
+Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  5.3.0" "Package shell status version"
+Assert-Contains (Normalize-Output $shellOut) "version: DByte 5.3.0" "Package shell sysinfo version"
 Assert-Contains (Normalize-Output $shellOut) "read: dbyteos ->" "Package shell which read"
 Assert-Contains (Normalize-Output $shellOut) "doctor: dbyteos ->" "Package shell which doctor"
 Assert-Contains (Normalize-Output $shellOut) "project: dbyteos ->" "Package shell which project"
@@ -3711,11 +3902,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 5.2.1`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 5.3.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.2.1`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.2.1`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.2.1`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 5.3.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 5.3.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 5.3.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -3763,7 +3954,7 @@ Assert-Contains $packagePostMutationHealth.Text "prompt:  dbyteos> (overridden)"
 Assert-Contains $packagePostMutationHealth.Text "system.prompt = dbyteos> (overridden)" "Package snapshot after prompt config override"
 Assert-Contains $packagePostMutationHealth.Text "dbyteos> preferences reset to default seed state." "Package post-mutation prefs reset"
 
-$packageJourneyInput = "boot`nwelcome`ncheck-system`ndoctor`nprefs set system.prompt dbyteos>`nsnapshot`nproject reset-demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask status demo`nproject status demo`nproject snapshot demo`nprefs reset-demo`nversion`nquit`n"
+$packageJourneyInput = "boot`nwelcome`ncheck-system`ndoctor`nprefs set system.prompt dbyteos>`nsnapshot`nproject reset-demo`ntask reset-demo`ntask list demo`ntask add demo write tests`ntask done demo 1`ntask status demo`ntask summary demo`ntask open demo`ntask doctor demo`ntask snapshot demo`ntask clear-done demo`nproject status demo`nproject snapshot demo`nprefs reset-demo`nversion`nquit`n"
 $packageJourney = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText $packageJourneyInput -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packageJourney.Code -ne 0) { throw "Package Personal Alpha journey failed: $($packageJourney.Text)" }
 $expectedPackageJourney = @"
@@ -3778,7 +3969,7 @@ dbyte-shell> ==================================================
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  5.2.1  ( Userland Prototype )
+  Version:    DByte  5.3.0  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -3854,7 +4045,7 @@ result: healthy
 dbyte-shell> preference 'system.prompt' updated successfully.
 dbyteos> --- DByteOS System Snapshot ---
 System:
-  version: DByte 5.2.1
+  version: DByte 5.3.0
   codename: Userland Prototype
   host:    DByte-Alpha
   kernel:  Simulated (Host)
@@ -3902,6 +4093,30 @@ dbyteos> Task Status: demo
 open: 2
 done: 1
 total: 3
+dbyteos> Task Summary: demo
+open: 2
+done: 1
+total: 3
+dbyteos> DByteOS open tasks: demo
+[ ] 2: write project note
+[ ] 3: write tests
+dbyteos> Task Doctor: demo
+project: ok
+tasks_file: ok
+rows: ok
+result: healthy
+dbyteos> --- DByteOS Task Snapshot ---
+project: demo
+open: 2
+done: 1
+total: 3
+tasks:
+[x] 1: inspect workspace
+[ ] 2: write project note
+[ ] 3: write tests
+dbyteos> task clear-done: demo
+removed: 1
+remaining: 2
 dbyteos> --- DByteOS Project Status ---
 name: demo
 project: present
@@ -3915,7 +4130,7 @@ status: active
 files: project.txt, notes.txt, snapshot.txt
 
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 5.2.1
+dbyte-shell> DByte 5.3.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Alpha journey exact snapshot"

@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Alpha (v5.2.1)
+## DByteOS Personal Alpha (v5.3.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -77,6 +77,11 @@ dbyteos> task list demo
 dbyteos> task add demo write tests
 dbyteos> task done demo 1
 dbyteos> task status demo
+dbyteos> task summary demo
+dbyteos> task open demo
+dbyteos> task doctor demo
+dbyteos> task snapshot demo
+dbyteos> task clear-done demo
 dbyteos> project status demo
 dbyteos> project snapshot demo
 dbyteos> prefs reset-demo
@@ -113,6 +118,11 @@ task list demo
 task add demo write tests
 task done demo 1
 task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
 project status demo
 project snapshot demo
 prefs reset-demo
