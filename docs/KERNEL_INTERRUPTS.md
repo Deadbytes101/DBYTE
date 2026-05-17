@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.3.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.4.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -112,18 +112,18 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.3.1`)
+## 6. Current Milestone Status (`v7.4.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.3.1`, and CPU exception telemetry has been successfully hardened:
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.4.0`, and CPU exception telemetry and handling have been successfully expanded:
+- **Divide-by-Zero Exception (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, which wraps `divide_by_zero_handler_rust`. Preserves register state (`pushad`/`popad`) and returns cleanly via `iretd`.
+- **`div0` Command**: Added a controlled trigger command `div0` using the `int 0` software instruction, allowing safe trap-based return behavior to prevent EIP infinite loops.
+- **Telemetry Synchronized**: Telemetry correctly tracks and increments on divide-by-zero exceptions, setting `LAST_EXCEPTION_VECTOR` to `0` and `LAST_EXCEPTION_NAME` to `"divide-by-zero"`.
 - **Telemetry State Tracking**: Tracks exception counts (`EXCEPTION_COUNT`), last vector (`LAST_EXCEPTION_VECTOR`), and last exception name (`LAST_EXCEPTION_NAME`) under zero-allocation constraints.
-- **Diagnostics Telemetry Hardened**: Verified correct exact wording formats for `exception` and dynamic sync on `system` commands.
-- **Idempotency Checked**: Calling `exception-reset` multiple times remains perfectly safe, leaving stats at zero/none.
-- **Explicit Warnings Extended**: Checked and reinforced that divide-by-zero (vector 0) and page-fault (vector 14) exceptions remain dangerous and unhandled, protected only by manual QEMU shell diagnostics boundary control in `v7.3.1`.
 - **`exception` Command**: Displays current telemetry counts and last exception parameters.
 - **`exception-reset` Command**: Resets all exception statistics cleanly back to `0 / none / none`.
-- **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically.
+- **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically, reflecting active handlers: `breakpoint, divide-by-zero`.
 - **Breakpoint Exception (Vector 3)**: Fully active. An assembly wrapper `breakpoint_handler_asm` preserves register state (`pushad`/`popad`) and handles CPU return via `iretd` cleanly, updating telemetry on each call.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
-- **Status Reporting**: The `system` command explicitly lists: `idt: loaded`, `exception handlers: breakpoint`, and `interrupts: disabled`.
+- **Status Reporting**: The `system` command explicitly lists: `idt: loaded`, `exception handlers: breakpoint, divide-by-zero`, and `interrupts: disabled`.

@@ -1,4 +1,4 @@
-# DByteOS Personal Workspace Beta Foundation (v7.3.1)
+# DByteOS Personal Workspace Beta Foundation (v7.4.0)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
