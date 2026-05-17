@@ -1,6 +1,6 @@
-# DByteOS Kernel Exception Subsystem Foundation (v8.0.1)
+# DByteOS Kernel Exception Subsystem Foundation (v8.1.0)
 
-DByteOS Kernel Lab `v8.0.1` hardens the exception subsystem foundation. This is a hardening-only release: it documents and verifies the existing exception stack without adding new exception vectors, changing Page Fault smoke mechanics, enabling STI, touching PIC/IRQ, or replacing keyboard polling.
+DByteOS Kernel Lab `v8.1.0` preserves the exception subsystem foundation while adding PIC/IRQ direction docs separately in `KERNEL_IRQ.md`. This release does not add new exception vectors, change Page Fault smoke mechanics, enable STI, remap PIC, bind IRQ vectors, or replace keyboard polling.
 
 ## Active Vectors
 

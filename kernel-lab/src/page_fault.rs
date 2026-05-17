@@ -33,7 +33,7 @@ impl PageFaultErrorCode {
 
 /// Planned same-ring Page Fault frame documentation.
 ///
-/// This records the same-ring frame shape used by the v8.0.1 Page Fault smoke
+/// This records the same-ring frame shape used by the v8.1.0 Page Fault smoke
 /// handler after vector 14 is explicitly enabled.
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
