@@ -1,0 +1,8 @@
+[build]
+target = "i686-unknown-linux-gnu"
+rustflags = [
+    "-C", "link-arg=-Tboot/linker.ld",
+    "-C", "link-arg=-no-pie",
+    "-C", "linker-flavor=ld.lld",
+    "-C", "linker=rust-lld",
+]
