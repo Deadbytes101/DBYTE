@@ -39,6 +39,11 @@ impl IdtEntry {
             offset_high: 0,
         }
     }
+
+    /// Create a dummy / non-present missing entry.
+    pub const fn missing() -> Self {
+        Self::new()
+    }
 }
 
 /// The IDT Pointer structure loaded into the processor register via the `lidt` assembly instruction.
@@ -71,4 +76,20 @@ impl InterruptDescriptorTable {
             entries: [IdtEntry::new(); 256],
         }
     }
+
+    /// Load the Interrupt Descriptor Table into the CPU's IDTR register using standard `lidt` assembly.
+    pub unsafe fn load(&self) {
+        let ptr = IdtPtr {
+            limit: (core::mem::size_of::<Self>() - 1) as u16,
+            base: self as *const _ as u32,
+        };
+        core::arch::asm!(
+            "lidt [{}]",
+            in(reg) &ptr,
+            options(readonly, nostack, preserves_flags)
+        );
+    }
 }
+
+/// Global static instance representing the active CPU Interrupt Descriptor Table.
+pub static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
