@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v7.9.1)
+# DByteOS Kernel Lab Guide (v8.0.0)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**
@@ -13,6 +13,13 @@ The laboratory is completely isolated inside the `kernel-lab/` directory:
 - `kernel-lab/src/main.rs`: Kernel entry point using Rust `global_asm!`.
 - `kernel-lab/src/vga.rs`: Simple frame buffer output driver mapped to `0xB8000`.
 - `kernel-lab/scripts/`: PowerShell runners for compiling and launching under QEMU.
+- `docs/KERNEL_EXCEPTIONS.md`: Kernel Exception Subsystem Foundation overview for active vectors `0 / 3 / 14`, telemetry, recovery UX, and status UX.
+
+## Exception Subsystem Foundation
+
+Version `8.0.0` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
+
+This milestone does not add a new exception vector, does not change `pf-smoke`, does not enable STI, does not touch PIC/IRQ, and keeps keyboard input polling-based.
 
 ## Prerequisites
 To boot the prototype, you need:
