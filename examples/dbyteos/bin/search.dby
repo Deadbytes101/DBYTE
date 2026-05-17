@@ -509,6 +509,27 @@ fn print_recent_record(print_idx_pr: int, rec_line_pr: str):
         if f_type_pr == "proj_note":
             print(prefix_pr + "project " + f_proj_pr + " note: " + f_content_pr + suffix_pr)
 
+fn is_index_healthy() -> int:
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        return 0
+    let index_content: str = fs.read_text(index_cache_path)
+    let doc_line: str = ""
+    let is_healthy: int = 1
+    for c in index_content:
+        if c == "\n":
+            if doc_line != "":
+                if is_record_valid(doc_line) == 0:
+                    is_healthy = 0
+            doc_line = ""
+        else:
+            if c != "\r":
+                doc_line = doc_line + c
+    if doc_line != "":
+        if is_record_valid(doc_line) == 0:
+            is_healthy = 0
+    return is_healthy
+
 fn show_recent():
     let index_cache_path_rc: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
     if fs.exists(index_cache_path_rc) == 0:
@@ -622,7 +643,7 @@ fn show_summary():
 
 fn search_projects_ux(query_str_ux: str):
     let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-    if fs.exists(index_cache_path_ux) == 1:
+    if is_index_healthy() == 1:
         print("DByteOS projects search (cached): " + query_str_ux)
         let index_content_ux: str = fs.read_text(index_cache_path_ux)
         let rec_line_ux: str = ""
@@ -690,7 +711,7 @@ fn search_projects_ux(query_str_ux: str):
 
 fn search_tasks_ux(query_str_ux: str):
     let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-    if fs.exists(index_cache_path_ux) == 1:
+    if is_index_healthy() == 1:
         print("DByteOS tasks search (cached): " + query_str_ux)
         let index_content_ux: str = fs.read_text(index_cache_path_ux)
         let rec_line_ux: str = ""
@@ -753,7 +774,7 @@ fn search_tasks_ux(query_str_ux: str):
 
 fn search_notes_ux(query_str_ux: str):
     let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-    if fs.exists(index_cache_path_ux) == 1:
+    if is_index_healthy() == 1:
         print("DByteOS notes search (cached): " + query_str_ux)
         let index_content_ux: str = fs.read_text(index_cache_path_ux)
         let rec_line_ux: str = ""
@@ -815,7 +836,7 @@ fn search_notes_ux(query_str_ux: str):
 
 fn search_journal_ux(query_str_ux: str):
     let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-    if fs.exists(index_cache_path_ux) == 1:
+    if is_index_healthy() == 1:
         print("DByteOS journal search (cached): " + query_str_ux)
         let index_content_ux: str = fs.read_text(index_cache_path_ux)
         let rec_line_ux: str = ""
