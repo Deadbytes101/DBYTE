@@ -11,10 +11,14 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
-project new demo
+project reset-demo
+task reset-demo
+task list demo
+task add demo write tests
+task done demo 1
+task status demo
 project status demo
 project snapshot demo
-project reset-demo
 prefs reset-demo
 profile show
 config show
@@ -33,9 +37,9 @@ status
 - `doctor` prints the full subsystem health report.
 - `prefs set system.prompt dbyteos>` updates the next DByteOS shell prompt.
 - `snapshot` prints a read-only system summary for debugging.
-- `project new demo` creates a deterministic workspace project.
+- `project reset-demo` restores a deterministic workspace project.
+- `task reset-demo`, `task list demo`, `task add demo write tests`, `task done demo 1`, and `task status demo` exercise project tasks.
 - `project status demo` and `project snapshot demo` inspect project state.
-- `project reset-demo` restores the demo project workspace.
 - `prefs reset-demo` restores deterministic demo preferences.
 - `profile show` prints the deterministic user profile.
 - `config show` prints read-only system preferences.

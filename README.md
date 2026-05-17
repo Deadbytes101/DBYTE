@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Alpha (v5.1.1)
+## DByteOS Personal Alpha (v5.2.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -56,6 +56,7 @@ loads the DByteOS prompt from `system.prompt`.
 - [Config Guide](docs/DBYTEOS_CONFIG.md)
 - [Snapshot Guide](docs/DBYTEOS_SNAPSHOT.md)
 - [Projects Guide](docs/DBYTEOS_PROJECTS.md)
+- [Tasks Guide](docs/DBYTEOS_TASKS.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
@@ -70,10 +71,14 @@ dbyte-shell> profile show
 dbyte-shell> config show
 dbyte-shell> prefs set system.prompt dbyteos>
 dbyte-shell> snapshot
-dbyteos> project new demo
+dbyteos> project reset-demo
+dbyteos> task reset-demo
+dbyteos> task list demo
+dbyteos> task add demo write tests
+dbyteos> task done demo 1
+dbyteos> task status demo
 dbyteos> project status demo
 dbyteos> project snapshot demo
-dbyteos> project reset-demo
 dbyteos> prefs reset-demo
 dbyte-shell> getting-started
 dbyte-shell> commands
@@ -102,10 +107,14 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
-project new demo
+project reset-demo
+task reset-demo
+task list demo
+task add demo write tests
+task done demo 1
+task status demo
 project status demo
 project snapshot demo
-project reset-demo
 prefs reset-demo
 profile show
 config show

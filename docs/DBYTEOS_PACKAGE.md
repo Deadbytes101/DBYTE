@@ -32,12 +32,16 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
-project new demo
+project reset-demo
+task reset-demo
+task list demo
+task add demo write tests
+task done demo 1
+task status demo
 project status demo
 project notes demo
 project snapshot demo
 project doctor demo
-project reset-demo
 prefs reset-demo
 profile show
 config show
@@ -64,9 +68,9 @@ quit
 - `prefs set system.prompt dbyteos>` changes the next DByteOS shell prompt.
 - `prefs reset-demo` restores the default DByteOS shell prompt.
 - `snapshot` prints the read-only system summary.
-- `project new demo` creates a deterministic workspace project.
+- `project reset-demo` restores a deterministic workspace project.
+- `task reset-demo`, `task list demo`, `task add demo write tests`, `task done demo 1`, and `task status demo` verify project task state.
 - `project status demo`, `project notes demo`, `project snapshot demo`, and `project doctor demo` verify project state.
-- `project reset-demo` restores deterministic project demo data.
 - `profile show` prints the deterministic profile summary.
 - `config show` prints read-only preferences.
 - `getting-started` prints the first-run checklist.
@@ -84,4 +88,4 @@ quit
 - Temporary session artifacts live under `examples/dbyteos/tmp/`.
 - `clean` removes session logs such as `tmp/security.log`.
 - User data such as `home/deadbyte/journal.txt` and `home/deadbyte/projects/` is preserved by clean.
-- v5.1.1 hardening keeps workspace project names path-like safe and reports missing projects as `error: project not found: missing`.
+- v5.2.0 hardening keeps workspace project names path-like safe and reports missing projects as `error: project not found: missing`.
