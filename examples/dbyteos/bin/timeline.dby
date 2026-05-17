@@ -4,6 +4,31 @@ import std.fs as fs
 
 let args: list[str] = env.args()
 
+fn strip_cr(s_cr: str) -> str:
+    let out_cr: str = ""
+    for c_cr in s_cr:
+        if c_cr != "\r":
+            out_cr = out_cr + c_cr
+    return out_cr
+
+fn valid_search_text(text_val: str) -> int:
+    if text_val == "":
+        return 0
+    for c_val in text_val:
+        if c_val == ".":
+            return 0
+        if c_val == "/":
+            return 0
+        if c_val == "\\":
+            return 0
+        if c_val == ":":
+            return 0
+        if c_val == "*":
+            return 0
+        if c_val == "?":
+            return 0
+    return 1
+
 fn substring(s_sub: str, start_sub: int, length_sub: int) -> str:
     let out_sub: str = ""
     let idx_sub: int = 0
@@ -159,49 +184,75 @@ fn compile_cached() -> str:
         for c_rb in content_rb:
             if c_rb == "\n":
                 if rb_line != "":
-                    accum = accum + "project|" + rb_line + "|1||registered\n"
+                    accum = accum + "project|" + strip_cr(rb_line) + "|1||registered\n"
                 rb_line = ""
             else:
-                if c_rb != "\r":
-                    rb_line = rb_line + c_rb
+                rb_line = rb_line + c_rb
         if rb_line != "":
-            accum = accum + "project|" + rb_line + "|1||registered\n"
+            accum = accum + "project|" + strip_cr(rb_line) + "|1||registered\n"
             
     # 2. Records from search_index.txt
     let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-    let index_content: str = fs.read_text(index_cache_path)
-    let rec_line: str = ""
-    for c in index_content:
-        if c == "\n":
-            if rec_line != "":
-                let f_type: str = get_field(rec_line, 0)
-                let f_proj: str = get_field(rec_line, 1)
-                let f_line_no: str = get_field(rec_line, 3)
-                let f_content: str = get_field(rec_line, 4)
-                
-                if f_type == "notes":
-                    accum = accum + "global_note||" + f_line_no + "||" + f_content + "\n"
-                if f_type == "journal":
-                    accum = accum + "global_journal||" + f_line_no + "||" + f_content + "\n"
-                if f_type == "proj_note":
-                    accum = accum + "project_note|" + f_proj + "|" + f_line_no + "||" + f_content + "\n"
-                if f_type == "proj_task":
-                    let t_status: str = ""
-                    let t_text: str = ""
-                    let t_sep: int = 0
-                    for tc in f_content:
-                        if t_sep == 0:
-                            if tc == "|":
-                                t_sep = 1
+    if fs.exists(index_cache_path) == 1:
+        let index_content: str = fs.read_text(index_cache_path)
+        let rec_line: str = ""
+        for c in index_content:
+            if c == "\n":
+                if rec_line != "":
+                    let clean_rec: str = strip_cr(rec_line)
+                    let f_type: str = get_field(clean_rec, 0)
+                    let f_proj: str = get_field(clean_rec, 1)
+                    let f_line_no: str = get_field(clean_rec, 3)
+                    let f_content: str = get_field(clean_rec, 4)
+                    
+                    if f_type == "notes":
+                        accum = accum + "global_note||" + f_line_no + "||" + f_content + "\n"
+                    if f_type == "journal":
+                        accum = accum + "global_journal||" + f_line_no + "||" + f_content + "\n"
+                    if f_type == "proj_note":
+                        accum = accum + "project_note|" + f_proj + "|" + f_line_no + "||" + f_content + "\n"
+                    if f_type == "proj_task":
+                        let t_status: str = ""
+                        let t_text: str = ""
+                        let t_sep: int = 0
+                        for tc in f_content:
+                            if t_sep == 0:
+                                if tc == "|":
+                                    t_sep = 1
+                                else:
+                                    t_status = t_status + tc
                             else:
-                                t_status = t_status + tc
-                        else:
-                            t_text = t_text + tc
-                    accum = accum + "project_task|" + f_proj + "|" + f_line_no + "|" + t_status + "|" + t_text + "\n"
-            rec_line = ""
-        else:
-            if c != "\r":
+                                t_text = t_text + tc
+                        accum = accum + "project_task|" + f_proj + "|" + f_line_no + "|" + t_status + "|" + t_text + "\n"
+                rec_line = ""
+            else:
                 rec_line = rec_line + c
+        if rec_line != "":
+            let clean_rec: str = strip_cr(rec_line)
+            let f_type: str = get_field(clean_rec, 0)
+            let f_proj: str = get_field(clean_rec, 1)
+            let f_line_no: str = get_field(clean_rec, 3)
+            let f_content: str = get_field(clean_rec, 4)
+            
+            if f_type == "notes":
+                accum = accum + "global_note||" + f_line_no + "||" + f_content + "\n"
+            if f_type == "journal":
+                accum = accum + "global_journal||" + f_line_no + "||" + f_content + "\n"
+            if f_type == "proj_note":
+                accum = accum + "project_note|" + f_proj + "|" + f_line_no + "||" + f_content + "\n"
+            if f_type == "proj_task":
+                let t_status: str = ""
+                let t_text: str = ""
+                let t_sep: int = 0
+                for tc in f_content:
+                    if t_sep == 0:
+                        if tc == "|":
+                            t_sep = 1
+                        else:
+                            t_status = t_status + tc
+                    else:
+                        t_text = t_text + tc
+                accum = accum + "project_task|" + f_proj + "|" + f_line_no + "|" + t_status + "|" + t_text + "\n"
     return accum
 
 fn compile_scan() -> str:
@@ -216,14 +267,13 @@ fn compile_scan() -> str:
         for c in content:
             if c == "\n":
                 if line != "":
-                    accum = accum + "global_note||" + int_to_str(line_no) + "||" + line + "\n"
+                    accum = accum + "global_note||" + int_to_str(line_no) + "||" + strip_cr(line) + "\n"
                 line = ""
                 line_no = line_no + 1
             else:
-                if c != "\r":
-                    line = line + c
+                line = line + c
         if line != "":
-            accum = accum + "global_note||" + int_to_str(line_no) + "||" + line + "\n"
+            accum = accum + "global_note||" + int_to_str(line_no) + "||" + strip_cr(line) + "\n"
             
     # 2. Global Journal
     let journal_path: str = profile.resolve_user_data_path("home/deadbyte/journal.txt")
@@ -234,14 +284,13 @@ fn compile_scan() -> str:
         for c in content:
             if c == "\n":
                 if line != "":
-                    accum = accum + "global_journal||" + int_to_str(line_no) + "||" + line + "\n"
+                    accum = accum + "global_journal||" + int_to_str(line_no) + "||" + strip_cr(line) + "\n"
                 line = ""
                 line_no = line_no + 1
             else:
-                if c != "\r":
-                    line = line + c
+                line = line + c
         if line != "":
-            accum = accum + "global_journal||" + int_to_str(line_no) + "||" + line + "\n"
+            accum = accum + "global_journal||" + int_to_str(line_no) + "||" + strip_cr(line) + "\n"
             
     # 3. Projects list
     let index_rel_rb: str = "home/deadbyte/projects/index.txt"
@@ -252,10 +301,11 @@ fn compile_scan() -> str:
         for c_rb in content_rb:
             if c_rb == "\n":
                 if rb_line != "":
-                    accum = accum + "project|" + rb_line + "|1||registered\n"
+                    let clean_proj: str = strip_cr(rb_line)
+                    accum = accum + "project|" + clean_proj + "|1||registered\n"
                     
                     # Load project notes
-                    let p_notes_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + rb_line + "/notes.txt")
+                    let p_notes_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_proj + "/notes.txt")
                     if fs.exists(p_notes_path) == 1:
                         let n_content: str = fs.read_text(p_notes_path)
                         let n_line: str = ""
@@ -263,17 +313,16 @@ fn compile_scan() -> str:
                         for nc in n_content:
                             if nc == "\n":
                                 if n_line != "":
-                                    accum = accum + "project_note|" + rb_line + "|" + int_to_str(n_line_no) + "||" + n_line + "\n"
+                                    accum = accum + "project_note|" + clean_proj + "|" + int_to_str(n_line_no) + "||" + strip_cr(n_line) + "\n"
                                 n_line = ""
                                 n_line_no = n_line_no + 1
                             else:
-                                if nc != "\r":
-                                    n_line = n_line + nc
+                                n_line = n_line + nc
                         if n_line != "":
-                            accum = accum + "project_note|" + rb_line + "|" + int_to_str(n_line_no) + "||" + n_line + "\n"
+                            accum = accum + "project_note|" + clean_proj + "|" + int_to_str(n_line_no) + "||" + strip_cr(n_line) + "\n"
                     
                     # Load project tasks
-                    let p_tasks_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + rb_line + "/tasks.txt")
+                    let p_tasks_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_proj + "/tasks.txt")
                     if fs.exists(p_tasks_path) == 1:
                         let t_content: str = fs.read_text(p_tasks_path)
                         let t_line: str = ""
@@ -281,10 +330,11 @@ fn compile_scan() -> str:
                         for tc in t_content:
                             if tc == "\n":
                                 if t_line != "":
+                                    let clean_t: str = strip_cr(t_line)
                                     let t_status: str = ""
                                     let t_text: str = ""
                                     let t_sep: int = 0
-                                    for t_char in t_line:
+                                    for t_char in clean_t:
                                         if t_sep == 0:
                                             if t_char == "|":
                                                 t_sep = 1
@@ -292,17 +342,17 @@ fn compile_scan() -> str:
                                                 t_status = t_status + t_char
                                         else:
                                             t_text = t_text + t_char
-                                    accum = accum + "project_task|" + rb_line + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
+                                    accum = accum + "project_task|" + clean_proj + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
                                 t_line = ""
                                 t_line_no = t_line_no + 1
                             else:
-                                if tc != "\r":
-                                    t_line = t_line + tc
+                                t_line = t_line + tc
                         if t_line != "":
+                            let clean_t: str = strip_cr(t_line)
                             let t_status: str = ""
                             let t_text: str = ""
                             let t_sep: int = 0
-                            for t_char in t_line:
+                            for t_char in clean_t:
                                 if t_sep == 0:
                                     if t_char == "|":
                                         t_sep = 1
@@ -310,16 +360,16 @@ fn compile_scan() -> str:
                                         t_status = t_status + t_char
                                 else:
                                     t_text = t_text + t_char
-                            accum = accum + "project_task|" + rb_line + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
+                            accum = accum + "project_task|" + clean_proj + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
                 rb_line = ""
             else:
-                if c_rb != "\r":
-                    rb_line = rb_line + c_rb
+                rb_line = rb_line + c_rb
         if rb_line != "":
-            accum = accum + "project|" + rb_line + "|1||registered\n"
+            let clean_proj: str = strip_cr(rb_line)
+            accum = accum + "project|" + clean_proj + "|1||registered\n"
             
             # Load project notes for last project
-            let p_notes_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + rb_line + "/notes.txt")
+            let p_notes_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_proj + "/notes.txt")
             if fs.exists(p_notes_path) == 1:
                 let n_content: str = fs.read_text(p_notes_path)
                 let n_line: str = ""
@@ -327,17 +377,16 @@ fn compile_scan() -> str:
                 for nc in n_content:
                     if nc == "\n":
                         if n_line != "":
-                            accum = accum + "project_note|" + rb_line + "|" + int_to_str(n_line_no) + "||" + n_line + "\n"
+                            accum = accum + "project_note|" + clean_proj + "|" + int_to_str(n_line_no) + "||" + strip_cr(n_line) + "\n"
                         n_line = ""
                         n_line_no = n_line_no + 1
                     else:
-                        if nc != "\r":
-                            n_line = n_line + nc
+                        n_line = n_line + nc
                 if n_line != "":
-                    accum = accum + "project_note|" + rb_line + "|" + int_to_str(n_line_no) + "||" + n_line + "\n"
+                    accum = accum + "project_note|" + clean_proj + "|" + int_to_str(n_line_no) + "||" + strip_cr(n_line) + "\n"
             
             # Load project tasks for last project
-            let p_tasks_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + rb_line + "/tasks.txt")
+            let p_tasks_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_proj + "/tasks.txt")
             if fs.exists(p_tasks_path) == 1:
                 let t_content: str = fs.read_text(p_tasks_path)
                 let t_line: str = ""
@@ -345,10 +394,11 @@ fn compile_scan() -> str:
                 for tc in t_content:
                     if tc == "\n":
                         if t_line != "":
+                            let clean_t: str = strip_cr(t_line)
                             let t_status: str = ""
                             let t_text: str = ""
                             let t_sep: int = 0
-                            for t_char in t_line:
+                            for t_char in clean_t:
                                 if t_sep == 0:
                                     if t_char == "|":
                                         t_sep = 1
@@ -356,17 +406,17 @@ fn compile_scan() -> str:
                                         t_status = t_status + t_char
                                 else:
                                     t_text = t_text + t_char
-                            accum = accum + "project_task|" + rb_line + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
+                            accum = accum + "project_task|" + clean_proj + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
                         t_line = ""
                         t_line_no = t_line_no + 1
                     else:
-                        if tc != "\r":
-                            t_line = t_line + tc
+                        t_line = t_line + tc
                 if t_line != "":
+                    let clean_t: str = strip_cr(t_line)
                     let t_status: str = ""
                     let t_text: str = ""
                     let t_sep: int = 0
-                    for t_char in t_line:
+                    for t_char in clean_t:
                         if t_sep == 0:
                             if t_char == "|":
                                 t_sep = 1
@@ -374,25 +424,24 @@ fn compile_scan() -> str:
                                 t_status = t_status + t_char
                         else:
                             t_text = t_text + t_char
-                    accum = accum + "project_task|" + rb_line + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
+                    accum = accum + "project_task|" + clean_proj + "|" + int_to_str(t_line_no) + "|" + t_status + "|" + t_text + "\n"
     return accum
 
 fn reset_demo():
-    let notes_path: str = profile.resolve_user_data_path("home/deadbyte/notes.txt")
-    let journal_path: str = profile.resolve_user_data_path("home/deadbyte/journal.txt")
-    fs.write_text(notes_path, "dbyteos notes seed\n")
-    fs.write_text(journal_path, "[JOURNAL] dbyteos journal seed\n")
+    let projects_path: str = profile.resolve_user_data_path("home/deadbyte/projects")
+    if fs.exists(projects_path) == 0:
+        fs.mkdir(projects_path)
+    let demo_path: str = profile.resolve_user_data_path("home/deadbyte/projects/demo")
+    if fs.exists(demo_path) == 0:
+        fs.mkdir(demo_path)
     
-    let demo_p: str = profile.resolve_user_data_path("home/deadbyte/projects/demo")
-    if fs.exists(demo_p) == 1:
-        fs.remove(demo_p)
-    fs.mkdir(demo_p)
-    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/project.txt"), "name: demo\nowner: deadbyte\nstatus: active\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/index.txt"), "demo\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/project.txt"), "name: demo\nowner: deadbyte\nhome: home/deadbyte\nmode: workspace-project\nstatus: active\n")
     fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/notes.txt"), "project demo notes\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/snapshot.txt"), "--- DByteOS Project Snapshot ---\nname: demo\nowner: deadbyte\nstatus: active\nfiles: project.txt, notes.txt, snapshot.txt\n")
     fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/tasks.txt"), "0|inspect workspace\n0|write project note\n")
-    
-    let idx_path: str = profile.resolve_user_data_path("home/deadbyte/projects/index.txt")
-    fs.write_text(idx_path, "demo\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/journal.txt"), "[JOURNAL] dbyteos journal seed\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/notes.txt"), "dbyteos notes seed\n")
     
     let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
     if fs.exists(index_cache_path) == 1:
@@ -456,8 +505,7 @@ else:
                                 j_count = j_count + 1
                         line_str = ""
                     else:
-                        if line_char != "\r":
-                            line_str = line_str + line_char
+                        line_str = line_str + line_char
                 print("  Journal: " + int_to_str(j_count) + " entries recorded")
                 
                 print("[Open Tasks]")
@@ -478,8 +526,7 @@ else:
                                     open_printed = 1
                         line_str = ""
                     else:
-                        if line_char2 != "\r":
-                            line_str = line_str + line_char2
+                        line_str = line_str + line_char2
                 if open_printed == 0:
                     print("  (none)")
                     
@@ -497,8 +544,9 @@ else:
                         for c_rb in content_rb:
                             if c_rb == "\n":
                                 if rb_line != "":
+                                    let clean_proj: str = strip_cr(rb_line)
                                     # Print project registration first
-                                    print("* project: " + rb_line + " (registered)")
+                                    print("* project: " + clean_proj + " (registered)")
                                     
                                     # Filter note/task for this project from timeline_db
                                     let line_str: str = ""
@@ -511,9 +559,9 @@ else:
                                                 let t_status: str = get_field(line_str, 3)
                                                 let t_text: str = get_field(line_str, 4)
                                                 
-                                                if t_proj == rb_line:
+                                                if t_proj == clean_proj:
                                                     if t_type == "project_note":
-                                                        print("  - note: " + t_text + " (home/deadbyte/projects/" + rb_line + "/notes.txt:" + t_line_no + ")")
+                                                        print("  - note: " + t_text + " (home/deadbyte/projects/" + clean_proj + "/notes.txt:" + t_line_no + ")")
                                                     if t_type == "project_task":
                                                         let box: str = "[ ]"
                                                         if t_status == "1":
@@ -521,14 +569,13 @@ else:
                                                         print("  - task #" + t_line_no + ": " + box + " " + t_text)
                                             line_str = ""
                                         else:
-                                            if line_char != "\r":
-                                                line_str = line_str + line_char
-                                rb_line = ""
+                                            line_str = line_str + line_char
+                                    rb_line = ""
                             else:
-                                if c_rb != "\r":
-                                    rb_line = rb_line + c_rb
+                                rb_line = rb_line + c_rb
                         if rb_line != "":
-                            print("* project: " + rb_line + " (registered)")
+                            let clean_proj: str = strip_cr(rb_line)
+                            print("* project: " + clean_proj + " (registered)")
                             let line_str: str = ""
                             for line_char in timeline_db:
                                 if line_char == "\n":
@@ -539,9 +586,9 @@ else:
                                         let t_status: str = get_field(line_str, 3)
                                         let t_text: str = get_field(line_str, 4)
                                         
-                                        if t_proj == rb_line:
+                                        if t_proj == clean_proj:
                                             if t_type == "project_note":
-                                                print("  - note: " + t_text + " (home/deadbyte/projects/" + rb_line + "/notes.txt:" + t_line_no + ")")
+                                                print("  - note: " + t_text + " (home/deadbyte/projects/" + clean_proj + "/notes.txt:" + t_line_no + ")")
                                             if t_type == "project_task":
                                                 let box: str = "[ ]"
                                                 if t_status == "1":
@@ -549,8 +596,7 @@ else:
                                                 print("  - task #" + t_line_no + ": " + box + " " + t_text)
                                     line_str = ""
                                 else:
-                                    if line_char != "\r":
-                                        line_str = line_str + line_char
+                                    line_str = line_str + line_char
                 else:
                     if cmd == "tasks":
                         print("--- DByteOS Workspace Timeline: Tasks ---")
@@ -574,8 +620,7 @@ else:
                                         has_tasks = 1
                                 line_str = ""
                             else:
-                                if line_char != "\r":
-                                    line_str = line_str + line_char
+                                line_str = line_str + line_char
                         if has_tasks == 0:
                             print("  (none)")
                     else:
@@ -596,8 +641,7 @@ else:
                                             has_journal = 1
                                     line_str = ""
                                 else:
-                                    if line_char != "\r":
-                                        line_str = line_str + line_char
+                                    line_str = line_str + line_char
                             if has_journal == 0:
                                 print("  (none)")
                         else:
@@ -606,54 +650,56 @@ else:
                                     print("usage: timeline search <text>")
                                 else:
                                     let search_text: str = profile.join_args_from(args, 1)
-                                    let search_lower: str = to_lowercase(search_text)
-                                    print("--- DByteOS Workspace Timeline Search: " + search_text + " ---")
-                                    print("Timeline Mode: " + mode_str)
-                                    
-                                    let line_str: str = ""
-                                    let match_printed: int = 0
-                                    for line_char in timeline_db:
-                                        if line_char == "\n":
-                                            if line_str != "":
-                                                let t_type: str = get_field(line_str, 0)
-                                                let t_proj: str = get_field(line_str, 1)
-                                                let t_line_no: str = get_field(line_str, 2)
-                                                let t_status: str = get_field(line_str, 3)
-                                                let t_text: str = get_field(line_str, 4)
-                                                
-                                                let type_lower: str = to_lowercase(t_type)
-                                                let proj_lower: str = to_lowercase(t_proj)
-                                                let content_lower: str = to_lowercase(t_text)
-                                                
-                                                let is_match: int = 0
-                                                if string_contains(type_lower, search_lower) == 1:
-                                                    is_match = 1
-                                                if string_contains(proj_lower, search_lower) == 1:
-                                                    is_match = 1
-                                                if string_contains(content_lower, search_lower) == 1:
-                                                    is_match = 1
-                                                
-                                                if is_match == 1:
-                                                    if t_type == "global_note":
-                                                        print("* [note] " + t_text + " (home/deadbyte/notes.txt:" + t_line_no + ")")
-                                                    if t_type == "global_journal":
-                                                        print("* [journal] " + t_text + " (home/deadbyte/journal.txt:" + t_line_no + ")")
-                                                    if t_type == "project":
-                                                        print("* [project] " + t_proj + " (registered)")
-                                                    if t_type == "project_note":
-                                                        print("* [project_note] " + t_proj + ": " + t_text + " (home/deadbyte/projects/" + t_proj + "/notes.txt:" + t_line_no + ")")
-                                                    if t_type == "project_task":
-                                                        let box: str = "[ ]"
-                                                        if t_status == "1":
-                                                            box = "[x]"
-                                                        print("* [project_task] " + t_proj + " #" + t_line_no + ": " + box + " " + t_text)
-                                                    match_printed = 1
-                                            line_str = ""
-                                        else:
-                                            if line_char != "\r":
+                                    if valid_search_text(search_text) == 0:
+                                        print("error: search: invalid query")
+                                    else:
+                                        let search_lower: str = to_lowercase(search_text)
+                                        print("--- DByteOS Workspace Timeline Search: " + search_text + " ---")
+                                        print("Timeline Mode: " + mode_str)
+                                        
+                                        let line_str: str = ""
+                                        let match_printed: int = 0
+                                        for line_char in timeline_db:
+                                            if line_char == "\n":
+                                                if line_str != "":
+                                                    let t_type: str = get_field(line_str, 0)
+                                                    let t_proj: str = get_field(line_str, 1)
+                                                    let t_line_no: str = get_field(line_str, 2)
+                                                    let t_status: str = get_field(line_str, 3)
+                                                    let t_text: str = get_field(line_str, 4)
+                                                    
+                                                    let type_lower: str = to_lowercase(t_type)
+                                                    let proj_lower: str = to_lowercase(t_proj)
+                                                    let content_lower: str = to_lowercase(t_text)
+                                                    
+                                                    let is_match: int = 0
+                                                    if string_contains(type_lower, search_lower) == 1:
+                                                        is_match = 1
+                                                    if string_contains(proj_lower, search_lower) == 1:
+                                                        is_match = 1
+                                                    if string_contains(content_lower, search_lower) == 1:
+                                                        is_match = 1
+                                                    
+                                                    if is_match == 1:
+                                                        if t_type == "global_note":
+                                                            print("* [note] " + t_text + " (home/deadbyte/notes.txt:" + t_line_no + ")")
+                                                        if t_type == "global_journal":
+                                                            print("* [journal] " + t_text + " (home/deadbyte/journal.txt:" + t_line_no + ")")
+                                                        if t_type == "project":
+                                                            print("* [project] " + t_proj + " (registered)")
+                                                        if t_type == "project_note":
+                                                            print("* [project_note] " + t_proj + ": " + t_text + " (home/deadbyte/projects/" + t_proj + "/notes.txt:" + t_line_no + ")")
+                                                        if t_type == "project_task":
+                                                            let box: str = "[ ]"
+                                                            if t_status == "1":
+                                                                box = "[x]"
+                                                            print("* [project_task] " + t_proj + " #" + t_line_no + ": " + box + " " + t_text)
+                                                        match_printed = 1
+                                                line_str = ""
+                                            else:
                                                 line_str = line_str + line_char
-                                    if match_printed == 0:
-                                        print("  (no matches found)")
+                                        if match_printed == 0:
+                                            print("  (no matches found)")
                             else:
                                 if cmd == "snapshot":
                                     print("--- DByteOS Workspace Timeline Snapshot ---")
@@ -688,8 +734,7 @@ else:
                                                         t_open = t_open + 1
                                             line_str = ""
                                         else:
-                                            if line_char != "\r":
-                                                line_str = line_str + line_char
+                                            line_str = line_str + line_char
                                                 
                                     print("Total Projects: " + int_to_str(p_count))
                                     print("Total Notes:    " + int_to_str(n_global + n_proj) + " (" + int_to_str(n_global) + " global, " + int_to_str(n_proj) + " project-specific)")
