@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Alpha (v5.4.1)
+## DByteOS Personal Alpha (v5.5.0)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 

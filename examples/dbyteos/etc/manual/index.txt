@@ -28,6 +28,7 @@ Manual topics:
   task
   services
   log
+  search
 
 Use:
   man <topic>

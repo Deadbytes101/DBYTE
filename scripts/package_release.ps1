@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "5.4.1"
+    [string]$Version = "5.5.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,12 +49,21 @@ if (Test-Path $releaseTmp) {
     Get-ChildItem -Path $releaseTmp -Exclude ".gitignore", ".gitkeep" | Remove-Item -Recurse -Force
 }
 
+# Clean up examples/dbyteos/home/deadbyte junk in the release dir
+$releaseHome = Join-Path $releaseDir "examples\dbyteos\home\deadbyte"
+if (Test-Path $releaseHome) {
+    Get-ChildItem -Path $releaseHome -Exclude ".gitignore", ".gitkeep", "preferences.dby", "projects" | Remove-Item -Recurse -Force
+    $releaseProjects = Join-Path $releaseHome "projects"
+    if (Test-Path $releaseProjects) {
+        Get-ChildItem -Path $releaseProjects -Exclude ".gitignore", ".gitkeep" | Remove-Item -Recurse -Force
+    }
+}
+
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "docs") -Force | Out-Null
 Copy-Item ".\docs\*" (Join-Path $releaseDir "docs") -Recurse -Force
 
-git bundle create "dbyte-v$Version.bundle" --all
-Copy-Item "dbyte-v$Version.bundle" (Join-Path $releaseDir "dbyte-v$Version.bundle")
-Remove-Item "dbyte-v$Version.bundle" -Force
+$targetBundlePath = Join-Path $releaseDir "dbyte-v$Version.bundle"
+git bundle create $targetBundlePath --all
 
 Compress-Archive -Path (Join-Path $releaseDir "*") -DestinationPath $zipPath
 
