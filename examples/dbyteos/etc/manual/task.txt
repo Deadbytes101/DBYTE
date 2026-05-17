@@ -1,0 +1,21 @@
+DByteOS Task Command
+
+Usage:
+  task add <project> <text>
+  task list <project>
+  task done <project> <id>
+  task status <project>
+  task reset-demo
+
+Description:
+  The task command manages deterministic task lists for workspace projects.
+  Task files live under home/deadbyte/projects/<name>/tasks.txt.
+
+Safety:
+  Project names are validated by the same workspace project policy.
+  Task text rejects the storage delimiter |.
+  Task IDs are 1-based and follow stored task order.
+
+Demo:
+  task reset-demo restores deterministic demo tasks.
+  clean preserves project task data because it is user data.

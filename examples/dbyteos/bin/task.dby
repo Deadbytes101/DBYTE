@@ -1,0 +1,395 @@
+import "../sys/profile.dby" as profile
+import std.env as env
+import std.fs as fs
+
+let args: list[str] = env.args()
+let projects_rel: str = "home/deadbyte/projects"
+let projects_path: str = profile.resolve_user_data_path(projects_rel)
+let index_path: str = profile.resolve_user_data_path(projects_rel + "/index.txt")
+
+fn show_usage():
+    print("usage: task <command> [project] [args...]")
+    print("")
+    print("commands:")
+    print("  add <project> <text>  - add a task to a workspace project")
+    print("  list <project>        - list project tasks")
+    print("  done <project> <id>   - mark a task done")
+    print("  status <project>      - summarize project task state")
+    print("  reset-demo            - reset demo project tasks")
+
+fn has_bad_char(name: str) -> int:
+    for c in name:
+        if c == ".":
+            return 1
+        if c == "/":
+            return 1
+        if c == "\\":
+            return 1
+        if c == ":":
+            return 1
+        if c == " ":
+            return 1
+        if c == "\t":
+            return 1
+    return 0
+
+fn valid_name(name: str) -> int:
+    if name == "":
+        return 0
+    if name == ".":
+        return 0
+    if name == "..":
+        return 0
+    if has_bad_char(name) == 1:
+        return 0
+    return 1
+
+fn has_bad_task_char(text: str) -> int:
+    for c in text:
+        if c == "|":
+            return 1
+    return 0
+
+fn project_rel(name: str) -> str:
+    return projects_rel + "/" + name
+
+fn project_path(name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name))
+
+fn task_path(name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name) + "/tasks.txt")
+
+fn project_file(name: str, file_name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name) + "/" + file_name)
+
+fn project_exists(name: str) -> int:
+    if fs.exists(project_path(name)) == 1:
+        return 1
+    return 0
+
+fn ensure_projects_dir():
+    if fs.exists(projects_path) == 0:
+        fs.mkdir(projects_path)
+
+fn index_has(name: str) -> int:
+    if fs.exists(index_path) == 0:
+        return 0
+    let content: str = fs.read_text(index_path)
+    let line: str = ""
+    for c in content:
+        if c == "\n":
+            if line == name:
+                return 1
+            line = ""
+        else:
+            line = line + c
+    if line == name:
+        return 1
+    return 0
+
+fn append_index(name: str):
+    let old: str = ""
+    if fs.exists(index_path) == 1:
+        old = fs.read_text(index_path)
+    fs.write_text(index_path, old + name + "\n")
+
+fn ensure_demo_project():
+    ensure_projects_dir()
+    let demo_path: str = project_path("demo")
+    if fs.exists(demo_path) == 0:
+        fs.mkdir(demo_path)
+    fs.write_text(project_file("demo", "project.txt"), "name: demo\nowner: deadbyte\nhome: home/deadbyte\nmode: workspace-project\nstatus: active\n")
+    fs.write_text(project_file("demo", "notes.txt"), "project demo notes\n")
+    fs.write_text(project_file("demo", "snapshot.txt"), "--- DByteOS Project Snapshot ---\nname: demo\nowner: deadbyte\nstatus: active\nfiles: project.txt, notes.txt, snapshot.txt\n")
+    if index_has("demo") == 0:
+        append_index("demo")
+
+fn ensure_tasks(name: str):
+    let path: str = task_path(name)
+    if fs.exists(path) == 0:
+        fs.write_text(path, "")
+
+fn validate_project(name: str) -> int:
+    if valid_name(name) == 0:
+        print("error: invalid project name: " + name)
+        return 0
+    if project_exists(name) == 0:
+        print("error: project not found: " + name)
+        return 0
+    return 1
+
+fn digit_to_int(c: str) -> int:
+    if c == "0":
+        return 0
+    if c == "1":
+        return 1
+    if c == "2":
+        return 2
+    if c == "3":
+        return 3
+    if c == "4":
+        return 4
+    if c == "5":
+        return 5
+    if c == "6":
+        return 6
+    if c == "7":
+        return 7
+    if c == "8":
+        return 8
+    if c == "9":
+        return 9
+    return -1
+
+fn int_to_str(n: int) -> str:
+    if n == 0:
+        return "0"
+    let out: str = ""
+    let value: int = n
+    while value > 0:
+        let digit: int = value - ((value / 10) * 10)
+        if digit == 0:
+            out = "0" + out
+        if digit == 1:
+            out = "1" + out
+        if digit == 2:
+            out = "2" + out
+        if digit == 3:
+            out = "3" + out
+        if digit == 4:
+            out = "4" + out
+        if digit == 5:
+            out = "5" + out
+        if digit == 6:
+            out = "6" + out
+        if digit == 7:
+            out = "7" + out
+        if digit == 8:
+            out = "8" + out
+        if digit == 9:
+            out = "9" + out
+        value = value / 10
+    return out
+
+fn parse_id(raw: str) -> int:
+    if raw == "":
+        return 0
+    let out: int = 0
+    for c in raw:
+        let d: int = digit_to_int(c)
+        if d < 0:
+            return 0
+        out = out * 10 + d
+    return out
+
+fn task_count(name: str) -> int:
+    ensure_tasks(name)
+    let content: str = fs.read_text(task_path(name))
+    let count: int = 0
+    for c in content:
+        if c == "\n":
+            count = count + 1
+    return count
+
+fn print_task_line(line: str, id: int):
+    let status: str = ""
+    let text: str = ""
+    let seen_sep: int = 0
+    for c in line:
+        if seen_sep == 0:
+            if c == "|":
+                seen_sep = 1
+            else:
+                status = status + c
+        else:
+            text = text + c
+    if status == "1":
+        print("[x] " + int_to_str(id) + ": " + text)
+    else:
+        print("[ ] " + int_to_str(id) + ": " + text)
+
+fn list_tasks(name: str):
+    if validate_project(name) == 1:
+        ensure_tasks(name)
+        print("DByteOS project tasks: " + name)
+        let content: str = fs.read_text(task_path(name))
+        if content == "":
+            print("  (none)")
+        else:
+            let line: str = ""
+            let id: int = 1
+            for c in content:
+                if c == "\n":
+                    if line != "":
+                        print_task_line(line, id)
+                        id = id + 1
+                    line = ""
+                else:
+                    line = line + c
+            if line != "":
+                print_task_line(line, id)
+
+fn add_task(name: str, text: str):
+    if validate_project(name) == 1:
+        if text == "":
+            print("error: task text cannot be empty")
+        else:
+            if has_bad_task_char(text) == 1:
+                print("error: invalid task text")
+            else:
+                ensure_tasks(name)
+                let id: int = task_count(name) + 1
+                let path: str = task_path(name)
+                let old: str = fs.read_text(path)
+                fs.write_text(path, old + "0|" + text + "\n")
+                print("task added: " + name + " #" + int_to_str(id))
+
+fn done_task(name: str, raw_id: str):
+    if validate_project(name) == 1:
+        let wanted: int = parse_id(raw_id)
+        if wanted < 1:
+            print("error: invalid task id: " + raw_id)
+        else:
+            ensure_tasks(name)
+            let content: str = fs.read_text(task_path(name))
+            let out: str = ""
+            let line: str = ""
+            let id: int = 1
+            let found: int = 0
+            let already_done: int = 0
+            for c in content:
+                if c == "\n":
+                    if line != "":
+                        if id == wanted:
+                            found = 1
+                            let status: str = ""
+                            let text: str = ""
+                            let seen_sep: int = 0
+                            for lc in line:
+                                if seen_sep == 0:
+                                    if lc == "|":
+                                        seen_sep = 1
+                                    else:
+                                        status = status + lc
+                                else:
+                                    text = text + lc
+                            if status == "1":
+                                already_done = 1
+                                out = out + line + "\n"
+                            else:
+                                out = out + "1|" + text + "\n"
+                        else:
+                            out = out + line + "\n"
+                        id = id + 1
+                    line = ""
+                else:
+                    line = line + c
+            if line != "":
+                if id == wanted:
+                    found = 1
+                    let status2: str = ""
+                    let text2: str = ""
+                    let seen_sep2: int = 0
+                    for lc2 in line:
+                        if seen_sep2 == 0:
+                            if lc2 == "|":
+                                seen_sep2 = 1
+                            else:
+                                status2 = status2 + lc2
+                        else:
+                            text2 = text2 + lc2
+                    if status2 == "1":
+                        already_done = 1
+                        out = out + line + "\n"
+                    else:
+                        out = out + "1|" + text2 + "\n"
+                else:
+                    out = out + line + "\n"
+            if found == 0:
+                print("error: task not found: " + raw_id)
+            else:
+                if already_done == 1:
+                    print("task already done: " + name + " #" + int_to_str(wanted))
+                else:
+                    fs.write_text(task_path(name), out)
+                    print("task done: " + name + " #" + int_to_str(wanted))
+
+fn status_tasks(name: str):
+    if validate_project(name) == 1:
+        ensure_tasks(name)
+        let content: str = fs.read_text(task_path(name))
+        let line: str = ""
+        let open_count: int = 0
+        let done_count: int = 0
+        for c in content:
+            if c == "\n":
+                if line != "":
+                    let first: str = ""
+                    for lc in line:
+                        if first == "":
+                            first = lc
+                    if first == "1":
+                        done_count = done_count + 1
+                    else:
+                        open_count = open_count + 1
+                line = ""
+            else:
+                line = line + c
+        if line != "":
+            let first2: str = ""
+            for lc2 in line:
+                if first2 == "":
+                    first2 = lc2
+            if first2 == "1":
+                done_count = done_count + 1
+            else:
+                open_count = open_count + 1
+        print("Task Status: " + name)
+        print("open: " + int_to_str(open_count))
+        print("done: " + int_to_str(done_count))
+        print("total: " + int_to_str(open_count + done_count))
+
+fn reset_demo():
+    ensure_demo_project()
+    fs.write_text(task_path("demo"), "0|inspect workspace\n0|write project note\n")
+    print("task demo reset.")
+
+if projects_path == "":
+    print("error: task: internal path resolution failed")
+else:
+    if len(args) < 1:
+        show_usage()
+    else:
+        let cmd: str = args[0]
+        if cmd == "add":
+            if len(args) < 3:
+                print("usage: task add <project> <text>")
+            else:
+                add_task(args[1], profile.join_args_from(args, 2))
+        else:
+            if cmd == "list":
+                if len(args) != 2:
+                    print("usage: task list <project>")
+                else:
+                    list_tasks(args[1])
+            else:
+                if cmd == "done":
+                    if len(args) != 3:
+                        print("usage: task done <project> <id>")
+                    else:
+                        done_task(args[1], args[2])
+                else:
+                    if cmd == "status":
+                        if len(args) != 2:
+                            print("usage: task status <project>")
+                        else:
+                            status_tasks(args[1])
+                    else:
+                        if cmd == "reset-demo":
+                            if len(args) != 1:
+                                print("usage: task reset-demo")
+                            else:
+                                reset_demo()
+                        else:
+                            print("error: unknown task command: " + cmd)
+                            show_usage()

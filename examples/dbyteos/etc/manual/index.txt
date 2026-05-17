@@ -13,6 +13,7 @@ Manual topics:
   config
   snapshot
   project
+  task
   env
   path
   read
@@ -24,6 +25,7 @@ Manual topics:
   notes
   journal
   project
+  task
   services
   log
 

@@ -95,6 +95,8 @@ fn write_project(name: str):
     fs.write_text(project_file(name, "project.txt"), "name: " + name + "\nowner: deadbyte\nhome: home/deadbyte\nmode: workspace-project\nstatus: active\n")
     fs.write_text(project_file(name, "notes.txt"), "project " + name + " notes\n")
     fs.write_text(project_file(name, "snapshot.txt"), "--- DByteOS Project Snapshot ---\nname: " + name + "\nowner: deadbyte\nstatus: active\nfiles: project.txt, notes.txt, snapshot.txt\n")
+    if name == "demo":
+        fs.write_text(project_file(name, "tasks.txt"), "0|inspect workspace\n0|write project note\n")
     if index_has(name) == 0:
         append_index(name)
 
