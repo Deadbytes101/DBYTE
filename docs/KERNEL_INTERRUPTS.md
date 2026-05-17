@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v7.2.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v7.3.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -112,11 +112,14 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v7.2.1`)
+## 6. Current Milestone Status (`v7.3.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.2.1`, but CPU exception handling has been successfully hardened:
-- **Breakpoint Exception (Vector 3)**: Fully active. An assembly wrapper `breakpoint_handler_asm` preserves register state (`pushad`/`popad`) and handles CPU return via `iretd` cleanly.
-- **`int3` Trigger Command**: Executable manually via shell.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `7.3.0`, but CPU exception telemetry and diagnostics are fully implemented:
+- **Telemetry State Tracking**: Tracks exception counts (`EXCEPTION_COUNT`), last vector (`LAST_EXCEPTION_VECTOR`), and last exception name (`LAST_EXCEPTION_NAME`) under zero-allocation constraints.
+- **`exception` Command**: Displays current telemetry counts and last exception parameters.
+- **`exception-reset` Command**: Resets all exception statistics cleanly back to `0 / none / none`.
+- **`system` Command Integration**: Reports the count of exceptions handled and last exception details dynamically.
+- **Breakpoint Exception (Vector 3)**: Fully active. An assembly wrapper `breakpoint_handler_asm` preserves register state (`pushad`/`popad`) and handles CPU return via `iretd` cleanly, updating telemetry on each call.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
 - **PIC Remap Commands**: Not dispatched.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.

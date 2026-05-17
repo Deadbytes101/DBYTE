@@ -47,8 +47,20 @@ extern "C" {
     pub fn breakpoint_handler_asm();
 }
 
+/// Global exception telemetry count tracking.
+pub static mut EXCEPTION_COUNT: u32 = 0;
+/// Global last exception vector. -1 represents none.
+pub static mut LAST_EXCEPTION_VECTOR: i32 = -1;
+/// Global last exception name. "none" represents none.
+pub static mut LAST_EXCEPTION_NAME: &'static str = "none";
+
 #[no_mangle]
 pub extern "C" fn breakpoint_handler_rust() {
+    unsafe {
+        EXCEPTION_COUNT += 1;
+        LAST_EXCEPTION_VECTOR = 3;
+        LAST_EXCEPTION_NAME = "breakpoint";
+    }
     crate::vga::print("\nexception: breakpoint\nvector: 3\nstatus: handled\n");
     crate::serial::print("\nexception: breakpoint\nvector: 3\nstatus: handled\n");
 }
