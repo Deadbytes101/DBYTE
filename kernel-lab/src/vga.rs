@@ -30,3 +30,12 @@ pub fn print(s: &str) {
         }
     }
 }
+
+pub struct VgaWriter;
+
+impl core::fmt::Write for VgaWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        print(s);
+        Ok(())
+    }
+}
