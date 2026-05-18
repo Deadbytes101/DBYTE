@@ -1,6 +1,6 @@
-# DByteOS Kernel PIC Remap Code Foundation (v8.2.0)
+# DByteOS Kernel PIC Remap Code Foundation (v8.2.1)
 
-DByteOS Kernel Lab `v8.2.0` adds a PIC remap code foundation. PIC/IRQ remains planned / disabled. This release documents and compiles the remap sequence shape, but the remap function is present / not called, no hardware writes are performed, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.2.1` hardens the PIC remap code foundation. This is a hardening-only release: PIC/IRQ remains planned / disabled. This release documents and compiles the remap sequence shape, but the remap function is present / not called, no hardware writes are performed, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 ## PIC Remap Plan
 
@@ -17,6 +17,7 @@ PIC remap code foundation is documented and compiled only. No Initialization Com
 
 - `remap_plan()` returns the planned remap offsets, IRQ vector range, and disabled mask state.
 - `remap_disabled()` documents the ICW1-ICW4 sequence and returns the plan without touching hardware.
+- `remap_disabled()` returns the documentation-only plan through `remap_plan()`.
 - The remap function is present / not called from boot, shell commands, IDT setup, or keyboard input paths.
 - IRQ vectors `0x20-0x2f` are planned only.
 
@@ -26,11 +27,11 @@ PIC remap code foundation is documented and compiled only. No Initialization Com
 - **ICW2 (`0x20` / `0x28`)**: planned master/slave remap offsets.
 - **ICW3 (`0x04` / `0x02`)**: planned master/slave cascade wiring.
 - **ICW4 (`0x01`)**: planned 8086 mode.
-- **IRQ0 timer**: planned PIT timer interrupt; disabled in `v8.2.0`.
-- **IRQ1 keyboard**: planned PS/2 keyboard interrupt; disabled in `v8.2.0`.
+- **IRQ0 timer**: planned PIT timer interrupt; disabled in `v8.2.1`.
+- **IRQ1 keyboard**: planned PS/2 keyboard interrupt; disabled in `v8.2.1`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.2.0`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.2.1`.
 
 ## Status UX
 
