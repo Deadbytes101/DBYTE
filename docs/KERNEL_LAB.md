@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v8.1.1)
+# DByteOS Kernel Lab Guide (v8.2.0)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**
@@ -14,13 +14,13 @@ The laboratory is completely isolated inside the `kernel-lab/` directory:
 - `kernel-lab/src/vga.rs`: Simple frame buffer output driver mapped to `0xB8000`.
 - `kernel-lab/scripts/`: PowerShell runners for compiling and launching under QEMU.
 - `docs/KERNEL_EXCEPTIONS.md`: Kernel Exception Subsystem Foundation overview for active vectors `0 / 3 / 14`, telemetry, recovery UX, and status UX.
-- `docs/KERNEL_IRQ.md`: PIC/IRQ Direction Foundation overview for planned remap offsets, IRQ glossary, disabled IRQ status, and polling-only keyboard boundaries.
+- `docs/KERNEL_IRQ.md`: PIC Remap Code Foundation overview for planned remap offsets, disabled remap function, IRQ glossary, disabled IRQ status, and polling-only keyboard boundaries.
 
 ## Exception Subsystem Foundation
 
-Version `8.1.1` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
+Version `8.2.0` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
 
-Version `8.1.1` adds the PIC/IRQ Direction Foundation. PIC/IRQ remains planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, and keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`.
+Version `8.2.0` adds the PIC Remap Code Foundation. PIC/IRQ remains planned / disabled, PIC remap code is present / not called, IRQ vectors `0x20-0x2f` are planned, and keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`.
 
 This milestone does not add a new exception vector, does not change `pf-smoke`, does not enable STI, does not remap PIC, does not bind IRQ vectors, and keeps keyboard input polling-based.
 
