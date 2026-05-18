@@ -1,6 +1,6 @@
-# DByteOS Kernel Exception Subsystem Foundation (v8.7.0)
+# DByteOS Kernel Exception Subsystem Foundation (v8.7.1)
 
-DByteOS Kernel Lab `v8.7.0` preserves the exception subsystem foundation while adding PIC/IRQ direction docs separately in `KERNEL_IRQ.md`. This release does not add new exception vectors, change Page Fault smoke mechanics, enable STI, remap PIC, bind IRQ vectors, or replace keyboard polling.
+DByteOS Kernel Lab `v8.7.1` preserves the exception subsystem foundation while adding PIC/IRQ direction docs separately in `KERNEL_IRQ.md`. This release does not add new exception vectors, change Page Fault smoke mechanics, enable STI, remap PIC, bind IRQ vectors, or replace keyboard polling.
 
 ## Active Vectors
 
