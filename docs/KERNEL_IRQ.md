@@ -1,6 +1,6 @@
-# DByteOS Kernel IRQ Handler Skeleton Foundation (v8.4.1)
+# DByteOS Kernel IRQ Handler Skeleton Foundation (v8.5.0)
 
-DByteOS Kernel Lab `v8.4.1` adds an IRQ handler skeleton foundation. This is a skeleton-only release: IRQ0 timer and IRQ1 keyboard skeletons are compiled for contract verification, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, no hardware writes are performed, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.5.0` implements an EOI strategy foundation on top of the IRQ handler skeleton. This is a planning and code-foundation-only release: EOI target paths and configurations are compiled but no EOI is actively dispatched, no hardware writes are performed, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 ## PIC Remap Plan
 
@@ -28,9 +28,28 @@ PIC remap dry-run telemetry is documented and compiled only. No Initialization C
 - `IRQ0_VECTOR = 32` and `IRQ1_VECTOR = 33` define the future remapped vectors.
 - `IrqHandlerSkeleton`, `irq0_timer_skeleton()`, `irq1_keyboard_skeleton()`, and `irq_handler_skeletons()` describe the planned handlers without binding them.
 - The skeletons are not called from boot, shell commands, IDT setup, PIC setup, or keyboard input paths.
-- No assembly wrapper, active `extern "C"` entrypoint, EOI write, PIC remap call, or port write exists for IRQ0/IRQ1 in `v8.4.1`.
+- No assembly wrapper, active `extern "C"` entrypoint, EOI write, PIC remap call, or port write exists for IRQ0/IRQ1 in `v8.5.0`.
 
-## v8.4.1 Hardening Guards
+## EOI Strategy Foundation
+
+End Of Interrupt (EOI) processing is a hardware acknowledgment protocol required to clear the In-Service Register (ISR) of the 8259A PIC, allowing subsequent hardware interrupts of equal or lower priority to trigger.
+
+- **PIC_EOI (`0x20`)**: End of Interrupt command value.
+- **EoiTarget**: Enumeration representing routing rules:
+  - `MasterOnly`: Send EOI command `0x20` to the Master PIC command port (`0x20`).
+  - `MasterAndSlave`: Send EOI command `0x20` to both the Master PIC command port (`0x20`) and the Slave PIC command port (`0xA0`).
+  - `None`: No EOI is required.
+- **EoiPlan**: Struct describing an EOI path, specifying the target and ports.
+- **Dry-run Configurations**:
+  - `master_eoi_plan()`: returns dry-run master EOI targets.
+  - `slave_eoi_plan()`: returns dry-run slave EOI targets.
+  - `irq0_timer_eoi_plan()`: returns the planned timer (IRQ0) EOI path.
+  - `irq1_keyboard_eoi_plan()`: returns the planned keyboard (IRQ1) EOI path.
+  - `eoi_strategy_status()`: returns combined EOI strategy metrics for CLI command dispatch.
+
+No EOI command functions are called in this release; they are compiled solely for verification and system preparation.
+
+## v8.5.0 Hardening & Static EOI Strategy Guards
 
 This release locks the IRQ handler skeleton as compile-time structure only.
 Verification guards enforce that `IRQ0_VECTOR` stays `32`, `IRQ1_VECTOR` stays
@@ -45,11 +64,11 @@ keyboard input remains polling-only, and `pf-smoke` mechanics remain unchanged.
 - **ICW2 (`0x20` / `0x28`)**: planned master/slave remap offsets.
 - **ICW3 (`0x04` / `0x02`)**: planned master/slave cascade wiring.
 - **ICW4 (`0x01`)**: planned 8086 mode.
-- **IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.4.1`.
-- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.4.1`.
+- **IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.5.0`.
+- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.5.0`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.4.1`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.5.0`.
 
 ## Status UX
 
@@ -156,6 +175,23 @@ interrupts: disabled
 irq handlers:
 skeleton planned: irq0 timer, irq1 keyboard
 active: none
+```
+
+```txt
+EOI strategy: planned / disabled
+PIC command: 0x20
+master PIC: planned
+slave PIC: planned
+dispatch: disabled
+```
+
+```txt
+EOI strategy note:
+- EOI means End Of Interrupt.
+- Master PIC EOI targets command port 0x20 in the future.
+- Slave IRQs require slave EOI plus master cascade acknowledgement in the future.
+- IRQ0 timer and IRQ1 keyboard EOI paths are planned only.
+- No EOI is dispatched in this milestone.
 ```
 
 ## Safety Boundaries
