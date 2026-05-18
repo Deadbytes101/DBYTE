@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v8.4.0)
+# DByteOS Kernel Lab Guide (v8.4.1)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**
@@ -18,9 +18,9 @@ The laboratory is completely isolated inside the `kernel-lab/` directory:
 
 ## Exception Subsystem Foundation
 
-Version `8.4.0` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
+Version `8.4.1` declares the Kernel Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
 
-Version `8.4.0` adds the IRQ Handler Skeleton Foundation. This is a skeleton-only release: PIC/IRQ remains planned / disabled, PIC remap code is present / not called, `pic-plan`, `irq-map`, and `pic-status --verbose` expose dry-run status only, IRQ0 timer and IRQ1 keyboard skeletons are compiled but not called or bound, IRQ vectors `0x20-0x2f` are planned, and keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`.
+Version `8.4.1` adds the IRQ Handler Skeleton Foundation. This is a skeleton-only release: PIC/IRQ remains planned / disabled, PIC remap code is present / not called, `pic-plan`, `irq-map`, and `pic-status --verbose` expose dry-run status only, IRQ0 timer and IRQ1 keyboard skeletons are compiled but not called or bound, IRQ vectors `0x20-0x2f` are planned, and keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`.
 
 This milestone does not add a new exception vector, does not change `pf-smoke`, does not enable STI, does not remap PIC, does not bind IRQ vectors, and keeps keyboard input polling-based.
 
