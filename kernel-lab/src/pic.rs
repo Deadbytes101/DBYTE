@@ -13,7 +13,7 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.8.0 keeps the dry-run remap plan disabled while IRQ0/IRQ1 handler
+//! v8.8.1 keeps the dry-run remap plan disabled while IRQ0/IRQ1 handler
 //! skeletons are documented in `irq.rs`. The plan is intentionally not called
 //! from boot or shell code, and this module performs no hardware writes.
 
