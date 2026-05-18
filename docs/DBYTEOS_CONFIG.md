@@ -1,4 +1,4 @@
-﻿# DByteOS Config
+# DByteOS Config
 
 DByteOS config support is a deterministic, read-only preferences foundation for
 the Alpha userland. It centralizes existing system/profile values without
@@ -28,7 +28,7 @@ config get system.prompt
 prints the available keys. `config get <key>` prints one value for scripts and
 package smoke tests.
 
-The config layer is read-only in v8.5.0. It does not write config files,
+The config layer is read-only in v8.5.1. It does not write config files,
 persist settings, change security policy, or invoke the host OS.
 
 When DByteOS is launched with `dbyte shell --rc examples/dbyteos/.dbyterc`,
