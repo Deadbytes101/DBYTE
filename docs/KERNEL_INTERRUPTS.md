@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v8.6.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v8.7.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v8.6.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v8.7.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 #### Exact Runtime Execution Flow
 When the user types the `pf-smoke` command:
@@ -132,7 +132,7 @@ On x86, a real Page Fault pushes an error code that describes why address transl
   - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
   - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v8.6.1: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v8.7.0: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -199,9 +199,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v8.6.1`)
+## 6. Current Milestone Status (`v8.7.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.6.1`. This is an EOI Strategy Foundation release: EOI target paths and configurations are compiled but no EOI is actively dispatched, no hardware writes are performed, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, IRQ0 timer and IRQ1 keyboard skeletons are compiled but not called or bound, IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain disabled, and no PIC remap hardware commands are dispatched. See `KERNEL_IRQ.md` for EOI strategy and IRQ skeleton overview.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.7.0`. This is an IRQ Gate Binding Code Foundation release layered on the EOI Strategy Foundation: IRQ gate plan structs/helpers are compiled and exposed through a dormant command path, EOI target paths and configurations are compiled but no EOI is actively dispatched, no hardware writes are performed, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, IRQ0 timer and IRQ1 keyboard skeletons are compiled but not called or bound, IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain disabled, and no PIC remap hardware commands are dispatched. See `KERNEL_IRQ.md` for EOI strategy and IRQ skeleton overview.
 - **`handlers` Command**: Lists active exception handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`, `vector 14: page fault`), planned exception handlers (`none`), and planned IRQ handlers (`irq0 timer`, `irq1 keyboard`) with active IRQ handlers (`none`).
 - **`handlers --active` Command**: Lists only currently active exception handlers.
 - **`exception-status` & `exceptions` Command**: Displays concise exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
@@ -215,6 +215,7 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **`pf-smoke` Command**: Triggers a controlled real Page Fault and recovers through a trampoline after the handler records diagnostics.
 - **`eoi-status` Command**: Displays the EOI strategy configuration, PIC commands, Master/Slave plan states, and dispatch status.
 - **`eoi-note` Command**: Explains the architectural EOI design, Master/Slave routing rules, and the planned-only status of this milestone.
+- **`irq-gate-plan` Command**: Reads the compiled `IrqGatePlan` helper data for IRQ0/IRQ1 and prints the dormant vector plan while keeping IDT binding, PIC remap, EOI dispatch, and interrupts disabled.
 - **`irq-note` Command**: Documents that PIC/IRQ remains planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, IRQ0/IRQ1 skeletons exist, IRQ1 keyboard and IRQ0 timer are disabled, and interrupts are disabled.
 - **`irq-status` Command**: Displays the planned IRQ subsystem state, not-remapped PIC state, no active IRQ handlers, polling-only keyboard input, unavailable timer, and disabled interrupts.
 - **`irq-handlers` Command**: Displays the IRQ handler skeleton foundation for IRQ0 timer and IRQ1 keyboard without IDT binding, PIC remap, or interrupts.

@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v8.6.1)
+# DByteOS QEMU Boot Smoke (v8.7.0)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 8.6.1
+version: 8.7.0
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v8.6.1)
+## Keyboard Line Editor & Command Dispatch Lab (v8.7.0)
 
-In version `8.6.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `8.7.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
@@ -81,9 +81,9 @@ In version `8.6.1`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 
 | Command Input | Parameter Handling | Output Response / Behavior |
 | :--- | :--- | :--- |
-| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status pic-note pic-status pic-plan irq-map pic-status --verbose` |
+| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan pic-note pic-status pic-plan irq-map pic-status --verbose` |
 | `about` | None | Prints: `DByteOS Kernel Lab` |
-| `version` | None | Prints: `DByteOS Kernel Lab 8.6.1` |
+| `version` | None | Prints: `DByteOS Kernel Lab 8.7.0` |
 | `clear` | None | Clears the entire VGA console and resets prompt location to top-left. |
 | `cls` | None | Clears the entire VGA console (alias of `clear`). |
 | `echo` | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter. |
@@ -124,6 +124,7 @@ In version `8.6.1`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 | `eoi-note` | None | Explains EOI concepts, PIC ports, master/slave dependencies, and dry-run isolation. |
 | `irq-gates` | None | Prints the planned CPU vector mappings for external interrupts. |
 | `irq-gate-status` | None | Prints the actual runtime IDT state of IRQ gates 32 and 33. |
+| `irq-gate-plan` | None | Prints the dormant IRQ0/IRQ1 gate binding plan from compiled helper data. |
 | `pic-status --verbose` | None | Prints verbose PIC dry-run telemetry status. |
 | *`<unknown>`* | Unsupported strings | Prints: `error: unknown command` |
 | *`<empty>`* | `LINE_LEN == 0` | Silent reprompt (cursor moves to new line, prints prompt). |
@@ -145,9 +146,9 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 3. Type commands and press Enter to execute them. For example:
    ```txt
     dbyte-kernel> help
-    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status pic-note pic-status pic-plan irq-map pic-status --verbose
+    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan pic-note pic-status pic-plan irq-map pic-status --verbose
     dbyte-kernel> version
-    DByteOS Kernel Lab 8.6.1
+    DByteOS Kernel Lab 8.7.0
    dbyte-kernel> handlers
    active handlers:
    vector 0: divide-by-zero
@@ -302,6 +303,15 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     IDT vector 32 (IRQ0 Timer): disabled / null handler
     IDT vector 33 (IRQ1 Keyboard): disabled / null handler
     gate binding dispatch: dormant
+    dbyte-kernel> irq-gate-plan
+    IRQ Gate Binding Plan:
+    IRQ0 timer -> vector 32 (0x20)
+    IRQ1 keyboard -> vector 33 (0x21)
+    IDT binding: disabled
+    PIC remap: disabled
+    EOI dispatch: disabled
+    interrupts: disabled
+    state: dormant / disabled
     dbyte-kernel> fault-status
    fault recovery:
    exceptions handled: 1
@@ -422,7 +432,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This release (`v8.6.1`) enforces strict technical bounds to maintain lab stability:
+> This release (`v8.7.0`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** remap/enable the Programmable Interrupt Controller (PIC/8259). Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
