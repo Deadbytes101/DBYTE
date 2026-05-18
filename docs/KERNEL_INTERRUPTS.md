@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v8.9.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v8.10.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v8.9.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v8.10.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 #### Exact Runtime Execution Flow
 When the user types the `pf-smoke` command:
@@ -132,7 +132,7 @@ On x86, a real Page Fault pushes an error code that describes why address transl
   - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
   - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v8.9.1: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v8.10.0: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -187,7 +187,7 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 > [!IMPORTANT]
 > **No PIC Remapping Dispatch**
-> The PIC remap code foundation is present / not called. No Initialization Command Words (ICWs) have been sent to ports `0x20` or `0xA0`, no hardware writes are performed from the PIC module, and the 8259A PIC chips remain configured with default BIOS configurations.
+> The PIC remap code foundation is present, and `v8.10.0` adds a controlled smoke path. Initialization Command Words (ICWs) are sent only by the explicit two-step `pic-remap-arm` / `pic-remap-smoke` command path; boot, IDT setup, IRQ setup, EOI paths, and keyboard polling do not remap the PIC.
 
 > [!IMPORTANT]
 > **Keyboard Polling Mode is Active**
@@ -199,9 +199,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v8.9.1`)
+## 6. Current Milestone Status (`v8.10.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.9.1`. This is an IRQ Runtime Readiness Gate release layered on the EOI Strategy Foundation: IRQ gate plan structs/helpers are compiled and exposed through a dormant command path, the disabled bind-path helper is compiled and exposed only through `irq-bind-note` / `irq-bind-status`, readiness telemetry is exposed only through `irq-readiness`, `irq-risk`, and `irq-preflight`, EOI target paths and configurations are compiled but no EOI is actively dispatched, no hardware writes are performed, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, IRQ0 timer and IRQ1 keyboard skeletons are compiled but not called or bound, IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain disabled, and no PIC remap hardware commands are dispatched. See `KERNEL_IRQ.md` for EOI strategy and IRQ skeleton overview.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.10.0`. This is a PIC Remap Controlled Smoke release layered on the IRQ Runtime Readiness Gate: IRQ gate plan structs/helpers are compiled and exposed through a dormant command path, the disabled bind-path helper is compiled and exposed only through `irq-bind-note` / `irq-bind-status`, readiness telemetry is exposed only through `irq-readiness`, `irq-risk`, and `irq-preflight`, EOI target paths and configurations are compiled but no EOI is actively dispatched, PIC remap hardware writes are limited to the two-step `pic-remap-arm` / `pic-remap-smoke` command path, IRQ0 timer and IRQ1 keyboard skeletons are compiled but not called or bound, IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain disabled, and no PIC remap hardware commands run at boot. See `KERNEL_IRQ.md` for EOI strategy and IRQ skeleton overview.
 - **`handlers` Command**: Lists active exception handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`, `vector 14: page fault`), planned exception handlers (`none`), and planned IRQ handlers (`irq0 timer`, `irq1 keyboard`) with active IRQ handlers (`none`).
 - **`handlers --active` Command**: Lists only currently active exception handlers.
 - **`exception-status` & `exceptions` Command**: Displays concise exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
@@ -218,7 +218,7 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **`irq-gate-plan` Command**: Reads the compiled `IrqGatePlan` helper data for IRQ0/IRQ1 and prints the dormant vector plan while keeping IDT binding, PIC remap, EOI dispatch, and interrupts disabled.
 - **`irq-bind-note` Command**: Reads the disabled bind-path helper and prints that IRQ0/IRQ1 gate binding is planned / not installed, with PIC remap, EOI dispatch, and interrupts disabled.
 - **`irq-bind-status` Command**: Reads the disabled bind-path helper and prints the helper name, boot-call status, unbound vectors 32/33, no active IRQ0/IRQ1 handlers, and polling-only keyboard input.
-- **`irq-readiness` Command**: Reads readiness helper telemetry and reports IDT exceptions, gate plan, EOI strategy, disabled PIC remap/STI, polling keyboard fallback, and `ready for runtime irq: no`.
+- **`irq-readiness` Command**: Reads readiness helper telemetry and reports IDT exceptions, gate plan, EOI strategy, PIC remap controlled smoke only, disabled STI, polling keyboard fallback, and `ready for runtime irq: no`.
 - **`irq-risk` Command**: Reads risk helper telemetry and reports that runtime IRQ is blocked because IRQ0/IRQ1 gates are not bound.
 - **`irq-preflight` Command**: Reads preflight helper telemetry and reports pass/unbound/disabled checks with result `blocked`.
 - **`irq-note` Command**: Documents that PIC/IRQ remains planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, IRQ0/IRQ1 skeletons exist, IRQ1 keyboard and IRQ0 timer are disabled, and interrupts are disabled.
@@ -227,6 +227,9 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **`pic-note` Command**: Documents the planned remap offsets `0x20 / 0x28`, IRQ vector range `0x20-0x2f`, disabled hardware writes, and disabled interrupts.
 - **`pic-status` Command**: Displays that the PIC remap function is present / not called, no IRQ handlers are active, and interrupts are disabled.
 - **`pic-plan` Command**: Displays the dry-run PIC remap plan, including ICW1-ICW4 values, master/slave offsets, IRQ vector range, mask-after-remap value, and disabled hardware writes.
+- **`pic-remap-arm` Command**: Arms the one-shot controlled PIC remap smoke path and reports that interrupts remain disabled and IRQ gates remain unbound.
+- **`pic-remap-smoke` Command**: If armed, writes the PIC ICW sequence, masks all PIC IRQ lines, keeps `sti` disabled, leaves IRQ gates unbound, and performs no EOI dispatch. If not armed, it reports `result: blocked`.
+- **`pic-remap-status` Command**: Reports current arm/executed smoke state without touching hardware.
 - **`irq-map` Command**: Displays the planned IRQ0-IRQ15 mapping into vectors `32-47` / `0x20-0x2f`, with active IRQ handlers still `none`.
 - **`pic-status --verbose` Command**: Displays dry-run telemetry availability, planned offsets, planned IRQ vector range, disabled hardware writes, no IRQ handlers, and disabled interrupts.
 - **Page Fault Frame Layout Foundation**: Keeps compile-time documentation types for `PageFaultFrame` and `PageFaultErrorCode` while vector 14 is registered for smoke handling.
@@ -236,8 +239,8 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **Page Fault Smoke (Vector 14)**: Active smoke. Registered IDT entry 14 pointing to `page_fault_handler_asm`, preserving GPRs, reading `CR2`, discarding the CPU-pushed error code with `add esp, 4`, and returning via `iretd`.
 - **Active / Smoke / Planned Model**: Vector 0 and vector 3 are active handlers, vector 14 is active smoke with recovery trampoline, and planned handlers are currently `none`.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
-- **PIC Remap Dry-Run Telemetry**: `remap_plan()`, `remap_disabled()`, and `irq_map_plan()` are compile-time planning hooks only; they are not called from boot, shell commands, IDT setup, or keyboard input paths.
-- **PIC Remap Commands**: Not dispatched.
+- **PIC Remap Controlled Smoke**: `pic_remap_smoke_arm()`, `pic_remap_controlled_smoke()`, and `pic_remap_smoke_status()` are command-path only. They are not called from boot, IDT setup, IRQ setup, EOI paths, or keyboard input paths.
+- **PIC Remap Commands**: Dispatched only through `pic-remap-arm`, `pic-remap-smoke`, and `pic-remap-status`.
 - **IRQ Handler Skeleton Foundation**: PIC/IRQ remains planned / disabled; IRQ0 timer and IRQ1 keyboard skeletons are compiled, but no IRQ vector binding, no IRQ1 keyboard active handler, and no IRQ0 PIT active handler exist.
 - **IRQ Gate Bind Disabled Path**: The `IrqGatePlan` shape, disabled bind helper shape, vector sync, exact command telemetry, and no-call/no-bind invariants are verified without introducing active IRQ0/IRQ1 handlers.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
