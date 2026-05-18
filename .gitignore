@@ -11,4 +11,5 @@ personal_tools_scratch_*.bin
 examples/dbyteos/home/deadbyte/journal.txt
 examples/dbyteos/home/deadbyte/projects/
 examples/dbyteos/home/deadbyte/preferences.dby.bak
+examples/dbyteos/home/deadbyte/search_index.txt
 test_import.dby
