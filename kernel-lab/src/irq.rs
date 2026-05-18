@@ -28,6 +28,9 @@ pub const IRQ_IDT_BINDING_DISABLED: &str = "disabled";
 /// Disabled PIC remap state for planned IRQ gates.
 pub const IRQ_PIC_REMAP_DISABLED: &str = "disabled";
 
+/// Controlled smoke-only PIC remap state for readiness telemetry.
+pub const IRQ_PIC_REMAP_CONTROLLED_SMOKE_ONLY: &str = "controlled smoke only";
+
 /// Disabled EOI dispatch state for planned IRQ gates.
 pub const IRQ_EOI_DISPATCH_DISABLED: &str = "disabled";
 
@@ -271,7 +274,7 @@ pub fn irq_runtime_readiness() -> IrqRuntimeReadiness {
             IRQ_RUNTIME_BLOCKED
         },
         eoi_strategy: IRQ_READINESS_OK,
-        pic_remap: plan[0].pic_remap,
+        pic_remap: IRQ_PIC_REMAP_CONTROLLED_SMOKE_ONLY,
         sti: plan[0].interrupts,
         keyboard_fallback: disabled_bind.keyboard_input,
         ready_for_runtime_irq: IRQ_RUNTIME_READY_NO,
@@ -297,7 +300,7 @@ pub fn irq_runtime_preflight() -> IrqRuntimePreflight {
         irq_vectors: disabled_bind.irq0_state,
         bind_path: IRQ_IDT_BINDING_DISABLED,
         eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
-        pic_remap: IRQ_PIC_REMAP_DISABLED,
+        pic_remap: IRQ_PIC_REMAP_CONTROLLED_SMOKE_ONLY,
         keyboard_fallback: disabled_bind.keyboard_input,
         pf_smoke: IRQ_PF_SMOKE_UNCHANGED,
         result: IRQ_RUNTIME_BLOCKED,

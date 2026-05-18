@@ -13,9 +13,10 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.9.1 keeps the dry-run remap plan disabled while IRQ0/IRQ1 handler
-//! skeletons are documented in `irq.rs`. The plan is intentionally not called
-//! from boot or shell code, and this module performs no hardware writes.
+//! v8.10.0 adds a two-step controlled remap smoke path while IRQ0/IRQ1 handler
+//! skeletons are documented in `irq.rs`. The smoke path is intentionally not
+//! called from boot, does not enable STI, does not bind IRQ gates, masks all
+//! PIC lines after remap, and does not dispatch EOI.
 
 /// I/O Port address for the Master PIC Command/Status register.
 pub const PIC_MASTER_CMD: u16 = 0x20;
@@ -54,6 +55,22 @@ pub const PIC_EOI: u8 = 0x20;
 /// Default mask value used by the disabled remap plan.
 pub const PIC_MASK_ALL: u8 = 0xFF;
 
+/// Controlled smoke state strings.
+pub const PIC_REMAP_GUARD_ARMED: &str = "armed";
+pub const PIC_REMAP_GUARD_NOT_ARMED: &str = "not armed";
+pub const PIC_REMAP_RESULT_BLOCKED: &str = "blocked";
+pub const PIC_REMAP_RESULT_REMAP_MASKED: &str = "remapped / masked";
+pub const PIC_REMAP_NEXT_ARM: &str = "pic-remap-arm";
+pub const PIC_REMAP_NEXT_SMOKE: &str = "pic-remap-smoke";
+pub const PIC_REMAP_MODE_CONTROLLED_SMOKE: &str = "controlled smoke";
+pub const PIC_REMAP_ICW_SEQUENCE_WRITTEN: &str = "written";
+pub const PIC_REMAP_STI_DISABLED: &str = "disabled";
+pub const PIC_REMAP_IRQ_GATES_UNBOUND: &str = "unbound";
+pub const PIC_REMAP_EOI_DISPATCH_DISABLED: &str = "disabled";
+
+static mut PIC_REMAP_SMOKE_ARMED: bool = false;
+static mut PIC_REMAP_SMOKE_EXECUTED: bool = false;
+
 /// Documentation-only representation of the future PIC remap sequence.
 pub struct PicRemapPlan {
     pub master_offset: u8,
@@ -61,6 +78,43 @@ pub struct PicRemapPlan {
     pub irq_vector_start: u8,
     pub irq_vector_end: u8,
     pub mask_after_remap: u8,
+}
+
+/// Command-facing result for arming the controlled PIC remap smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct PicRemapSmokeArmStatus {
+    pub mode: &'static str,
+    pub next: &'static str,
+    pub interrupts: &'static str,
+    pub irq_gates: &'static str,
+}
+
+/// Command-facing status for the controlled PIC remap smoke state.
+#[derive(Copy, Clone, Debug)]
+pub struct PicRemapSmokeStatus {
+    pub armed: bool,
+    pub executed: bool,
+    pub master_offset: u8,
+    pub slave_offset: u8,
+    pub mask_after_remap: u8,
+    pub sti: &'static str,
+    pub irq_gates: &'static str,
+    pub eoi_dispatch: &'static str,
+}
+
+/// Command-facing result for an attempted controlled PIC remap smoke.
+#[derive(Copy, Clone, Debug)]
+pub struct PicRemapSmokeResult {
+    pub guard: &'static str,
+    pub icw_sequence: Option<&'static str>,
+    pub master_offset: u8,
+    pub slave_offset: u8,
+    pub mask_after_remap: u8,
+    pub sti: &'static str,
+    pub irq_gates: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub result: &'static str,
+    pub next: Option<&'static str>,
 }
 
 /// Documentation-only IRQ mapping entry for the planned 0x20-0x2F remap range.
@@ -126,6 +180,84 @@ impl ProgrammableInterruptController {
         &IRQ_MAP_PLAN
     }
 
+    /// Arms the explicit command-only PIC remap smoke path.
+    pub fn pic_remap_smoke_arm() -> PicRemapSmokeArmStatus {
+        unsafe {
+            PIC_REMAP_SMOKE_ARMED = true;
+        }
+
+        PicRemapSmokeArmStatus {
+            mode: PIC_REMAP_MODE_CONTROLLED_SMOKE,
+            next: PIC_REMAP_NEXT_SMOKE,
+            interrupts: PIC_REMAP_STI_DISABLED,
+            irq_gates: PIC_REMAP_IRQ_GATES_UNBOUND,
+        }
+    }
+
+    /// Returns current controlled smoke status without touching hardware.
+    pub fn pic_remap_smoke_status() -> PicRemapSmokeStatus {
+        let plan = Self::remap_plan();
+
+        PicRemapSmokeStatus {
+            armed: unsafe { PIC_REMAP_SMOKE_ARMED },
+            executed: unsafe { PIC_REMAP_SMOKE_EXECUTED },
+            master_offset: plan.master_offset,
+            slave_offset: plan.slave_offset,
+            mask_after_remap: plan.mask_after_remap,
+            sti: PIC_REMAP_STI_DISABLED,
+            irq_gates: PIC_REMAP_IRQ_GATES_UNBOUND,
+            eoi_dispatch: PIC_REMAP_EOI_DISPATCH_DISABLED,
+        }
+    }
+
+    /// Runs the explicit command-only PIC remap smoke path if previously armed.
+    pub fn pic_remap_controlled_smoke() -> PicRemapSmokeResult {
+        let plan = Self::remap_plan();
+
+        if unsafe { !PIC_REMAP_SMOKE_ARMED } {
+            return PicRemapSmokeResult {
+                guard: PIC_REMAP_GUARD_NOT_ARMED,
+                icw_sequence: None,
+                master_offset: plan.master_offset,
+                slave_offset: plan.slave_offset,
+                mask_after_remap: plan.mask_after_remap,
+                sti: PIC_REMAP_STI_DISABLED,
+                irq_gates: PIC_REMAP_IRQ_GATES_UNBOUND,
+                eoi_dispatch: PIC_REMAP_EOI_DISPATCH_DISABLED,
+                result: PIC_REMAP_RESULT_BLOCKED,
+                next: Some(PIC_REMAP_NEXT_ARM),
+            };
+        }
+
+        unsafe {
+            write_pic_port(PIC_MASTER_CMD, ICW1_INIT);
+            write_pic_port(PIC_SLAVE_CMD, ICW1_INIT);
+            write_pic_port(PIC_MASTER_DATA, ICW2_MASTER_OFFSET);
+            write_pic_port(PIC_SLAVE_DATA, ICW2_SLAVE_OFFSET);
+            write_pic_port(PIC_MASTER_DATA, ICW3_MASTER_CASCADE);
+            write_pic_port(PIC_SLAVE_DATA, ICW3_SLAVE_CASCADE);
+            write_pic_port(PIC_MASTER_DATA, ICW4_8086_MODE);
+            write_pic_port(PIC_SLAVE_DATA, ICW4_8086_MODE);
+            write_pic_port(PIC_MASTER_DATA, PIC_MASK_ALL);
+            write_pic_port(PIC_SLAVE_DATA, PIC_MASK_ALL);
+            PIC_REMAP_SMOKE_ARMED = false;
+            PIC_REMAP_SMOKE_EXECUTED = true;
+        }
+
+        PicRemapSmokeResult {
+            guard: PIC_REMAP_GUARD_ARMED,
+            icw_sequence: Some(PIC_REMAP_ICW_SEQUENCE_WRITTEN),
+            master_offset: plan.master_offset,
+            slave_offset: plan.slave_offset,
+            mask_after_remap: plan.mask_after_remap,
+            sti: PIC_REMAP_STI_DISABLED,
+            irq_gates: PIC_REMAP_IRQ_GATES_UNBOUND,
+            eoi_dispatch: PIC_REMAP_EOI_DISPATCH_DISABLED,
+            result: PIC_REMAP_RESULT_REMAP_MASKED,
+            next: None,
+        }
+    }
+
     /// Returns the planned master EOI target configuration without touching hardware.
     pub fn master_eoi_plan() -> EoiPlan {
         EoiPlan {
@@ -181,6 +313,16 @@ impl ProgrammableInterruptController {
             dispatch_enabled: false,
         }
     }
+}
+
+/// Writes one byte to a PIC command/data port for the controlled smoke path.
+unsafe fn write_pic_port(port: u16, value: u8) {
+    core::arch::asm!(
+        "out dx, al",
+        in("dx") port,
+        in("al") value,
+        options(nomem, nostack, preserves_flags)
+    );
 }
 
 /// EOI target identifier representing which PIC chip requires acknowledgment.
