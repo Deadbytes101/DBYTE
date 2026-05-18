@@ -55,6 +55,31 @@ pub const IRQ_KEYBOARD_INPUT_POLLING_ONLY: &str = "polling-only";
 /// Disabled bind path note for each planned IRQ gate.
 pub const IRQ_BIND_PATH_DISABLED_ONLY: &str = "disabled bind path only";
 
+/// Positive readiness state for pre-runtime checks.
+pub const IRQ_READINESS_OK: &str = "ok";
+
+/// Runtime IRQ readiness result while IRQ activation remains blocked.
+pub const IRQ_RUNTIME_READY_NO: &str = "no";
+
+/// Runtime IRQ blocker state.
+pub const IRQ_RUNTIME_BLOCKED: &str = "blocked";
+
+/// Runtime IRQ risk reason while IRQ gates remain unbound.
+pub const IRQ_RUNTIME_RISK_REASON: &str = "IRQ0/IRQ1 gates are not bound";
+
+/// Runtime IRQ prerequisites before interrupts may be enabled.
+pub const IRQ_RUNTIME_REQUIRED_BEFORE_ENABLE: &str =
+    "IDT gate bind, PIC remap, EOI dispatch, handler stubs";
+
+/// STI policy for the current readiness milestone.
+pub const IRQ_STI_ALLOWED_NO: &str = "no";
+
+/// Stable preflight pass state.
+pub const IRQ_PREFLIGHT_PASS: &str = "pass";
+
+/// Page Fault smoke readiness state.
+pub const IRQ_PF_SMOKE_UNCHANGED: &str = "unchanged";
+
 /// Documentation-only representation of a future IRQ handler.
 pub struct IrqHandlerSkeleton {
     pub irq: u8,
@@ -102,6 +127,40 @@ pub struct IrqGateBindDisabledStatus {
     pub irq1_active_handler: &'static str,
     pub keyboard_input: &'static str,
     pub steps: [IrqGateBindDisabledStep; 2],
+}
+
+/// Documentation-only readiness status for future runtime IRQ activation.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeReadiness {
+    pub idt_exceptions: &'static str,
+    pub irq_gate_plan: &'static str,
+    pub eoi_strategy: &'static str,
+    pub pic_remap: &'static str,
+    pub sti: &'static str,
+    pub keyboard_fallback: &'static str,
+    pub ready_for_runtime_irq: &'static str,
+}
+
+/// Documentation-only risk summary for blocked IRQ runtime activation.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeRisk {
+    pub runtime_irq: &'static str,
+    pub reason: &'static str,
+    pub required_before_enable: &'static str,
+    pub sti_allowed: &'static str,
+}
+
+/// Documentation-only preflight result for future IRQ runtime activation.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimePreflight {
+    pub idt_exceptions: &'static str,
+    pub irq_vectors: &'static str,
+    pub bind_path: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub pic_remap: &'static str,
+    pub keyboard_fallback: &'static str,
+    pub pf_smoke: &'static str,
+    pub result: &'static str,
 }
 
 /// Documentation-only timer IRQ skeleton.
@@ -196,5 +255,51 @@ pub fn bind_irq_gates_disabled() -> IrqGateBindDisabledStatus {
                 interrupts: IRQ_INTERRUPTS_DISABLED,
             },
         ],
+    }
+}
+
+/// Returns readiness telemetry for future IRQ runtime activation.
+pub fn irq_runtime_readiness() -> IrqRuntimeReadiness {
+    let plan = irq_gate_plan();
+    let disabled_bind = bind_irq_gates_disabled();
+
+    IrqRuntimeReadiness {
+        idt_exceptions: IRQ_READINESS_OK,
+        irq_gate_plan: if plan[0].vector == IRQ0_VECTOR && plan[1].vector == IRQ1_VECTOR {
+            IRQ_READINESS_OK
+        } else {
+            IRQ_RUNTIME_BLOCKED
+        },
+        eoi_strategy: IRQ_READINESS_OK,
+        pic_remap: plan[0].pic_remap,
+        sti: plan[0].interrupts,
+        keyboard_fallback: disabled_bind.keyboard_input,
+        ready_for_runtime_irq: IRQ_RUNTIME_READY_NO,
+    }
+}
+
+/// Returns risk telemetry for why runtime IRQ activation remains blocked.
+pub fn irq_runtime_risk() -> IrqRuntimeRisk {
+    IrqRuntimeRisk {
+        runtime_irq: IRQ_RUNTIME_BLOCKED,
+        reason: IRQ_RUNTIME_RISK_REASON,
+        required_before_enable: IRQ_RUNTIME_REQUIRED_BEFORE_ENABLE,
+        sti_allowed: IRQ_STI_ALLOWED_NO,
+    }
+}
+
+/// Returns preflight telemetry without installing IRQ gates or touching hardware.
+pub fn irq_runtime_preflight() -> IrqRuntimePreflight {
+    let disabled_bind = bind_irq_gates_disabled();
+
+    IrqRuntimePreflight {
+        idt_exceptions: IRQ_PREFLIGHT_PASS,
+        irq_vectors: disabled_bind.irq0_state,
+        bind_path: IRQ_IDT_BINDING_DISABLED,
+        eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
+        pic_remap: IRQ_PIC_REMAP_DISABLED,
+        keyboard_fallback: disabled_bind.keyboard_input,
+        pf_smoke: IRQ_PF_SMOKE_UNCHANGED,
+        result: IRQ_RUNTIME_BLOCKED,
     }
 }
