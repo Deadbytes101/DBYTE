@@ -13,8 +13,9 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.2.1 hardens the compile-time remap plan only. The plan is intentionally not
-//! called from boot or shell code, and this module performs no hardware writes.
+//! v8.3.0 adds dry-run telemetry for the compile-time remap plan only. The plan
+//! is intentionally not called from boot or shell code, and this module performs
+//! no hardware writes.
 
 /// I/O Port address for the Master PIC Command/Status register.
 pub const PIC_MASTER_CMD: u16 = 0x20;
@@ -62,6 +63,33 @@ pub struct PicRemapPlan {
     pub mask_after_remap: u8,
 }
 
+/// Documentation-only IRQ mapping entry for the planned 0x20-0x2F remap range.
+pub struct IrqMapEntry {
+    pub irq: u8,
+    pub name: &'static str,
+    pub vector: u8,
+}
+
+/// Documentation-only IRQ vector map for dry-run telemetry.
+pub const IRQ_MAP_PLAN: [IrqMapEntry; 16] = [
+    IrqMapEntry { irq: 0, name: "timer", vector: 0x20 },
+    IrqMapEntry { irq: 1, name: "keyboard", vector: 0x21 },
+    IrqMapEntry { irq: 2, name: "cascade", vector: 0x22 },
+    IrqMapEntry { irq: 3, name: "serial2", vector: 0x23 },
+    IrqMapEntry { irq: 4, name: "serial1", vector: 0x24 },
+    IrqMapEntry { irq: 5, name: "parallel2", vector: 0x25 },
+    IrqMapEntry { irq: 6, name: "floppy", vector: 0x26 },
+    IrqMapEntry { irq: 7, name: "parallel1", vector: 0x27 },
+    IrqMapEntry { irq: 8, name: "rtc", vector: 0x28 },
+    IrqMapEntry { irq: 9, name: "acpi", vector: 0x29 },
+    IrqMapEntry { irq: 10, name: "reserved", vector: 0x2A },
+    IrqMapEntry { irq: 11, name: "reserved", vector: 0x2B },
+    IrqMapEntry { irq: 12, name: "mouse", vector: 0x2C },
+    IrqMapEntry { irq: 13, name: "fpu", vector: 0x2D },
+    IrqMapEntry { irq: 14, name: "primary-ata", vector: 0x2E },
+    IrqMapEntry { irq: 15, name: "secondary-ata", vector: 0x2F },
+];
+
 /// Stub representation of the PIC management sub-system.
 pub struct ProgrammableInterruptController;
 
@@ -91,5 +119,10 @@ impl ProgrammableInterruptController {
         // ICW4: 8086 mode.
         // No command/data port writes are performed in this milestone.
         Self::remap_plan()
+    }
+
+    /// Returns the planned IRQ vector map without touching hardware.
+    pub fn irq_map_plan() -> &'static [IrqMapEntry; 16] {
+        &IRQ_MAP_PLAN
     }
 }
