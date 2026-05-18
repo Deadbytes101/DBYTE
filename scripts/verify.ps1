@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOut = & $cli --version
-if ($versionOut -ne "DByte 8.10.1") {
-    throw "Version mismatch: expected 'DByte 8.10.1', got '$versionOut'"
+if ($versionOut -ne "DByte 8.11.0") {
+    throw "Version mismatch: expected 'DByte 8.11.0', got '$versionOut'"
 }
 
 function Normalize-Output($value) {
@@ -558,7 +558,7 @@ if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.T
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 8.10.1" "shell version"
+Assert-Contains $shellBasic.Text "DByte 8.11.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -1126,7 +1126,7 @@ catch {
     throw $_
 }
 
-Write-Host "Running DByteOS Command Set (v8.10.1) smoke tests..."
+Write-Host "Running DByteOS Command Set (v8.11.0) smoke tests..."
 $dbyteosRoot = Join-Path $repoRoot "examples\dbyteos"
 $dbyteosProjectsPath = Join-Path $dbyteosRoot "home\deadbyte\projects"
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -1145,7 +1145,7 @@ $expectedDbyteosBoot = @"
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  8.10.1  ( Userland Prototype )
+  Version:    DByte  8.11.0  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -1237,7 +1237,7 @@ Try: welcome, profile show, config show, snapshot, getting-started, commands
 $expectedDbyteosStatus = @"
 --- DByteOS System Status ---
 Summary:
-  OS:      DByte  8.10.1
+  OS:      DByte  8.11.0
   Host:     DByte-Alpha
   User:     deadbyte
   Home:     home/deadbyte
@@ -1261,7 +1261,7 @@ Next:    help | man <topic> | which <command>
 "@
 $expectedDbyteosSysinfo = @"
 DByteOS Alpha Userland
-version: DByte 8.10.1
+version: DByte 8.11.0
 codename: Userland Prototype
 host: DByte-Alpha
 kernel: Simulated (Host)
@@ -1437,7 +1437,7 @@ shell: dbyte shell
 mode: beta-userland
 theme: default
 prompt: dbyte-shell>
-os_version: 8.10.1
+os_version: 8.11.0
 "@
 $expectedDbyteosProfileUnknown = @"
 error: unknown profile command: unknown
@@ -1788,7 +1788,7 @@ commands:
 $expectedDbyteosSnapshot = @"
 --- DByteOS System Snapshot ---
 System:
-  version: DByte 8.10.1
+  version: DByte 8.11.0
   codename: Userland Prototype
   host:    DByte-Alpha
   kernel:  Simulated (Host)
@@ -2466,7 +2466,7 @@ try {
     if ($dbyteosPrefsGetAfterReset.Code -ne 0) { throw "dbyteos prefs get after reset failed: $($dbyteosPrefsGetAfterReset.Text)" }
     Assert-Equal $dbyteosPrefsGetAfterReset.Text "default" "dbyteos prefs get default after reset"
 
-    # --- v8.10.1 Exact Snapshot Assertions ---
+    # --- v8.11.0 Exact Snapshot Assertions ---
     # ensure no stale .bak from previous runs
     $prefsBakCleanup = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby.bak"
     Remove-Item $prefsBakCleanup -Force -ErrorAction SilentlyContinue
@@ -2806,7 +2806,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 8.10.1`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 8.11.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -2814,7 +2814,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 8.10.1`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 8.10.1`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 8.10.1`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 8.11.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 8.11.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 8.11.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -2886,7 +2886,7 @@ Backup: Present
     if ($dbyteosSysinfoRoot.Code -ne 0) { throw "dbyteos sysinfo from root failed: $($dbyteosSysinfoRoot.Text)" }
     Assert-NormalizedEqual $dbyteosSysinfoRoot.Text $expectedDbyteosSysinfo "dbyteos sysinfo snapshot"
     Assert-Contains $dbyteosSysinfoRoot.Text "DByteOS Alpha Userland" "dbyteos sysinfo banner"
-    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 8.10.1" "dbyteos sysinfo version"
+    Assert-Contains $dbyteosSysinfoRoot.Text "version: DByte 8.11.0" "dbyteos sysinfo version"
     Assert-Contains $dbyteosSysinfoRoot.Text "codename: Userland Prototype" "dbyteos sysinfo codename"
     Assert-Contains $dbyteosSysinfoRoot.Text "guide: run help, status, or man <topic>" "dbyteos sysinfo guide"
 
@@ -2989,7 +2989,7 @@ Backup: Present
     Assert-Contains $dbyteosProfileRoot.Text "mode: beta-userland" "dbyteos profile mode"
     Assert-Contains $dbyteosProfileRoot.Text "theme: default" "dbyteos profile theme"
     Assert-Contains $dbyteosProfileRoot.Text "prompt: dbyte-shell>" "dbyteos profile prompt"
-    Assert-Contains $dbyteosProfileRoot.Text "os_version: 8.10.1" "dbyteos profile os version"
+    Assert-Contains $dbyteosProfileRoot.Text "os_version: 8.11.0" "dbyteos profile os version"
 
     $dbyteosNotesOnce = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\notes.dby", "clear-demo") -WorkingDirectory $repoRoot
     if ($dbyteosNotesOnce.Code -ne 0) { throw "dbyteos notes failed: $($dbyteosNotesOnce.Text)" }
@@ -3021,7 +3021,7 @@ Backup: Present
     if ($dbyteosReadCwd.Code -ne 0) { throw "dbyteos read from dbyteos cwd failed: $($dbyteosReadCwd.Text)" }
     Assert-Equal $dbyteosReadCwd.Text "cwd ok" "dbyteos read from dbyteos cwd"
 
-    Write-Host "Running DByteOS Security/Permissions (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Security/Permissions (v8.11.0) smoke tests..."
     $securityLogPath = Join-Path $dbyteosRoot "tmp\security.log"
     if (Test-Path $securityLogPath) {
         Remove-Item -Force $securityLogPath
@@ -3073,7 +3073,7 @@ Backup: Present
     Assert-Equal $dbyteosPermUnknown.Text "DENY read var/log.txt (policy)" "perm unknown root denied"
     $dbyteosReadEtc = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\read.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosReadEtc.Code -ne 0) { throw "dbyteos read etc failed: $($dbyteosReadEtc.Text)" }
-    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"8.10.1`"" "read etc allowed"
+    Assert-Contains $dbyteosReadEtc.Text "pub let os_version: str = `"8.11.0`"" "read etc allowed"
     $dbyteosWriteEtcDenied = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\write.dby", "etc/system.dby", "test") -WorkingDirectory $repoRoot
     if ($dbyteosWriteEtcDenied.Code -ne 0) { throw "dbyteos write etc deny command failed: $($dbyteosWriteEtcDenied.Text)" }
     Assert-Equal $dbyteosWriteEtcDenied.Text "error: permission denied: write etc/system.dby" "write etc denied"
@@ -3131,7 +3131,7 @@ Backup: Present
     $catSource = Get-Content (Join-Path $dbyteosRoot "bin\cat.dby") -Raw
     $touchSource = Get-Content (Join-Path $dbyteosRoot "bin\touch.dby") -Raw
     
-    Write-Host "Running DByteOS Security Enforcement Expansion (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Expansion (v8.11.0) smoke tests..."
     $enforcementInput = @"
 clean
 cat etc/system.dby
@@ -3146,7 +3146,7 @@ quit
 "@
     $dbyteosEnforcement = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "$enforcementInput`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosEnforcement.Code -ne 0) { throw "dbyteos security enforcement failed: $($dbyteosEnforcement.Text)" }
-    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"8.10.1`"" "cat etc allowed"
+    Assert-Contains $dbyteosEnforcement.Text "os_version: str = `"8.11.0`"" "cat etc allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: path escape tmp/../etc/system.dby" "cat escape denied"
     Assert-Contains $dbyteosEnforcement.Text "touch: ok" "touch tmp allowed"
     Assert-Contains $dbyteosEnforcement.Text "error: permission denied: touch etc/security_touch.txt" "touch etc denied"
@@ -3157,7 +3157,7 @@ quit
     Assert-Contains $dbyteosEnforcement.Text "DENY inspect unknown/file" "security log inspect denied"
     Assert-Contains $dbyteosEnforcement.Text "workspace sweep complete" "enforcement clean sweep"
 
-    Write-Host "Running DByteOS Security Enforcement Hardening (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Security Enforcement Hardening (v8.11.0) smoke tests..."
     $hardeningInput = @"
 clean
 cat boot.dby
@@ -3185,14 +3185,14 @@ quit
     $dbyteosNoRcScoping = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "cat etc/system.dby`nquit`n" -WorkingDirectory $dbyteosRoot
     Assert-Contains $dbyteosNoRcScoping.Text "ShellError: unknown command: cat" "shell --no-rc hides cat autopath"
 
-    Write-Host "Verifying DByteOS Personal Workspace Beta Foundation (v8.10.1) documentation..."
+    Write-Host "Verifying DByteOS Personal Workspace Beta Foundation (v8.11.0) documentation..."
     $dbyteDocs = @("DBYTEOS_PERSONAL_ALPHA.md", "DBYTEOS_ALPHA.md", "DBYTEOS_COMMANDS.md", "DBYTEOS_SECURITY.md", "DBYTEOS_BOOT.md", "DBYTEOS_PACKAGE.md", "DBYTEOS_ONBOARDING.md", "DBYTEOS_PROFILE.md", "DBYTEOS_CONFIG.md", "DBYTEOS_SNAPSHOT.md", "DBYTEOS_PROJECTS.md", "DBYTEOS_TASKS.md", "KERNEL_EXCEPTIONS.md", "KERNEL_IRQ.md")
     foreach ($doc in $dbyteDocs) {
         $p = Join-Path $repoRoot "docs/$doc"
         if (-not (Test-Path $p)) { throw "DByteOS doc missing: $doc" }
     }
     $mainReadme = Get-Content (Join-Path $repoRoot "README.md") -Raw
-    Assert-Contains $mainReadme "DByteOS Personal Workspace Beta Foundation (v8.10.1)" "README Personal Workspace Beta Foundation positioning"
+    Assert-Contains $mainReadme "DByteOS Personal Workspace Beta Foundation (v8.11.0)" "README Personal Workspace Beta Foundation positioning"
     Assert-Contains $mainReadme "docs/DBYTEOS_PERSONAL_ALPHA.md" "README Personal Workspace Beta Foundation link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ALPHA.md" "README alpha link"
     Assert-Contains $mainReadme "docs/DBYTEOS_ONBOARDING.md" "README onboarding link"
@@ -3240,7 +3240,7 @@ quit
     if (-not (Test-Path (Join-Path $repoRoot "docs\KERNEL_IRQ.md"))) { throw "README kernel irq foundation link target missing" }
     
     $osReadme = Get-Content (Join-Path $repoRoot "examples/dbyteos/README.md") -Raw
-    Assert-Contains $osReadme "DByteOS Personal Workspace Beta Foundation (v8.10.1)" "OS README Personal Workspace Beta Foundation positioning"
+    Assert-Contains $osReadme "DByteOS Personal Workspace Beta Foundation (v8.11.0)" "OS README Personal Workspace Beta Foundation positioning"
     Assert-Contains $osReadme '| `cat` | View file contents |' "OS README command table"
     Assert-Contains $osReadme "Package Smoke" "OS README package smoke"
     Assert-Contains $osReadme ".\dbyte.exe --version" "OS README package version smoke"
@@ -3320,17 +3320,17 @@ quit
     Assert-Contains $configGuide "DByteOS Config" "config guide title"
     Assert-Contains $configGuide "config show" "config guide show"
     Assert-Contains $configGuide "system.prompt = dbyte-shell>" "config guide prompt"
-    Assert-Contains $configGuide "read-only in v8.10.1" "config guide read-only"
+    Assert-Contains $configGuide "read-only in v8.11.0" "config guide read-only"
     Assert-Contains $configGuide "snapshot config" "config guide snapshot"
     $snapshotGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_SNAPSHOT.md") -Raw
     Assert-Contains $snapshotGuide "DByteOS Snapshot" "snapshot guide title"
     Assert-Contains $snapshotGuide "snapshot system" "snapshot guide system"
-    Assert-Contains $snapshotGuide "read-only in v8.10.1" "snapshot guide read-only"
+    Assert-Contains $snapshotGuide "read-only in v8.11.0" "snapshot guide read-only"
     $projectsGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_PROJECTS.md") -Raw
     Assert-Contains $projectsGuide "DByteOS Workspace Projects" "projects guide title"
     Assert-Contains $projectsGuide "project new demo" "projects guide new demo"
     Assert-Contains $projectsGuide "home/deadbyte/projects/" "projects guide user data path"
-    Assert-Contains $projectsGuide "v8.10.1 disabled path foundation" "projects guide hardening"
+    Assert-Contains $projectsGuide "v8.11.0 disabled path foundation" "projects guide hardening"
     Assert-Contains $projectsGuide "error: project not found: missing" "projects guide missing project"
     $tasksGuide = Get-Content (Join-Path $repoRoot "docs/DBYTEOS_TASKS.md") -Raw
     Assert-Contains $tasksGuide "DByteOS Workspace Tasks" "tasks guide title"
@@ -3461,7 +3461,7 @@ quit
 
 
     $inspectSource = Get-Content (Join-Path $dbyteosRoot "bin\inspect.dby") -Raw
-    # v8.10.1 enforcement confirmed via smoke tests above
+    # v8.11.0 enforcement confirmed via smoke tests above
     $dbyteosCatGuard = Invoke-Dbyte -Arguments @("run", "examples\dbyteos\bin\cat.dby", "etc/system.dby") -WorkingDirectory $repoRoot
     if ($dbyteosCatGuard.Code -ne 0) { throw "dbyteos cat guard failed: $($dbyteosCatGuard.Text)" }
     Assert-Contains $dbyteosCatGuard.Text "pub let os_version" "cat enforced allowed"
@@ -3500,10 +3500,10 @@ quit
     $dbyteosCmdShell = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "whoami`nsysinfo`nhome`ntmp`nprofile`npath`nenv`nwhich cat`nnotes`nmkdir-demo`nwrite tmp/shell_chain.txt shell chain ok`nread tmp/shell_chain.txt`nwrite-demo`ncat tmp/write_demo.txt`ntimeline today`ntimeline snapshot`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosCmdShell.Code -ne 0) { throw "dbyteos command shell chain failed: $($dbyteosCmdShell.Text)" }
     Assert-Contains $dbyteosCmdShell.Text "deadbyte" "dbyteos shell whoami"
-    Assert-Contains $dbyteosCmdShell.Text "version: DByte 8.10.1" "dbyteos shell sysinfo"
+    Assert-Contains $dbyteosCmdShell.Text "version: DByte 8.11.0" "dbyteos shell sysinfo"
     Assert-Contains $dbyteosCmdShell.Text "home/deadbyte" "dbyteos shell home"
     Assert-Contains $dbyteosCmdShell.Text "wrote tmp/write_demo.txt" "dbyteos shell write-demo"
-    Assert-Contains $dbyteosCmdShell.Text "os_version: 8.10.1" "dbyteos shell profile"
+    Assert-Contains $dbyteosCmdShell.Text "os_version: 8.11.0" "dbyteos shell profile"
     Assert-Contains $dbyteosCmdShell.Text "mode: beta-userland" "dbyteos shell profile mode"
     Assert-Contains $dbyteosCmdShell.Text "PATH=/bin:/tmp:/home/deadbyte" "dbyteos shell path"
     Assert-Contains $dbyteosCmdShell.Text "cat: dbyteos ->" "dbyteos shell chain which cat autopath"
@@ -3513,7 +3513,7 @@ quit
     Assert-Contains $dbyteosCmdShell.Text "Timeline Mode: fallback" "dbyteos shell timeline today mode"
     Assert-Contains $dbyteosCmdShell.Text "Total Projects: 1" "dbyteos shell timeline snapshot projects count"
 
-    Write-Host "Running DByteOS Notes Workflow (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Workflow (v8.11.0) smoke tests..."
     $dbyteosNotesWorkflow = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "notes clear-demo`nnotes read`nnotes add First Note`nnotes read`nnotes append Second Note`nnotes read`nnotes list`nclean`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosNotesWorkflow.Code -ne 0) { throw "dbyteos notes workflow failed: $($dbyteosNotesWorkflow.Text)" }
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: reset to seed state" "notes clear-demo"
@@ -3524,7 +3524,7 @@ quit
     Assert-Contains $dbyteosNotesWorkflow.Text "First Note`nSecond Note" "notes read both lines"
     Assert-Contains $dbyteosNotesWorkflow.Text "notes: home/deadbyte/notes.txt (exists)" "notes list"
 
-    Write-Host "Running DByteOS Notes Hardening (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Notes Hardening (v8.11.0) smoke tests..."
     $notesInput = @"
 clean
 notes read
@@ -3551,7 +3551,7 @@ quit
     Assert-Contains $dbyteosNotesHardening.Text "notes: reset to seed state" "notes clear-demo idempotent"
     Assert-Contains $dbyteosNotesHardening.Text "notes: home/deadbyte/notes.txt (exists)" "notes list after clear"
     
-    Write-Host "Running DByteOS Init Services (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Init Services (v8.11.0) smoke tests..."
     $dbyteosInitServices = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "boot`nservices list`nservices status`nservices run notes`nquit`n" -WorkingDirectory $dbyteosRoot
     if ($dbyteosInitServices.Code -ne 0) { throw "dbyteos init services failed: $($dbyteosInitServices.Text)" }
     Assert-Contains $dbyteosInitServices.Text "Init: starting userland services..." "init start"
@@ -3561,7 +3561,7 @@ quit
     Assert-Contains $dbyteosInitServices.Text "[ACTIVE] notes" "services status notes"
     Assert-Contains $dbyteosInitServices.Text "services: running notes..." "services run notes"
     
-    Write-Host "Running DByteOS Journal/Logger (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Journal/Logger (v8.11.0) smoke tests..."
     $journalPath = Join-Path $dbyteosRoot "home\deadbyte\journal.txt"
     if (Test-Path $journalPath) {
         Remove-Item -Force $journalPath
@@ -3713,7 +3713,7 @@ quit
     if ($dbyteosDiagnoseUnknown.Code -ne 0) { throw "dbyteos diagnose unknown failed: $($dbyteosDiagnoseUnknown.Text)" }
     Assert-Equal $dbyteosDiagnoseUnknown.Text "usage: diagnose [profile|config|preferences|security|logs|manual|package]" "dbyteos diagnose unknown snapshot"
 
-    Write-Host "Running DByteOS Search (v8.10.1) smoke tests..."
+    Write-Host "Running DByteOS Search (v8.11.0) smoke tests..."
     $searchHelp = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "help") -WorkingDirectory $dbyteosRoot
     if ($searchHelp.Code -ne 0) { throw "search help failed: $($searchHelp.Text)" }
     Assert-Contains $searchHelp.Text "usage: search <command>" "search help usage"
@@ -3729,7 +3729,7 @@ quit
     if ($searchReset.Code -ne 0) { throw "search reset failed: $($searchReset.Text)" }
     Assert-Contains $searchReset.Text "search: reset demo project and workspace seed data" "search reset-demo output"
 
-    # --- v8.10.1 Exact Snapshot Assertions ---
+    # --- v8.11.0 Exact Snapshot Assertions ---
     $searchWorkspace = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "workspace", "search", "note") -WorkingDirectory $dbyteosRoot
     if ($searchWorkspace.Code -ne 0) { throw "search workspace failed: $($searchWorkspace.Text)" }
     $expectedWorkspaceOut = "DByteOS workspace search: note`nnotes: dbyteos notes seed`nproject demo note: project demo notes`nproject demo task: [ ] 1: write project note"
@@ -3750,7 +3750,7 @@ quit
     $expectedDailyOut = "DByteOS daily search: seed`nnotes: dbyteos notes seed`njournal: [JOURNAL] dbyteos journal seed"
     Assert-Equal $searchDaily.Text $expectedDailyOut "search daily exact snapshot"
 
-    # --- v8.10.1 Deterministic Rejections ---
+    # --- v8.11.0 Deterministic Rejections ---
     $searchEmpty = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "workspace", "search", '""') -WorkingDirectory $dbyteosRoot
     if ($searchEmpty.Code -ne 0) { throw "search empty failed: $($searchEmpty.Text)" }
     Assert-Equal $searchEmpty.Text "error: search: invalid query" "search empty query reject"
@@ -3767,7 +3767,7 @@ quit
     if ($searchMissingProj.Code -ne 0) { throw "search missing project failed: $($searchMissingProj.Text)" }
     Assert-Equal $searchMissingProj.Text "error: project 'missing' not found in index" "missing project search deterministic"
 
-    # --- v8.10.1 Cache Commands Tests ---
+    # --- v8.11.0 Cache Commands Tests ---
     # 1. Clear cache initially and verify idempotency
     $cacheClearInit = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "clear-cache") -WorkingDirectory $dbyteosRoot
     if ($cacheClearInit.Code -ne 0) { throw "search clear-cache initial failed" }
@@ -3788,7 +3788,7 @@ quit
     if ($cacheDoctorMissing.Code -ne 0) { throw "search doctor missing failed" }
     Assert-Equal $cacheDoctorMissing.Text "error: index: missing (use 'search rebuild' to generate)" "cache doctor missing message"
 
-    # --- v8.10.1 Search UX Missing Cache / Scan Fallback tests ---
+    # --- v8.11.0 Search UX Missing Cache / Scan Fallback tests ---
     $uxSummaryMissing = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "summary") -WorkingDirectory $dbyteosRoot
     if ($uxSummaryMissing.Code -ne 0) { throw "search summary missing cache failed" }
     $expectedSummaryMissing = "--- DByteOS Search Summary ---`nIndex Status: missing`nIntegrity:    missing`nDaily Sources:`n  notes:   home/deadbyte/notes.txt (exists)`n  journal: home/deadbyte/journal.txt (exists)`nProjects:`n  - demo"
@@ -3842,7 +3842,7 @@ quit
     if ($cacheDoctorActive.Code -ne 0) { throw "search doctor active failed" }
     Assert-Equal $cacheDoctorActive.Text "index: healthy (all 5 records valid)" "cache doctor healthy message"
 
-    # --- v8.10.1 Search UX Active Cache tests ---
+    # --- v8.11.0 Search UX Active Cache tests ---
     $uxSummaryActive = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "summary") -WorkingDirectory $dbyteosRoot
     if ($uxSummaryActive.Code -ne 0) { throw "search summary active cache failed" }
     $cacheFile = Join-Path $dbyteosRoot "home\deadbyte\search_index.txt"
@@ -3939,7 +3939,7 @@ quit
     if ($cacheIndexSearchBad.Code -ne 0) { throw "search index validation failed" }
     Assert-Equal $cacheIndexSearchBad.Text "error: search: invalid query" "cache search query with forbidden chars reject"
     
-    # --- DByteOS Timeline (v8.10.1) tests ---
+    # --- DByteOS Timeline (v8.11.0) tests ---
     # 1. Reset-demo idempotency check (run twice)
     $timelineReset1 = Invoke-Dbyte -Arguments @("run", "bin\timeline.dby", "reset-demo") -WorkingDirectory $dbyteosRoot
     if ($timelineReset1.Code -ne 0) { throw "timeline reset-demo first run failed" }
@@ -4114,7 +4114,7 @@ Total Tasks:    2 (2 open, 0 done)
     if ($cacheClearFinal.Code -ne 0) { throw "search clear-cache final failed" }
     Assert-Equal $cacheClearFinal.Text "search: index cache cleared successfully" "cache clear-cache output"
 
-    # --- DByteOS Workspace Dashboard (v8.10.1) tests ---
+    # --- DByteOS Workspace Dashboard (v8.11.0) tests ---
     # 1. Fallback Scan Mode (cache is cleared or missing)
     $expectedDashboardHomeFallback = @"
 --- DByteOS Workspace Dashboard ---
@@ -4191,7 +4191,7 @@ projects index: healthy
     $expectedDashboardSnapshotFallback = @"
 --- DByteOS Dashboard: Snapshot ---
 User: deadbyte
-OS Version: 8.10.1
+OS Version: 8.11.0
 Projects: 1
 Tasks: 2 open / 0 done
 Services: active
@@ -4351,7 +4351,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "8.10.1"
+$EXPECTED_VERSION = "8.11.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -4431,7 +4431,7 @@ Assert-Equal (Normalize-Output $releaseU32StartOob) "error: offset out of bounds
 
 Assert-GitStatus-Unchanged $releasePersonalToolsStatus "release personal tools cleanliness"
 
-Write-Host "Verifying DByteOS Kernel Lab (v8.10.1) freestanding build..."
+Write-Host "Verifying DByteOS Kernel Lab (v8.11.0) freestanding build..."
 $linkerScript = Join-Path $repoRoot "kernel-lab\boot\linker.ld"
 if (-not (Test-Path $linkerScript)) { throw "Kernel-lab linker script not found!" }
 
@@ -4483,10 +4483,10 @@ $kernelIrqDocs = $kernelIrqDocs -replace "`r`n", "`n"
 $kernelInterruptDocs = $kernelInterruptDocs -replace "`r`n", "`n"
 $kernelBootSmokeDocs = $kernelBootSmokeDocs -replace "`r`n", "`n"
 
-Write-Host "Verifying DByteOS Kernel Lab (v8.10.1) exception status UX contracts..."
+Write-Host "Verifying DByteOS Kernel Lab (v8.11.0) exception status UX contracts..."
 Assert-Contains $kernelMainSource "mod page_fault;" "kernel page fault skeleton module is compiled"
 Assert-Contains $kernelMainSource "mod irq;" "kernel irq skeleton module is compiled"
-Assert-Contains $kernelMainSource "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status irq-map pic-status --verbose" "kernel help lists exception and irq UX commands"
+Assert-Contains $kernelMainSource "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose" "kernel help lists exception and irq UX commands"
 Assert-Contains $kernelMainSource "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\nskeleton planned: irq0 timer, irq1 keyboard\nactive: none\n" "kernel handlers command exact output"
 Assert-Contains $kernelMainSource "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n" "kernel handlers --active exact output"
 Assert-Contains $kernelMainSource "line_str == `"exception-status`" || line_str == `"exceptions`"" "kernel exceptions alias dispatch"
@@ -4503,6 +4503,9 @@ Assert-Contains $kernelMainSource "line_str == `"pic-plan`"" "kernel pic-plan di
 Assert-Contains $kernelMainSource "line_str == `"pic-remap-arm`"" "kernel pic-remap-arm dispatch"
 Assert-Contains $kernelMainSource "line_str == `"pic-remap-smoke`"" "kernel pic-remap-smoke dispatch"
 Assert-Contains $kernelMainSource "line_str == `"pic-remap-status`"" "kernel pic-remap-status dispatch"
+Assert-Contains $kernelMainSource "line_str == `"pic-remap-state`"" "kernel pic-remap-state dispatch"
+Assert-Contains $kernelMainSource "line_str == `"pic-remap-history`"" "kernel pic-remap-history dispatch"
+Assert-Contains $kernelMainSource "line_str == `"pic-remap-preflight`"" "kernel pic-remap-preflight dispatch"
 Assert-Contains $kernelMainSource "line_str == `"irq-map`"" "kernel irq-map dispatch"
 Assert-Contains $kernelMainSource "line_str == `"pic-status --verbose`"" "kernel pic-status verbose dispatch"
 Assert-Contains $kernelMainSource "line_str == `"eoi-status`"" "kernel eoi-status dispatch"
@@ -4540,6 +4543,10 @@ Assert-Contains $kernelMainSource "PIC remap smoke armed\nmode: {}\nnext: {}\nin
 Assert-Contains $kernelMainSource "PIC remap controlled smoke\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n" "kernel pic-remap-smoke armed output template"
 Assert-Contains $kernelMainSource "PIC remap controlled smoke\nguard: {}\nresult: {}\nnext: {}\n" "kernel pic-remap-smoke blocked output template"
 Assert-Contains $kernelMainSource "PIC remap smoke status\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\n" "kernel pic-remap-status output template"
+Assert-Contains $kernelMainSource "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n" "kernel pic-remap-state output template"
+Assert-Contains $kernelMainSource "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n" "kernel pic-remap-history output template"
+Assert-Contains $kernelMainSource "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n" "kernel pic-remap-preflight output template"
+Assert-Contains $kernelMainSource "pic remap controlled smoke: executed={}\n" "kernel system pic remap controlled smoke sync output"
 Assert-Contains $kernelMainSource "irq map:\nirq0 timer -> vector 32 (0x20)\nirq1 keyboard -> vector 33 (0x21)\nirq2 cascade -> vector 34 (0x22)\nirq3 serial2 -> vector 35 (0x23)\nirq4 serial1 -> vector 36 (0x24)\nirq5 parallel2 -> vector 37 (0x25)\nirq6 floppy -> vector 38 (0x26)\nirq7 parallel1 -> vector 39 (0x27)\nirq8 rtc -> vector 40 (0x28)\nirq9 acpi -> vector 41 (0x29)\nirq10 reserved -> vector 42 (0x2a)\nirq11 reserved -> vector 43 (0x2b)\nirq12 mouse -> vector 44 (0x2c)\nirq13 fpu -> vector 45 (0x2d)\nirq14 primary-ata -> vector 46 (0x2e)\nirq15 secondary-ata -> vector 47 (0x2f)\nactive irq handlers: none\n" "kernel irq-map exact output"
 Assert-Contains $kernelMainSource "pic subsystem:\nfoundation: dry-run telemetry\nremap function: present / not called\ndry-run plan: available\nmaster offset: 0x20\nslave offset: 0x28\nirq vectors: 0x20-0x2f\nhardware writes: disabled\nirq handlers: none\ninterrupts: disabled\n" "kernel pic-status verbose exact output"
 Assert-Contains $kernelMainSource "IRQ Interrupt Gates:\n- Vector 32 (0x20): IRQ0 Timer (planned)\n- Vector 33 (0x21): IRQ1 Keyboard (planned)\n- Handler setup: planned\n- Status: dormant / disabled\n" "kernel irq-gates exact output"
@@ -4585,6 +4592,23 @@ $expectedPicRemapStatusAfterSmokeOutput = "PIC remap smoke status`narmed: no`nex
 Assert-Contains $kernelIrqDocs $expectedPicRemapStatusAfterSmokeOutput "irq docs pic-remap-status after-smoke exact rendered contract"
 $expectedQemuPicRemapStatusAfterSmokeOutput = "PIC remap smoke status`n   armed: no`n   executed: yes`n   master offset: 0x20`n   slave offset: 0x28`n   mask after remap: 0xff`n   sti: disabled`n   irq gates: unbound`n   eoi dispatch: disabled"
 Assert-Contains $kernelBootSmokeDocs $expectedQemuPicRemapStatusAfterSmokeOutput "qemu docs pic-remap-status after-smoke exact rendered contract"
+$expectedPicRemapStateOutput = "PIC remap state`narmed: no`nexecuted: no`nmaster offset: 0x20`nslave offset: 0x28`nicw sequence expected: yes`nicw sequence applied: no`nmask after remap: 0xff`nirq runtime: disabled"
+Assert-Contains $kernelIrqDocs $expectedPicRemapStateOutput "irq docs pic-remap-state exact rendered contract"
+$expectedQemuPicRemapStateOutput = "PIC remap state`n   armed: no`n   executed: no`n   master offset: 0x20`n   slave offset: 0x28`n   icw sequence expected: yes`n   icw sequence applied: no`n   mask after remap: 0xff`n   irq runtime: disabled"
+Assert-Contains $kernelBootSmokeDocs $expectedQemuPicRemapStateOutput "qemu docs pic-remap-state exact rendered contract"
+$expectedPicRemapStateAfterSmokeOutput = "PIC remap state`narmed: no`nexecuted: yes`nmaster offset: 0x20`nslave offset: 0x28`nicw sequence expected: yes`nicw sequence applied: yes`nmask after remap: 0xff`nirq runtime: disabled"
+Assert-Contains $kernelBootSmokeDocs ($expectedPicRemapStateAfterSmokeOutput -replace "`n", "`n   ") "qemu docs pic-remap-state after-smoke exact rendered contract"
+$expectedPicRemapHistoryOutput = "PIC remap history`narm command: available`nsmoke command: available`nlast smoke executed: no`nicw writes: controlled command path only`nboot remap: no"
+Assert-Contains $kernelIrqDocs $expectedPicRemapHistoryOutput "irq docs pic-remap-history exact rendered contract"
+$expectedQemuPicRemapHistoryOutput = "PIC remap history`n   arm command: available`n   smoke command: available`n   last smoke executed: no`n   icw writes: controlled command path only`n   boot remap: no"
+Assert-Contains $kernelBootSmokeDocs $expectedQemuPicRemapHistoryOutput "qemu docs pic-remap-history exact rendered contract"
+$expectedPicRemapHistoryAfterSmokeOutput = "PIC remap history`narm command: available`nsmoke command: available`nlast smoke executed: yes`nicw writes: controlled command path only`nboot remap: no"
+Assert-Contains $kernelBootSmokeDocs ($expectedPicRemapHistoryAfterSmokeOutput -replace "`n", "`n   ") "qemu docs pic-remap-history after-smoke exact rendered contract"
+$expectedPicRemapPreflightOutput = "PIC remap preflight`nguard: command armed required`nicw sequence: ready`nmaster offset: 0x20`nslave offset: 0x28`nmask after remap: 0xff`nsti: disabled`nirq gates: unbound`neoi dispatch: disabled`nresult: telemetry only"
+Assert-Contains $kernelIrqDocs $expectedPicRemapPreflightOutput "irq docs pic-remap-preflight exact rendered contract"
+$expectedQemuPicRemapPreflightOutput = "PIC remap preflight`n   guard: command armed required`n   icw sequence: ready`n   master offset: 0x20`n   slave offset: 0x28`n   mask after remap: 0xff`n   sti: disabled`n   irq gates: unbound`n   eoi dispatch: disabled`n   result: telemetry only"
+Assert-Contains $kernelBootSmokeDocs $expectedQemuPicRemapPreflightOutput "qemu docs pic-remap-preflight exact rendered contract"
+Assert-Contains $kernelIrqDocs "pic remap controlled smoke: executed=no" "irq docs system pic remap controlled smoke sync"
 $expectedIrqReadinessOutput = "IRQ runtime readiness`nidt exceptions: ok`nirq gate plan: ok`neoi strategy: ok`npic remap: controlled smoke only`nsti: disabled`nkeyboard fallback: polling`nready for runtime irq: no"
 Assert-Contains $kernelIrqDocs $expectedIrqReadinessOutput "irq docs irq-readiness exact rendered contract"
 $expectedQemuIrqReadinessOutput = "IRQ runtime readiness`n    idt exceptions: ok`n    irq gate plan: ok`n    eoi strategy: ok`n    pic remap: controlled smoke only`n    sti: disabled`n    keyboard fallback: polling`n    ready for runtime irq: no"
@@ -4707,16 +4731,28 @@ if ($kernelMainSource.IndexOf('irq::irq_runtime_preflight()') -lt $irqPreflightD
 $picRemapArmCalls = [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_smoke_arm\(\)').Count
 $picRemapSmokeCalls = [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_controlled_smoke\(\)').Count
 $picRemapStatusCalls = [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_smoke_status\(\)').Count
+$picRemapStateCalls = [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_state\(\)').Count
+$picRemapHistoryCalls = [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_history\(\)').Count
+$picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_preflight\(\)').Count
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
+}
+if ($picRemapStateCalls -ne 2 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=2 (command + system), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_status()" "kernel boot path does not read pic remap smoke status"
+Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_state()" "kernel boot path does not read pic remap state telemetry"
+Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_history()" "kernel boot path does not read pic remap history telemetry"
+Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_preflight()" "kernel boot path does not read pic remap preflight telemetry"
 $picRemapArmDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-arm"')
 $picRemapSmokeDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-smoke"')
 $picRemapStatusDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-status"')
-if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0) {
+$picRemapStateDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-state"')
+$picRemapHistoryDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-history"')
+$picRemapPreflightDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-preflight"')
+if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
     throw "Kernel PIC remap smoke guard failed: pic-remap dispatch not found"
 }
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_smoke_arm()') -lt $picRemapArmDispatch) {
@@ -4727,6 +4763,20 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_c
 }
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_smoke_status()') -lt $picRemapStatusDispatch) {
     throw "Kernel PIC remap smoke guard failed: status helper call outside pic-remap-status dispatch"
+}
+foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_state\(\)')) {
+    $callIndex = $call.Index
+    $nearStateCommand = ($callIndex -gt $picRemapStateDispatch -and $callIndex -lt $picRemapStateDispatch + 1024)
+    $nearSystemCommand = ($callIndex -gt $kernelMainSource.IndexOf('line_str == "system"') -and $callIndex -lt $kernelMainSource.IndexOf('line_str == "system"') + 2048)
+    if (-not ($nearStateCommand -or $nearSystemCommand)) {
+        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system dispatch"
+    }
+}
+if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_history()') -lt $picRemapHistoryDispatch) {
+    throw "Kernel PIC remap telemetry guard failed: history helper call outside pic-remap-history dispatch"
+}
+if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_preflight()') -lt $picRemapPreflightDispatch) {
+    throw "Kernel PIC remap telemetry guard failed: preflight helper call outside pic-remap-preflight dispatch"
 }
 Assert-NotContains $kernelMainSource "timer_interrupt_handler_stub" "kernel main does not bind timer interrupt stub"
 Assert-NotContains $kernelMainSource "keyboard_interrupt_handler_stub" "kernel main does not bind keyboard interrupt stub"
@@ -4784,7 +4834,7 @@ Assert-NotContains $kernelInterruptSource "irq0_handler" "interrupt source has n
 Assert-NotContains $kernelInterruptSource "irq1_handler" "interrupt source has no irq1 keyboard handler"
 Assert-NotContains $kernelInterruptSource "keyboard_irq" "interrupt source has no keyboard irq path"
 Assert-NotContains $kernelInterruptSource "timer_irq" "interrupt source has no timer irq path"
-Assert-Contains $kernelPicSource "v8.10.1 hardens the two-step controlled remap smoke path" "pic source controlled smoke hardening milestone wording"
+Assert-Contains $kernelPicSource "v8.11.0 adds read-only PIC remap state telemetry" "pic source state telemetry milestone wording"
 Assert-Contains $kernelPicSource "unsafe fn write_pic_port(port: u16, value: u8)" "pic source controlled smoke port write helper"
 Assert-Contains $kernelPicSource '"out dx, al"' "pic source uses explicit PIC port write instruction"
 Assert-Contains $kernelPicSource "pub const PIC_MASTER_CMD: u16 = 0x20;" "pic master command port constant"
@@ -4806,6 +4856,18 @@ Assert-Contains $kernelPicSource "Self::remap_plan()" "pic remap disabled return
 Assert-Contains $kernelPicSource "pub fn pic_remap_smoke_arm() -> PicRemapSmokeArmStatus" "pic remap smoke arm function"
 Assert-Contains $kernelPicSource "pub fn pic_remap_controlled_smoke() -> PicRemapSmokeResult" "pic remap controlled smoke function"
 Assert-Contains $kernelPicSource "pub fn pic_remap_smoke_status() -> PicRemapSmokeStatus" "pic remap smoke status function"
+Assert-Contains $kernelPicSource "pub struct PicRemapStateTelemetry" "pic remap state telemetry struct"
+Assert-Contains $kernelPicSource "pub struct PicRemapHistoryTelemetry" "pic remap history telemetry struct"
+Assert-Contains $kernelPicSource "pub struct PicRemapPreflightTelemetry" "pic remap preflight telemetry struct"
+Assert-Contains $kernelPicSource "pub fn pic_remap_state() -> PicRemapStateTelemetry" "pic remap state telemetry function"
+Assert-Contains $kernelPicSource "pub fn pic_remap_history() -> PicRemapHistoryTelemetry" "pic remap history telemetry function"
+Assert-Contains $kernelPicSource "pub fn pic_remap_preflight() -> PicRemapPreflightTelemetry" "pic remap preflight telemetry function"
+Assert-Contains $kernelPicSource "pub const PIC_REMAP_ICW_SEQUENCE_EXPECTED: &str = `"yes`";" "pic remap expected icw telemetry constant"
+Assert-Contains $kernelPicSource "pub const PIC_REMAP_ICW_WRITES_CONTROLLED_ONLY: &str = `"controlled command path only`";" "pic remap controlled writes telemetry constant"
+Assert-Contains $kernelPicSource "pub const PIC_REMAP_GUARD_COMMAND_ARMED_REQUIRED: &str = `"command armed required`";" "pic remap preflight guard constant"
+Assert-Contains $kernelPicSource "pub const PIC_REMAP_RESULT_TELEMETRY_ONLY: &str = `"telemetry only`";" "pic remap telemetry-only result constant"
+Assert-Contains $kernelPicSource "icw_sequence_applied: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO }" "pic remap state reports applied from executed state"
+Assert-Contains $kernelPicSource "last_smoke_executed: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO }" "pic remap history reports executed state"
 Assert-Contains $kernelPicSource "PIC_REMAP_SMOKE_ARMED = true;" "pic remap smoke arm sets guard"
 Assert-Contains $kernelPicSource "if unsafe { !PIC_REMAP_SMOKE_ARMED }" "pic remap smoke blocks when unarmed"
 Assert-Contains $kernelPicSource "write_pic_port(PIC_MASTER_CMD, ICW1_INIT);" "pic remap writes master ICW1"
@@ -4971,7 +5033,7 @@ Assert-Contains $kernelInterruptDocs "Trap-Style Controlled Trigger" "interrupt 
 Assert-Contains $kernelInterruptDocs "Page Fault Handler Smoke (Vector 14)" "interrupt docs page fault smoke section"
 Assert-Contains $kernelInterruptDocs "controlled real Page Fault" "interrupt docs controlled real page fault"
 Assert-Contains $kernelInterruptDocs "recovery trampoline" "interrupt docs recovery trampoline"
-Assert-Contains $kernelInterruptDocs "PIC Remap Controlled Smoke Hardening release" "interrupt docs mark pic remap controlled smoke hardening release"
+Assert-Contains $kernelInterruptDocs "PIC Remap State Telemetry release" "interrupt docs mark pic remap state telemetry release"
 Assert-Contains $kernelInterruptDocs "PIC/IRQ remains planned / disabled" "interrupt docs irq planned disabled"
 Assert-Contains $kernelInterruptDocs 'IRQ vectors `0x20-0x2f` are planned' "interrupt docs irq vector range planned"
 Assert-Contains $kernelInterruptDocs '`irq-note` Command' "interrupt docs irq-note command"
@@ -4992,6 +5054,9 @@ Assert-Contains $kernelInterruptDocs 'PIC remap hardware writes are limited to t
 Assert-Contains $kernelInterruptDocs '`pic-remap-arm` Command' "interrupt docs pic-remap-arm command"
 Assert-Contains $kernelInterruptDocs '`pic-remap-smoke` Command' "interrupt docs pic-remap-smoke command"
 Assert-Contains $kernelInterruptDocs '`pic-remap-status` Command' "interrupt docs pic-remap-status command"
+Assert-Contains $kernelInterruptDocs '`pic-remap-state` Command' "interrupt docs pic-remap-state command"
+Assert-Contains $kernelInterruptDocs '`pic-remap-history` Command' "interrupt docs pic-remap-history command"
+Assert-Contains $kernelInterruptDocs '`pic-remap-preflight` Command' "interrupt docs pic-remap-preflight command"
 Assert-Contains $kernelInterruptDocs "no IRQ vector binding" "interrupt docs no irq vector binding"
 Assert-Contains $kernelInterruptDocs "IRQ0 timer and IRQ1 keyboard skeletons are compiled" "interrupt docs skeletons compiled"
 Assert-Contains $kernelInterruptDocs "no IRQ1 keyboard active handler" "interrupt docs no irq1 active handler"
@@ -5010,7 +5075,7 @@ Assert-Contains $kernelInterruptDocs '| `cs` | CPU stack push | Saved code-segme
 Assert-Contains $kernelInterruptDocs '| `eflags` | CPU stack push | Saved flags register. |' "interrupt docs stack frame eflags"
 Assert-Contains $kernelInterruptDocs '| `cr2` | Handler snapshot | Faulting linear address from the CR2 register. |' "interrupt docs stack frame cr2"
 Assert-Contains $kernelInterruptDocs "Page Fault Error Code Bits" "interrupt docs error-code bits section"
-Assert-Contains $kernelInterruptDocs 'Exact bit set tracked for v8.10.1: `P / W/R / U/S / RSVD / I/D`.' "interrupt docs exact error-code bit names"
+Assert-Contains $kernelInterruptDocs 'Exact bit set tracked for v8.11.0: `P / W/R / U/S / RSVD / I/D`.' "interrupt docs exact error-code bit names"
 Assert-Contains $kernelInterruptDocs "CR2 = faulting linear address." "interrupt docs CR2 equals faulting linear address"
 Assert-Contains $kernelInterruptDocs "CR2" "interrupt docs CR2 explanation"
 Assert-Contains $kernelInterruptDocs "error code" "interrupt docs error code explanation"
@@ -5039,7 +5104,8 @@ Assert-Contains $kernelExceptionDocs "PF_SMOKE_ACTIVE" "exception docs pf smoke 
 Assert-Contains $kernelExceptionDocs "PF_SMOKE_RECOVERY_EIP" "exception docs pf smoke recovery eip guard"
 Assert-Contains $kernelExceptionDocs "pf_smoke_probe_asm" "exception docs pf smoke probe guard"
 Assert-Contains $kernelIrqDocs "IRQ Handler Skeleton Foundation" "irq docs skeleton title"
-Assert-Contains $kernelIrqDocs "hardens the two-step PIC remap controlled smoke path" "irq docs controlled smoke hardening release"
+Assert-Contains $kernelIrqDocs "PIC Remap State Telemetry" "irq docs pic remap state telemetry title"
+Assert-Contains $kernelIrqDocs "adds read-only PIC remap state telemetry" "irq docs pic remap state telemetry release"
 Assert-Contains $kernelIrqDocs "only that explicit command path may write the PIC ICW sequence" "irq docs command-only pic write path"
 Assert-Contains $kernelIrqDocs "PIC/IRQ remains blocked for runtime use" "irq docs runtime irq blocked"
 Assert-Contains $kernelIrqDocs 'PS/2 ports `0x64` and `0x60`' "irq docs keyboard polling ports"
@@ -5069,8 +5135,8 @@ Assert-Contains $kernelIrqDocs '**ICW1 (`0x11`)**' "irq docs icw1"
 Assert-Contains $kernelIrqDocs '**ICW2 (`0x20` / `0x28`)**' "irq docs icw2"
 Assert-Contains $kernelIrqDocs '**ICW3 (`0x04` / `0x02`)**' "irq docs icw3"
 Assert-Contains $kernelIrqDocs '**ICW4 (`0x01`)**' "irq docs icw4"
-Assert-Contains $kernelIrqDocs '**IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.10.1`.' "irq docs irq0 skeleton disabled"
-Assert-Contains $kernelIrqDocs '**IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.10.1`.' "irq docs irq1 skeleton disabled"
+Assert-Contains $kernelIrqDocs '**IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.11.0`.' "irq docs irq0 skeleton disabled"
+Assert-Contains $kernelIrqDocs '**IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.11.0`.' "irq docs irq1 skeleton disabled"
 Assert-Contains $kernelIrqDocs "**IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15." "irq docs irq vector range"
 Assert-Contains $kernelIrqDocs "**EOI**: End Of Interrupt command planned for future PIC acknowledgements." "irq docs eoi glossary"
 Assert-Contains $kernelIrqDocs "pic remap dry-run:" "irq docs pic-plan output"
@@ -5121,7 +5187,7 @@ Assert-Contains $kernelIrqDocs "- IRQ0 timer and IRQ1 keyboard EOI paths are pla
 Assert-Contains $kernelIrqDocs "- No EOI is dispatched in this milestone." "irq docs eoi-note detail 5"
 Assert-Contains $kernelIrqDocs "No keyboard polling path rewrite." "irq docs no keyboard rewrite"
 Assert-Contains $kernelIrqDocs 'No change to `pf-smoke` mechanics and no `asm!("int 14")`.' "irq docs pf smoke unchanged"
-Assert-Contains $kernelBootSmokeDocs "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status irq-map pic-status --verbose" "qemu docs help snapshot"
+Assert-Contains $kernelBootSmokeDocs "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose" "qemu docs help snapshot"
 Assert-Contains $kernelBootSmokeDocs "dbyte-kernel> handlers" "qemu docs handlers snapshot"
 Assert-Contains $kernelBootSmokeDocs "irq handlers:" "qemu docs handlers irq section"
 Assert-Contains $kernelBootSmokeDocs "skeleton planned: irq0 timer, irq1 keyboard" "qemu docs handlers irq skeleton planned"
@@ -5199,9 +5265,9 @@ Assert-Contains $mainReadme "docs/KERNEL_EXCEPTIONS.md" "README includes kernel 
 Assert-Contains $mainReadme "docs/KERNEL_IRQ.md" "README includes kernel irq foundation doc"
 
 # ==============================================================================
-# DByteOS Kernel Lab Hardening Verify Guards (v8.10.1)
+# DByteOS Kernel Lab Hardening Verify Guards (v8.11.0)
 # ==============================================================================
-Write-Host "Verifying DByteOS Kernel Lab (v8.10.1) hardening guards..." -ForegroundColor Green
+Write-Host "Verifying DByteOS Kernel Lab (v8.11.0) hardening guards..." -ForegroundColor Green
 
 # 1. Verify guard that no asm!("int 14") is used anywhere in kernel-lab sources
 Get-ChildItem (Join-Path $repoRoot "kernel-lab\src") -Filter "*.rs" | ForEach-Object {
@@ -5264,7 +5330,7 @@ Assert-NotContains $kernelMainSource "entries[32].set_handler" "kernel IDT entry
 Assert-NotContains $kernelMainSource "entries[33].set_handler" "kernel IDT entry 33 remains unbound"
 
 # 6. Verify guard for stale previous-release references in current release-facing files
-$staleVersion = '8.10.' + '0'
+$staleVersion = '8.10.' + '1'
 $staleCheckFiles = @(
     'Cargo.toml',
     'Cargo.lock',
@@ -5334,7 +5400,7 @@ if (-not $qemuExe) {
 if (-not $qemuExe) {
     Write-Host "[WARNING] QEMU not found in PATH, skipping virtualized boot smoke tests." -ForegroundColor Yellow
 } else {
-    Write-Host "Verifying DByteOS Kernel Lab (v8.10.1) virtualized QEMU boot smoke using $($qemuExe.Name)..." -ForegroundColor Green
+    Write-Host "Verifying DByteOS Kernel Lab (v8.11.0) virtualized QEMU boot smoke using $($qemuExe.Name)..." -ForegroundColor Green
     $qemuLog = Join-Path $repoRoot "tmp\qemu_serial.log"
     if (Test-Path $qemuLog) { Remove-Item -Force $qemuLog }
 
@@ -5363,8 +5429,8 @@ if (-not $qemuExe) {
     if (-not ($logContent -like "*status: booted*")) {
         throw "QEMU boot smoke test failed: 'status: booted' not found in serial log!"
     }
-    if (-not ($logContent -like "*version: 8.10.1*")) {
-        throw "QEMU boot smoke test failed: 'version: 8.10.1' not found in serial log!"
+    if (-not ($logContent -like "*version: 8.11.0*")) {
+        throw "QEMU boot smoke test failed: 'version: 8.11.0' not found in serial log!"
     }
     if (-not ($logContent -like "*target: i686 multiboot*")) {
         throw "QEMU boot smoke test failed: 'target: i686 multiboot' not found in serial log!"
@@ -5382,7 +5448,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha (v8.10.1) Package Smoke Tests..."
+Write-Host "Running DByteOS Alpha (v8.11.0) Package Smoke Tests..."
 if (Test-Path (Join-Path $repoRoot "tmp")) { Remove-Item -Recurse -Force (Join-Path $repoRoot "tmp") }
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -5393,8 +5459,8 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& .\scripts\package_release.ps1 -Version "8.10.1"
-$zipFile = Join-Path $repoRoot "dbyte-v8.10.1-windows-x64.zip"
+& .\scripts\package_release.ps1 -Version "8.11.0"
+$zipFile = Join-Path $repoRoot "dbyte-v8.11.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -5404,7 +5470,7 @@ $extractedOsRoot = Join-Path $smokeRoot "examples\dbyteos"
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 8.10.1") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 8.11.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -5663,7 +5729,7 @@ try {
     Assert-Contains (Normalize-Output $pkgDashboardHealth) "system: healthy" "Package dashboard health"
 
     $pkgDashboardSnapshot = & $extractedExe run "bin\dashboard.dby" snapshot 2>&1
-    Assert-Contains (Normalize-Output $pkgDashboardSnapshot) "OS Version: 8.10.1" "Package dashboard snapshot"
+    Assert-Contains (Normalize-Output $pkgDashboardSnapshot) "OS Version: 8.11.0" "Package dashboard snapshot"
 
     # --- Package Full-System Beta Journey Smoke Tests ---
     $pkgJourneyBoot = & $extractedExe run "boot.dby" 2>&1
@@ -5694,7 +5760,7 @@ try {
     Assert-Contains (Normalize-Output $pkgJourneyTimeline) "Timeline" "Package Beta Journey Timeline"
 
     $pkgJourneySnapshot = & $extractedExe run "bin\snapshot.dby" 2>&1
-    Assert-Contains (Normalize-Output $pkgJourneySnapshot) "DByte 8.10.1" "Package Beta Journey Snapshot"
+    Assert-Contains (Normalize-Output $pkgJourneySnapshot) "DByte 8.11.0" "Package Beta Journey Snapshot"
 
     $pkgJourneyPrefsShow = & $extractedExe run "bin\prefs.dby" show 2>&1
     Assert-Contains (Normalize-Output $pkgJourneyPrefsShow) "ui.theme = default" "Package Beta Journey Prefs Show"
@@ -5774,8 +5840,8 @@ Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosC
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosManIndex) "Package shell man-index"
 Assert-Contains (Normalize-Output $shellOut) "D B Y T E O S   U S E R L A N D" "Package shell boot"
 Assert-Contains (Normalize-Output $shellOut) (Normalize-Output $expectedDbyteosHelp) "Package shell help"
-Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  8.10.1" "Package shell status version"
-Assert-Contains (Normalize-Output $shellOut) "version: DByte 8.10.1" "Package shell sysinfo version"
+Assert-Contains (Normalize-Output $shellOut) "OS:      DByte  8.11.0" "Package shell status version"
+Assert-Contains (Normalize-Output $shellOut) "version: DByte 8.11.0" "Package shell sysinfo version"
 Assert-Contains (Normalize-Output $shellOut) "read: dbyteos ->" "Package shell which read"
 Assert-Contains (Normalize-Output $shellOut) "doctor: dbyteos ->" "Package shell which doctor"
 Assert-Contains (Normalize-Output $shellOut) "project: dbyteos ->" "Package shell which project"
@@ -5800,11 +5866,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 8.10.1`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 8.11.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 8.10.1`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 8.10.1`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 8.10.1`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 8.11.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 8.11.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 8.11.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -5867,7 +5933,7 @@ dbyte-shell> ==================================================
         Alpha personal computing workspace
 ==================================================
 System:
-  Version:    DByte  8.10.1  ( Userland Prototype )
+  Version:    DByte  8.11.0  ( Userland Prototype )
   Hostname:    DByte-Alpha
   Kernel:      Simulated (Host)
   User:        deadbyte
@@ -5943,7 +6009,7 @@ result: healthy
 dbyte-shell> preference 'system.prompt' updated successfully.
 dbyteos> --- DByteOS System Snapshot ---
 System:
-  version: DByte 8.10.1
+  version: DByte 8.11.0
   codename: Userland Prototype
   host:    DByte-Alpha
   kernel:  Simulated (Host)
@@ -6058,7 +6124,7 @@ Journal: 0 entries recorded
 Open Tasks:
   demo: 2 open
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 8.10.1
+dbyte-shell> DByte 8.11.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"

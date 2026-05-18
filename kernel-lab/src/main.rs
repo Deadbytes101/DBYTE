@@ -99,7 +99,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v8.10.1)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v8.11.0)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -120,7 +120,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 8.10.1\n");
+    serial::print("version: 8.11.0\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -200,14 +200,14 @@ pub extern "C" fn kernel_main() -> ! {
                                     // Convert and process submitted line
                                     if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status irq-map pic-status --verbose\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status irq-map pic-status --verbose\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 8.10.1\n");
-                                            serial::print("DByteOS Kernel Lab 8.10.1\n");
+                                            vga::print("DByteOS Kernel Lab 8.11.0\n");
+                                            serial::print("DByteOS Kernel Lab 8.11.0\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
@@ -395,6 +395,74 @@ pub extern "C" fn kernel_main() -> ! {
                                                   status.sti,
                                                   status.irq_gates,
                                                   status.eoi_dispatch
+                                              );
+                                          } else if line_str == "pic-remap-state" {
+                                              let state = pic::ProgrammableInterruptController::pic_remap_state();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n",
+                                                  if state.armed { "yes" } else { "no" },
+                                                  if state.executed { "yes" } else { "no" },
+                                                  state.master_offset,
+                                                  state.slave_offset,
+                                                  state.icw_sequence_expected,
+                                                  state.icw_sequence_applied,
+                                                  state.mask_after_remap,
+                                                  state.irq_runtime
+                                              );
+                                              let _ = write!(serial_writer, "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n",
+                                                  if state.armed { "yes" } else { "no" },
+                                                  if state.executed { "yes" } else { "no" },
+                                                  state.master_offset,
+                                                  state.slave_offset,
+                                                  state.icw_sequence_expected,
+                                                  state.icw_sequence_applied,
+                                                  state.mask_after_remap,
+                                                  state.irq_runtime
+                                              );
+                                          } else if line_str == "pic-remap-history" {
+                                              let history = pic::ProgrammableInterruptController::pic_remap_history();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n",
+                                                  history.arm_command,
+                                                  history.smoke_command,
+                                                  history.last_smoke_executed,
+                                                  history.icw_writes,
+                                                  history.boot_remap
+                                              );
+                                              let _ = write!(serial_writer, "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n",
+                                                  history.arm_command,
+                                                  history.smoke_command,
+                                                  history.last_smoke_executed,
+                                                  history.icw_writes,
+                                                  history.boot_remap
+                                              );
+                                          } else if line_str == "pic-remap-preflight" {
+                                              let preflight = pic::ProgrammableInterruptController::pic_remap_preflight();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
+                                                  preflight.guard,
+                                                  preflight.icw_sequence,
+                                                  preflight.master_offset,
+                                                  preflight.slave_offset,
+                                                  preflight.mask_after_remap,
+                                                  preflight.sti,
+                                                  preflight.irq_gates,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.result
+                                              );
+                                              let _ = write!(serial_writer, "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
+                                                  preflight.guard,
+                                                  preflight.icw_sequence,
+                                                  preflight.master_offset,
+                                                  preflight.slave_offset,
+                                                  preflight.mask_after_remap,
+                                                  preflight.sti,
+                                                  preflight.irq_gates,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.result
                                               );
                                           } else if line_str == "irq-map" {
                                               let irq_map_msg = "irq map:\nirq0 timer -> vector 32 (0x20)\nirq1 keyboard -> vector 33 (0x21)\nirq2 cascade -> vector 34 (0x22)\nirq3 serial2 -> vector 35 (0x23)\nirq4 serial1 -> vector 36 (0x24)\nirq5 parallel2 -> vector 37 (0x25)\nirq6 floppy -> vector 38 (0x26)\nirq7 parallel1 -> vector 39 (0x27)\nirq8 rtc -> vector 40 (0x28)\nirq9 acpi -> vector 41 (0x29)\nirq10 reserved -> vector 42 (0x2a)\nirq11 reserved -> vector 43 (0x2b)\nirq12 mouse -> vector 44 (0x2c)\nirq13 fpu -> vector 45 (0x2d)\nirq14 primary-ata -> vector 46 (0x2e)\nirq15 secondary-ata -> vector 47 (0x2f)\nactive irq handlers: none\n";
@@ -630,10 +698,10 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("uptime: unavailable (no timer driver)\n");
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
-                                            vga::print("                   DByteOS Command Dispatch Lab (v8.10.1)                \n");
+                                            vga::print("                   DByteOS Command Dispatch Lab (v8.11.0)                \n");
                                             vga::print("========================================================================\n");
                                             serial::print("========================================================================\n");
-                                            serial::print("                   DByteOS Command Dispatch Lab (v8.10.1)                \n");
+                                            serial::print("                   DByteOS Command Dispatch Lab (v8.11.0)                \n");
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
@@ -654,7 +722,7 @@ pub extern "C" fn kernel_main() -> ! {
                                              let mut vga_writer = vga::VgaWriter;
                                              let mut serial_writer = serial::SerialWriter;
                                              vga::print("DByteOS Kernel Lab
-version: 8.10.1
+version: 8.11.0
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -673,7 +741,7 @@ page fault smoke: armed=false
 interrupts: disabled
 ");
                                              serial::print("DByteOS Kernel Lab
-version: 8.10.1
+version: 8.11.0
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -691,6 +759,13 @@ recovery mode: smoke-safe
 page fault smoke: armed=false
 interrupts: disabled
 ");
+                                             let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                             let _ = write!(vga_writer, "pic remap controlled smoke: executed={}\n",
+                                                 if pic_state.executed { "yes" } else { "no" }
+                                             );
+                                             let _ = write!(serial_writer, "pic remap controlled smoke: executed={}\n",
+                                                 if pic_state.executed { "yes" } else { "no" }
+                                             );
                                              let count = interrupts::EXCEPTION_COUNT;
                                              let vector = interrupts::LAST_EXCEPTION_VECTOR;
                                              let name = interrupts::LAST_EXCEPTION_NAME;
@@ -710,8 +785,8 @@ last exception: {} ({})
 ", count, vector, name);
                                              }
                                          } else if line_str == "status" {
-                                            vga::print("status: active\nversion: 8.10.1\nmode: polling\n");
-                                            serial::print("status: active\nversion: 8.10.1\nmode: polling\n");
+                                            vga::print("status: active\nversion: 8.11.0\nmode: polling\n");
+                                            serial::print("status: active\nversion: 8.11.0\nmode: polling\n");
                                         } else if line_str == "mods" {
                                             vga::print("shift active: ");
                                             vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });

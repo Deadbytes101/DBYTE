@@ -13,7 +13,7 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.10.1 hardens the two-step controlled remap smoke path while IRQ0/IRQ1 handler
+//! v8.11.0 adds read-only PIC remap state telemetry while IRQ0/IRQ1 handler
 //! skeletons are documented in `irq.rs`. The smoke path is intentionally not
 //! called from boot, does not enable STI, does not bind IRQ gates, masks all
 //! PIC lines after remap, and does not dispatch EOI.
@@ -67,6 +67,17 @@ pub const PIC_REMAP_ICW_SEQUENCE_WRITTEN: &str = "written";
 pub const PIC_REMAP_STI_DISABLED: &str = "disabled";
 pub const PIC_REMAP_IRQ_GATES_UNBOUND: &str = "unbound";
 pub const PIC_REMAP_EOI_DISPATCH_DISABLED: &str = "disabled";
+pub const PIC_REMAP_YES: &str = "yes";
+pub const PIC_REMAP_NO: &str = "no";
+pub const PIC_REMAP_ARM_COMMAND_AVAILABLE: &str = "available";
+pub const PIC_REMAP_SMOKE_COMMAND_AVAILABLE: &str = "available";
+pub const PIC_REMAP_ICW_SEQUENCE_READY: &str = "ready";
+pub const PIC_REMAP_ICW_SEQUENCE_EXPECTED: &str = "yes";
+pub const PIC_REMAP_ICW_WRITES_CONTROLLED_ONLY: &str = "controlled command path only";
+pub const PIC_REMAP_BOOT_REMAP_NO: &str = "no";
+pub const PIC_REMAP_GUARD_COMMAND_ARMED_REQUIRED: &str = "command armed required";
+pub const PIC_REMAP_IRQ_RUNTIME_DISABLED: &str = "disabled";
+pub const PIC_REMAP_RESULT_TELEMETRY_ONLY: &str = "telemetry only";
 
 static mut PIC_REMAP_SMOKE_ARMED: bool = false;
 static mut PIC_REMAP_SMOKE_EXECUTED: bool = false;
@@ -115,6 +126,43 @@ pub struct PicRemapSmokeResult {
     pub eoi_dispatch: &'static str,
     pub result: &'static str,
     pub next: Option<&'static str>,
+}
+
+/// Read-only state telemetry for the controlled PIC remap smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct PicRemapStateTelemetry {
+    pub armed: bool,
+    pub executed: bool,
+    pub master_offset: u8,
+    pub slave_offset: u8,
+    pub icw_sequence_expected: &'static str,
+    pub icw_sequence_applied: &'static str,
+    pub mask_after_remap: u8,
+    pub irq_runtime: &'static str,
+}
+
+/// Read-only history telemetry for the controlled PIC remap smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct PicRemapHistoryTelemetry {
+    pub arm_command: &'static str,
+    pub smoke_command: &'static str,
+    pub last_smoke_executed: &'static str,
+    pub icw_writes: &'static str,
+    pub boot_remap: &'static str,
+}
+
+/// Read-only preflight telemetry for the controlled PIC remap smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct PicRemapPreflightTelemetry {
+    pub guard: &'static str,
+    pub icw_sequence: &'static str,
+    pub master_offset: u8,
+    pub slave_offset: u8,
+    pub mask_after_remap: u8,
+    pub sti: &'static str,
+    pub irq_gates: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub result: &'static str,
 }
 
 /// Documentation-only IRQ mapping entry for the planned 0x20-0x2F remap range.
@@ -207,6 +255,52 @@ impl ProgrammableInterruptController {
             sti: PIC_REMAP_STI_DISABLED,
             irq_gates: PIC_REMAP_IRQ_GATES_UNBOUND,
             eoi_dispatch: PIC_REMAP_EOI_DISPATCH_DISABLED,
+        }
+    }
+
+    /// Returns read-only state telemetry without touching PIC hardware.
+    pub fn pic_remap_state() -> PicRemapStateTelemetry {
+        let status = Self::pic_remap_smoke_status();
+
+        PicRemapStateTelemetry {
+            armed: status.armed,
+            executed: status.executed,
+            master_offset: status.master_offset,
+            slave_offset: status.slave_offset,
+            icw_sequence_expected: PIC_REMAP_ICW_SEQUENCE_EXPECTED,
+            icw_sequence_applied: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO },
+            mask_after_remap: status.mask_after_remap,
+            irq_runtime: PIC_REMAP_IRQ_RUNTIME_DISABLED,
+        }
+    }
+
+    /// Returns read-only command history telemetry without touching PIC hardware.
+    pub fn pic_remap_history() -> PicRemapHistoryTelemetry {
+        let status = Self::pic_remap_smoke_status();
+
+        PicRemapHistoryTelemetry {
+            arm_command: PIC_REMAP_ARM_COMMAND_AVAILABLE,
+            smoke_command: PIC_REMAP_SMOKE_COMMAND_AVAILABLE,
+            last_smoke_executed: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO },
+            icw_writes: PIC_REMAP_ICW_WRITES_CONTROLLED_ONLY,
+            boot_remap: PIC_REMAP_BOOT_REMAP_NO,
+        }
+    }
+
+    /// Returns read-only preflight telemetry without touching PIC hardware.
+    pub fn pic_remap_preflight() -> PicRemapPreflightTelemetry {
+        let plan = Self::remap_plan();
+
+        PicRemapPreflightTelemetry {
+            guard: PIC_REMAP_GUARD_COMMAND_ARMED_REQUIRED,
+            icw_sequence: PIC_REMAP_ICW_SEQUENCE_READY,
+            master_offset: plan.master_offset,
+            slave_offset: plan.slave_offset,
+            mask_after_remap: plan.mask_after_remap,
+            sti: PIC_REMAP_STI_DISABLED,
+            irq_gates: PIC_REMAP_IRQ_GATES_UNBOUND,
+            eoi_dispatch: PIC_REMAP_EOI_DISPATCH_DISABLED,
+            result: PIC_REMAP_RESULT_TELEMETRY_ONLY,
         }
     }
 

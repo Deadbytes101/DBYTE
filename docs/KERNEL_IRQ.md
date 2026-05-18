@@ -1,6 +1,6 @@
-# DByteOS Kernel PIC Remap Controlled Smoke Hardening (v8.10.1)
+# DByteOS Kernel PIC Remap State Telemetry (v8.11.0)
 
-DByteOS Kernel Lab `v8.10.1` hardens the two-step PIC remap controlled smoke path on top of the IRQ Runtime Readiness Gate. The `pic-remap-arm` command must run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. No IRQ gate is installed, no EOI is actively dispatched, `sti` remains disabled, PIC/IRQ remains blocked for runtime use, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.11.0` adds read-only PIC remap state telemetry on top of the two-step PIC remap controlled smoke path. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. No IRQ gate is installed, no EOI is actively dispatched, `sti` remains disabled, PIC/IRQ remains blocked for runtime use, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while keeping the IRQ gate plan and disabled bind path dormant and adding a preflight status surface. It adds no new runtime IRQ behavior, no active IDT bind path, and no dry-bind readiness path.
 
@@ -13,7 +13,7 @@ The 8259A PIC pair routes hardware interrupt requests into CPU interrupt vectors
 | Master PIC | IRQ0-IRQ7 | `0x20` command / `0x21` data | `0x20` |
 | Slave PIC | IRQ8-IRQ15 | `0xA0` command / `0xA1` data | `0x28` |
 
-PIC remap dry-run telemetry remains available, and `v8.10.1` hardens the explicit controlled smoke path introduced in the previous milestone. Initialization Command Words are dispatched only after `pic-remap-arm` followed by `pic-remap-smoke`; no boot path remaps the PIC, no EOI is sent, no `sti` runs, and no IRQ gate is installed in the IDT.
+PIC remap dry-run telemetry remains available, and `v8.11.0` adds state/history/preflight telemetry for the explicit controlled smoke path introduced in the previous milestone. Initialization Command Words are dispatched only after `pic-remap-arm` followed by `pic-remap-smoke`; no boot path remaps the PIC, no EOI is sent, no `sti` runs, and no IRQ gate is installed in the IDT.
 
 ## Remap Controlled Smoke Foundation
 
@@ -24,6 +24,7 @@ PIC remap dry-run telemetry remains available, and `v8.10.1` hardens the explici
 - `pic_remap_smoke_arm()` arms the one-shot smoke path.
 - `pic_remap_controlled_smoke()` writes the ICW sequence only when armed, then masks all PIC IRQ lines and clears the arm flag.
 - `pic_remap_smoke_status()` reports arm/executed state without touching hardware.
+- `pic_remap_state()`, `pic_remap_history()`, and `pic_remap_preflight()` report controlled smoke telemetry without touching hardware.
 - The remap smoke function is not called from boot, IDT setup, IRQ setup, or keyboard input paths.
 - IRQ vectors `0x20-0x2f` are planned only.
 
@@ -36,7 +37,7 @@ PIC remap dry-run telemetry remains available, and `v8.10.1` hardens the explici
 - `IrqGateBindDisabledStep`, `IrqGateBindDisabledStatus`, and `bind_irq_gates_disabled()` describe the disabled bind path without accepting an IDT reference, mutating IDT entries, remapping PIC, dispatching EOI, or enabling interrupts.
 - `IrqRuntimeReadiness`, `IrqRuntimeRisk`, `IrqRuntimePreflight`, and their helpers describe readiness, risk, and preflight telemetry without accepting IDT/PIC references or changing runtime state.
 - The skeletons are not called from boot, shell commands, IDT setup, PIC setup, or keyboard input paths.
-- No assembly wrapper, active `extern "C"` entrypoint, EOI write, PIC remap call, or port write exists for IRQ0/IRQ1 in `v8.10.1`.
+- No assembly wrapper, active `extern "C"` entrypoint, EOI write, PIC remap call, or port write exists for IRQ0/IRQ1 in `v8.11.0`.
 
 ## EOI Strategy Foundation
 
@@ -68,9 +69,9 @@ To support external hardware interrupts safely, the kernel maps Master and Slave
 - **Disabled Bind Path**: `bind_irq_gates_disabled()` is a telemetry helper for the future IRQ0/IRQ1 gate bind sequence. It is read only by `irq-bind-note` and `irq-bind-status`, never during boot, and never installs IDT entries.
 - **Readiness Gate**: `irq-readiness`, `irq-risk`, and `irq-preflight` read compiled helper telemetry only. They report that runtime IRQ remains blocked even though PIC remap controlled smoke exists, because IDT gate binding, EOI dispatch, handler stubs, and `sti` remain unavailable.
 
-## v8.10.1 PIC Remap Controlled Smoke Hardening & Static Guards
+## v8.11.0 PIC Remap State Telemetry & Static Guards
 
-This hardening release locks the IRQ handler skeleton, gate binding plan, disabled bind-path helper, runtime preflight helpers, and the explicit PIC remap hardware-write path without adding new runtime IRQ behavior.
+This telemetry release reports PIC remap controlled smoke state, history, and preflight data without adding new runtime IRQ behavior.
 Verification guards enforce that `IRQ0_VECTOR` stays `32`, `IRQ1_VECTOR` stays
 `33`, `irq-handlers` output remains exact, disabled bind and readiness command output remains exact, handlers/system documentation stays
 in sync, IDT vectors `32` and `33` are not bound, `asm!("sti")` is absent, PIC
@@ -85,6 +86,8 @@ are pinned by verification so future IRQ work cannot silently turn the plan into
 active IDT, PIC, or EOI behavior.
 The readiness helpers are guarded as command-path telemetry only; boot remains
 free of readiness/preflight helper calls and `ready for runtime irq` remains `no`.
+The PIC remap telemetry helpers are guarded as command-path/system telemetry only;
+boot remains free of state/history/preflight helper activation.
 
 ## IRQ Glossary
 
@@ -92,11 +95,11 @@ free of readiness/preflight helper calls and `ready for runtime irq` remains `no
 - **ICW2 (`0x20` / `0x28`)**: planned master/slave remap offsets.
 - **ICW3 (`0x04` / `0x02`)**: planned master/slave cascade wiring.
 - **ICW4 (`0x01`)**: planned 8086 mode.
-- **IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.10.1`.
-- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.10.1`.
+- **IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.11.0`.
+- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.11.0`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.10.1`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.11.0`.
 
 ## Status UX
 
@@ -321,6 +324,44 @@ eoi dispatch: disabled
 ```
 
 ```txt
+PIC remap state
+armed: no
+executed: no
+master offset: 0x20
+slave offset: 0x28
+icw sequence expected: yes
+icw sequence applied: no
+mask after remap: 0xff
+irq runtime: disabled
+```
+
+```txt
+PIC remap history
+arm command: available
+smoke command: available
+last smoke executed: no
+icw writes: controlled command path only
+boot remap: no
+```
+
+```txt
+PIC remap preflight
+guard: command armed required
+icw sequence: ready
+master offset: 0x20
+slave offset: 0x28
+mask after remap: 0xff
+sti: disabled
+irq gates: unbound
+eoi dispatch: disabled
+result: telemetry only
+```
+
+```txt
+pic remap controlled smoke: executed=no
+```
+
+```txt
 IRQ runtime readiness
 idt exceptions: ok
 irq gate plan: ok
@@ -361,6 +402,7 @@ result: blocked
 - No IRQ0 PIT active handler or IDT binding.
 - No boot-time call to `bind_irq_gates_disabled()`.
 - No boot-time call to runtime readiness helpers.
+- No boot-time call to PIC remap state telemetry helpers.
 - No EOI dispatch.
 - No keyboard polling path rewrite.
 - No change to `pf-smoke` mechanics and no `asm!("int 14")`.

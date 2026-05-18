@@ -1,4 +1,4 @@
-# DByteOS Kernel Direction & Architecture (v8.10.1)
+# DByteOS Kernel Direction & Architecture (v8.11.0)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**

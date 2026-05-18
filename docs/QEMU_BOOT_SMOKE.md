@@ -1,4 +1,4 @@
-# DByteOS QEMU Boot Smoke (v8.10.1)
+# DByteOS QEMU Boot Smoke (v8.11.0)
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -54,7 +54,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 8.10.1
+version: 8.11.0
 status: booted
 target: i686 multiboot
 ```
@@ -68,9 +68,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v8.10.1)
+## Keyboard Line Editor & Command Dispatch Lab (v8.11.0)
 
-In version `8.10.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `8.11.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
@@ -81,9 +81,9 @@ In version `8.10.1`, a polling-based PS/2 keyboard listener and stateful ASCII m
 
 | Command Input | Parameter Handling | Output Response / Behavior |
 | :--- | :--- | :--- |
-| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status irq-map pic-status --verbose` |
+| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
 | `about` | None | Prints: `DByteOS Kernel Lab` |
-| `version` | None | Prints: `DByteOS Kernel Lab 8.10.1` |
+| `version` | None | Prints: `DByteOS Kernel Lab 8.11.0` |
 | `clear` | None | Clears the entire VGA console and resets prompt location to top-left. |
 | `cls` | None | Clears the entire VGA console (alias of `clear`). |
 | `echo` | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter. |
@@ -122,6 +122,9 @@ In version `8.10.1`, a polling-based PS/2 keyboard listener and stateful ASCII m
 | `pic-remap-arm` | None | Arms the one-shot controlled PIC remap smoke path. |
 | `pic-remap-smoke` | None | Runs the PIC remap ICW smoke only if armed; otherwise reports blocked. |
 | `pic-remap-status` | None | Prints controlled remap smoke arm/executed status. |
+| `pic-remap-state` | None | Prints controlled remap state telemetry. |
+| `pic-remap-history` | None | Prints controlled remap command history telemetry. |
+| `pic-remap-preflight` | None | Prints controlled remap readiness telemetry without hardware writes. |
 | `irq-map` | None | Prints the planned IRQ0-IRQ15 vector map and no active IRQ handlers. |
 | `eoi-status` | None | Prints the EOI strategy planned / disabled status. |
 | `eoi-note` | None | Explains EOI concepts, PIC ports, master/slave dependencies, and dry-run isolation. |
@@ -154,9 +157,9 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 3. Type commands and press Enter to execute them. For example:
    ```txt
     dbyte-kernel> help
-    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status irq-map pic-status --verbose
+    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
     dbyte-kernel> version
-    DByteOS Kernel Lab 8.10.1
+    DByteOS Kernel Lab 8.11.0
    dbyte-kernel> handlers
    active handlers:
    vector 0: divide-by-zero
@@ -268,6 +271,34 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
    sti: disabled
    irq gates: unbound
    eoi dispatch: disabled
+   dbyte-kernel> pic-remap-state
+   PIC remap state
+   armed: no
+   executed: no
+   master offset: 0x20
+   slave offset: 0x28
+   icw sequence expected: yes
+   icw sequence applied: no
+   mask after remap: 0xff
+   irq runtime: disabled
+   dbyte-kernel> pic-remap-history
+   PIC remap history
+   arm command: available
+   smoke command: available
+   last smoke executed: no
+   icw writes: controlled command path only
+   boot remap: no
+   dbyte-kernel> pic-remap-preflight
+   PIC remap preflight
+   guard: command armed required
+   icw sequence: ready
+   master offset: 0x20
+   slave offset: 0x28
+   mask after remap: 0xff
+   sti: disabled
+   irq gates: unbound
+   eoi dispatch: disabled
+   result: telemetry only
    dbyte-kernel> pic-remap-smoke
    PIC remap controlled smoke
    guard: not armed
@@ -300,6 +331,23 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
    sti: disabled
    irq gates: unbound
    eoi dispatch: disabled
+   dbyte-kernel> pic-remap-state
+   PIC remap state
+   armed: no
+   executed: yes
+   master offset: 0x20
+   slave offset: 0x28
+   icw sequence expected: yes
+   icw sequence applied: yes
+   mask after remap: 0xff
+   irq runtime: disabled
+   dbyte-kernel> pic-remap-history
+   PIC remap history
+   arm command: available
+   smoke command: available
+   last smoke executed: yes
+   icw writes: controlled command path only
+   boot remap: no
    dbyte-kernel> irq-map
    irq map:
    irq0 timer -> vector 32 (0x20)
@@ -524,7 +572,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This hardening release (`v8.10.1`) enforces strict technical bounds to maintain lab stability:
+> This hardening release (`v8.11.0`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** enable maskable interrupts or route keyboard input through IRQ1. Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
