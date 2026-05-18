@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab (v7.8.0)
+# DByteOS Kernel Lab (v8.4.0)
 
 Welcome to the **DByteOS Kernel Lab**! This sandbox is a bare-metal experimental laboratory separated entirely from the stable `dbyteos` userland computing environment.
 
@@ -7,6 +7,7 @@ Welcome to the **DByteOS Kernel Lab**! This sandbox is a bare-metal experimental
 - `boot/linker.ld`: Linker script locating the Multiboot section at `1MB` physical memory.
 - `src/main.rs`: Freestanding bootloader entry point utilizing inline LLVM assembly.
 - `src/vga.rs`: Framebuffer writing driver mapped directly to `0xB8000`.
+- `src/irq.rs`: Documentation-only IRQ0/IRQ1 handler skeleton foundation; no IDT binding, PIC remap, EOI, or STI.
 - `scripts/`: Powershell pipelines for easy bootstrapping, building, and running.
 
 ## Running the Kernel Lab
