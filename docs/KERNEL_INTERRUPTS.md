@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v8.1.1)
+# DByteOS Kernel Interrupt Architecture Foundation (v8.2.0)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v8.1.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v8.2.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 #### Exact Runtime Execution Flow
 When the user types the `pf-smoke` command:
@@ -132,7 +132,7 @@ On x86, a real Page Fault pushes an error code that describes why address transl
   - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
   - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v8.1.1: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v8.2.0: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -187,7 +187,7 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 > [!IMPORTANT]
 > **No PIC Remapping Dispatch**
-> No Initialization Command Words (ICWs) have been sent to ports `0x20` or `0xA0`. The 8259A PIC chips remain configured with default BIOS configurations.
+> The PIC remap code foundation is present / not called. No Initialization Command Words (ICWs) have been sent to ports `0x20` or `0xA0`, no hardware writes are performed from the PIC module, and the 8259A PIC chips remain configured with default BIOS configurations.
 
 > [!IMPORTANT]
 > **Keyboard Polling Mode is Active**
@@ -199,9 +199,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v8.1.1`)
+## 6. Current Milestone Status (`v8.2.0`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.1.1`. This is a PIC/IRQ Direction Foundation release: PIC/IRQ is planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, keyboard IRQ1 and timer IRQ0 remain disabled, and no PIC remap commands are dispatched. The Kernel Exception Subsystem Foundation remains unchanged; see `KERNEL_IRQ.md` for the PIC/IRQ foundation overview.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.2.0`. This is a PIC Remap Code Foundation release: PIC/IRQ is planned / disabled, PIC remap code is present / not called, IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain disabled, and no PIC remap commands are dispatched. The Kernel Exception Subsystem Foundation remains unchanged; see `KERNEL_IRQ.md` for the PIC remap foundation overview.
 - **`handlers` Command**: Lists active exception handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`, `vector 14: page fault`), planned exception handlers (`none`), and planned IRQ handlers (`irq0 timer`, `irq1 keyboard`) with active IRQ handlers (`none`).
 - **`handlers --active` Command**: Lists only currently active exception handlers.
 - **`exception-status` & `exceptions` Command**: Displays concise exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).
@@ -215,6 +215,8 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **`pf-smoke` Command**: Triggers a controlled real Page Fault and recovers through a trampoline after the handler records diagnostics.
 - **`irq-note` Command**: Documents that PIC/IRQ remains planned / disabled, PIC remap is documented only, IRQ vectors `32-47` are planned, IRQ1 keyboard and IRQ0 timer are disabled, and interrupts are disabled.
 - **`irq-status` Command**: Displays the planned IRQ subsystem state, not-remapped PIC state, no active IRQ handlers, polling-only keyboard input, unavailable timer, and disabled interrupts.
+- **`pic-note` Command**: Documents the planned remap offsets `0x20 / 0x28`, IRQ vector range `0x20-0x2f`, disabled hardware writes, and disabled interrupts.
+- **`pic-status` Command**: Displays that the PIC remap function is present / not called, no IRQ handlers are active, and interrupts are disabled.
 - **Page Fault Frame Layout Foundation**: Keeps compile-time documentation types for `PageFaultFrame` and `PageFaultErrorCode` while vector 14 is registered for smoke handling.
 - **Exception Handler Status Table**: Added a clear vector registration tracking table mapping Active vs Planned entry gates in Section 2.
 - **Controlled Divide-by-Zero (Vector 0)**: Fully active. Registered IDT entry 0 pointing to `divide_by_zero_handler_asm`, preserving GPRs via `pushad`/`popad` and returning via `iretd`.
@@ -222,6 +224,7 @@ To preserve absolute stability and maintain polling-based shell input, **Interru
 - **Page Fault Smoke (Vector 14)**: Active smoke. Registered IDT entry 14 pointing to `page_fault_handler_asm`, preserving GPRs, reading `CR2`, discarding the CPU-pushed error code with `add esp, 4`, and returning via `iretd`.
 - **Active / Smoke / Planned Model**: Vector 0 and vector 3 are active handlers, vector 14 is active smoke with recovery trampoline, and planned handlers are currently `none`.
 - **STI (Set Interrupts Flag) instruction**: Uncalled.
+- **PIC Remap Code Foundation**: `remap_plan()` and `remap_disabled()` are compile-time planning hooks only; they are not called from boot, shell commands, IDT setup, or keyboard input paths.
 - **PIC Remap Commands**: Not dispatched.
 - **IRQ Direction Foundation**: PIC/IRQ remains planned / disabled; no IRQ vector binding, no IRQ1 keyboard handler, and no IRQ0 PIT handler are active.
 - **IDT Loading**: Executed successfully using the standard `lidt` instruction during bootstrap.
