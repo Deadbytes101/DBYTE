@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+﻿#![allow(dead_code)]
 
 //! Programmable Interrupt Controller (8259A PIC) Foundation
 //!
@@ -13,7 +13,7 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.4.1 keeps the dry-run remap plan disabled while IRQ0/IRQ1 handler
+//! v8.5.0 keeps the dry-run remap plan disabled while IRQ0/IRQ1 handler
 //! skeletons are documented in `irq.rs`. The plan is intentionally not called
 //! from boot or shell code, and this module performs no hardware writes.
 
@@ -125,4 +125,93 @@ impl ProgrammableInterruptController {
     pub fn irq_map_plan() -> &'static [IrqMapEntry; 16] {
         &IRQ_MAP_PLAN
     }
+
+    /// Returns the planned master EOI target configuration without touching hardware.
+    pub fn master_eoi_plan() -> EoiPlan {
+        EoiPlan {
+            irq: 0,
+            target: EoiTarget::MasterOnly,
+            command_value: PIC_EOI,
+            master_port: PIC_MASTER_CMD,
+            slave_port: None,
+        }
+    }
+
+    /// Returns the planned slave EOI target configuration without touching hardware.
+    pub fn slave_eoi_plan() -> EoiPlan {
+        EoiPlan {
+            irq: 8,
+            target: EoiTarget::MasterAndSlave,
+            command_value: PIC_EOI,
+            master_port: PIC_MASTER_CMD,
+            slave_port: Some(PIC_SLAVE_CMD),
+        }
+    }
+
+    /// Returns the planned IRQ0 timer EOI path configuration.
+    pub fn irq0_timer_eoi_plan() -> EoiPlan {
+        EoiPlan {
+            irq: 0,
+            target: EoiTarget::MasterOnly,
+            command_value: PIC_EOI,
+            master_port: PIC_MASTER_CMD,
+            slave_port: None,
+        }
+    }
+
+    /// Returns the planned IRQ1 keyboard EOI path configuration.
+    pub fn irq1_keyboard_eoi_plan() -> EoiPlan {
+        EoiPlan {
+            irq: 1,
+            target: EoiTarget::MasterOnly,
+            command_value: PIC_EOI,
+            master_port: PIC_MASTER_CMD,
+            slave_port: None,
+        }
+    }
+
+    /// Combined EOI strategy status accessor for dry-run CLI telemetry.
+    pub fn eoi_strategy_status() -> EoiStrategyStatus {
+        EoiStrategyStatus {
+            strategy_name: "planned / disabled",
+            enabled: false,
+            pic_command: PIC_EOI,
+            master_pic_state: "planned",
+            slave_pic_state: "planned",
+            dispatch_enabled: false,
+        }
+    }
 }
+
+/// EOI target identifier representing which PIC chip requires acknowledgment.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum EoiTarget {
+    /// EOI directed only to the Master PIC command port (for IRQs 0-7).
+    MasterOnly,
+    /// EOI directed to both Master and Slave PIC command ports (for IRQs 8-15).
+    MasterAndSlave,
+    /// No EOI target required.
+    None,
+}
+
+/// Documentation-only EOI plan structure representing a dry-run EOI path description.
+#[derive(Copy, Clone, Debug)]
+pub struct EoiPlan {
+    pub irq: u8,
+    pub target: EoiTarget,
+    pub command_value: u8,
+    pub master_port: u16,
+    pub slave_port: Option<u16>,
+}
+
+/// EOI strategy status representation for dry-run CLI telemetry.
+#[derive(Copy, Clone, Debug)]
+pub struct EoiStrategyStatus {
+    pub strategy_name: &'static str,
+    pub enabled: bool,
+    pub pic_command: u8,
+    pub master_pic_state: &'static str,
+    pub slave_pic_state: &'static str,
+    pub dispatch_enabled: bool,
+}
+
