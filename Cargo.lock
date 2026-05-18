@@ -44,11 +44,11 @@ dependencies = [
 
 [[package]]
 name = "dbyte_ast"
-version = "8.11.0"
+version = "8.11.1"
 
 [[package]]
 name = "dbyte_bytecode"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
  "hex",
@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_cli"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
@@ -72,7 +72,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_compiler"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_embed"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
  "dbyte_interp",
@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_interp"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "byteorder",
  "dbyte_ast",
@@ -105,21 +105,21 @@ dependencies = [
 
 [[package]]
 name = "dbyte_lexer"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
 ]
 
 [[package]]
 name = "dbyte_module"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
 ]
 
 [[package]]
 name = "dbyte_parser"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
  "dbyte_lexer",
@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_project"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "serde",
  "toml",
@@ -135,7 +135,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_typeck"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "dbyte_ast",
  "dbyte_lexer",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_vm"
-version = "8.11.0"
+version = "8.11.1"
 dependencies = [
  "byteorder",
  "dbyte_ast",
