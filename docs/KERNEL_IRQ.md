@@ -1,8 +1,8 @@
-# DByteOS Kernel IRQ Handler Skeleton Foundation (v8.7.1)
+# DByteOS Kernel IRQ Gate Bind Disabled Path (v8.8.0)
 
-DByteOS Kernel Lab `v8.7.1` hardens the IRQ Gate Binding Code Foundation on top of the IRQ handler skeleton and EOI strategy foundation. This is a planning and code-foundation-only release: IRQ gate plan structs/helpers are compiled and exposed through `irq-gate-plan`, but no IRQ gate is installed, no EOI is actively dispatched, no hardware writes are performed, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.8.0` adds the IRQ Gate Bind Disabled Path on top of the hardened IRQ gate plan foundation. This is a planning and code-foundation-only release: IRQ gate plan structs/helpers are compiled and exposed through `irq-gate-plan`, disabled bind-path helper data is exposed through `irq-bind-note` and `irq-bind-status`, but no IRQ gate is installed, no EOI is actively dispatched, no hardware writes are performed, PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
-This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while hardening the previous IRQ Gate Binding Code Foundation. It adds no new runtime IRQ behavior, no disabled bind path, and no dry-bind readiness path.
+This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while adding a disabled bind-path data helper. It adds no new runtime IRQ behavior, no active IDT bind path, and no dry-bind readiness path.
 
 ## PIC Remap Plan
 
@@ -30,8 +30,9 @@ PIC remap dry-run telemetry is documented and compiled only. No Initialization C
 - `IRQ0_VECTOR = 32` and `IRQ1_VECTOR = 33` define the future remapped vectors.
 - `IrqHandlerSkeleton`, `irq0_timer_skeleton()`, `irq1_keyboard_skeleton()`, and `irq_handler_skeletons()` describe the planned handlers without binding them.
 - `IrqGatePlan`, `irq0_timer_gate_plan()`, `irq1_keyboard_gate_plan()`, and `irq_gate_plan()` describe the dormant gate binding plan without touching IDT, PIC, EOI, or interrupt state.
+- `IrqGateBindDisabledStep`, `IrqGateBindDisabledStatus`, and `bind_irq_gates_disabled()` describe the disabled bind path without accepting an IDT reference, mutating IDT entries, remapping PIC, dispatching EOI, or enabling interrupts.
 - The skeletons are not called from boot, shell commands, IDT setup, PIC setup, or keyboard input paths.
-- No assembly wrapper, active `extern "C"` entrypoint, EOI write, PIC remap call, or port write exists for IRQ0/IRQ1 in `v8.7.1`.
+- No assembly wrapper, active `extern "C"` entrypoint, EOI write, PIC remap call, or port write exists for IRQ0/IRQ1 in `v8.8.0`.
 
 ## EOI Strategy Foundation
 
@@ -60,20 +61,23 @@ To support external hardware interrupts safely, the kernel maps Master and Slave
 - **Vector 33 (IRQ1 Keyboard)**: Mapped to the PS/2 keyboard controller. The IDT gate remains planned, registered as a null/disabled handler, and dormant.
 - **Gate Status**: Both gates remain strictly unbound at runtime. No `idt::IDT.entries[32].set_handler` or `idt::IDT.entries[33].set_handler` calls exist.
 - **Command Surface**: `irq-gate-plan` reads the compiled helper plan and prints the dormant route for IRQ0/IRQ1. It does not run during boot and does not bind either vector.
+- **Disabled Bind Path**: `bind_irq_gates_disabled()` is a telemetry helper for the future IRQ0/IRQ1 gate bind sequence. It is read only by `irq-bind-note` and `irq-bind-status`, never during boot, and never installs IDT entries.
 
-## v8.7.1 Hardening & Static Guards
+## v8.8.0 Disabled Bind Path & Static Guards
 
-This release locks the IRQ handler skeleton and gate binding plan as compile-time structure only.
+This release locks the IRQ handler skeleton, gate binding plan, and disabled bind-path helper as compile-time structure only.
 Verification guards enforce that `IRQ0_VECTOR` stays `32`, `IRQ1_VECTOR` stays
-`33`, `irq-handlers` output remains exact, handlers/system documentation stays
+`33`, `irq-handlers` output remains exact, disabled bind command output remains exact, handlers/system documentation stays
 in sync, IDT vectors `32` and `33` are not bound, `asm!("sti")` is absent, PIC
 remap hooks are not called, `kernel-lab/src/pic.rs` performs no `outb` writes,
 keyboard input remains polling-only, and `pf-smoke` mechanics remain unchanged.
 The `irq-gate-plan` command is guarded as the only runtime command-path read of
 `irq::irq_gate_plan()`; boot remains free of IRQ gate helper calls.
-The `IrqGatePlan` field shape, vector constants, and exact printed telemetry
-contract are pinned by verification so future IRQ work cannot silently turn the
-plan into active IDT, PIC, or EOI behavior.
+The `bind_irq_gates_disabled()` helper is guarded as command-path telemetry only;
+boot remains free of disabled bind helper calls. The `IrqGatePlan` and disabled
+bind status field shapes, vector constants, and exact printed telemetry contracts
+are pinned by verification so future IRQ work cannot silently turn the plan into
+active IDT, PIC, or EOI behavior.
 
 ## IRQ Glossary
 
@@ -81,11 +85,11 @@ plan into active IDT, PIC, or EOI behavior.
 - **ICW2 (`0x20` / `0x28`)**: planned master/slave remap offsets.
 - **ICW3 (`0x04` / `0x02`)**: planned master/slave cascade wiring.
 - **ICW4 (`0x01`)**: planned 8086 mode.
-- **IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.7.1`.
-- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.7.1`.
+- **IRQ0 timer**: skeleton planned PIT timer interrupt; disabled in `v8.8.0`.
+- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; disabled in `v8.8.0`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.7.1`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.8.0`.
 
 ## Status UX
 
@@ -236,6 +240,27 @@ interrupts: disabled
 state: dormant / disabled
 ```
 
+```txt
+IRQ bind note:
+IRQ0 timer gate: disabled bind path only
+IRQ1 keyboard gate: disabled bind path only
+IDT entries: planned / not installed
+PIC remap: disabled
+EOI dispatch: disabled
+interrupts: disabled
+```
+
+```txt
+IRQ bind status:
+helper: bind_irq_gates_disabled
+boot call: no
+IDT vector 32: unbound
+IDT vector 33: unbound
+active IRQ0 handler: none
+active IRQ1 handler: none
+keyboard input: polling-only
+```
+
 ## Safety Boundaries
 
 - No `asm!("sti")`.
@@ -244,6 +269,7 @@ state: dormant / disabled
 - No active IRQ IDT bindings beyond existing exception vectors `0`, `3`, and `14`.
 - No IRQ1 keyboard active handler or IDT binding.
 - No IRQ0 PIT active handler or IDT binding.
+- No boot-time call to `bind_irq_gates_disabled()`.
 - No EOI dispatch.
 - No keyboard polling path rewrite.
 - No change to `pf-smoke` mechanics and no `asm!("int 14")`.
