@@ -1,4 +1,4 @@
-# DByteOS Personal Workspace Beta Foundation (v8.3.1)
+# DByteOS Personal Workspace Beta Foundation (v8.4.0)
 
 Welcome to the Personal Workspace Beta Foundation milestone of DByteOS.
 
@@ -17,7 +17,7 @@ DByteOS is a **Personal Computing Userland** built on top of the DByte programmi
 
 ## Current Status: Personal Workspace Beta Foundation
 
-As the v8.3.1 Personal Workspace Beta Foundation milestone, DByteOS includes the shell, package flow, manual pages, onboarding, profile/config/preferences, prompt integration, notes, journal, workspace projects, project tasks, services, diagnostics, snapshot, and simulated permission model. Future releases can build on this baseline without redefining the userland boundary.
+As the v8.4.0 Personal Workspace Beta Foundation milestone, DByteOS includes the shell, package flow, manual pages, onboarding, profile/config/preferences, prompt integration, notes, journal, workspace projects, project tasks, services, diagnostics, snapshot, and simulated permission model. Future releases can build on this baseline without redefining the userland boundary.
 
 ---
 [Home](../README.md) | [Personal Workspace Beta Foundation](DBYTEOS_PERSONAL_ALPHA.md) | [Commands](DBYTEOS_COMMANDS.md) | [Projects](DBYTEOS_PROJECTS.md) | [Tasks](DBYTEOS_TASKS.md) | [Security](DBYTEOS_SECURITY.md) | [Boot](DBYTEOS_BOOT.md)
