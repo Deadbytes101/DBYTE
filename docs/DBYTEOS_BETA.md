@@ -1,4 +1,4 @@
-# DByteOS Personal Workspace Beta Foundation (v8.3.0)
+# DByteOS Personal Workspace Beta Foundation (v8.3.1)
 
 Welcome to the Beta milestone of DByteOS! 
 
