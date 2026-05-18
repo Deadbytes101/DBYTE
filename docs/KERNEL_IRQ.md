@@ -1,6 +1,6 @@
-# DByteOS Kernel PIC Remap Dry-Run Telemetry (v8.3.0)
+# DByteOS Kernel PIC Remap Dry-Run Telemetry (v8.3.1)
 
-DByteOS Kernel Lab `v8.3.0` adds PIC remap dry-run telemetry. PIC/IRQ remains planned / disabled: the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, no hardware writes are performed, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.3.1` hardens PIC remap dry-run telemetry. This is a hardening-only release: PIC/IRQ remains planned / disabled, the remap function is present / not called, dry-run commands expose the planned ICW sequence and IRQ map, no hardware writes are performed, maskable interrupts remain disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 ## PIC Remap Plan
 
@@ -28,11 +28,11 @@ PIC remap dry-run telemetry is documented and compiled only. No Initialization C
 - **ICW2 (`0x20` / `0x28`)**: planned master/slave remap offsets.
 - **ICW3 (`0x04` / `0x02`)**: planned master/slave cascade wiring.
 - **ICW4 (`0x01`)**: planned 8086 mode.
-- **IRQ0 timer**: planned PIT timer interrupt; disabled in `v8.3.0`.
-- **IRQ1 keyboard**: planned PS/2 keyboard interrupt; disabled in `v8.3.0`.
+- **IRQ0 timer**: planned PIT timer interrupt; disabled in `v8.3.1`.
+- **IRQ1 keyboard**: planned PS/2 keyboard interrupt; disabled in `v8.3.1`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.3.0`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.3.1`.
 
 ## Status UX
 
