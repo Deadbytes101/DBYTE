@@ -13,7 +13,7 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.2.0 adds a compile-time remap plan only. The plan is intentionally not
+//! v8.2.1 hardens the compile-time remap plan only. The plan is intentionally not
 //! called from boot or shell code, and this module performs no hardware writes.
 
 /// I/O Port address for the Master PIC Command/Status register.
