@@ -3,9 +3,9 @@
 //! IRQ handler skeleton foundation.
 //!
 //! This module documents the first hardware IRQ handler shapes without making
-//! them active. It contains no assembly stubs, no active ABI entrypoints, no
-//! PIC EOI writes, and no port I/O. The symbols are compiled so verification
-//! can guard the intended IRQ0/IRQ1 contract before any IDT binding exists.
+//! them hardware-active. It contains no PIC EOI writes and no port I/O. The
+//! symbols are compiled so verification can guard the intended IRQ0/IRQ1
+//! contract before runtime IRQ activation exists.
 
 /// Planned CPU vector for IRQ0 after the future PIC remap.
 pub const IRQ0_VECTOR: u8 = 32;
@@ -82,6 +82,45 @@ pub const IRQ_PREFLIGHT_PASS: &str = "pass";
 
 /// Page Fault smoke readiness state.
 pub const IRQ_PF_SMOKE_UNCHANGED: &str = "unchanged";
+
+/// One-shot guard state string for armed IRQ gate bind smoke.
+pub const IRQ_GATE_BIND_SMOKE_GUARD_ARMED: &str = "armed";
+
+/// One-shot guard state string for blocked IRQ gate bind smoke.
+pub const IRQ_GATE_BIND_SMOKE_GUARD_NOT_ARMED: &str = "not armed";
+
+/// Controlled bind smoke mode string.
+pub const IRQ_GATE_BIND_SMOKE_MODE_CONTROLLED: &str = "controlled bind smoke";
+
+/// Next command after arming the controlled gate bind smoke.
+pub const IRQ_GATE_BIND_SMOKE_NEXT: &str = "irq-gate-bind-smoke";
+
+/// Command to arm the controlled gate bind smoke.
+pub const IRQ_GATE_BIND_ARM_NEXT: &str = "irq-gate-arm";
+
+/// PIC mask state while IRQ gates are bound only for smoke.
+pub const IRQ_PIC_IRQ_MASK_MASKED: &str = "masked";
+
+/// Bound vector state for controlled IRQ gate smoke.
+pub const IRQ_VECTOR_BOUND: &str = "bound";
+
+/// Dormant smoke-stub handler state for controlled IRQ gate smoke.
+pub const IRQ_SMOKE_STUB_DORMANT: &str = "smoke stub / dormant";
+
+/// Rendered IRQ0 smoke-stub binding target.
+pub const IRQ0_SMOKE_STUB_BINDING: &str = "bound to IRQ0 timer smoke stub";
+
+/// Rendered IRQ1 smoke-stub binding target.
+pub const IRQ1_SMOKE_STUB_BINDING: &str = "bound to IRQ1 keyboard smoke stub";
+
+/// Blocked result for unarmed IRQ gate bind smoke.
+pub const IRQ_GATE_BIND_RESULT_BLOCKED: &str = "blocked";
+
+/// Dormant result for a successful controlled IRQ gate bind smoke.
+pub const IRQ_GATE_BIND_RESULT_BOUND_DORMANT: &str = "bound / dormant";
+
+static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
+static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
 /// Documentation-only representation of a future IRQ handler.
 pub struct IrqHandlerSkeleton {
@@ -164,6 +203,47 @@ pub struct IrqRuntimePreflight {
     pub keyboard_fallback: &'static str,
     pub pf_smoke: &'static str,
     pub result: &'static str,
+}
+
+/// Command-facing arm status for the controlled IRQ gate bind smoke path.
+#[derive(Copy, Clone)]
+pub struct IrqGateBindSmokeArmStatus {
+    pub mode: &'static str,
+    pub next: &'static str,
+    pub interrupts: &'static str,
+    pub pic_irq_mask: &'static str,
+    pub eoi_dispatch: &'static str,
+}
+
+/// Command-facing result for an attempted controlled IRQ gate bind smoke.
+#[derive(Copy, Clone)]
+pub struct IrqGateBindSmokeResult {
+    pub guard: &'static str,
+    pub irq0_vector_state: &'static str,
+    pub irq1_vector_state: &'static str,
+    pub pic_irq_mask: &'static str,
+    pub sti: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub keyboard_input: &'static str,
+    pub result: &'static str,
+    pub next: Option<&'static str>,
+}
+
+/// Command-facing status for the controlled IRQ gate bind smoke path.
+#[derive(Copy, Clone)]
+pub struct IrqGateBindSmokeStatus {
+    pub armed: bool,
+    pub executed: bool,
+    pub irq0_vector: u8,
+    pub irq0_vector_state: &'static str,
+    pub irq1_vector: u8,
+    pub irq1_vector_state: &'static str,
+    pub irq0_active_handler: &'static str,
+    pub irq1_active_handler: &'static str,
+    pub pic_irq_mask: &'static str,
+    pub sti: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub keyboard_input: &'static str,
 }
 
 /// Documentation-only timer IRQ skeleton.
@@ -304,5 +384,88 @@ pub fn irq_runtime_preflight() -> IrqRuntimePreflight {
         keyboard_fallback: disabled_bind.keyboard_input,
         pf_smoke: IRQ_PF_SMOKE_UNCHANGED,
         result: IRQ_RUNTIME_BLOCKED,
+    }
+}
+
+/// Arms the explicit command-only IRQ gate bind smoke path.
+pub fn irq_gate_bind_smoke_arm() -> IrqGateBindSmokeArmStatus {
+    unsafe {
+        IRQ_GATE_BIND_SMOKE_ARMED = true;
+    }
+
+    IrqGateBindSmokeArmStatus {
+        mode: IRQ_GATE_BIND_SMOKE_MODE_CONTROLLED,
+        next: IRQ_GATE_BIND_SMOKE_NEXT,
+        interrupts: IRQ_INTERRUPTS_DISABLED,
+        pic_irq_mask: IRQ_PIC_IRQ_MASK_MASKED,
+        eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
+    }
+}
+
+/// Returns whether the controlled IRQ gate bind smoke path is armed.
+pub fn irq_gate_bind_smoke_is_armed() -> bool {
+    unsafe { IRQ_GATE_BIND_SMOKE_ARMED }
+}
+
+/// Records a successful command-path IRQ gate smoke bind after IDT entries are installed.
+pub fn irq_gate_bind_smoke_mark_bound() -> IrqGateBindSmokeResult {
+    unsafe {
+        IRQ_GATE_BIND_SMOKE_ARMED = false;
+        IRQ_GATE_BIND_SMOKE_EXECUTED = true;
+    }
+
+    IrqGateBindSmokeResult {
+        guard: IRQ_GATE_BIND_SMOKE_GUARD_ARMED,
+        irq0_vector_state: IRQ0_SMOKE_STUB_BINDING,
+        irq1_vector_state: IRQ1_SMOKE_STUB_BINDING,
+        pic_irq_mask: IRQ_PIC_IRQ_MASK_MASKED,
+        sti: IRQ_INTERRUPTS_DISABLED,
+        eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
+        keyboard_input: IRQ_KEYBOARD_INPUT_POLLING_ONLY,
+        result: IRQ_GATE_BIND_RESULT_BOUND_DORMANT,
+        next: None,
+    }
+}
+
+/// Returns a blocked IRQ gate bind smoke result without touching IDT entries.
+pub fn irq_gate_bind_smoke_blocked() -> IrqGateBindSmokeResult {
+    IrqGateBindSmokeResult {
+        guard: IRQ_GATE_BIND_SMOKE_GUARD_NOT_ARMED,
+        irq0_vector_state: IRQ_VECTOR_UNBOUND,
+        irq1_vector_state: IRQ_VECTOR_UNBOUND,
+        pic_irq_mask: IRQ_PIC_IRQ_MASK_MASKED,
+        sti: IRQ_INTERRUPTS_DISABLED,
+        eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
+        keyboard_input: IRQ_KEYBOARD_INPUT_POLLING_ONLY,
+        result: IRQ_GATE_BIND_RESULT_BLOCKED,
+        next: Some(IRQ_GATE_BIND_ARM_NEXT),
+    }
+}
+
+/// Returns current controlled IRQ gate bind smoke status without touching hardware.
+pub fn irq_gate_bind_smoke_status() -> IrqGateBindSmokeStatus {
+    let executed = unsafe { IRQ_GATE_BIND_SMOKE_EXECUTED };
+
+    IrqGateBindSmokeStatus {
+        armed: unsafe { IRQ_GATE_BIND_SMOKE_ARMED },
+        executed,
+        irq0_vector: IRQ0_VECTOR,
+        irq0_vector_state: if executed {
+            IRQ_VECTOR_BOUND
+        } else {
+            IRQ_VECTOR_UNBOUND
+        },
+        irq1_vector: IRQ1_VECTOR,
+        irq1_vector_state: if executed {
+            IRQ_VECTOR_BOUND
+        } else {
+            IRQ_VECTOR_UNBOUND
+        },
+        irq0_active_handler: IRQ_SMOKE_STUB_DORMANT,
+        irq1_active_handler: IRQ_SMOKE_STUB_DORMANT,
+        pic_irq_mask: IRQ_PIC_IRQ_MASK_MASKED,
+        sti: IRQ_INTERRUPTS_DISABLED,
+        eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
+        keyboard_input: IRQ_KEYBOARD_INPUT_POLLING_ONLY,
     }
 }

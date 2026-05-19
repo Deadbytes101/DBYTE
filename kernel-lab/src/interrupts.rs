@@ -69,7 +69,13 @@ core::arch::global_asm!(
     "    ret",
     ".global pf_smoke_recovery_asm",
     "pf_smoke_recovery_asm:",
-    "    ret"
+    "    ret",
+    ".global irq0_timer_gate_smoke_asm",
+    "irq0_timer_gate_smoke_asm:",
+    "    iretd",
+    ".global irq1_keyboard_gate_smoke_asm",
+    "irq1_keyboard_gate_smoke_asm:",
+    "    iretd"
 );
 
 extern "C" {
@@ -83,6 +89,10 @@ extern "C" {
     pub fn pf_smoke_probe_asm();
     /// Recovery trampoline used after the Page Fault handler rewrites saved EIP.
     pub fn pf_smoke_recovery_asm();
+    /// Dormant IRQ0 gate smoke wrapper. It performs no EOI and returns with iretd.
+    pub fn irq0_timer_gate_smoke_asm();
+    /// Dormant IRQ1 gate smoke wrapper. It performs no EOI and returns with iretd.
+    pub fn irq1_keyboard_gate_smoke_asm();
 }
 
 /// Global exception telemetry count tracking.
