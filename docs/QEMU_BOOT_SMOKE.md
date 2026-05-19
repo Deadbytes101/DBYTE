@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v8.11.1)
+# DByteOS QEMU Boot Smoke (v8.11.2)
 
-`v8.11.1` is a PIC Remap State Telemetry Hardening release. The state, history, preflight, and system sync snapshots below are telemetry only; they do not run PIC remap at boot, enable interrupts, install IRQ gates, or dispatch EOI.
+`v8.11.2` is a Keyboard Symbol Decode Hotfix release. It adds polling-keyboard decoding for `-`, `=`, `_`, `+`, numpad `-`, and numpad `+` so hyphenated kernel commands can be typed directly in QEMU. It does not change PIC remap state telemetry, run PIC remap at boot, enable interrupts, install IRQ gates, or dispatch EOI.
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -56,7 +56,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 8.11.1
+version: 8.11.2
 status: booted
 target: i686 multiboot
 ```
@@ -70,9 +70,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v8.11.1)
+## Keyboard Line Editor & Command Dispatch Lab (v8.11.2)
 
-In version `8.11.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `8.11.2`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
@@ -85,7 +85,7 @@ In version `8.11.1`, a polling-based PS/2 keyboard listener and stateful ASCII m
 | :--- | :--- | :--- |
 | `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
 | `about` | None | Prints: `DByteOS Kernel Lab` |
-| `version` | None | Prints: `DByteOS Kernel Lab 8.11.1` |
+| `version` | None | Prints: `DByteOS Kernel Lab 8.11.2` |
 | `clear` | None | Clears the entire VGA console and resets prompt location to top-left. |
 | `cls` | None | Clears the entire VGA console (alias of `clear`). |
 | `echo` | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter. |
@@ -161,10 +161,10 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     dbyte-kernel> help
     commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
     dbyte-kernel> version
-    DByteOS Kernel Lab 8.11.1
+    DByteOS Kernel Lab 8.11.2
    dbyte-kernel> system
    DByteOS Kernel Lab
-   version: 8.11.1
+   version: 8.11.2
    input mode: keyboard polling
    ...
    interrupts: disabled
@@ -535,6 +535,23 @@ When `SHIFT_ACTIVE` is true, typing a numeric key redirects the translation mapp
 | **`8`** | `0x09` | `'8'` | `Shift + 0x09` | **`'*'`** |
 | **`9`** | `0x0A` | `'9'` | `Shift + 0x0A` | **`'('`** |
 | **`0`** | `0x0B` | `'0'` | `Shift + 0x0B` | **`')'`** |
+| **`-`** | `0x0C` | `'-'` | `Shift + 0x0C` | **`'_'`** |
+| **`=`** | `0x0D` | `'='` | `Shift + 0x0D` | **`'+'`** |
+
+### Keyboard Symbol Decode Hotfix Manual Proof
+
+The `v8.11.2` hotfix keeps the keyboard path polling-only while allowing hyphenated commands and the minimum required symbol echo test to be typed directly in QEMU:
+
+```txt
+dbyte-kernel> irq-status
+dbyte-kernel> pic-remap-status
+dbyte-kernel> eoi-status
+dbyte-kernel> pf-smoke
+dbyte-kernel> echo - = + _
+- = + _
+```
+
+No IRQ1 keyboard handler is installed; these symbols are decoded from PS/2 Set 1 scancodes in the existing polling loop.
 
 ---
 
@@ -559,6 +576,10 @@ All other keystrokes not explicitly defined below are currently ignored by the f
 | --- | --- | --- | --- |
 | **Alphabetic** | `A` through `Z` | `0x1E` through `0x2C` (Set 1) | Cased representation (`'a'` - `'z'` / `'A'` - `'Z'`) |
 | **Numeric** | `1` through `0` | `0x02` through `0x0B` | Numeric or symbol representation |
+| **Symbol** | `-` / `_` | `0x0C` | `'-'` or shifted `'_'` |
+| **Symbol** | `=` / `+` | `0x0D` | `'='` or shifted `'+'` |
+| **Numpad** | `Numpad -` | `0x4A` | `'-'` |
+| **Numpad** | `Numpad +` | `0x4E` | `'+'` |
 | **Spacer** | `Space` | `0x39` | Blank space padding byte (`' '`) |
 | **Control** | `Enter` | `0x1C` | Translates to Carriage Return / Newline (`'\n'`) |
 | **Control** | `Backspace` | `0x0E` | Erase previous character trigger (`'\x08'`) |
@@ -581,7 +602,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This hardening release (`v8.11.1`) enforces strict technical bounds to maintain lab stability:
+> This hardening release (`v8.11.2`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** enable maskable interrupts or route keyboard input through IRQ1. Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.

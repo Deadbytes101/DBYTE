@@ -86,6 +86,12 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
         0x09 => Some(if shift { '*' } else { '8' }),
         0x0A => Some(if shift { '(' } else { '9' }),
         0x0B => Some(if shift { ')' } else { '0' }),
+        0x0C => Some(if shift { '_' } else { '-' }),
+        0x0D => Some(if shift { '+' } else { '=' }),
+
+        // Numpad arithmetic symbols
+        0x4A => Some('-'),
+        0x4E => Some('+'),
 
         // Spaces and controls
         0x39 => Some(' '),
@@ -99,7 +105,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v8.11.1)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v8.11.2)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -120,7 +126,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 8.11.1\n");
+    serial::print("version: 8.11.2\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -206,8 +212,8 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 8.11.1\n");
-                                            serial::print("DByteOS Kernel Lab 8.11.1\n");
+                                            vga::print("DByteOS Kernel Lab 8.11.2\n");
+                                            serial::print("DByteOS Kernel Lab 8.11.2\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
@@ -698,10 +704,10 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("uptime: unavailable (no timer driver)\n");
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
-                                            vga::print("                   DByteOS Command Dispatch Lab (v8.11.1)                \n");
+                                            vga::print("                   DByteOS Command Dispatch Lab (v8.11.2)                \n");
                                             vga::print("========================================================================\n");
                                             serial::print("========================================================================\n");
-                                            serial::print("                   DByteOS Command Dispatch Lab (v8.11.1)                \n");
+                                            serial::print("                   DByteOS Command Dispatch Lab (v8.11.2)                \n");
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
@@ -722,7 +728,7 @@ pub extern "C" fn kernel_main() -> ! {
                                              let mut vga_writer = vga::VgaWriter;
                                              let mut serial_writer = serial::SerialWriter;
                                              vga::print("DByteOS Kernel Lab
-version: 8.11.1
+version: 8.11.2
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -741,7 +747,7 @@ page fault smoke: armed=false
 interrupts: disabled
 ");
                                              serial::print("DByteOS Kernel Lab
-version: 8.11.1
+version: 8.11.2
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -785,8 +791,8 @@ last exception: {} ({})
 ", count, vector, name);
                                              }
                                          } else if line_str == "status" {
-                                            vga::print("status: active\nversion: 8.11.1\nmode: polling\n");
-                                            serial::print("status: active\nversion: 8.11.1\nmode: polling\n");
+                                            vga::print("status: active\nversion: 8.11.2\nmode: polling\n");
+                                            serial::print("status: active\nversion: 8.11.2\nmode: polling\n");
                                         } else if line_str == "mods" {
                                             vga::print("shift active: ");
                                             vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
