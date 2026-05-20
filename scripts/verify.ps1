@@ -6345,7 +6345,7 @@ dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"
 
-Remove-Item -Recurse -Force $smokeRoot
+Remove-Item -Recurse -Force $smokeRoot -ErrorAction SilentlyContinue
 Assert-GitStatus-Unchanged $packageSmokeStatus "package smoke cleanliness"
 Write-Host "Package smoke tests passed."
 

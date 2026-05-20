@@ -14,3 +14,11 @@ examples/dbyteos/home/deadbyte/preferences.dby.bak
 examples/dbyteos/home/deadbyte/search_index.txt
 test_import.dby
 .gemini/
+verify_*.log
+verify_*.txt
+verify_debug.txt
+verify_full.log
+verify_final.log
+verify_out.txt
+verify_err.txt
+verify_output.txt
