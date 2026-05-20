@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Workspace Beta Foundation (v8.13.0)
+## DByteOS Personal Workspace Beta Foundation (v8.13.1)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -48,6 +48,7 @@ This configures the session environment, activates autopath resolving, and
 loads the DByteOS prompt from `system.prompt`.
 
 2. **Explore the System**:
+
 - [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
@@ -281,16 +282,16 @@ dbyte run personal_tools\read_u32_table.dby firmware.bin 0 8
 
 ### Personal Tools Command Reference
 
-| Tool | Usage | Description |
-|---|---|---|
-| `hexdump.dby` | `hexdump.dby <file> [offset length]` | Hex dump file bytes, 8 bytes per row |
-| `bininfo.dby` | `bininfo.dby <file>` | File size, first 8 bytes hex, checksum |
-| `find_bytes.dby` | `find_bytes.dby <file> <hex_pattern>` | Find byte pattern, print offset (dec + hex) |
-| `patch_bytes.dby` | `patch_bytes.dby <file> <find> <replace>` | Patch first match, output to `<file>.patched` |
-| `patch_bytes.dby --all` | `patch_bytes.dby --all <file> <find> <replace>` | Patch all matches |
-| `patch_bytes.dby --offset` | `patch_bytes.dby --offset <N> <file> <replace>` | Patch at explicit byte offset |
-| `patch_bytes.dby --out` | append `--out <outfile>` to any mode | Write output to explicit path instead of `<file>.patched` |
-| `read_u32_table.dby` | `read_u32_table.dby <file> [offset count]` | Dump little-endian u32 table |
+| Tool                       | Usage                                           | Description                                               |
+| -------------------------- | ----------------------------------------------- | --------------------------------------------------------- |
+| `hexdump.dby`              | `hexdump.dby <file> [offset length]`            | Hex dump file bytes, 8 bytes per row                      |
+| `bininfo.dby`              | `bininfo.dby <file>`                            | File size, first 8 bytes hex, checksum                    |
+| `find_bytes.dby`           | `find_bytes.dby <file> <hex_pattern>`           | Find byte pattern, print offset (dec + hex)               |
+| `patch_bytes.dby`          | `patch_bytes.dby <file> <find> <replace>`       | Patch first match, output to `<file>.patched`             |
+| `patch_bytes.dby --all`    | `patch_bytes.dby --all <file> <find> <replace>` | Patch all matches                                         |
+| `patch_bytes.dby --offset` | `patch_bytes.dby --offset <N> <file> <replace>` | Patch at explicit byte offset                             |
+| `patch_bytes.dby --out`    | append `--out <outfile>` to any mode            | Write output to explicit path instead of `<file>.patched` |
+| `read_u32_table.dby`       | `read_u32_table.dby <file> [offset count]`      | Dump little-endian u32 table                              |
 
 All tools support `--help` / `-h`.
 
@@ -348,4 +349,3 @@ See [INSTALL.md](INSTALL.md) for install verification and release smoke tests.
 ## License
 
 MIT. See [LICENSE](LICENSE).
-

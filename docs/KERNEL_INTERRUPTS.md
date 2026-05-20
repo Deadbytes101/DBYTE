@@ -1,4 +1,4 @@
-# DByteOS Kernel Interrupt Architecture Foundation (v8.13.0)
+# DByteOS Kernel Interrupt Architecture Foundation (v8.13.1)
 
 This document details the layout, data structures, and cascade configuration for standard **x86 Interrupt Handling** under freestanding and zero-allocation constraints.
 
@@ -66,7 +66,7 @@ When a division error occurs, the processor normally triggers a **Fault** (Vecto
 - **Trap-Style Controlled Trigger (`int 0`)**: To avoid this risk in our diagnostics lab while validating Vector 0 registration, the `div0` shell command triggers Vector 0 via a software trap (`int 0`). Under software interrupt rules, the CPU pushes the `EIP` pointing to the *next instruction* after `int 0`. This enables safe trap-style execution flow, incrementing exception telemetry stats, printing diagnostic status, and returning back to the interactive polling shell loop flawlessly.
 
 ### Page Fault Handler Smoke (Vector 14)
-Page Fault handling is **active smoke** in `v8.13.0`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
+Page Fault handling is **active smoke** in `v8.13.1`. The `pf-smoke` command triggers a controlled real Page Fault through a null read probe, reads `CR2`, decodes the CPU-pushed error code as a raw value, and returns to the shell through a recovery trampoline.
 
 #### Exact Runtime Execution Flow
 When the user types the `pf-smoke` command:
@@ -132,7 +132,7 @@ On x86, a real Page Fault pushes an error code that describes why address transl
   - `I/D` (Bit 4) is `0`: The fault was not an instruction fetch violation.
   - Therefore, the raw error code pushed by the CPU is `0x00000000`.
 
-Exact bit set tracked for v8.13.0: `P / W/R / U/S / RSVD / I/D`.
+Exact bit set tracked for v8.13.1: `P / W/R / U/S / RSVD / I/D`.
 
 CR2 = faulting linear address. The faulting linear address is reported through the `CR2` register.
 
@@ -187,7 +187,7 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 > [!IMPORTANT]
 > **No PIC Remapping Dispatch**
-> The PIC remap code foundation is present, and `v8.13.0` adds IRQ gate binding controlled smoke. Initialization Command Words (ICWs) are sent only by the explicit two-step `pic-remap-arm` / `pic-remap-smoke` command path; IRQ gates `32/33` are installed only by the explicit two-step `irq-gate-arm` / `irq-gate-bind-smoke` command path. Boot, general IDT setup, EOI paths, and keyboard polling do not remap the PIC or activate IRQ delivery.
+> The PIC remap code foundation is present, and `v8.13.1` adds IRQ gate binding controlled smoke. Initialization Command Words (ICWs) are sent only by the explicit two-step `pic-remap-arm` / `pic-remap-smoke` command path; IRQ gates `32/33` are installed only by the explicit two-step `irq-gate-arm` / `irq-gate-bind-smoke` command path. Boot, general IDT setup, EOI paths, and keyboard polling do not remap the PIC or activate IRQ delivery.
 
 > [!IMPORTANT]
 > **Keyboard Polling Mode is Active**
@@ -199,9 +199,9 @@ To ensure precise terminology and strict alignment across the DByteOS system, th
 
 ---
 
-## 6. Current Milestone Status (`v8.13.0`)
+## 6. Current Milestone Status (`v8.13.1`)
 
-To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.13.0`. This is an IRQ Gate Binding Controlled Smoke release layered on the previous keyboard hotfix and PIC Remap State Telemetry line: the polling keyboard decoder supports the symbol scancodes required to type hyphenated commands, IRQ gate plan structs/helpers remain exposed through a dormant command path, the disabled bind-path helper is compiled and exposed only through `irq-bind-note` / `irq-bind-status`, readiness telemetry is exposed only through `irq-readiness`, `irq-risk`, and `irq-preflight`, EOI target paths and configurations are compiled but no EOI is actively dispatched, PIC remap hardware writes are limited to the two-step `pic-remap-arm` / `pic-remap-smoke` command path, state telemetry is exposed through `pic-remap-state`, `pic-remap-history`, and `pic-remap-preflight`, and IRQ0/IRQ1 IDT smoke binding is limited to the two-step `irq-gate-arm` / `irq-gate-bind-smoke` command path. IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain hardware-disabled, and no PIC remap or IRQ gate smoke commands run at boot. See `KERNEL_IRQ.md` for EOI strategy and IRQ skeleton overview.
+To preserve absolute stability and maintain polling-based shell input, **Interrupts remain strictly disabled** in version `8.13.1`. This is an IRQ Gate Binding Controlled Smoke release layered on the previous keyboard hotfix and PIC Remap State Telemetry line: the polling keyboard decoder supports the symbol scancodes required to type hyphenated commands, IRQ gate plan structs/helpers remain exposed through a dormant command path, the disabled bind-path helper is compiled and exposed only through `irq-bind-note` / `irq-bind-status`, readiness telemetry is exposed only through `irq-readiness`, `irq-risk`, and `irq-preflight`, EOI target paths and configurations are compiled but no EOI is actively dispatched, PIC remap hardware writes are limited to the two-step `pic-remap-arm` / `pic-remap-smoke` command path, state telemetry is exposed through `pic-remap-state`, `pic-remap-history`, and `pic-remap-preflight`, and IRQ0/IRQ1 IDT smoke binding is limited to the two-step `irq-gate-arm` / `irq-gate-bind-smoke` command path. IRQ vectors `0x20-0x2f` are planned, keyboard IRQ1 and timer IRQ0 remain hardware-disabled, and no PIC remap or IRQ gate smoke commands run at boot. See `KERNEL_IRQ.md` for EOI strategy and IRQ skeleton overview.
 - **`handlers` Command**: Lists active exception handlers (`vector 0: divide-by-zero`, `vector 3: breakpoint`, `vector 14: page fault`), planned exception handlers (`none`), and planned IRQ handlers (`irq0 timer`, `irq1 keyboard`) with active IRQ handlers (`none`).
 - **`handlers --active` Command**: Lists only currently active exception handlers.
 - **`exception-status` & `exceptions` Command**: Displays concise exception diagnostics summary including total count, last vector (with name), and current interrupt flag status (`disabled`).

@@ -1,8 +1,9 @@
-# DByteOS Personal Workspace Beta Foundation (v8.13.0)
+# DByteOS Personal Workspace Beta Foundation (v8.13.1)
 
 Welcome to **DByteOS**: a personal computing userland built on the DByte runtime.
 
 ## Directory Structure
+
 - `/bin`: System utilities and commands.
 - `/etc`: System configuration files.
 - `/home`: User data zone (`home/deadbyte`).
@@ -90,9 +91,11 @@ quit
 ```
 
 ## Security & Persistence
+
 - **Enforcement**: File operations on `etc/`, `bin/`, and `sys/` are read-only.
 - **Persistence**: User data in `home/deadbyte/journal.txt` and `home/deadbyte/projects/` is persistent.
 - **Determinism**: All system logs (`boot.log`, `security.log`) are reproducible.
 
 ---
+
 [Personal Workspace Beta Foundation](../../docs/DBYTEOS_PERSONAL_ALPHA.md) | [Alpha Positioning](../../docs/DBYTEOS_ALPHA.md) | [Onboarding](../../docs/DBYTEOS_ONBOARDING.md) | [Profile](../../docs/DBYTEOS_PROFILE.md) | [Config](../../docs/DBYTEOS_CONFIG.md) | [Snapshot](../../docs/DBYTEOS_SNAPSHOT.md) | [Projects](../../docs/DBYTEOS_PROJECTS.md) | [Tasks](../../docs/DBYTEOS_TASKS.md) | [Security Policy](../../docs/DBYTEOS_SECURITY.md)
