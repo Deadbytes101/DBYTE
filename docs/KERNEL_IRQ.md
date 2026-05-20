@@ -1,6 +1,6 @@
 # DByteOS Kernel IRQ/PIC Safety Notes (v8.14.0)
 
-DByteOS Kernel Lab `v8.14.0` is an IRQ Gate Bind State Telemetry release over the `v8.12.1` controlled bind smoke line. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The new `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. No boot path installs those gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, PIC/IRQ remains blocked for runtime use, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.14.0` is an IRQ Runtime Activation Preconditions 2 release. It consolidates PIC remap state, IRQ gate bind state, EOI strategy state, keyboard fallback state, and pf-smoke state into unified preflight, status, and blockers commands. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while keeping the IRQ gate plan and disabled bind path dormant and adding a preflight status surface. It adds no new runtime IRQ behavior, no active IDT bind path, and no dry-bind readiness path.
 
@@ -8,10 +8,10 @@ This milestone still implements an EOI strategy foundation on top of the IRQ han
 
 The 8259A PIC pair routes hardware interrupt requests into CPU interrupt vectors. The planned remap moves IRQs away from CPU exception vectors and into `0x20-0x2f`.
 
-| Controller | IRQ Lines | Ports | Planned Vector Offset |
-| --- | --- | --- | --- |
-| Master PIC | IRQ0-IRQ7 | `0x20` command / `0x21` data | `0x20` |
-| Slave PIC | IRQ8-IRQ15 | `0xA0` command / `0xA1` data | `0x28` |
+| Controller | IRQ Lines  | Ports                        | Planned Vector Offset |
+| ---------- | ---------- | ---------------------------- | --------------------- |
+| Master PIC | IRQ0-IRQ7  | `0x20` command / `0x21` data | `0x20`                |
+| Slave PIC  | IRQ8-IRQ15 | `0xA0` command / `0xA1` data | `0x28`                |
 
 PIC remap dry-run telemetry remains available, and `v8.14.0` adds a separate controlled IDT gate bind smoke path for IRQ0/IRQ1. Initialization Command Words are dispatched only after `pic-remap-arm` followed by `pic-remap-smoke`; no boot path remaps the PIC, no EOI is sent, and no `sti` runs. IRQ gates 32/33 are installed only by `irq-gate-arm` followed by `irq-gate-bind-smoke`.
 
