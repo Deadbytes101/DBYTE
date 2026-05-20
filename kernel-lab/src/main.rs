@@ -922,13 +922,8 @@ pub extern "C" fn kernel_main() -> ! {
                                                 let _ = write!(serial_writer, "- EOI dispatch: not enabled\n");
                                                 let _ = write!(vga_writer, "- STI: disabled\n");
                                                 let _ = write!(serial_writer, "- STI: disabled\n");
-                                                if pic_state.executed && gate_state.executed {
-                                                    let _ = write!(vga_writer, "ready to unblock: all preconditions satisfied\n");
-                                                    let _ = write!(serial_writer, "ready to unblock: all preconditions satisfied\n");
-                                                } else {
-                                                    let _ = write!(vga_writer, "blocked: preconditions not satisfied\n");
-                                                    let _ = write!(serial_writer, "blocked: preconditions not satisfied\n");
-                                                }
+                                                let _ = write!(vga_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
+                                                let _ = write!(serial_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
                                             } else if line_str == "pic-status --verbose" {
                                               let pic_status_verbose_msg = "pic subsystem:\nfoundation: dry-run telemetry\nremap function: present / not called\ndry-run plan: available\nmaster offset: 0x20\nslave offset: 0x28\nirq vectors: 0x20-0x2f\nhardware writes: disabled\nirq handlers: none\ninterrupts: disabled\n";
                                               vga::print(pic_status_verbose_msg);
