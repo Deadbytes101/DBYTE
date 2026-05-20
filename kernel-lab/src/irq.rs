@@ -119,6 +119,35 @@ pub const IRQ_GATE_BIND_RESULT_BLOCKED: &str = "blocked";
 /// Dormant result for a successful controlled IRQ gate bind smoke.
 pub const IRQ_GATE_BIND_RESULT_BOUND_DORMANT: &str = "bound / dormant";
 
+/// Yes/no telemetry strings for IRQ gate bind state.
+pub const IRQ_GATE_BIND_YES: &str = "yes";
+pub const IRQ_GATE_BIND_NO: &str = "no";
+
+/// Command availability strings for IRQ gate bind history.
+pub const IRQ_GATE_BIND_ARM_COMMAND_AVAILABLE: &str = "available";
+pub const IRQ_GATE_BIND_SMOKE_COMMAND_AVAILABLE: &str = "available";
+
+/// Controlled IDT bind path note for history telemetry.
+pub const IRQ_GATE_BIND_IDT_BINDS_CONTROLLED_ONLY: &str = "controlled command path only";
+
+/// Boot-time IRQ gate bind state for history telemetry.
+pub const IRQ_GATE_BIND_BOOT_BIND_NO: &str = "no";
+
+/// Preflight guard string for IRQ gate bind telemetry.
+pub const IRQ_GATE_BIND_GUARD_COMMAND_ARMED_REQUIRED: &str = "command armed required";
+
+/// Preflight bind path readiness string.
+pub const IRQ_GATE_BIND_BIND_PATH_READY: &str = "ready";
+
+/// IRQ runtime remains disabled after controlled gate bind smoke.
+pub const IRQ_GATE_BIND_IRQ_RUNTIME_DISABLED: &str = "disabled";
+
+/// Preflight result for read-only IRQ gate bind telemetry.
+pub const IRQ_GATE_BIND_RESULT_TELEMETRY_ONLY: &str = "telemetry only";
+
+/// Bind expected/applied telemetry strings.
+pub const IRQ_GATE_BIND_EXPECTED: &str = "yes";
+
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
@@ -227,6 +256,52 @@ pub struct IrqGateBindSmokeResult {
     pub keyboard_input: &'static str,
     pub result: &'static str,
     pub next: Option<&'static str>,
+}
+
+/// Read-only state telemetry for the controlled IRQ gate bind smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct IrqGateBindStateTelemetry {
+    pub armed: bool,
+    pub executed: bool,
+    pub irq0_vector: u8,
+    pub irq0_vector_state: &'static str,
+    pub irq1_vector: u8,
+    pub irq1_vector_state: &'static str,
+    pub irq0_active_handler: &'static str,
+    pub irq1_active_handler: &'static str,
+    pub bind_expected: &'static str,
+    pub bind_applied: &'static str,
+    pub irq_runtime: &'static str,
+    pub pic_irq_mask: &'static str,
+    pub sti: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub keyboard_input: &'static str,
+}
+
+/// Read-only history telemetry for the controlled IRQ gate bind smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct IrqGateBindHistoryTelemetry {
+    pub arm_command: &'static str,
+    pub smoke_command: &'static str,
+    pub last_smoke_executed: &'static str,
+    pub idt_binds: &'static str,
+    pub boot_bind: &'static str,
+}
+
+/// Read-only preflight telemetry for the controlled IRQ gate bind smoke path.
+#[derive(Copy, Clone, Debug)]
+pub struct IrqGateBindPreflightTelemetry {
+    pub guard: &'static str,
+    pub bind_path: &'static str,
+    pub irq0_vector: u8,
+    pub irq0_vector_state: &'static str,
+    pub irq1_vector: u8,
+    pub irq1_vector_state: &'static str,
+    pub pic_irq_mask: &'static str,
+    pub sti: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub keyboard_input: &'static str,
+    pub result: &'static str,
 }
 
 /// Command-facing status for the controlled IRQ gate bind smoke path.
@@ -467,5 +542,76 @@ pub fn irq_gate_bind_smoke_status() -> IrqGateBindSmokeStatus {
         sti: IRQ_INTERRUPTS_DISABLED,
         eoi_dispatch: IRQ_EOI_DISPATCH_DISABLED,
         keyboard_input: IRQ_KEYBOARD_INPUT_POLLING_ONLY,
+    }
+}
+
+/// Returns read-only IRQ gate bind state telemetry without touching hardware.
+pub fn irq_gate_bind_state() -> IrqGateBindStateTelemetry {
+    let status = irq_gate_bind_smoke_status();
+
+    IrqGateBindStateTelemetry {
+        armed: status.armed,
+        executed: status.executed,
+        irq0_vector: status.irq0_vector,
+        irq0_vector_state: status.irq0_vector_state,
+        irq1_vector: status.irq1_vector,
+        irq1_vector_state: status.irq1_vector_state,
+        irq0_active_handler: status.irq0_active_handler,
+        irq1_active_handler: status.irq1_active_handler,
+        bind_expected: IRQ_GATE_BIND_EXPECTED,
+        bind_applied: if status.executed {
+            IRQ_GATE_BIND_YES
+        } else {
+            IRQ_GATE_BIND_NO
+        },
+        irq_runtime: IRQ_GATE_BIND_IRQ_RUNTIME_DISABLED,
+        pic_irq_mask: status.pic_irq_mask,
+        sti: status.sti,
+        eoi_dispatch: status.eoi_dispatch,
+        keyboard_input: status.keyboard_input,
+    }
+}
+
+/// Returns read-only IRQ gate bind command history telemetry without touching hardware.
+pub fn irq_gate_bind_history() -> IrqGateBindHistoryTelemetry {
+    let status = irq_gate_bind_smoke_status();
+
+    IrqGateBindHistoryTelemetry {
+        arm_command: IRQ_GATE_BIND_ARM_COMMAND_AVAILABLE,
+        smoke_command: IRQ_GATE_BIND_SMOKE_COMMAND_AVAILABLE,
+        last_smoke_executed: if status.executed {
+            IRQ_GATE_BIND_YES
+        } else {
+            IRQ_GATE_BIND_NO
+        },
+        idt_binds: IRQ_GATE_BIND_IDT_BINDS_CONTROLLED_ONLY,
+        boot_bind: IRQ_GATE_BIND_BOOT_BIND_NO,
+    }
+}
+
+/// Returns read-only IRQ gate bind preflight telemetry without touching hardware.
+pub fn irq_gate_bind_preflight() -> IrqGateBindPreflightTelemetry {
+    let status = irq_gate_bind_smoke_status();
+
+    IrqGateBindPreflightTelemetry {
+        guard: IRQ_GATE_BIND_GUARD_COMMAND_ARMED_REQUIRED,
+        bind_path: IRQ_GATE_BIND_BIND_PATH_READY,
+        irq0_vector: status.irq0_vector,
+        irq0_vector_state: if status.executed {
+            IRQ_VECTOR_BOUND
+        } else {
+            IRQ_VECTOR_UNBOUND
+        },
+        irq1_vector: status.irq1_vector,
+        irq1_vector_state: if status.executed {
+            IRQ_VECTOR_BOUND
+        } else {
+            IRQ_VECTOR_UNBOUND
+        },
+        pic_irq_mask: status.pic_irq_mask,
+        sti: status.sti,
+        eoi_dispatch: status.eoi_dispatch,
+        keyboard_input: status.keyboard_input,
+        result: IRQ_GATE_BIND_RESULT_TELEMETRY_ONLY,
     }
 }

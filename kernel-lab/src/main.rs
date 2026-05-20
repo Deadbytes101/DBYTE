@@ -105,7 +105,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v8.12.1)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v8.13.0)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -126,7 +126,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 8.12.1\n");
+    serial::print("version: 8.13.0\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -206,14 +206,14 @@ pub extern "C" fn kernel_main() -> ! {
                                     // Convert and process submitted line
                                     if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 8.12.1\n");
-                                            serial::print("DByteOS Kernel Lab 8.12.1\n");
+                                            vga::print("DByteOS Kernel Lab 8.13.0\n");
+                                            serial::print("DByteOS Kernel Lab 8.13.0\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
@@ -261,13 +261,28 @@ pub extern "C" fn kernel_main() -> ! {
                                               vga::print("fault recovery: reset successfully\n");
                                               serial::print("fault recovery: reset successfully\n");
                                           } else if line_str == "handlers" {
-                                              let handlers_msg = "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\nskeleton planned: irq0 timer, irq1 keyboard\nactive: none\n";
-                                              vga::print(handlers_msg);
-                                              serial::print(handlers_msg);
+                                              let gate_status = irq::irq_gate_bind_smoke_status();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\n");
+                                              let _ = write!(serial_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\n");
+                                              if gate_status.executed {
+                                                  let _ = write!(vga_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\nruntime irq: disabled\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                                  let _ = write!(serial_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\nruntime irq: disabled\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                              } else {
+                                                  vga::print("skeleton planned: irq0 timer, irq1 keyboard\nactive: none\nruntime irq: disabled\n");
+                                                  serial::print("skeleton planned: irq0 timer, irq1 keyboard\nactive: none\nruntime irq: disabled\n");
+                                              }
                                           } else if line_str == "handlers --active" {
-                                              let active_handlers_msg = "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n";
-                                              vga::print(active_handlers_msg);
-                                              serial::print(active_handlers_msg);
+                                              let gate_status = irq::irq_gate_bind_smoke_status();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n");
+                                              let _ = write!(serial_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n");
+                                              if gate_status.executed {
+                                                  let _ = write!(vga_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                                  let _ = write!(serial_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                              }
                                           } else if line_str == "exception-status" || line_str == "exceptions" {
                                               let mut vga_writer = vga::VgaWriter;
                                               let mut serial_writer = serial::SerialWriter;
@@ -640,6 +655,92 @@ pub extern "C" fn kernel_main() -> ! {
                                                   status.eoi_dispatch,
                                                   status.keyboard_input
                                               );
+                                          } else if line_str == "irq-gate-state" {
+                                              let state = irq::irq_gate_bind_state();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "IRQ gate bind state\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nbind expected: {}\nbind applied: {}\nirq runtime: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
+                                                  if state.armed { "yes" } else { "no" },
+                                                  if state.executed { "yes" } else { "no" },
+                                                  state.irq0_vector,
+                                                  state.irq0_vector_state,
+                                                  state.irq1_vector,
+                                                  state.irq1_vector_state,
+                                                  state.irq0_active_handler,
+                                                  state.irq1_active_handler,
+                                                  state.bind_expected,
+                                                  state.bind_applied,
+                                                  state.irq_runtime,
+                                                  state.pic_irq_mask,
+                                                  state.sti,
+                                                  state.eoi_dispatch,
+                                                  state.keyboard_input
+                                              );
+                                              let _ = write!(serial_writer, "IRQ gate bind state\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nbind expected: {}\nbind applied: {}\nirq runtime: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
+                                                  if state.armed { "yes" } else { "no" },
+                                                  if state.executed { "yes" } else { "no" },
+                                                  state.irq0_vector,
+                                                  state.irq0_vector_state,
+                                                  state.irq1_vector,
+                                                  state.irq1_vector_state,
+                                                  state.irq0_active_handler,
+                                                  state.irq1_active_handler,
+                                                  state.bind_expected,
+                                                  state.bind_applied,
+                                                  state.irq_runtime,
+                                                  state.pic_irq_mask,
+                                                  state.sti,
+                                                  state.eoi_dispatch,
+                                                  state.keyboard_input
+                                              );
+                                          } else if line_str == "irq-gate-history" {
+                                              let history = irq::irq_gate_bind_history();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "IRQ gate bind history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nidt binds: {}\nboot bind: {}\n",
+                                                  history.arm_command,
+                                                  history.smoke_command,
+                                                  history.last_smoke_executed,
+                                                  history.idt_binds,
+                                                  history.boot_bind
+                                              );
+                                              let _ = write!(serial_writer, "IRQ gate bind history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nidt binds: {}\nboot bind: {}\n",
+                                                  history.arm_command,
+                                                  history.smoke_command,
+                                                  history.last_smoke_executed,
+                                                  history.idt_binds,
+                                                  history.boot_bind
+                                              );
+                                          } else if line_str == "irq-gate-preflight" {
+                                              let preflight = irq::irq_gate_bind_preflight();
+                                              let mut vga_writer = vga::VgaWriter;
+                                              let mut serial_writer = serial::SerialWriter;
+                                              let _ = write!(vga_writer, "IRQ gate bind preflight\nguard: {}\nbind path: {}\nIDT vector {}: {}\nIDT vector {}: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
+                                                  preflight.guard,
+                                                  preflight.bind_path,
+                                                  preflight.irq0_vector,
+                                                  preflight.irq0_vector_state,
+                                                  preflight.irq1_vector,
+                                                  preflight.irq1_vector_state,
+                                                  preflight.pic_irq_mask,
+                                                  preflight.sti,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.keyboard_input,
+                                                  preflight.result
+                                              );
+                                              let _ = write!(serial_writer, "IRQ gate bind preflight\nguard: {}\nbind path: {}\nIDT vector {}: {}\nIDT vector {}: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
+                                                  preflight.guard,
+                                                  preflight.bind_path,
+                                                  preflight.irq0_vector,
+                                                  preflight.irq0_vector_state,
+                                                  preflight.irq1_vector,
+                                                  preflight.irq1_vector_state,
+                                                  preflight.pic_irq_mask,
+                                                  preflight.sti,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.keyboard_input,
+                                                  preflight.result
+                                              );
                                           } else if line_str == "irq-bind-note" {
                                               let bind_status = irq::bind_irq_gates_disabled();
                                               let timer = bind_status.steps[0];
@@ -796,10 +897,10 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("uptime: unavailable (no timer driver)\n");
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
-                                            vga::print("                   DByteOS Command Dispatch Lab (v8.12.1)                \n");
+                                            vga::print("                   DByteOS Command Dispatch Lab (v8.13.0)                \n");
                                             vga::print("========================================================================\n");
                                             serial::print("========================================================================\n");
-                                            serial::print("                   DByteOS Command Dispatch Lab (v8.12.1)                \n");
+                                            serial::print("                   DByteOS Command Dispatch Lab (v8.13.0)                \n");
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
@@ -820,7 +921,7 @@ pub extern "C" fn kernel_main() -> ! {
                                              let mut vga_writer = vga::VgaWriter;
                                              let mut serial_writer = serial::SerialWriter;
                                              vga::print("DByteOS Kernel Lab
-version: 8.12.1
+version: 8.13.0
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -839,7 +940,7 @@ page fault smoke: armed=false
 interrupts: disabled
 ");
                                              serial::print("DByteOS Kernel Lab
-version: 8.12.1
+version: 8.13.0
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -864,6 +965,13 @@ interrupts: disabled
                                              let _ = write!(serial_writer, "pic remap controlled smoke: executed={}\n",
                                                  if pic_state.executed { "yes" } else { "no" }
                                              );
+                                             let gate_state = irq::irq_gate_bind_state();
+                                             let _ = write!(vga_writer, "irq gates controlled smoke: bound={}\n",
+                                                 if gate_state.executed { "yes" } else { "no" }
+                                             );
+                                             let _ = write!(serial_writer, "irq gates controlled smoke: bound={}\n",
+                                                 if gate_state.executed { "yes" } else { "no" }
+                                             );
                                              let count = interrupts::EXCEPTION_COUNT;
                                              let vector = interrupts::LAST_EXCEPTION_VECTOR;
                                              let name = interrupts::LAST_EXCEPTION_NAME;
@@ -883,8 +991,8 @@ last exception: {} ({})
 ", count, vector, name);
                                              }
                                          } else if line_str == "status" {
-                                            vga::print("status: active\nversion: 8.12.1\nmode: polling\n");
-                                            serial::print("status: active\nversion: 8.12.1\nmode: polling\n");
+                                            vga::print("status: active\nversion: 8.13.0\nmode: polling\n");
+                                            serial::print("status: active\nversion: 8.13.0\nmode: polling\n");
                                         } else if line_str == "mods" {
                                             vga::print("shift active: ");
                                             vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });

@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v8.12.1)
+# DByteOS QEMU Boot Smoke (v8.13.0)
 
-`v8.12.1` is an IRQ Gate Binding Controlled Smoke release over the previous keyboard symbol decode hotfix. It preserves polling-keyboard decoding for `-`, `=`, `_`, `+`, numpad `-`, and numpad `+` so hyphenated kernel commands can be typed directly in QEMU. It adds a two-step `irq-gate-arm` / `irq-gate-bind-smoke` path that may bind IDT vectors `32/33` to dormant smoke stubs only from the command path. It does not run PIC remap or IRQ gate bind smoke at boot, enable interrupts, unmask PIC IRQ lines, rewrite keyboard polling, or dispatch EOI.
+`v8.13.0` is an IRQ Gate Bind State Telemetry release over the `v8.12.1` controlled bind smoke line. It preserves polling-keyboard decoding for hyphenated commands and adds `irq-gate-state`, `irq-gate-history`, and `irq-gate-preflight` read-only telemetry plus `system` / `handlers` sync for controlled bind state. IDT vectors `32/33` may bind only via `irq-gate-arm` / `irq-gate-bind-smoke`. It does not run bind smoke at boot, enable interrupts, unmask PIC IRQ lines, rewrite keyboard polling, or dispatch EOI.
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -56,7 +56,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 8.12.1
+version: 8.13.0
 status: booted
 target: i686 multiboot
 ```
@@ -70,9 +70,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...` | Fallback 64-bit Emulation |
 | None | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v8.12.1)
+## Keyboard Line Editor & Command Dispatch Lab (v8.13.0)
 
-In version `8.12.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `8.13.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 1. **Shell Prompt**: Renders `dbyte-kernel> ` on screen/serial.
@@ -83,9 +83,9 @@ In version `8.12.1`, a polling-based PS/2 keyboard listener and stateful ASCII m
 
 | Command Input | Parameter Handling | Output Response / Behavior |
 | :--- | :--- | :--- |
-| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
+| `help` | None | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
 | `about` | None | Prints: `DByteOS Kernel Lab` |
-| `version` | None | Prints: `DByteOS Kernel Lab 8.12.1` |
+| `version` | None | Prints: `DByteOS Kernel Lab 8.13.0` |
 | `clear` | None | Clears the entire VGA console and resets prompt location to top-left. |
 | `cls` | None | Clears the entire VGA console (alias of `clear`). |
 | `echo` | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter. |
@@ -136,6 +136,9 @@ In version `8.12.1`, a polling-based PS/2 keyboard listener and stateful ASCII m
 | `irq-gate-arm` | None | Arms the one-shot controlled IRQ gate bind smoke path. |
 | `irq-gate-bind-smoke` | None | Binds IDT vectors `32/33` to dormant smoke wrappers only if armed; otherwise reports blocked. |
 | `irq-gate-bind-status` | None | Prints controlled IRQ gate bind smoke arm/executed state and dormant handler status. |
+| `irq-gate-state` | None | Prints read-only IRQ gate bind state telemetry (armed/executed/bound). |
+| `irq-gate-history` | None | Prints read-only IRQ gate bind command history telemetry. |
+| `irq-gate-preflight` | None | Prints read-only IRQ gate bind preflight telemetry without mutating hardware. |
 | `irq-bind-note` | None | Prints the disabled IRQ0/IRQ1 bind-path note from compiled helper data. |
 | `irq-bind-status` | None | Prints the disabled IRQ0/IRQ1 bind-path status from compiled helper data. |
 | `irq-readiness` | None | Prints runtime IRQ readiness telemetry without enabling interrupts. |
@@ -162,16 +165,17 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 3. Type commands and press Enter to execute them. For example:
    ```txt
     dbyte-kernel> help
-    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
+    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
     dbyte-kernel> version
-    DByteOS Kernel Lab 8.12.1
+    DByteOS Kernel Lab 8.13.0
    dbyte-kernel> system
    DByteOS Kernel Lab
-   version: 8.12.1
+   version: 8.13.0
    input mode: keyboard polling
    ...
    interrupts: disabled
    pic remap controlled smoke: executed=no
+   irq gates controlled smoke: bound=no
    dbyte-kernel> handlers
    active handlers:
    vector 0: divide-by-zero
@@ -434,6 +438,39 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     sti: disabled
     eoi dispatch: disabled
     keyboard input: polling-only
+    dbyte-kernel> irq-gate-state
+    IRQ gate bind state
+    armed: no
+    executed: no
+    IDT vector 32: unbound
+    IDT vector 33: unbound
+    active IRQ0 handler: smoke stub / dormant
+    active IRQ1 handler: smoke stub / dormant
+    bind expected: yes
+    bind applied: no
+    irq runtime: disabled
+    pic irq mask: masked
+    sti: disabled
+    eoi dispatch: disabled
+    keyboard input: polling-only
+    dbyte-kernel> irq-gate-history
+    IRQ gate bind history
+    arm command: available
+    smoke command: available
+    last smoke executed: no
+    idt binds: controlled command path only
+    boot bind: no
+    dbyte-kernel> irq-gate-preflight
+    IRQ gate bind preflight
+    guard: command armed required
+    bind path: ready
+    IDT vector 32: unbound
+    IDT vector 33: unbound
+    pic irq mask: masked
+    sti: disabled
+    eoi dispatch: disabled
+    keyboard input: polling-only
+    result: telemetry only
     dbyte-kernel> irq-gate-bind-smoke
     IRQ gate bind controlled smoke
     guard: not armed
@@ -468,6 +505,39 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     sti: disabled
     eoi dispatch: disabled
     keyboard input: polling-only
+    dbyte-kernel> irq-gate-state
+    IRQ gate bind state
+    armed: no
+    executed: yes
+    IDT vector 32: bound
+    IDT vector 33: bound
+    active IRQ0 handler: smoke stub / dormant
+    active IRQ1 handler: smoke stub / dormant
+    bind expected: yes
+    bind applied: yes
+    irq runtime: disabled
+    pic irq mask: masked
+    sti: disabled
+    eoi dispatch: disabled
+    keyboard input: polling-only
+    dbyte-kernel> irq-gate-history
+    IRQ gate bind history
+    arm command: available
+    smoke command: available
+    last smoke executed: yes
+    idt binds: controlled command path only
+    boot bind: no
+    dbyte-kernel> irq-gate-preflight
+    IRQ gate bind preflight
+    guard: command armed required
+    bind path: ready
+    IDT vector 32: bound
+    IDT vector 33: bound
+    pic irq mask: masked
+    sti: disabled
+    eoi dispatch: disabled
+    keyboard input: polling-only
+    result: telemetry only
     dbyte-kernel> irq-bind-note
     IRQ bind note:
     IRQ0 timer gate: disabled bind path only
@@ -589,7 +659,7 @@ When `SHIFT_ACTIVE` is true, typing a numeric key redirects the translation mapp
 
 ### Keyboard Symbol Decode Hotfix Manual Proof
 
-The previous keyboard hotfix remains part of the `v8.12.1` baseline and keeps the keyboard path polling-only while allowing hyphenated commands and the minimum required symbol echo test to be typed directly in QEMU:
+The previous keyboard hotfix remains part of the `v8.13.0` baseline and keeps the keyboard path polling-only while allowing hyphenated commands and the minimum required symbol echo test to be typed directly in QEMU:
 
 ```txt
 dbyte-kernel> irq-status
@@ -604,16 +674,27 @@ No IRQ1 keyboard handler is installed; these symbols are decoded from PS/2 Set 1
 
 ### IRQ Gate Bind Controlled Smoke Manual Proof
 
-The `v8.12.1` controlled smoke path proves that hyphenated IRQ commands can be typed and that IDT vectors `32/33` are bound only after explicit arming:
+The `v8.13.0` controlled smoke path proves that hyphenated IRQ commands can be typed and that IDT vectors `32/33` are bound only after explicit arming:
 
 ```txt
 dbyte-kernel> echo - = + _
 - = + _
 dbyte-kernel> irq-gate-bind-status
+dbyte-kernel> irq-gate-state
 dbyte-kernel> irq-gate-bind-smoke
 dbyte-kernel> irq-gate-arm
 dbyte-kernel> irq-gate-bind-smoke
 dbyte-kernel> irq-gate-bind-status
+dbyte-kernel> irq-gate-state
+dbyte-kernel> irq-gate-history
+dbyte-kernel> irq-gate-preflight
+dbyte-kernel> system
+```
+
+After bind smoke, `system` reports:
+
+```txt
+irq gates controlled smoke: bound=yes
 ```
 
 The resulting gate bind remains dormant: `sti` is disabled, PIC IRQ lines are masked, EOI dispatch is disabled, and keyboard input remains polling-only.
@@ -667,7 +748,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This controlled smoke release (`v8.12.1`) enforces strict technical bounds to maintain lab stability:
+> This controlled smoke release (`v8.13.0`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** enable maskable interrupts or route keyboard input through IRQ1. Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
@@ -677,3 +758,4 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 > 6. **IRQ Readiness Telemetry Only**: `irq-readiness`, `irq-risk`, and `irq-preflight` report blocked runtime readiness only. They do not run at boot, install gates, dispatch EOI, enable interrupts, or replace keyboard polling.
 > 7. **PIC Remap Controlled Smoke Only**: `pic-remap-arm` and `pic-remap-smoke` provide the only PIC ICW hardware-write path. It is command-only, two-step armed, masks all PIC IRQ lines after remap, does not dispatch EOI, and does not execute `sti`.
 > 8. **IRQ Gate Bind Controlled Smoke Only**: `irq-gate-arm` and `irq-gate-bind-smoke` provide the only IDT vector `32/33` bind path. It is command-only, two-step armed, uses dormant smoke wrappers, does not unmask PIC IRQ lines, does not dispatch EOI, does not replace keyboard polling, and does not execute `sti`.
+> 9. **IRQ Gate Bind State Telemetry Only**: `irq-gate-state`, `irq-gate-history`, and `irq-gate-preflight` report controlled bind telemetry only. They do not run at boot, install gates, unmask PIC lines, dispatch EOI, enable interrupts, or replace keyboard polling.
