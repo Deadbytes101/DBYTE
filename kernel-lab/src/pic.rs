@@ -13,7 +13,7 @@
 //! remap commands are written into Command Ports (Command registers) and Data Ports
 //! in four steps: ICW1 (Init), ICW2 (Remapped vector base), ICW3 (Cascade pins), ICW4 (Mode).
 //!
-//! v8.12.0 keeps read-only PIC remap state telemetry while IRQ0/IRQ1
+//! v8.12.1 keeps read-only PIC remap state telemetry while IRQ0/IRQ1
 //! gate binding controlled smoke is documented in `irq.rs`. The smoke path is
 //! intentionally not called from boot, does not enable STI, does not bind IRQ
 //! gates, masks all PIC lines after remap, and does not dispatch EOI.

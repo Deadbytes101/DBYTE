@@ -1,6 +1,6 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v8.12.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v8.12.1)
 
-DByteOS Kernel Lab `v8.12.0` is an IRQ Gate Binding Controlled Smoke release over the previous keyboard symbol decode hotfix. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The new `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. No boot path installs those gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, PIC/IRQ remains blocked for runtime use, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v8.12.1` is an IRQ Gate Binding Controlled Smoke release over the previous keyboard symbol decode hotfix. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The new `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. No boot path installs those gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, PIC/IRQ remains blocked for runtime use, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while keeping the IRQ gate plan and disabled bind path dormant and adding a preflight status surface. It adds no new runtime IRQ behavior, no active IDT bind path, and no dry-bind readiness path.
 
@@ -13,7 +13,7 @@ The 8259A PIC pair routes hardware interrupt requests into CPU interrupt vectors
 | Master PIC | IRQ0-IRQ7 | `0x20` command / `0x21` data | `0x20` |
 | Slave PIC | IRQ8-IRQ15 | `0xA0` command / `0xA1` data | `0x28` |
 
-PIC remap dry-run telemetry remains available, and `v8.12.0` adds a separate controlled IDT gate bind smoke path for IRQ0/IRQ1. Initialization Command Words are dispatched only after `pic-remap-arm` followed by `pic-remap-smoke`; no boot path remaps the PIC, no EOI is sent, and no `sti` runs. IRQ gates 32/33 are installed only by `irq-gate-arm` followed by `irq-gate-bind-smoke`.
+PIC remap dry-run telemetry remains available, and `v8.12.1` adds a separate controlled IDT gate bind smoke path for IRQ0/IRQ1. Initialization Command Words are dispatched only after `pic-remap-arm` followed by `pic-remap-smoke`; no boot path remaps the PIC, no EOI is sent, and no `sti` runs. IRQ gates 32/33 are installed only by `irq-gate-arm` followed by `irq-gate-bind-smoke`.
 
 ## Remap Controlled Smoke Foundation
 
@@ -72,7 +72,7 @@ To support external hardware interrupts safely, the kernel maps Master and Slave
 - **Controlled Bind Smoke**: `irq-gate-arm`, `irq-gate-bind-smoke`, and `irq-gate-bind-status` expose a one-shot IDT bind smoke for vectors `32/33`. Binding remains dormant because PIC IRQ lines stay masked, EOI dispatch is disabled, `sti` is disabled, and keyboard input remains polling-only.
 - **Readiness Gate**: `irq-readiness`, `irq-risk`, and `irq-preflight` read compiled helper telemetry only. They report that runtime IRQ remains blocked even though PIC remap controlled smoke and gate bind controlled smoke exist, because EOI dispatch, hardware IRQ unmasking, and `sti` remain unavailable.
 
-## v8.12.0 IRQ Gate Binding Controlled Smoke & Static Guards
+## v8.12.1 IRQ Gate Binding Controlled Smoke & Static Guards
 
 This release adds a controlled IDT gate bind smoke without enabling runtime IRQ behavior.
 Verification guards enforce that `IRQ0_VECTOR` stays `32`, `IRQ1_VECTOR` stays
@@ -100,11 +100,11 @@ remains free of vector `32/33` binding, PIC unmasking, EOI dispatch, and STI.
 - **ICW2 (`0x20` / `0x28`)**: planned master/slave remap offsets.
 - **ICW3 (`0x04` / `0x02`)**: planned master/slave cascade wiring.
 - **ICW4 (`0x01`)**: planned 8086 mode.
-- **IRQ0 timer**: skeleton planned PIT timer interrupt; bind smoke stub is dormant in `v8.12.0`.
-- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; bind smoke stub is dormant in `v8.12.0`.
+- **IRQ0 timer**: skeleton planned PIT timer interrupt; bind smoke stub is dormant in `v8.12.1`.
+- **IRQ1 keyboard**: skeleton planned PS/2 keyboard interrupt; bind smoke stub is dormant in `v8.12.1`.
 - **IRQ vectors 32-47**: planned remapped CPU vector range for IRQ0-IRQ15.
 - **EOI**: End Of Interrupt command planned for future PIC acknowledgements.
-- **STI**: Set Interrupt Flag instruction; not used in `v8.12.0`.
+- **STI**: Set Interrupt Flag instruction; not used in `v8.12.1`.
 
 ## Status UX
 
