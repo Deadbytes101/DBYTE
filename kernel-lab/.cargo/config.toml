@@ -6,3 +6,7 @@ rustflags = [
     "-C", "linker-flavor=ld.lld",
     "-C", "linker=rust-lld",
 ]
+
+[unstable]
+build-std = ["core"]
+build-std-features = ["compiler-builtins-mem"]

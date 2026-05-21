@@ -105,7 +105,7 @@ fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
     vga::print("========================================================================\n");
-    vga::print("                   DByteOS Command Dispatch Lab (v9.0.1)                \n");
+    vga::print("                   DByteOS Command Dispatch Lab (v9.0.2)                \n");
     vga::print("========================================================================\n\n");
     vga::print("[OK] Bootstrap entry point successfully resolved.\n");
     vga::print("[OK] Text-mode VGA framebuffer driver loaded.\n");
@@ -126,7 +126,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     // Print to serial console for QEMU Boot Smoke automated detection
     serial::print("DByteOS Kernel Lab\n");
-    serial::print("version: 9.0.1\n");
+    serial::print("version: 9.0.2\n");
     serial::print("status: booted\n");
     serial::print("target: i686 multiboot\n\n");
 
@@ -212,8 +212,8 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 9.0.1\n");
-                                            serial::print("DByteOS Kernel Lab 9.0.1\n");
+                                            vga::print("DByteOS Kernel Lab 9.0.2\n");
+                                            serial::print("DByteOS Kernel Lab 9.0.2\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
@@ -881,15 +881,26 @@ pub extern "C" fn kernel_main() -> ! {
                                                    "no"
                                                );
                                            } else if line_str == "irq-runtime-arm" {
-                                                irq::irq_runtime_arm();
                                                 let mut vga_writer = vga::VgaWriter;
                                                 let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
-                                                let _ = write!(serial_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
+                                                if irq::irq_runtime_is_committed() {
+                                                    let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                                    let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                                } else if irq::irq_runtime_is_armed() {
+                                                    let _ = write!(vga_writer, "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n");
+                                                    let _ = write!(serial_writer, "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n");
+                                                } else {
+                                                    irq::irq_runtime_arm();
+                                                    let _ = write!(vga_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
+                                                    let _ = write!(serial_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
+                                                }
                                            } else if line_str == "irq-runtime-commit" {
                                                 let mut vga_writer = vga::VgaWriter;
                                                 let mut serial_writer = serial::SerialWriter;
-                                                if irq::irq_runtime_is_armed() {
+                                                if irq::irq_runtime_is_committed() {
+                                                    let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                                    let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                                } else if irq::irq_runtime_is_armed() {
                                                     irq::irq_runtime_commit();
                                                     let _ = write!(vga_writer, "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\n");
                                                     let _ = write!(serial_writer, "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\n");
@@ -986,10 +997,10 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("uptime: unavailable (no timer driver)\n");
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
-                                            vga::print("                   DByteOS Command Dispatch Lab (v9.0.1)                \n");
+                                            vga::print("                   DByteOS Command Dispatch Lab (v9.0.2)                \n");
                                             vga::print("========================================================================\n");
                                             serial::print("========================================================================\n");
-                                            serial::print("                   DByteOS Command Dispatch Lab (v9.0.1)                \n");
+                                            serial::print("                   DByteOS Command Dispatch Lab (v9.0.2)                \n");
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
@@ -1010,7 +1021,7 @@ pub extern "C" fn kernel_main() -> ! {
                                              let mut vga_writer = vga::VgaWriter;
                                              let mut serial_writer = serial::SerialWriter;
                                              vga::print("DByteOS Kernel Lab
-version: 9.0.1
+version: 9.0.2
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -1029,7 +1040,7 @@ page fault smoke: armed=false
 interrupts: disabled
 ");
                                              serial::print("DByteOS Kernel Lab
-version: 9.0.1
+version: 9.0.2
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
 serial mode: COM1 115200 8N1
@@ -1080,8 +1091,8 @@ last exception: {} ({})
 ", count, vector, name);
                                              }
                                          } else if line_str == "status" {
-                                            vga::print("status: active\nversion: 9.0.1\nmode: polling\n");
-                                            serial::print("status: active\nversion: 9.0.1\nmode: polling\n");
+                                            vga::print("status: active\nversion: 9.0.2\nmode: polling\n");
+                                            serial::print("status: active\nversion: 9.0.2\nmode: polling\n");
                                         } else if line_str == "mods" {
                                             vga::print("shift active: ");
                                             vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
