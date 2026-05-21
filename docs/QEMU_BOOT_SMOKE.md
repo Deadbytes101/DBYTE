@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v9.0.0)
+# DByteOS QEMU Boot Smoke (v9.0.1)
 
-`v9.0.0` is an IRQ Runtime Activation Preconditions 2 release. It consolidates PIC remap, IRQ gate bind, EOI strategy, keyboard fallback, and pf-smoke state into unified preflight, status, and blockers commands (`irq-runtime-preflight`, `irq-runtime-status`, `irq-runtime-blockers`). Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, or execute `sti`.
+`v9.0.1` is an IRQ Runtime Activation Preconditions 2 release. It consolidates PIC remap, IRQ gate bind, EOI strategy, keyboard fallback, and pf-smoke state into unified preflight, status, and blockers commands (`irq-runtime-preflight`, `irq-runtime-status`, `irq-runtime-blockers`). Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, or execute `sti`.
 
 This document describes the virtualized boot smoke verification system built for the **DByteOS Kernel Lab**.
 
@@ -60,7 +60,7 @@ Note: Headless Serial Mode initiated. QEMU is running in the background.
 Press [Ctrl + C] in this terminal to terminate the simulation.
 ========================================================================
 DByteOS Kernel Lab
-version: 9.0.0
+version: 9.0.1
 status: booted
 target: i686 multiboot
 ```
@@ -75,9 +75,9 @@ The runner automatically probes your host environment and routes command streams
 | `qemu-system-x86_64` | `qemu-system-x86_64 -kernel ...`       | Fallback 64-bit Emulation   |
 | None                 | Graceful skip / friendly path warnings | Isolated offline build only |
 
-## Keyboard Line Editor & Command Dispatch Lab (v9.0.0)
+## Keyboard Line Editor & Command Dispatch Lab (v9.0.1)
 
-In version `9.0.0`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
+In version `9.0.1`, a polling-based PS/2 keyboard listener and stateful ASCII modifier decoding module are coupled with a zero-allocation **Kernel Command Dispatcher** and line editor. It tracks Shift and CapsLock state transitions, manages a 128-byte line buffer, protects the shell prompt from accidental erasure, and processes typed commands dynamically.
 
 ### Key Shell & Command Features
 
@@ -91,7 +91,7 @@ In version `9.0.0`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 | :--------------------- | :---------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `help`                 | None                          | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
 | `about`                | None                          | Prints: `DByteOS Kernel Lab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `version`              | None                          | Prints: `DByteOS Kernel Lab 9.0.0`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `version`              | None                          | Prints: `DByteOS Kernel Lab 9.0.1`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `clear`                | None                          | Clears the entire VGA console and resets prompt location to top-left.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `cls`                  | None                          | Clears the entire VGA console (alias of `clear`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `echo`                 | Matches exactly or with space | Prints a newline (if exact `"echo"`) or prints raw `<text>` parameter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -179,10 +179,10 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     dbyte-kernel> help
     commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
     dbyte-kernel> version
-    DByteOS Kernel Lab 9.0.0
+    DByteOS Kernel Lab 9.0.1
    dbyte-kernel> system
    DByteOS Kernel Lab
-   version: 9.0.0
+   version: 9.0.1
    input mode: keyboard polling
    ...
    interrupts: disabled
@@ -617,6 +617,33 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     - STI: disabled
     smoke prerequisites: satisfied
     runtime irq ready: no
+    dbyte-kernel> irq-runtime-commit
+    error: IRQ runtime activation not armed.
+    required: execute irq-runtime-arm first.
+    dbyte-kernel> irq-runtime-arm
+    IRQ runtime activation armed.
+    next: execute irq-runtime-commit
+    dbyte-kernel> irq-runtime-status
+    IRQ runtime readiness status
+    pic remap: not ready
+    irq gates: unbound
+    eoi dispatch: disabled
+    keyboard input: polling
+    page fault smoke: stable
+    runtime irq activation: armed / standby
+    sti enabled: no
+    dbyte-kernel> irq-runtime-commit
+    IRQ runtime activation committed.
+    WARNING: this is currently a dry-run.
+    dbyte-kernel> irq-runtime-status
+    IRQ runtime readiness status
+    pic remap: not ready
+    irq gates: unbound
+    eoi dispatch: disabled
+    keyboard input: polling
+    page fault smoke: stable
+    runtime irq activation: committed (dry-run)
+    sti enabled: no
     dbyte-kernel> fault-status
    fault recovery:
    exceptions handled: 1
@@ -701,7 +728,7 @@ When `SHIFT_ACTIVE` is true, typing a numeric key redirects the translation mapp
 
 ### Keyboard Symbol Decode Hotfix Manual Proof
 
-The previous keyboard hotfix remains part of the `v9.0.0` baseline and keeps the keyboard path polling-only while allowing hyphenated commands and the minimum required symbol echo test to be typed directly in QEMU:
+The previous keyboard hotfix remains part of the `v9.0.1` baseline and keeps the keyboard path polling-only while allowing hyphenated commands and the minimum required symbol echo test to be typed directly in QEMU:
 
 ```txt
 dbyte-kernel> irq-status
@@ -716,7 +743,7 @@ No IRQ1 keyboard handler is installed; these symbols are decoded from PS/2 Set 1
 
 ### IRQ Gate Bind Controlled Smoke Manual Proof
 
-The `v9.0.0` controlled smoke path proves that hyphenated IRQ commands can be typed and that IDT vectors `32/33` are bound only after explicit arming:
+The `v9.0.1` controlled smoke path proves that hyphenated IRQ commands can be typed and that IDT vectors `32/33` are bound only after explicit arming:
 
 ```txt
 dbyte-kernel> echo - = + _
@@ -796,7 +823,7 @@ Erase behavior requires synchronizing the local graphical viewport and the exter
 ### Architectural Boundaries & Explicit Exclusions
 
 > [!WARNING]
-> This controlled smoke release (`v9.0.0`) enforces strict technical bounds to maintain lab stability:
+> This controlled smoke release (`v9.0.1`) enforces strict technical bounds to maintain lab stability:
 >
 > 1. **Polling-Only Keyboard Processing**: The system does **NOT** enable maskable interrupts or route keyboard input through IRQ1. Keypress retrieval operates strictly within a synchronous, non-blocking polling loop within `kernel_main` querying status port `0x64` bit 0.
 > 2. **US-ish Minimal Keymap Only**: The kernel translates a small, hand-selected subset of keys based on standard US layouts. It does **NOT** support a full stateful keyboard layout translator (like UK, Dvorak, AZERTY, or extended ANSI layouts). Advanced modifiers (Ctrl, Alt) are parsed but currently ignored.
