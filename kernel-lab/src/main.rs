@@ -212,8 +212,8 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 9.0.2\n");
-                                            serial::print("DByteOS Kernel Lab 9.0.2\n");
+                                            vga::print("DByteOS Kernel Lab 9.1.0\n");
+                                            serial::print("DByteOS Kernel Lab 9.1.0\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
@@ -895,20 +895,42 @@ pub extern "C" fn kernel_main() -> ! {
                                                     let _ = write!(serial_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
                                                 }
                                            } else if line_str == "irq-runtime-commit" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
                                                 let mut vga_writer = vga::VgaWriter;
                                                 let mut serial_writer = serial::SerialWriter;
                                                 if irq::irq_runtime_is_committed() {
                                                     let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
                                                     let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
-                                                } else if irq::irq_runtime_is_armed() {
-                                                    irq::irq_runtime_commit();
-                                                    let _ = write!(vga_writer, "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\n");
-                                                    let _ = write!(serial_writer, "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\n");
-                                                } else {
+                                                } else if !irq::irq_runtime_is_armed() {
                                                     let _ = write!(vga_writer, "error: IRQ runtime activation not armed.\nrequired: execute irq-runtime-arm first.\n");
                                                     let _ = write!(serial_writer, "error: IRQ runtime activation not armed.\nrequired: execute irq-runtime-arm first.\n");
+                                                } else {
+                                                    let preconditions_met = irq::irq_runtime_check_all_preconditions(pic_state.executed);
+                                                    if preconditions_met {
+                                                        irq::irq_runtime_commit();
+                                                        let _ = write!(vga_writer, "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n");
+                                                        let _ = write!(serial_writer, "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n");
+                                                    } else {
+                                                        let _ = write!(vga_writer, "error: IRQ runtime commit blocked by unsatisfied preconditions.\n");
+                                                        let _ = write!(serial_writer, "error: IRQ runtime commit blocked by unsatisfied preconditions.\n");
+                                                        if !pic_state.executed {
+                                                            let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_PIC_REMAP);
+                                                            let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_PIC_REMAP);
+                                                        }
+                                                        if !gate_state.executed {
+                                                            let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_IRQ_GATES);
+                                                            let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_IRQ_GATES);
+                                                        }
+                                                        let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_EOI_DISPATCH);
+                                                        let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_EOI_DISPATCH);
+                                                        let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_STI);
+                                                        let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_STI);
+                                                        let _ = write!(vga_writer, "next: execute irq-runtime-blockers for details\n");
+                                                        let _ = write!(serial_writer, "next: execute irq-runtime-blockers for details\n");
+                                                    }
                                                 }
-                                           } else if line_str == "irq-runtime-status" {
+                                           }else if line_str == "irq-runtime-status" {
                                                 let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
                                                 let gate_state = irq::irq_gate_bind_state();
                                                 let runtime_activation = if irq::irq_runtime_is_committed() {

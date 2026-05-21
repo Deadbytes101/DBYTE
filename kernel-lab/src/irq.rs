@@ -148,6 +148,30 @@ pub const IRQ_GATE_BIND_RESULT_TELEMETRY_ONLY: &str = "telemetry only";
 /// Bind expected/applied telemetry strings.
 pub const IRQ_GATE_BIND_EXPECTED: &str = "yes";
 
+/// Precondition satisfied state string.
+pub const IRQ_RUNTIME_PRECONDITION_SATISFIED: &str = "satisfied";
+
+/// Precondition unsatisfied state string.
+pub const IRQ_RUNTIME_PRECONDITION_UNSATISFIED: &str = "unsatisfied";
+
+/// PIC remap precondition blocker message.
+pub const IRQ_RUNTIME_BLOCKER_PIC_REMAP: &str = "PIC remap: not ready for controlled smoke (run: pic-remap-arm, pic-remap-smoke)";
+
+/// IRQ gates precondition blocker message.
+pub const IRQ_RUNTIME_BLOCKER_IRQ_GATES: &str = "IRQ gates: vectors 32/33 not bound (run: irq-gate-arm, irq-gate-bind-smoke)";
+
+/// EOI dispatch precondition blocker message.
+pub const IRQ_RUNTIME_BLOCKER_EOI_DISPATCH: &str = "EOI dispatch: not enabled";
+
+/// STI precondition blocker message.
+pub const IRQ_RUNTIME_BLOCKER_STI: &str = "STI: disabled";
+
+/// Keyboard fallback precondition blocker message (but always satisfied in v9.1.0).
+pub const IRQ_RUNTIME_PRECONDITION_KEYBOARD_FALLBACK: &str = "keyboard fallback: polling-only (ok)";
+
+/// Page fault smoke precondition blocker message (but always satisfied in v9.1.0).
+pub const IRQ_RUNTIME_PRECONDITION_PF_SMOKE: &str = "pf-smoke: stable (ok)";
+
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
@@ -505,6 +529,29 @@ pub fn irq_runtime_commit() {
             IRQ_RUNTIME_ARMED = false;
         }
     }
+}
+
+/// Checks if PIC remap precondition is satisfied.
+pub fn irq_runtime_check_pic_remap_precondition() -> bool {
+    // Need to use pic module, but we can't import it here due to circular deps
+    // Instead, we'll mark this via a getter function from main that passes state
+    false  // Will be properly checked in main
+}
+
+/// Checks if IRQ gate bind precondition is satisfied.
+pub fn irq_runtime_check_irq_gate_bind_precondition() -> bool {
+    let status = irq_gate_bind_smoke_status();
+    status.executed
+}
+
+/// Checks if all critical preconditions are met for runtime commitment.
+/// This function must be called by the dispatcher with external state.
+pub fn irq_runtime_check_all_preconditions(pic_remap_executed: bool) -> bool {
+    let gate_bind_ok = irq_runtime_check_irq_gate_bind_precondition();
+    let pic_remap_ok = pic_remap_executed;
+    // EOI dispatch and STI are always "disabled" in v9.1.0, so they block but are documented
+    // Keyboard and pf-smoke are always "ok" in v9.1.0
+    gate_bind_ok && pic_remap_ok
 }
 
 /// Returns whether the runtime IRQ activation has been committed.
