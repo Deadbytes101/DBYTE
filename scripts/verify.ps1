@@ -565,8 +565,8 @@ if ($HEAD -eq $v910Tag) { throw "HEAD is still v9.1.0, v9.1.1 work not completed
 Write-Host "[OK] v9.1.1 branch is beyond v9.1.0 locked baseline"
 
 # v9.1.1: Exact output contracts for irq-runtime-commit blocking scenarios
-$kernelBoot = Join-Path $repoRoot "target\debug\kernel.bin"
-if (-not (Test-Path $kernelBoot)) { throw "Kernel binary not found: $kernelBoot" }
+$kernelELF = Join-Path $repoRoot "kernel-lab\target\i686-unknown-linux-gnu\debug\dbyte_kernel"
+if (-not (Test-Path $kernelELF)) { throw "Kernel ELF not found: $kernelELF" }
 Write-Host "[OK] v9.1.1 IRQ runtime commit wiring hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
