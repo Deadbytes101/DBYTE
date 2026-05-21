@@ -31,7 +31,7 @@ Projects are not executable manifests or host OS projects. DByteOS derives all
 project paths from the project name and rejects path-like names. `clean` does
 not remove projects because they are user data.
 
-## v8.14.0 disabled path foundation
+## v8.14.1 disabled path foundation
 
 Project names are exact workspace identifiers, not paths. Empty names, `.`, `..`,
 names containing `.`, `/`, `\`, `:`, spaces, or tabs are rejected before any
@@ -49,7 +49,7 @@ files, index entry, and demo task file.
 Workspace tasks are stored at `home/deadbyte/projects/<name>/tasks.txt` and are
 managed with `task`. See [Tasks](DBYTEOS_TASKS.md).
 
-`project notes <name>` is read-only in v8.14.0. Editing project notes is deferred
+`project notes <name>` is read-only in v8.14.1. Editing project notes is deferred
 to a future release.
 
 ---

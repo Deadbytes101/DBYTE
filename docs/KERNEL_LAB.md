@@ -1,4 +1,4 @@
-# DByteOS Kernel Lab Guide (v8.14.0)
+# DByteOS Kernel Lab Guide (v8.14.1)
 
 > [!WARNING]
 > **DByteOS Kernel Lab is a Bare-Metal Experiment.**
@@ -18,9 +18,9 @@ The laboratory is completely isolated inside the `kernel-lab/` directory:
 
 ## Exception Subsystem Foundation
 
-Version `8.14.0` preserves the Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
+Version `8.14.1` preserves the Exception Subsystem Foundation. The active exception surface is vector `0` divide-by-zero, vector `3` breakpoint, and vector `14` page fault smoke. Status and recovery are exposed through `exception-status`, `exceptions --verbose`, `fault-status`, `pf-status`, `handlers --active`, and `exception-about`.
 
-Version `8.14.0` adds IRQ gate bind state telemetry (`irq-gate-state`, `irq-gate-history`, `irq-gate-preflight`) on top of the `v8.12.1` controlled bind smoke line. The `system` command reports `irq gates controlled smoke: bound=yes|no`, and `handlers` reflects smoke-bound vectors `32/33` after bind smoke. EOI target paths remain compiled but not dispatched; dry-run commands expose status only; keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`. PIC hardware writes remain limited to `pic-remap-arm` / `pic-remap-smoke`. IDT vectors `32` and `33` bind only inside `irq-gate-arm` / `irq-gate-bind-smoke`.
+Version `8.14.1` adds IRQ gate bind state telemetry (`irq-gate-state`, `irq-gate-history`, `irq-gate-preflight`) on top of the `v8.12.1` controlled bind smoke line. The `system` command reports `irq gates controlled smoke: bound=yes|no`, and `handlers` reflects smoke-bound vectors `32/33` after bind smoke. EOI target paths remain compiled but not dispatched; dry-run commands expose status only; keyboard input stays polling-only through PS/2 ports `0x64` / `0x60`. PIC hardware writes remain limited to `pic-remap-arm` / `pic-remap-smoke`. IDT vectors `32` and `33` bind only inside `irq-gate-arm` / `irq-gate-bind-smoke`.
 
 This milestone does not add a new exception vector, does not change `pf-smoke`, does not enable STI, does not remap the PIC or bind IRQ gates at boot, does not unmask PIC IRQ lines, does not dispatch EOI, and keeps keyboard input polling-based.
 
