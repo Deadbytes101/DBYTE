@@ -981,6 +981,53 @@ pub extern "C" fn kernel_main() -> ! {
                                                 let _ = write!(serial_writer, "- STI: disabled\n");
                                                 let _ = write!(vga_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
                                                 let _ = write!(serial_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
+                                            } else if line_str == "eoi-runtime-note" {
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n");
+                                                let _ = write!(serial_writer, "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n");
+                                            } else if line_str == "eoi-runtime-status" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let preconditions_met = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                                let eoi_status = if preconditions_met { "ready (dry-run)" } else { "blocked" };
+                                                let _ = write!(vga_writer, "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n",
+                                                    eoi_status,
+                                                    if pic_state.executed { "ready" } else { "not ready" },
+                                                    if gate_state.executed { "bound" } else { "not bound" },
+                                                    if preconditions_met { "yes" } else { "no" }
+                                                );
+                                                let _ = write!(serial_writer, "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n",
+                                                    eoi_status,
+                                                    if pic_state.executed { "ready" } else { "not ready" },
+                                                    if gate_state.executed { "bound" } else { "not bound" },
+                                                    if preconditions_met { "yes" } else { "no" }
+                                                );
+                                            } else if line_str == "eoi-runtime-blockers" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "EOI runtime activation blockers\n");
+                                                let _ = write!(serial_writer, "EOI runtime activation blockers\n");
+                                                if !pic_state.executed {
+                                                    let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_PIC_REMAP);
+                                                    let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_PIC_REMAP);
+                                                }
+                                                if !gate_state.executed {
+                                                    let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_IRQ_GATES);
+                                                    let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_IRQ_GATES);
+                                                }
+                                                let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL);
+                                                let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL);
+                                                let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_KEYBOARD);
+                                                let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_KEYBOARD);
+                                                let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_STI);
+                                                let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_STI);
+                                                let _ = write!(vga_writer, "eoi dispatch: disabled\n");
+                                                let _ = write!(serial_writer, "eoi dispatch: disabled\n");
                                             } else if line_str == "pic-status --verbose" {
                                               let pic_status_verbose_msg = "pic subsystem:\nfoundation: dry-run telemetry\nremap function: present / not called\ndry-run plan: available\nmaster offset: 0x20\nslave offset: 0x28\nirq vectors: 0x20-0x2f\nhardware writes: disabled\nirq handlers: none\ninterrupts: disabled\n";
                                               vga::print(pic_status_verbose_msg);

@@ -569,6 +569,53 @@ $kernelELF = Join-Path $repoRoot "kernel-lab\target\i686-unknown-linux-gnu\debug
 if (-not (Test-Path $kernelELF)) { throw "Kernel ELF not found: $kernelELF" }
 Write-Host "[OK] v9.1.1 IRQ runtime commit wiring hardening verified"
 
+# v9.2.0: EOI Runtime Boundary Foundation
+Write-Host "Verifying v9.2.0 EOI runtime boundary contracts..."
+$v911Tag = & git rev-list -n 1 v9.1.1 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v911Tag) { throw "v9.1.1 tag not found (required baseline)" }
+if ($HEAD -eq $v911Tag) { throw "HEAD is still v9.1.1, v9.2.0 work not completed" }
+Write-Host "[OK] v9.2.0 branch is beyond v9.1.1 locked baseline"
+
+# v9.2.0: Verify three new EOI commands are callable (basic structure check)
+# Note: Full output contracts require QEMU boot, so we verify code presence
+$mainRs = Join-Path $repoRoot "kernel-lab\src\main.rs"
+$irrRs = Join-Path $repoRoot "kernel-lab\src\irq.rs"
+$mainContent = Get-Content $mainRs -Raw
+$irrContent = Get-Content $irrRs -Raw
+
+Assert-Contains $mainContent 'line_str == "eoi-runtime-note"' "eoi-runtime-note dispatcher"
+Assert-Contains $mainContent 'line_str == "eoi-runtime-status"' "eoi-runtime-status dispatcher"
+Assert-Contains $mainContent 'line_str == "eoi-runtime-blockers"' "eoi-runtime-blockers dispatcher"
+Assert-Contains $mainContent '"EOI runtime dispatch note' "eoi-runtime-note output format"
+Assert-Contains $mainContent '"EOI runtime readiness status' "eoi-runtime-status output format"
+Assert-Contains $mainContent '"EOI runtime activation blockers' "eoi-runtime-blockers output format"
+
+Assert-Contains $irrContent 'pub const EOI_RUNTIME_BLOCKER_PIC_REMAP' "EOI PIC remap blocker constant"
+Assert-Contains $irrContent 'pub const EOI_RUNTIME_BLOCKER_IRQ_GATES' "EOI IRQ gates blocker constant"
+Assert-Contains $irrContent 'pub const EOI_RUNTIME_BLOCKER_EDGE_LEVEL' "EOI edge/level blocker constant"
+Assert-Contains $irrContent 'pub const EOI_RUNTIME_BLOCKER_KEYBOARD' "EOI keyboard blocker constant"
+Assert-Contains $irrContent 'pub const EOI_RUNTIME_BLOCKER_STI' "EOI STI blocker constant"
+Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_runtime_check_all_preconditions function"
+
+# v9.2.0: Verify kernel version
+$cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
+$cargoContent = Get-Content $cargoToml -Raw
+Assert-Contains $cargoContent 'version = "9.2.0"' "kernel-lab version 9.2.0"
+
+# v9.2.0: Safety invariants still hold (from v9.1.1)
+$irrContent = Get-Content $irrRs -Raw
+Assert-Contains $irrContent 'pub const IRQ_RUNTIME_BLOCKER_PIC_REMAP' "IRQ PIC blocker still exists"
+Assert-Contains $irrContent 'pub const IRQ_RUNTIME_BLOCKER_IRQ_GATES' "IRQ gates blocker still exists"
+Assert-Contains $irrContent 'pub const IRQ_RUNTIME_BLOCKER_EOI_DISPATCH' "IRQ EOI blocker still exists"
+Assert-Contains $irrContent 'pub const IRQ_RUNTIME_BLOCKER_STI' "IRQ STI blocker still exists"
+
+# v9.2.0: Verify no STI enabled
+Assert-NotContains $irrContent 'asm!("sti")' "no STI enabled"
+Assert-NotContains $mainContent 'asm!("sti")' "no STI in main"
+
+Write-Host "[OK] v9.2.0 EOI runtime boundary foundation verified"
+
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"

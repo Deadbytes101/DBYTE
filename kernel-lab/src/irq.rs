@@ -172,6 +172,13 @@ pub const IRQ_RUNTIME_PRECONDITION_KEYBOARD_FALLBACK: &str = "keyboard fallback:
 /// Page fault smoke precondition blocker message (but always satisfied in v9.1.0).
 pub const IRQ_RUNTIME_PRECONDITION_PF_SMOKE: &str = "pf-smoke: stable (ok)";
 
+/// EOI precondition blocker messages (v9.2.0).
+pub const EOI_RUNTIME_BLOCKER_PIC_REMAP: &str = "PIC remap: not ready for EOI dispatch (run: pic-remap-arm, pic-remap-smoke)";
+pub const EOI_RUNTIME_BLOCKER_IRQ_GATES: &str = "IRQ gates: vectors 32/33 not bound for EOI (run: irq-gate-arm, irq-gate-bind-smoke)";
+pub const EOI_RUNTIME_BLOCKER_EDGE_LEVEL: &str = "IRQ edge/level: detection strategy not planned";
+pub const EOI_RUNTIME_BLOCKER_KEYBOARD: &str = "Keyboard fallback: state unknown";
+pub const EOI_RUNTIME_BLOCKER_STI: &str = "STI: not enabled for EOI dispatch";
+
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
@@ -551,6 +558,16 @@ pub fn irq_runtime_check_all_preconditions(pic_remap_executed: bool) -> bool {
     let pic_remap_ok = pic_remap_executed;
     // EOI dispatch and STI are always "disabled" in v9.1.0, so they block but are documented
     // Keyboard and pf-smoke are always "ok" in v9.1.0
+    gate_bind_ok && pic_remap_ok
+}
+
+/// Checks if all critical preconditions are met for EOI dispatch (v9.2.0).
+/// This function must be called by the dispatcher with external state.
+pub fn eoi_runtime_check_all_preconditions(pic_remap_executed: bool) -> bool {
+    let gate_bind_ok = irq_runtime_check_irq_gate_bind_precondition();
+    let pic_remap_ok = pic_remap_executed;
+    // In v9.2.0: EOI boundary definition, not activation
+    // All preconditions must be satisfied for EOI to be "ready" (but still disabled)
     gate_bind_ok && pic_remap_ok
 }
 
