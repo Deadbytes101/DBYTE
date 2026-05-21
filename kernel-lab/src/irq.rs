@@ -151,6 +151,9 @@ pub const IRQ_GATE_BIND_EXPECTED: &str = "yes";
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
+static mut IRQ_RUNTIME_ARMED: bool = false;
+static mut IRQ_RUNTIME_COMMITTED: bool = false;
+
 /// Documentation-only representation of a future IRQ handler.
 pub struct IrqHandlerSkeleton {
     pub irq: u8,
@@ -480,6 +483,33 @@ pub fn irq_gate_bind_smoke_arm() -> IrqGateBindSmokeArmStatus {
 /// Returns whether the controlled IRQ gate bind smoke path is armed.
 pub fn irq_gate_bind_smoke_is_armed() -> bool {
     unsafe { IRQ_GATE_BIND_SMOKE_ARMED }
+}
+
+/// Arms the runtime IRQ activation safety latch.
+pub fn irq_runtime_arm() {
+    unsafe {
+        IRQ_RUNTIME_ARMED = true;
+    }
+}
+
+/// Returns whether the runtime IRQ activation safety latch is armed.
+pub fn irq_runtime_is_armed() -> bool {
+    unsafe { IRQ_RUNTIME_ARMED }
+}
+
+/// Commits the runtime IRQ activation if armed.
+pub fn irq_runtime_commit() {
+    unsafe {
+        if IRQ_RUNTIME_ARMED {
+            IRQ_RUNTIME_COMMITTED = true;
+            IRQ_RUNTIME_ARMED = false;
+        }
+    }
+}
+
+/// Returns whether the runtime IRQ activation has been committed.
+pub fn irq_runtime_is_committed() -> bool {
+    unsafe { IRQ_RUNTIME_COMMITTED }
 }
 
 /// Records a successful command-path IRQ gate smoke bind after IDT entries are installed.
