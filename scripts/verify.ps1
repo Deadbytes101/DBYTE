@@ -4884,8 +4884,8 @@ $picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::Programmable
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
 }
-if ($picRemapStateCalls -ne 5 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
-    throw "Kernel PIC remap telemetry guard failed: expected state=5 (command + system + 3 preconditions), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
+if ($picRemapStateCalls -ne 6 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=6 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
@@ -4900,6 +4900,7 @@ $picRemapStateDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-state
 $picRemapHistoryDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-history"')
 $picRemapPreflightDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-preflight"')
 $irqRuntimePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-preflight"')
+$irqRuntimeCommitDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-commit"')
 $irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-status"')
 $irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
 if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
@@ -4919,9 +4920,10 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearStateCommand = ($callIndex -gt $picRemapStateDispatch -and $callIndex -lt $picRemapStateDispatch + 1024)
     $nearSystemCommand = ($callIndex -gt $kernelMainSource.IndexOf('line_str == "system"') -and $callIndex -lt $kernelMainSource.IndexOf('line_str == "system"') + 2048)
     $nearPreflightCommand = ($callIndex -gt $irqRuntimePreflightDispatch -and $callIndex -lt $irqRuntimePreflightDispatch + 1024)
+    $nearCommitCommand = ($callIndex -gt $irqRuntimeCommitDispatch -and $callIndex -lt $irqRuntimeCommitDispatch + 1024)
     $nearStatusCommand = ($callIndex -gt $irqRuntimeStatusDispatch -and $callIndex -lt $irqRuntimeStatusDispatch + 1024)
     $nearBlockersCommand = ($callIndex -gt $irqRuntimeBlockersDispatch -and $callIndex -lt $irqRuntimeBlockersDispatch + 1024)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearStatusCommand -or $nearBlockersCommand)) {
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand)) {
         throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions dispatch"
     }
 }
@@ -4934,8 +4936,8 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_p
 $irqGateStateCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)').Count
 $irqGateHistoryCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_history\(\)').Count
 $irqGatePreflightCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_preflight\(\)').Count
-if ($irqGateStateCalls -ne 5 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
-    throw "Kernel IRQ gate bind telemetry guard failed: expected state=5 (command + system + 3 preconditions), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
+if ($irqGateStateCalls -ne 6 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
+    throw "Kernel IRQ gate bind telemetry guard failed: expected state=6 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
 }
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot path does not read irq gate bind state telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
@@ -4954,6 +4956,7 @@ if ($kernelMainSource.IndexOf('irq::irq_gate_bind_preflight()') -lt $irqGatePref
     throw "Kernel IRQ gate bind telemetry guard failed: preflight helper call outside irq-gate-preflight dispatch"
 }
 $irqRuntimePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-preflight"')
+$irqRuntimeCommitDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-commit"')
 $irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-status"')
 $irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
 if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0) {
@@ -4965,9 +4968,10 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearStateCommand = ($callIndex -gt $irqGateStateDispatch -and $callIndex -lt $irqGateStateDispatch + 2048)
     $nearSystemCommand = ($callIndex -gt $kernelMainSource.IndexOf('line_str == "system"') -and $callIndex -lt $kernelMainSource.IndexOf('line_str == "system"') + 4096)
     $nearPreflightCommand = ($callIndex -gt $irqRuntimePreflightDispatch -and $callIndex -lt $irqRuntimePreflightDispatch + 1024)
+    $nearCommitCommand = ($callIndex -gt $irqRuntimeCommitDispatch -and $callIndex -lt $irqRuntimeCommitDispatch + 1024)
     $nearStatusCommand = ($callIndex -gt $irqRuntimeStatusDispatch -and $callIndex -lt $irqRuntimeStatusDispatch + 1024)
     $nearBlockersCommand = ($callIndex -gt $irqRuntimeBlockersDispatch -and $callIndex -lt $irqRuntimeBlockersDispatch + 1024)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearStatusCommand -or $nearBlockersCommand)) {
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand)) {
         throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions dispatch"
     }
 }

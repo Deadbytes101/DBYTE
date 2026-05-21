@@ -212,8 +212,8 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "version" {
-                                            vga::print("DByteOS Kernel Lab 9.1.0\n");
-                                            serial::print("DByteOS Kernel Lab 9.1.0\n");
+                                            vga::print("DByteOS Kernel Lab\n");
+                                            serial::print("DByteOS Kernel Lab\n");
                                         } else if line_str == "clear" || line_str == "cls" {
                                             vga::clear_screen();
                                         } else if line_str == "echo" {
