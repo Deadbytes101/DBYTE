@@ -4945,8 +4945,8 @@ $picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::Programmable
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
 }
-if ($picRemapStateCalls -ne 6 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
-    throw "Kernel PIC remap telemetry guard failed: expected state=6 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
+if ($picRemapStateCalls -ne 8 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=8 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
@@ -4964,6 +4964,8 @@ $irqRuntimePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-runti
 $irqRuntimeCommitDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-commit"')
 $irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-status"')
 $irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
+$eciRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-status"')
+$eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-blockers"')
 if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
     throw "Kernel PIC remap smoke guard failed: pic-remap dispatch not found"
 }
@@ -4984,8 +4986,10 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearCommitCommand = ($callIndex -gt $irqRuntimeCommitDispatch -and $callIndex -lt $irqRuntimeCommitDispatch + 1024)
     $nearStatusCommand = ($callIndex -gt $irqRuntimeStatusDispatch -and $callIndex -lt $irqRuntimeStatusDispatch + 1024)
     $nearBlockersCommand = ($callIndex -gt $irqRuntimeBlockersDispatch -and $callIndex -lt $irqRuntimeBlockersDispatch + 1024)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand)) {
-        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions dispatch"
+    $nearEoiStatusCommand = ($callIndex -gt $eciRuntimeStatusDispatch -and $callIndex -lt $eciRuntimeStatusDispatch + 1024)
+    $nearEoiBlockersCommand = ($callIndex -gt $eciRuntimeBlockersDispatch -and $callIndex -lt $eciRuntimeBlockersDispatch + 1024)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand)) {
+        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime dispatch"
     }
 }
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_history()') -lt $picRemapHistoryDispatch) {
@@ -4997,8 +5001,8 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_p
 $irqGateStateCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)').Count
 $irqGateHistoryCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_history\(\)').Count
 $irqGatePreflightCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_preflight\(\)').Count
-if ($irqGateStateCalls -ne 6 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
-    throw "Kernel IRQ gate bind telemetry guard failed: expected state=6 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
+if ($irqGateStateCalls -ne 8 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
+    throw "Kernel IRQ gate bind telemetry guard failed: expected state=8 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
 }
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot path does not read irq gate bind state telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
@@ -5020,8 +5024,10 @@ $irqRuntimePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-runti
 $irqRuntimeCommitDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-commit"')
 $irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-status"')
 $irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
-if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0) {
-    throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers dispatch not found"
+$eciRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-status"')
+$eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-blockers"')
+if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0) {
+    throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers/eoi-runtime-status/blockers dispatch not found"
 }
 # Now check irq_gate_bind_state calls are within allowed dispatches
 foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)')) {
@@ -5032,8 +5038,10 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearCommitCommand = ($callIndex -gt $irqRuntimeCommitDispatch -and $callIndex -lt $irqRuntimeCommitDispatch + 1024)
     $nearStatusCommand = ($callIndex -gt $irqRuntimeStatusDispatch -and $callIndex -lt $irqRuntimeStatusDispatch + 1024)
     $nearBlockersCommand = ($callIndex -gt $irqRuntimeBlockersDispatch -and $callIndex -lt $irqRuntimeBlockersDispatch + 1024)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand)) {
-        throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions dispatch"
+    $nearEoiStatusCommand = ($callIndex -gt $eciRuntimeStatusDispatch -and $callIndex -lt $eciRuntimeStatusDispatch + 1024)
+    $nearEoiBlockersCommand = ($callIndex -gt $eciRuntimeBlockersDispatch -and $callIndex -lt $eciRuntimeBlockersDispatch + 1024)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand)) {
+        throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime dispatch"
     }
 }
 Assert-NotContains $kernelMainSource "timer_interrupt_handler_stub" "kernel main does not bind timer interrupt stub"
