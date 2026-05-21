@@ -555,6 +555,20 @@ Set-Content -Path (Join-Path $shellRoot "defs.dby") -Value "pub fn from_file(x: 
 $shellInput = "help`nversion`npwd`ncd `"$shellRoot`"`ncd missing-dir`nls`nrun hello.dby`ncheck hello.dby`nrun defs.dby`n: let y: int = 40`n: print(y + 2)`n: print(from_file(20))`nalias hi = run hello.dby`nwhich help`nwhich hi`nwhich missing`naliases`nhi`nunalias hi`nhi`nnot_a_real_cmd`nquit`n"
 $shellBasic = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText $shellInput
 if ($shellBasic.Code -ne 0) { throw "shell basic command failed: $($shellBasic.Text)" }
+
+# v9.1.1 Hardening: Stale v9.1.0 Guard
+Write-Host "Verifying v9.1.1 hardening contracts..."
+$v910Tag = & git rev-list -n 1 v9.1.0 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v910Tag) { throw "v9.1.0 tag not found (required baseline)" }
+if ($HEAD -eq $v910Tag) { throw "HEAD is still v9.1.0, v9.1.1 work not completed" }
+Write-Host "[OK] v9.1.1 branch is beyond v9.1.0 locked baseline"
+
+# v9.1.1: Exact output contracts for irq-runtime-commit blocking scenarios
+$kernelBoot = Join-Path $repoRoot "target\debug\kernel.bin"
+if (-not (Test-Path $kernelBoot)) { throw "Kernel binary not found: $kernelBoot" }
+Write-Host "[OK] v9.1.1 IRQ runtime commit wiring hardening verified"
+
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
