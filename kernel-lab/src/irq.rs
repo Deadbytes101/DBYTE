@@ -198,6 +198,9 @@ pub const IRQ_MATRIX_RUNTIME_LATCH_COMMITTED_DRY_RUN: &str = "committed dry-run"
 pub const IRQ_MATRIX_KEYBOARD_MODE_POLLING: &str = "polling";
 pub const IRQ_MATRIX_STI_DISABLED: &str = "disabled";
 pub const IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+pub const IRQ_ACTIVATION_DRY_RUN_ALLOWED_NO: &str = "no";
+pub const IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED: &str = "blocked by readiness matrix";
+pub const IRQ_ACTIVATION_PLAN_NEXT: &str = "execute irq-runtime-activation-plan";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -288,6 +291,15 @@ pub struct IrqRuntimeMatrix {
     pub sti: &'static str,
     pub runtime_irq_active: &'static str,
     pub smoke_prerequisites: &'static str,
+}
+
+/// Read-only activation dry-run decision derived from the readiness matrix.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeActivationDryRun {
+    pub allowed: bool,
+    pub allowed_text: &'static str,
+    pub result: &'static str,
+    pub next: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -835,5 +847,16 @@ pub fn irq_runtime_matrix(
         } else {
             IRQ_MATRIX_NO
         },
+    }
+}
+
+/// Derives the v9.5.0 activation dry-run decision from the matrix only.
+pub fn irq_runtime_activation_dry_run(matrix: &IrqRuntimeMatrix) -> IrqRuntimeActivationDryRun {
+    core::hint::black_box(matrix);
+    IrqRuntimeActivationDryRun {
+        allowed: false,
+        allowed_text: IRQ_ACTIVATION_DRY_RUN_ALLOWED_NO,
+        result: IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED,
+        next: IRQ_ACTIVATION_PLAN_NEXT,
     }
 }

@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.4.1"' "kernel-lab version 9.4.1"
+Assert-Contains $cargoContent 'version = "9.5.0"' "kernel-lab version 9.5.0"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -678,7 +678,7 @@ Assert-NotContains $irrContent 'asm!("sti")' "irq source still has no STI"
 Assert-NotContains $mainContent 'keyboard_irq' "kernel main has no keyboard IRQ switch"
 Assert-NotContains $mainContent 'timer_irq' "kernel main has no timer IRQ activation"
 Assert-Contains $mainContent 'polling-only' "kernel main keeps keyboard polling-only telemetry"
-Assert-Contains $mainContent '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "kernel main keeps runtime irq active no telemetry"
+Assert-Contains $mainContent 'runtime irq active: {}' "kernel main keeps runtime irq active matrix telemetry"
 
 Write-Host "[OK] v9.2.1 EOI runtime boundary hardening verified"
 
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.4.1"' "kernel-lab current version 9.4.1"
+Assert-Contains $cargoContent930 'version = "9.5.0"' "kernel-lab current version 9.5.0"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -774,7 +774,7 @@ Assert-NotContains $picContent930 'write_pic_port(PIC_SLAVE_DATA, 0x00)' "no sla
 Assert-Contains $picContent930 'pub const PIC_MASK_LIVE_UNMASK:   &str = "no";' "live unmask: no phrase present"
 Assert-Contains $mainContent930 '"unmask gate: disabled\n"' "unmask gate disabled phrase present"
 Assert-Contains $picContent930 'pub const PIC_MASK_WRITES_PATH:   &str = "controlled smoke path only";' "mask writes controlled smoke path only phrase"
-Assert-Contains $mainContent930 '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "runtime irq active no phrase preserved"
+Assert-Contains $mainContent930 'runtime irq active: {}' "runtime irq active matrix phrase preserved"
 
 # v9.3.0: ELF symbol checks
 $kernelELF930 = Join-Path $repoRoot "kernel-lab\target\i686-unknown-linux-gnu\debug\dbyte_kernel"
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "9.4.1"' "kernel-lab current version 9.4.1"
+Assert-Contains $cargoContent931 'version = "9.5.0"' "kernel-lab current version 9.5.0"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -836,7 +836,7 @@ Assert-NotContains $mainContent931 'keyboard_interrupt_handler_stub' "v9.3.1 ker
 Assert-NotContains $mainContent931 'timer_irq' "v9.3.1 kernel main has no timer IRQ activation path"
 Assert-NotContains $mainContent931 'keyboard_irq' "v9.3.1 kernel main has no keyboard IRQ activation path"
 Assert-Contains $mainContent931 'polling-only' "v9.3.1 keyboard polling telemetry unchanged"
-Assert-Contains $mainContent931 '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "v9.3.1 runtime IRQ remains inactive"
+Assert-Contains $mainContent931 'runtime irq active: {}' "v9.3.1 runtime IRQ remains inactive"
 
 Write-Host "[OK] v9.3.1 PIC IRQ Mask Plan Hardening verified"
 
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "9.4.1"' "kernel-lab current version 9.4.1"
+Assert-Contains $cargoContent940 'version = "9.5.0"' "kernel-lab current version 9.5.0"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -916,7 +916,7 @@ $irrContent941 = Get-Content $irrRs -Raw
 $picContent941 = Get-Content $picRs -Raw
 $mainContent941 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent941 'version = "9.4.1"' "kernel-lab version 9.4.1"
+Assert-Contains $cargoContent941 'version = "9.5.0"' "kernel-lab current version 9.5.0"
 Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
 
 $matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
@@ -924,7 +924,7 @@ $matrixBlockEnd = $mainContent941.IndexOf('} else if line_str == "irq-runtime-re
 $readinessBlockStart = $matrixBlockEnd
 $readinessBlockEnd = $mainContent941.IndexOf('} else if line_str == "irq-runtime-next" {', $readinessBlockStart)
 $nextBlockStart = $readinessBlockEnd
-$nextBlockEnd = $mainContent941.IndexOf('} else if line_str == "eoi-runtime-note" {', $nextBlockStart)
+$nextBlockEnd = $mainContent941.IndexOf('} else if line_str == "irq-runtime-activation-plan" {', $nextBlockStart)
 if ($matrixBlockStart -lt 0 -or $matrixBlockEnd -lt $matrixBlockStart -or $readinessBlockEnd -lt $readinessBlockStart -or $nextBlockEnd -lt $nextBlockStart) {
     throw "v9.4.1 matrix command block isolation failed"
 }
@@ -1009,6 +1009,84 @@ Assert-Contains $mainContent941 'polling-only' "v9.4.1 keyboard polling telemetr
 Assert-Contains $mainContent941 'runtime irq active: no' "v9.4.1 runtime IRQ remains inactive"
 
 Write-Host "[OK] v9.4.1 IRQ Runtime Readiness Matrix Hardening verified"
+
+# v9.5.0: IRQ Runtime Activation Dry-Run Integration
+Write-Host "Verifying v9.5.0 IRQ Runtime Activation Dry-Run Integration contracts..."
+$v941Tag = & git rev-list -n 1 v9.4.1 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v941Tag) { throw "v9.4.1 tag not found (required baseline)" }
+if ($HEAD -eq $v941Tag) { throw "HEAD is still v9.4.1, v9.5.0 work not completed" }
+Write-Host "[OK] v9.5.0 branch is beyond v9.4.1 locked baseline"
+
+$cargoContent950 = Get-Content $cargoToml -Raw
+$irrContent950 = Get-Content $irrRs -Raw
+$picContent950 = Get-Content $picRs -Raw
+$mainContent950 = Get-Content $mainRs -Raw
+
+Assert-Contains $cargoContent950 'version = "9.5.0"' "kernel-lab version 9.5.0"
+Assert-NotContains $cargoContent950 'version = "9.4.1"' "kernel-lab stale v9.4.1 package version guard"
+Assert-Contains $mainContent950 'irq-runtime-next irq-runtime-activation-plan' "help string includes v9.5.0 activation command"
+Assert-Contains $mainContent950 'line_str == "irq-runtime-activation-plan"' "irq-runtime-activation-plan dispatcher"
+Assert-Contains $irrContent950 'pub struct IrqRuntimeActivationDryRun' "activation dry-run report struct"
+Assert-Contains $irrContent950 'pub fn irq_runtime_activation_dry_run(matrix: &IrqRuntimeMatrix)' "activation dry-run matrix helper"
+Assert-Contains $irrContent950 'allowed: false' "v9.5.0 dry-run commit remains blocked"
+
+$commitBlockStart950 = $mainContent950.IndexOf('} else if line_str == "irq-runtime-commit" {')
+$commitBlockEnd950 = $mainContent950.IndexOf('}else if line_str == "irq-runtime-status" {', $commitBlockStart950)
+$activationBlockStart950 = $mainContent950.IndexOf('} else if line_str == "irq-runtime-activation-plan" {')
+$activationBlockEnd950 = $mainContent950.IndexOf('} else if line_str == "eoi-runtime-note" {', $activationBlockStart950)
+if ($commitBlockStart950 -lt 0 -or $commitBlockEnd950 -lt $commitBlockStart950 -or $activationBlockStart950 -lt 0 -or $activationBlockEnd950 -lt $activationBlockStart950) {
+    throw "v9.5.0 activation command block isolation failed"
+}
+$commitBlock950 = $mainContent950.Substring($commitBlockStart950, $commitBlockEnd950 - $commitBlockStart950)
+$activationBlock950 = $mainContent950.Substring($activationBlockStart950, $activationBlockEnd950 - $activationBlockStart950)
+
+$irqRuntimeCommitDryRunExact950 = 'IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n'
+$irqRuntimeActivationPlanExact950 = 'IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n'
+Assert-Contains $commitBlock950 $irqRuntimeCommitDryRunExact950 "v9.5.0 irq-runtime-commit exact matrix output"
+Assert-Contains $activationBlock950 $irqRuntimeActivationPlanExact950 "v9.5.0 irq-runtime-activation-plan exact output"
+Assert-Contains $commitBlock950 'pic::ProgrammableInterruptController::pic_remap_state();' "v9.5.0 commit reads pic remap state"
+Assert-Contains $commitBlock950 'irq::irq_gate_bind_state();' "v9.5.0 commit reads irq gate state"
+Assert-Contains $commitBlock950 'pic::ProgrammableInterruptController::pic_mask_plan();' "v9.5.0 commit reads mask plan"
+Assert-Contains $commitBlock950 'pic::ProgrammableInterruptController::pic_mask_status();' "v9.5.0 commit reads mask status"
+Assert-Contains $commitBlock950 'irq::irq_runtime_matrix(' "v9.5.0 commit derives matrix"
+Assert-Contains $commitBlock950 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.5.0 commit derives activation decision from matrix"
+Assert-Contains $commitBlock950 'if !activation.allowed {' "v9.5.0 commit blocks when matrix disallows dry-run"
+Assert-NotContains $commitBlock950 'irq::irq_runtime_commit()' "v9.5.0 commit does not mutate runtime latch"
+Assert-Contains $activationBlock950 'irq::irq_runtime_matrix(' "v9.5.0 activation plan derives matrix"
+Assert-Contains $activationBlock950 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.5.0 activation plan derives decision from matrix"
+
+foreach ($blockedCall in @(
+    'write_pic_port(',
+    'set_handler(',
+    'irq::irq_runtime_commit()',
+    'irq::irq_runtime_arm()',
+    'pic::ProgrammableInterruptController::pic_remap_controlled_smoke()',
+    'irq::irq_gate_bind_smoke_mark_bound()',
+    'asm!("sti")'
+)) {
+    Assert-NotContains $activationBlock950 $blockedCall "v9.5.0 activation plan is advisory-only: $blockedCall"
+}
+
+Assert-NotContains $irrContent950 'asm!("sti")' "v9.5.0 irq source still has no STI"
+Assert-NotContains $mainContent950 'asm!("sti")' "v9.5.0 kernel main still has no STI"
+Assert-Contains $picContent950 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.5.0 safe mask-all constant remains allowed"
+foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
+    Assert-NotContains $mainContent950 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.5.0 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent950 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.5.0 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent950 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.5.0 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent950 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.5.0 no slave unmask literal $literal in pic.rs"
+}
+Assert-NotContains $mainContent950 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.5.0 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent950 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.5.0 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent950 'timer_interrupt_handler_stub' "v9.5.0 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent950 'keyboard_interrupt_handler_stub' "v9.5.0 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent950 'timer_irq' "v9.5.0 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent950 'keyboard_irq' "v9.5.0 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent950 'polling-only' "v9.5.0 keyboard polling telemetry unchanged"
+Assert-Contains $mainContent950 'runtime irq active: {}' "v9.5.0 runtime IRQ remains inactive"
+
+Write-Host "[OK] v9.5.0 IRQ Runtime Activation Dry-Run Integration verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
@@ -4942,7 +5020,7 @@ $kernelBootSmokeDocs = $kernelBootSmokeDocs -replace "`r`n", "`n"
 Write-Host "Verifying DByteOS Kernel Lab (v9.0.2) exception status UX contracts..."
 Assert-Contains $kernelMainSource "mod page_fault;" "kernel page fault skeleton module is compiled"
 Assert-Contains $kernelMainSource "mod irq;" "kernel irq skeleton module is compiled"
-$expectedKernelHelp = "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose"
+$expectedKernelHelp = "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose"
 Assert-Contains $kernelMainSource $expectedKernelHelp "kernel help lists exception and irq UX commands"
 Assert-Contains $kernelMainSource "irq::irq_gate_bind_smoke_status()" "kernel handlers reads irq gate bind status"
 Assert-Contains $kernelMainSource "skeleton planned: irq0 timer, irq1 keyboard" "kernel handlers unbound irq section"
@@ -5154,25 +5232,17 @@ $expectedQemuIrqRuntimeStatusArmedOutput = "IRQ runtime readiness status`n    pi
 Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeStatusArmedOutput "qemu docs irq-runtime-status armed exact rendered contract"
 Assert-Contains $kernelMainSource "`"armed / standby`"" "kernel irq-runtime-status armed text in source"
 
-$expectedQemuIrqRuntimeCommitSuccessOutput = "IRQ runtime activation committed.`n    WARNING: this is currently a dry-run."
-Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeCommitSuccessOutput "qemu docs irq-runtime-commit success exact rendered contract"
-Assert-Contains $kernelMainSource "IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\n" "kernel irq-runtime-commit success exact output"
+$expectedQemuIrqRuntimeCommitDryRunOutput = "IRQ runtime activation commit dry-run`n    pic remap smoke: no`n    irq gate bind smoke: no`n    eoi runtime boundary: disabled`n    pic mask policy: all masked (0xFF)`n    unmask policy: no unmask`n    runtime latch: armed`n    sti: disabled`n    runtime irq active: no`n    dry-run commit allowed: no`n    result: blocked by readiness matrix"
+Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeCommitDryRunOutput "qemu docs irq-runtime-commit dry-run exact rendered contract"
+Assert-Contains $kernelMainSource "IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n" "kernel irq-runtime-commit dry-run exact output"
 
 $expectedQemuIrqRuntimeArmAlreadyArmedOutput = "error: IRQ runtime activation already armed (no-op).`n    next: execute irq-runtime-commit"
 Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeArmAlreadyArmedOutput "qemu docs irq-runtime-arm already armed exact rendered contract"
 Assert-Contains $kernelMainSource "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n" "kernel irq-runtime-arm already armed exact output"
 
-$expectedQemuIrqRuntimeCommitAlreadyCommittedOutput = "error: IRQ runtime activation already committed (no-op)."
-Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeCommitAlreadyCommittedOutput "qemu docs irq-runtime-commit already committed exact rendered contract"
-Assert-Contains $kernelMainSource "error: IRQ runtime activation already committed (no-op).\n" "kernel irq-runtime-commit already committed exact output"
-
-$expectedQemuIrqRuntimeArmAlreadyCommittedOutput = "error: IRQ runtime activation already committed (no-op)."
-Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeArmAlreadyCommittedOutput "qemu docs irq-runtime-arm already committed exact rendered contract"
-Assert-Contains $kernelMainSource "error: IRQ runtime activation already committed (no-op).\n" "kernel irq-runtime-arm already committed exact output"
-
-$expectedQemuIrqRuntimeStatusCommittedOutput = "IRQ runtime readiness status`n    pic remap: not ready`n    irq gates: unbound`n    eoi dispatch: disabled`n    keyboard input: polling`n    page fault smoke: stable`n    runtime irq activation: committed (dry-run)`n    sti enabled: no"
-Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeStatusCommittedOutput "qemu docs irq-runtime-status committed exact rendered contract"
-Assert-Contains $kernelMainSource "`"committed (dry-run)`"" "kernel irq-runtime-status committed text in source"
+$expectedQemuIrqRuntimeActivationPlanOutput = "IRQ runtime activation plan`n    1. require readiness matrix smoke prerequisites: yes`n    2. require EOI runtime boundary: ready (dry-run)`n    3. keep PIC mask policy: all masked (0xFF)`n    4. keep unmask policy: no unmask`n    5. keep STI: disabled`n    6. commit path remains dry-run only`n    runtime irq active: no`n    dry-run commit allowed: no"
+Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeActivationPlanOutput "qemu docs irq-runtime-activation-plan exact rendered contract"
+Assert-Contains $kernelMainSource "IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n" "kernel irq-runtime-activation-plan exact output"
 
 $expectedQemuIrqRuntimeBlockersOutput = "IRQ runtime activation blockers`n    - PIC remap: not ready for controlled smoke`n    - IRQ gates: vectors 32/33 not bound`n    - EOI dispatch: not enabled`n    - STI: disabled`n    smoke prerequisites: satisfied`n    runtime irq ready: no"
 Assert-Contains $kernelBootSmokeDocs $expectedQemuIrqRuntimeBlockersOutput "qemu docs irq-runtime-blockers exact rendered contract"
@@ -5340,8 +5410,8 @@ $picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::Programmable
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
 }
-if ($picRemapStateCalls -ne 11 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
-    throw "Kernel PIC remap telemetry guard failed: expected state=11 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers + irq-mask-blockers + irq-runtime-matrix + irq-runtime-readiness), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
+if ($picRemapStateCalls -ne 12 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=12 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers + irq-mask-blockers + irq-runtime-matrix + irq-runtime-readiness + irq-runtime-activation-plan), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
@@ -5364,6 +5434,7 @@ $eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtim
 $irqMaskBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-mask-blockers"')
 $irqRuntimeMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-matrix"')
 $irqRuntimeReadinessMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-readiness"')
+$irqRuntimeActivationPlanDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-plan"')
 if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
     throw "Kernel PIC remap smoke guard failed: pic-remap dispatch not found"
 }
@@ -5389,7 +5460,8 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearIrqMaskBlockersCommand = ($callIndex -gt $irqMaskBlockersDispatch -and $callIndex -lt $irqMaskBlockersDispatch + 1024)
     $nearIrqRuntimeMatrixCommand = ($callIndex -gt $irqRuntimeMatrixDispatch -and $callIndex -lt $irqRuntimeMatrixDispatch + 2048)
     $nearIrqRuntimeReadinessCommand = ($callIndex -gt $irqRuntimeReadinessMatrixDispatch -and $callIndex -lt $irqRuntimeReadinessMatrixDispatch + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand)) {
+    $nearIrqRuntimeActivationPlanCommand = ($callIndex -gt $irqRuntimeActivationPlanDispatch -and $callIndex -lt $irqRuntimeActivationPlanDispatch + 2048)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand)) {
         throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
@@ -5402,8 +5474,8 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_p
 $irqGateStateCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)').Count
 $irqGateHistoryCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_history\(\)').Count
 $irqGatePreflightCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_preflight\(\)').Count
-if ($irqGateStateCalls -ne 11 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
-    throw "Kernel IRQ gate bind telemetry guard failed: expected state=11 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers + irq-mask-blockers + irq-runtime-matrix + irq-runtime-readiness), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
+if ($irqGateStateCalls -ne 12 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
+    throw "Kernel IRQ gate bind telemetry guard failed: expected state=12 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers + irq-mask-blockers + irq-runtime-matrix + irq-runtime-readiness + irq-runtime-activation-plan), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
 }
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot path does not read irq gate bind state telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
@@ -5430,7 +5502,8 @@ $eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtim
 $irqMaskBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-mask-blockers"')
 $irqRuntimeMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-matrix"')
 $irqRuntimeReadinessMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-readiness"')
-if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0 -or $irqMaskBlockersDispatch -lt 0 -or $irqRuntimeMatrixDispatch -lt 0 -or $irqRuntimeReadinessMatrixDispatch -lt 0) {
+$irqRuntimeActivationPlanDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-plan"')
+if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0 -or $irqMaskBlockersDispatch -lt 0 -or $irqRuntimeMatrixDispatch -lt 0 -or $irqRuntimeReadinessMatrixDispatch -lt 0 -or $irqRuntimeActivationPlanDispatch -lt 0) {
     throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers/eoi-runtime-status/blockers/irq-mask-blockers/matrix/readiness dispatch not found"
 }
 # Now check irq_gate_bind_state calls are within allowed dispatches
@@ -5447,7 +5520,8 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearIrqMaskBlockersCommand = ($callIndex -gt $irqMaskBlockersDispatch -and $callIndex -lt $irqMaskBlockersDispatch + 1024)
     $nearIrqRuntimeMatrixCommand = ($callIndex -gt $irqRuntimeMatrixDispatch -and $callIndex -lt $irqRuntimeMatrixDispatch + 2048)
     $nearIrqRuntimeReadinessCommand = ($callIndex -gt $irqRuntimeReadinessMatrixDispatch -and $callIndex -lt $irqRuntimeReadinessMatrixDispatch + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand)) {
+    $nearIrqRuntimeActivationPlanCommand = ($callIndex -gt $irqRuntimeActivationPlanDispatch -and $callIndex -lt $irqRuntimeActivationPlanDispatch + 2048)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand)) {
         throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
