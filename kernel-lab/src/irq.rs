@@ -207,6 +207,15 @@ pub const IRQ_ACTIVATION_TOKEN_SCOPE: &str = "activation telemetry only";
 pub const IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO: &str = "no";
 pub const IRQ_ACTIVATION_TOKEN_PIC_UNMASK_NO: &str = "no";
 pub const IRQ_ACTIVATION_TOKEN_LIVE_IRQ_NO: &str = "no";
+pub const IRQ_ACTIVATION_GATE_PURPOSE: &str = "controlled activation preconditions";
+pub const IRQ_ACTIVATION_GATE_REQUIRED_YES: &str = "yes";
+pub const IRQ_ACTIVATION_GATE_MATRIX_REQUIRED_READY: &str = "ready";
+pub const IRQ_ACTIVATION_GATE_READINESS_BLOCKED: &str = "blocked";
+pub const IRQ_ACTIVATION_GATE_ALLOWED_NO: &str = "no";
+pub const IRQ_ACTIVATION_GATE_RESULT_BLOCKED: &str = "activation blocked";
+pub const IRQ_ACTIVATION_GATE_NEXT_BLOCKERS: &str = "execute irq-runtime-gate-blockers";
+pub const IRQ_ACTIVATION_GATE_DRY_RUN_NOT_ALLOWED: &str = "not allowed";
+pub const IRQ_ACTIVATION_GATE_RUNTIME_READY_NO: &str = "runtime irq ready no";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -320,6 +329,22 @@ pub struct IrqRuntimeActivationTokenTelemetry {
     pub live_irq0_irq1: &'static str,
     pub runtime_eoi_dispatch: &'static str,
     pub keyboard_mode: &'static str,
+}
+
+/// Read-only controlled activation gate telemetry for future IRQ runtime activation.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeActivationGate {
+    pub token_gate: &'static str,
+    pub readiness_matrix: &'static str,
+    pub dry_run_commit_allowed: &'static str,
+    pub eoi_runtime_boundary: &'static str,
+    pub pic_mask_policy: &'static str,
+    pub unmask_policy: &'static str,
+    pub hardware_mutation: &'static str,
+    pub activation_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub result: &'static str,
+    pub next: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -914,4 +939,32 @@ pub fn irq_runtime_activation_token_clear() -> IrqRuntimeActivationTokenTelemetr
         IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT = false;
     }
     irq_runtime_activation_token_status()
+}
+
+/// Derives the v9.7.0 controlled activation gate without mutating runtime state.
+pub fn irq_runtime_activation_gate(
+    token: IrqRuntimeActivationTokenTelemetry,
+    matrix: IrqRuntimeMatrix,
+    activation: IrqRuntimeActivationDryRun,
+    eoi_runtime_ready: bool,
+    pic_mask_policy: &'static str,
+    unmask_policy: &'static str,
+) -> IrqRuntimeActivationGate {
+    IrqRuntimeActivationGate {
+        token_gate: token.token_state,
+        readiness_matrix: IRQ_ACTIVATION_GATE_READINESS_BLOCKED,
+        dry_run_commit_allowed: activation.allowed_text,
+        eoi_runtime_boundary: if eoi_runtime_ready {
+            IRQ_MATRIX_EOI_READY_DRY_RUN
+        } else {
+            IRQ_MATRIX_EOI_DISABLED
+        },
+        pic_mask_policy,
+        unmask_policy,
+        hardware_mutation: IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
+        activation_allowed: IRQ_ACTIVATION_GATE_ALLOWED_NO,
+        runtime_irq_active: matrix.runtime_irq_active,
+        result: IRQ_ACTIVATION_GATE_RESULT_BLOCKED,
+        next: IRQ_ACTIVATION_GATE_NEXT_BLOCKERS,
+    }
 }

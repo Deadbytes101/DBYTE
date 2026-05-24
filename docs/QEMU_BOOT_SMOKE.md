@@ -89,7 +89,7 @@ In version `9.0.2`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 
 | Command Input          | Parameter Handling            | Output Response / Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | :--------------------- | :---------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `help`                 | None                          | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
+| `help`                 | None                          | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose` |
 | `about`                | None                          | Prints: `DByteOS Kernel Lab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `version`              | None                          | Prints: `DByteOS Kernel Lab 9.0.2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `clear`                | None                          | Clears the entire VGA console and resets prompt location to top-left.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -177,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 3. Type commands and press Enter to execute them. For example:
    ```txt
     dbyte-kernel> help
-    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
+    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose
     dbyte-kernel> version
     DByteOS Kernel Lab 9.0.2
    dbyte-kernel> system
@@ -742,6 +742,41 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     live irq0/irq1: no
     runtime eoi dispatch: disabled
     keyboard mode: polling
+    dbyte-kernel> irq-runtime-gate-note
+    IRQ runtime activation gate note
+    gate purpose: controlled activation preconditions
+    token required: yes
+    matrix required: ready
+    dry-run commit required: yes
+    hardware mutation: no
+    activation allowed: no
+    dbyte-kernel> irq-runtime-gate-status
+    IRQ runtime activation gate status
+    token gate: absent
+    readiness matrix: blocked
+    eoi runtime boundary: disabled
+    pic mask policy: all masked (0xFF)
+    unmask policy: no unmask
+    dry-run commit allowed: no
+    runtime irq active: no
+    activation allowed: no
+    dbyte-kernel> irq-runtime-gate-check
+    IRQ runtime activation gate check
+    token gate: absent
+    matrix decision: blocked
+    eoi boundary: disabled
+    mask policy: all masked (0xFF)
+    hardware mutation: no
+    result: activation blocked
+    next: execute irq-runtime-gate-blockers
+    dbyte-kernel> irq-runtime-gate-blockers
+    IRQ runtime activation gate blockers
+    - activation token: absent
+    - readiness matrix: runtime irq ready no
+    - dry-run commit: not allowed
+    - EOI runtime boundary: disabled
+    - STI: disabled
+    activation allowed: no
     dbyte-kernel> irq-runtime-status
     IRQ runtime readiness status
     pic remap: not ready
