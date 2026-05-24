@@ -206,8 +206,8 @@ pub extern "C" fn kernel_main() -> ! {
                                     // Convert and process submitted line
                                     if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
@@ -1112,6 +1112,100 @@ pub extern "C" fn kernel_main() -> ! {
                                                     matrix.sti,
                                                     matrix.runtime_irq_active,
                                                     activation.allowed_text
+                                                );
+                                           } else if line_str == "irq-runtime-token-note" {
+                                                let token = irq::irq_runtime_activation_token_status();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "IRQ runtime activation token note\ntoken gate: explicit\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                                let _ = write!(serial_writer, "IRQ runtime activation token note\ntoken gate: explicit\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                           } else if line_str == "irq-runtime-token-status" {
+                                                let token = irq::irq_runtime_activation_token_status();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "IRQ runtime activation token status\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_state,
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                                let _ = write!(serial_writer, "IRQ runtime activation token status\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_state,
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                           } else if line_str == "irq-runtime-token-arm" {
+                                                let token = irq::irq_runtime_activation_token_arm();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "IRQ runtime activation token armed\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_state,
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                                let _ = write!(serial_writer, "IRQ runtime activation token armed\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_state,
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                           } else if line_str == "irq-runtime-token-clear" {
+                                                let token = irq::irq_runtime_activation_token_clear();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "IRQ runtime activation token cleared\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_state,
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
+                                                );
+                                                let _ = write!(serial_writer, "IRQ runtime activation token cleared\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                                    token.token_state,
+                                                    token.token_scope,
+                                                    token.hardware_mutation,
+                                                    token.sti,
+                                                    token.pic_unmask,
+                                                    token.live_irq0_irq1,
+                                                    token.runtime_eoi_dispatch,
+                                                    token.keyboard_mode
                                                 );
                                             } else if line_str == "eoi-runtime-note" {
                                                 let mut vga_writer = vga::VgaWriter;

@@ -201,12 +201,19 @@ pub const IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
 pub const IRQ_ACTIVATION_DRY_RUN_ALLOWED_NO: &str = "no";
 pub const IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED: &str = "blocked by readiness matrix";
 pub const IRQ_ACTIVATION_PLAN_NEXT: &str = "execute irq-runtime-activation-plan";
+pub const IRQ_ACTIVATION_TOKEN_ABSENT: &str = "absent";
+pub const IRQ_ACTIVATION_TOKEN_PRESENT: &str = "present";
+pub const IRQ_ACTIVATION_TOKEN_SCOPE: &str = "activation telemetry only";
+pub const IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO: &str = "no";
+pub const IRQ_ACTIVATION_TOKEN_PIC_UNMASK_NO: &str = "no";
+pub const IRQ_ACTIVATION_TOKEN_LIVE_IRQ_NO: &str = "no";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
 static mut IRQ_RUNTIME_ARMED: bool = false;
 static mut IRQ_RUNTIME_COMMITTED: bool = false;
+static mut IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT: bool = false;
 
 /// Documentation-only representation of a future IRQ handler.
 pub struct IrqHandlerSkeleton {
@@ -300,6 +307,19 @@ pub struct IrqRuntimeActivationDryRun {
     pub allowed_text: &'static str,
     pub result: &'static str,
     pub next: &'static str,
+}
+
+/// Telemetry-only activation token state for future IRQ runtime activation.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeActivationTokenTelemetry {
+    pub token_state: &'static str,
+    pub token_scope: &'static str,
+    pub hardware_mutation: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_irq0_irq1: &'static str,
+    pub runtime_eoi_dispatch: &'static str,
+    pub keyboard_mode: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -859,4 +879,39 @@ pub fn irq_runtime_activation_dry_run(matrix: &IrqRuntimeMatrix) -> IrqRuntimeAc
         result: IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED,
         next: IRQ_ACTIVATION_PLAN_NEXT,
     }
+}
+
+/// Returns telemetry-only activation token state.
+pub fn irq_runtime_activation_token_status() -> IrqRuntimeActivationTokenTelemetry {
+    let token_present = unsafe { IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT };
+    IrqRuntimeActivationTokenTelemetry {
+        token_state: if token_present {
+            IRQ_ACTIVATION_TOKEN_PRESENT
+        } else {
+            IRQ_ACTIVATION_TOKEN_ABSENT
+        },
+        token_scope: IRQ_ACTIVATION_TOKEN_SCOPE,
+        hardware_mutation: IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
+        sti: IRQ_MATRIX_STI_DISABLED,
+        pic_unmask: IRQ_ACTIVATION_TOKEN_PIC_UNMASK_NO,
+        live_irq0_irq1: IRQ_ACTIVATION_TOKEN_LIVE_IRQ_NO,
+        runtime_eoi_dispatch: IRQ_MATRIX_EOI_DISABLED,
+        keyboard_mode: IRQ_MATRIX_KEYBOARD_MODE_POLLING,
+    }
+}
+
+/// Arms only the activation token telemetry flag.
+pub fn irq_runtime_activation_token_arm() -> IrqRuntimeActivationTokenTelemetry {
+    unsafe {
+        IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT = true;
+    }
+    irq_runtime_activation_token_status()
+}
+
+/// Clears only the activation token telemetry flag.
+pub fn irq_runtime_activation_token_clear() -> IrqRuntimeActivationTokenTelemetry {
+    unsafe {
+        IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT = false;
+    }
+    irq_runtime_activation_token_status()
 }
