@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.4.0"' "kernel-lab version 9.4.0"
+Assert-Contains $cargoContent 'version = "9.4.1"' "kernel-lab version 9.4.1"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.4.0"' "kernel-lab current version 9.4.0"
+Assert-Contains $cargoContent930 'version = "9.4.1"' "kernel-lab current version 9.4.1"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "9.4.0"' "kernel-lab current version 9.4.0"
+Assert-Contains $cargoContent931 'version = "9.4.1"' "kernel-lab current version 9.4.1"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "9.4.0"' "kernel-lab version 9.4.0"
+Assert-Contains $cargoContent940 'version = "9.4.1"' "kernel-lab current version 9.4.1"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -902,6 +902,113 @@ Assert-Contains $mainContent940 'polling-only' "v9.4.0 keyboard polling telemetr
 Assert-Contains $mainContent940 'runtime irq active: no' "v9.4.0 runtime IRQ remains inactive"
 
 Write-Host "[OK] v9.4.0 IRQ Runtime Readiness Matrix Foundation verified"
+
+# v9.4.1: IRQ Runtime Readiness Matrix Hardening
+Write-Host "Verifying v9.4.1 IRQ Runtime Readiness Matrix Hardening contracts..."
+$v940Tag = & git rev-list -n 1 v9.4.0 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v940Tag) { throw "v9.4.0 tag not found (required baseline)" }
+if ($HEAD -eq $v940Tag) { throw "HEAD is still v9.4.0, v9.4.1 work not completed" }
+Write-Host "[OK] v9.4.1 branch is beyond v9.4.0 locked baseline"
+
+$cargoContent941 = Get-Content $cargoToml -Raw
+$irrContent941 = Get-Content $irrRs -Raw
+$picContent941 = Get-Content $picRs -Raw
+$mainContent941 = Get-Content $mainRs -Raw
+
+Assert-Contains $cargoContent941 'version = "9.4.1"' "kernel-lab version 9.4.1"
+Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
+
+$matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
+$matrixBlockEnd = $mainContent941.IndexOf('} else if line_str == "irq-runtime-readiness" {', $matrixBlockStart)
+$readinessBlockStart = $matrixBlockEnd
+$readinessBlockEnd = $mainContent941.IndexOf('} else if line_str == "irq-runtime-next" {', $readinessBlockStart)
+$nextBlockStart = $readinessBlockEnd
+$nextBlockEnd = $mainContent941.IndexOf('} else if line_str == "eoi-runtime-note" {', $nextBlockStart)
+if ($matrixBlockStart -lt 0 -or $matrixBlockEnd -lt $matrixBlockStart -or $readinessBlockEnd -lt $readinessBlockStart -or $nextBlockEnd -lt $nextBlockStart) {
+    throw "v9.4.1 matrix command block isolation failed"
+}
+$matrixBlock = $mainContent941.Substring($matrixBlockStart, $matrixBlockEnd - $matrixBlockStart)
+$readinessBlock = $mainContent941.Substring($readinessBlockStart, $readinessBlockEnd - $readinessBlockStart)
+$nextBlock = $mainContent941.Substring($nextBlockStart, $nextBlockEnd - $nextBlockStart)
+
+$irqRuntimeMatrixExact941 = 'IRQ runtime readiness matrix\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nkeyboard mode: {}\nsti: {}\nruntime irq active: {}\n'
+$irqRuntimeReadinessExact941 = 'IRQ runtime readiness\nsmoke prerequisites: {}\nmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq ready: no\n'
+$irqRuntimeNextExact941 = 'IRQ runtime next\n1. keep PIC mask policy all masked (0xFF)\n2. keep unmask policy no unmask\n3. implement live EOI dispatch boundary\n4. enable STI only after EOI and handlers are ready\n5. switch keyboard from polling only after IRQ1 handler is live\nruntime irq active: no\n'
+Assert-Contains $mainContent941 $irqRuntimeMatrixExact941 "v9.4.1 irq-runtime-matrix exact output"
+Assert-Contains $mainContent941 $irqRuntimeReadinessExact941 "v9.4.1 irq-runtime-readiness exact output"
+Assert-Contains $mainContent941 $irqRuntimeNextExact941 "v9.4.1 irq-runtime-next exact output"
+
+Assert-ContainsInOrder $matrixBlock @(
+    'pic remap smoke: {}',
+    'irq gate bind smoke: {}',
+    'eoi runtime boundary: {}',
+    'pic mask policy: {}',
+    'unmask policy: {}',
+    'runtime latch: {}',
+    'keyboard mode: {}',
+    'sti: {}',
+    'runtime irq active: {}'
+) "v9.4.1 matrix field ordering"
+Assert-ContainsInOrder $readinessBlock @(
+    'smoke prerequisites: {}',
+    'mask policy: {}',
+    'runtime latch: {}',
+    'sti: {}',
+    'runtime irq ready: no'
+) "v9.4.1 readiness summary wording order"
+Assert-ContainsInOrder $nextBlock @(
+    '1. keep PIC mask policy all masked (0xFF)',
+    '2. keep unmask policy no unmask',
+    '3. implement live EOI dispatch boundary',
+    '4. enable STI only after EOI and handlers are ready',
+    '5. switch keyboard from polling only after IRQ1 handler is live',
+    'runtime irq active: no'
+) "v9.4.1 irq-runtime-next recommendation wording"
+
+foreach ($blockedCall in @(
+    'write_pic_port(',
+    'set_handler(',
+    'irq::irq_runtime_commit()',
+    'irq::irq_runtime_arm()',
+    'pic::ProgrammableInterruptController::pic_remap_controlled_smoke()',
+    'irq::irq_gate_bind_smoke_mark_bound()',
+    'asm!("sti")'
+)) {
+    Assert-NotContains $matrixBlock $blockedCall "v9.4.1 matrix command is read-only: $blockedCall"
+    Assert-NotContains $readinessBlock $blockedCall "v9.4.1 readiness command is read-only: $blockedCall"
+    Assert-NotContains $nextBlock $blockedCall "v9.4.1 next command is advisory-only: $blockedCall"
+}
+
+Assert-Contains $matrixBlock 'pic::ProgrammableInterruptController::pic_remap_state();' "v9.4.1 matrix reads pic remap state"
+Assert-Contains $matrixBlock 'irq::irq_gate_bind_state();' "v9.4.1 matrix reads irq gate state"
+Assert-Contains $matrixBlock 'pic::ProgrammableInterruptController::pic_mask_plan();' "v9.4.1 matrix reads pic mask plan"
+Assert-Contains $matrixBlock 'pic::ProgrammableInterruptController::pic_mask_status();' "v9.4.1 matrix reads pic mask status"
+Assert-Contains $matrixBlock 'irq::eoi_runtime_check_all_preconditions(pic_state.executed);' "v9.4.1 matrix reads eoi boundary"
+Assert-Contains $readinessBlock 'pic::ProgrammableInterruptController::pic_remap_state();' "v9.4.1 readiness reads pic remap state"
+Assert-Contains $readinessBlock 'irq::irq_gate_bind_state();' "v9.4.1 readiness reads irq gate state"
+Assert-Contains $readinessBlock 'pic::ProgrammableInterruptController::pic_mask_plan();' "v9.4.1 readiness reads pic mask plan"
+Assert-Contains $readinessBlock 'irq::eoi_runtime_check_all_preconditions(pic_state.executed);' "v9.4.1 readiness reads eoi boundary"
+
+Assert-NotContains $irrContent941 'asm!("sti")' "v9.4.1 irq source still has no STI"
+Assert-NotContains $mainContent941 'asm!("sti")' "v9.4.1 kernel main still has no STI"
+Assert-Contains $picContent941 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.4.1 safe mask-all constant remains allowed"
+foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
+    Assert-NotContains $mainContent941 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.4.1 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent941 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.4.1 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent941 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.4.1 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent941 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.4.1 no slave unmask literal $literal in pic.rs"
+}
+Assert-NotContains $mainContent941 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.4.1 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent941 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.4.1 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent941 'timer_interrupt_handler_stub' "v9.4.1 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent941 'keyboard_interrupt_handler_stub' "v9.4.1 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent941 'timer_irq' "v9.4.1 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent941 'keyboard_irq' "v9.4.1 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent941 'polling-only' "v9.4.1 keyboard polling telemetry unchanged"
+Assert-Contains $mainContent941 'runtime irq active: no' "v9.4.1 runtime IRQ remains inactive"
+
+Write-Host "[OK] v9.4.1 IRQ Runtime Readiness Matrix Hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
