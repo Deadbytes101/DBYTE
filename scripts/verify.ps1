@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.3.0"' "kernel-lab version 9.3.0"
+Assert-Contains $cargoContent 'version = "9.3.1"' "kernel-lab version 9.3.1"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.3.0"' "kernel-lab version 9.3.0"
+Assert-Contains $cargoContent930 'version = "9.3.1"' "kernel-lab current version 9.3.1"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -787,6 +787,58 @@ Assert-Contains $elfSymbols930 "irq_mask_blocker_report" "ELF contains irq_mask_
 Assert-Contains $elfSymbols930 "irq_mask_check_all_blockers" "ELF contains irq_mask_check_all_blockers symbol"
 
 Write-Host "[OK] v9.3.0 PIC IRQ Mask Plan Foundation verified"
+
+# v9.3.1: PIC IRQ Mask Plan Hardening
+Write-Host "Verifying v9.3.1 PIC IRQ Mask Plan Hardening contracts..."
+$v930Tag = & git rev-list -n 1 v9.3.0 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v930Tag) { throw "v9.3.0 tag not found (required baseline)" }
+if ($HEAD -eq $v930Tag) { throw "HEAD is still v9.3.0, v9.3.1 work not completed" }
+Write-Host "[OK] v9.3.1 branch is beyond v9.3.0 locked baseline"
+
+$cargoContent931 = Get-Content $cargoToml -Raw
+$irrContent931 = Get-Content $irrRs -Raw
+$picContent931 = Get-Content $picRs -Raw
+$mainContent931 = Get-Content $mainRs -Raw
+
+Assert-Contains $cargoContent931 'version = "9.3.1"' "kernel-lab version 9.3.1"
+Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
+
+$picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
+Assert-Contains $mainContent931 $picMaskPlanExact931 "v9.3.1 pic-mask-plan exact mask-all output"
+Assert-Contains $mainContent931 '"PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n"' "v9.3.1 pic-mask-status field output contract"
+Assert-Contains $mainContent931 'PIC IRQ unmask activation blockers\n' "v9.3.1 irq-mask-blockers header"
+Assert-Contains $mainContent931 '"unmask gate: disabled\n"' "v9.3.1 irq-mask-blockers gate disabled footer"
+
+Assert-Contains $picContent931 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.3.1 safe mask-all constant"
+Assert-Contains $picContent931 'pub const PIC_MASK_PLAN_POLICY:   &str = "all masked (0xFF)";' "v9.3.1 mask policy all masked"
+Assert-Contains $picContent931 'pub const PIC_MASK_CANDIDATES:    &str = "none";' "v9.3.1 unmask candidates none"
+Assert-Contains $picContent931 'pub const PIC_MASK_LIVE_UNMASK:   &str = "no";' "v9.3.1 live unmask no"
+Assert-Contains $picContent931 'pub const PIC_MASK_WRITES_PATH:   &str = "controlled smoke path only";' "v9.3.1 writes path controlled smoke only"
+Assert-Contains $picContent931 'master_imr_planned: PIC_MASK_ALL' "v9.3.1 master planned mask-all telemetry"
+Assert-Contains $picContent931 'slave_imr_planned: PIC_MASK_ALL' "v9.3.1 slave planned mask-all telemetry"
+Assert-Contains $picContent931 'write_pic_port(PIC_MASTER_DATA, PIC_MASK_ALL);' "v9.3.1 controlled smoke masks master with PIC_MASK_ALL"
+Assert-Contains $picContent931 'write_pic_port(PIC_SLAVE_DATA, PIC_MASK_ALL);' "v9.3.1 controlled smoke masks slave with PIC_MASK_ALL"
+
+foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
+    Assert-NotContains $mainContent931 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.3.1 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent931 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.3.1 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent931 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.3.1 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent931 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.3.1 no slave unmask literal $literal in pic.rs"
+}
+
+Assert-NotContains $irrContent931 'asm!("sti")' "v9.3.1 irq source still has no STI"
+Assert-NotContains $mainContent931 'asm!("sti")' "v9.3.1 kernel main still has no STI"
+Assert-NotContains $mainContent931 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.3.1 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent931 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.3.1 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent931 'timer_interrupt_handler_stub' "v9.3.1 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent931 'keyboard_interrupt_handler_stub' "v9.3.1 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent931 'timer_irq' "v9.3.1 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent931 'keyboard_irq' "v9.3.1 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent931 'polling-only' "v9.3.1 keyboard polling telemetry unchanged"
+Assert-Contains $mainContent931 '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "v9.3.1 runtime IRQ remains inactive"
+
+Write-Host "[OK] v9.3.1 PIC IRQ Mask Plan Hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
