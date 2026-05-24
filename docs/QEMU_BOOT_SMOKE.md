@@ -692,8 +692,48 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     live irq0/irq1: no
     runtime eoi dispatch: disabled
     keyboard mode: polling
+    dbyte-kernel> irq-runtime-token-arm
+    IRQ runtime activation token armed
+    activation token: present
+    scope: activation telemetry only
+    hardware mutation: no
+    sti: disabled
+    pic unmask: no
+    live irq0/irq1: no
+    runtime eoi dispatch: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-token-status
+    IRQ runtime activation token status
+    activation token: present
+    scope: activation telemetry only
+    hardware mutation: no
+    sti: disabled
+    pic unmask: no
+    live irq0/irq1: no
+    runtime eoi dispatch: disabled
+    keyboard mode: polling
     dbyte-kernel> irq-runtime-token-clear
     IRQ runtime activation token cleared
+    activation token: absent
+    scope: activation telemetry only
+    hardware mutation: no
+    sti: disabled
+    pic unmask: no
+    live irq0/irq1: no
+    runtime eoi dispatch: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-token-clear
+    IRQ runtime activation token cleared
+    activation token: absent
+    scope: activation telemetry only
+    hardware mutation: no
+    sti: disabled
+    pic unmask: no
+    live irq0/irq1: no
+    runtime eoi dispatch: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-token-status
+    IRQ runtime activation token status
     activation token: absent
     scope: activation telemetry only
     hardware mutation: no
