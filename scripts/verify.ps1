@@ -66,7 +66,21 @@ function Assert-NotContains($actual, $unexpected, $name) {
     }
 }
 
+function Assert-ContainsInOrder($actual, $expectedParts, $name) {
+    $cursor = 0
+    foreach ($part in $expectedParts) {
+        $index = $actual.IndexOf($part, $cursor)
+        if ($index -lt 0) {
+            throw "$name failed: expected to find '$part' after offset $cursor"
+        }
+        $cursor = $index + $part.Length
+    }
+}
+
 function Expected-File($path) {
+    if (-not [System.IO.Path]::IsPathRooted($path)) {
+        $path = Join-Path $repoRoot $path
+    }
     return ((Get-Content $path -Raw) -replace "`r`n", "`n").Trim()
 }
 
@@ -79,11 +93,25 @@ function Invoke-Dbyte {
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     $oldCwd = Get-Location
-    try {
-        if ($null -ne $WorkingDirectory) {
-            Set-Location $WorkingDirectory
+    if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $WorkingDirectory = $repoRoot
+    }
+    $resolvedArguments = foreach ($arg in $Arguments) {
+        if ([string]::IsNullOrEmpty($arg)) {
+            $arg
+            continue
         }
-        $output = & $cli @Arguments 2>&1
+        $candidate = Join-Path $WorkingDirectory $arg
+        if (-not $arg.StartsWith("-") -and ($arg.Contains("\") -or $arg.Contains("/") -or $arg.EndsWith(".dby")) -and (Test-Path $candidate)) {
+            (Resolve-Path $candidate).Path
+        }
+        else {
+            $arg
+        }
+    }
+    try {
+        Set-Location $WorkingDirectory
+        $output = & $cli @resolvedArguments 2>&1
         $code = $LASTEXITCODE
     }
     finally {
@@ -601,7 +629,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.2.0"' "kernel-lab version 9.2.0"
+Assert-Contains $cargoContent 'version = "9.2.1"' "kernel-lab version 9.2.1"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -615,6 +643,56 @@ Assert-NotContains $irrContent 'asm!("sti")' "no STI enabled"
 Assert-NotContains $mainContent 'asm!("sti")' "no STI in main"
 
 Write-Host "[OK] v9.2.0 EOI runtime boundary foundation verified"
+
+Write-Host "Verifying v9.2.1 EOI runtime boundary hardening contracts..."
+$v920Tag = & git rev-list -n 1 v9.2.0 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v920Tag) { throw "v9.2.0 tag not found (required baseline)" }
+if ($HEAD -eq $v920Tag) { throw "HEAD is still v9.2.0, v9.2.1 work not completed" }
+Write-Host "[OK] v9.2.1 branch is beyond v9.2.0 locked baseline"
+
+$eoiRuntimeNoteExact = "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n"
+$eoiRuntimeStatusTemplateExact = "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n"
+$eoiRuntimeBlockersHeaderExact = "EOI runtime activation blockers\n"
+Assert-Contains $mainContent $eoiRuntimeNoteExact "eoi-runtime-note exact output contract"
+Assert-Contains $mainContent $eoiRuntimeStatusTemplateExact "eoi-runtime-status exact output contract"
+Assert-Contains $mainContent $eoiRuntimeBlockersHeaderExact "eoi-runtime-blockers exact header contract"
+Assert-Contains $mainContent 'let eoi_status = if preconditions_met { "ready (dry-run)" } else { "blocked" };' "eoi-runtime-status dry-run ready wording"
+Assert-Contains $mainContent 'let preconditions_met = irq::eoi_runtime_check_all_preconditions(pic_state.executed);' "eoi-runtime-status uses EOI precondition telemetry"
+Assert-Contains $mainContent 'let pic_state = pic::ProgrammableInterruptController::pic_remap_state();' "eoi-runtime uses pic remap state telemetry"
+Assert-Contains $mainContent 'let gate_state = irq::irq_gate_bind_state();' "eoi-runtime uses irq gate bind state telemetry"
+$eoiBlockersStart = $mainContent.IndexOf('} else if line_str == "eoi-runtime-blockers" {')
+$eoiBlockersEnd = $mainContent.IndexOf('} else if line_str == "pic-status --verbose" {', $eoiBlockersStart)
+if ($eoiBlockersStart -lt 0 -or $eoiBlockersEnd -lt $eoiBlockersStart) { throw "eoi-runtime-blockers block isolation failed" }
+$eoiBlockersBlock = $mainContent.Substring($eoiBlockersStart, $eoiBlockersEnd - $eoiBlockersStart)
+Assert-ContainsInOrder $eoiBlockersBlock @(
+    'if !pic_state.executed {',
+    'irq::EOI_RUNTIME_BLOCKER_PIC_REMAP',
+    'if !gate_state.executed {',
+    'irq::EOI_RUNTIME_BLOCKER_IRQ_GATES',
+    'irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL',
+    'irq::EOI_RUNTIME_BLOCKER_KEYBOARD',
+    'irq::EOI_RUNTIME_BLOCKER_STI',
+    '"eoi dispatch: disabled\n"'
+) "eoi-runtime-blockers source ordering"
+Assert-ContainsInOrder $irrContent @(
+    'pub const EOI_RUNTIME_BLOCKER_PIC_REMAP',
+    'pub const EOI_RUNTIME_BLOCKER_IRQ_GATES',
+    'pub const EOI_RUNTIME_BLOCKER_EDGE_LEVEL',
+    'pub const EOI_RUNTIME_BLOCKER_KEYBOARD',
+    'pub const EOI_RUNTIME_BLOCKER_STI'
+) "eoi-runtime blocker constant ordering"
+Assert-NotContains $cargoContent 'version = "9.2.0"' "kernel-lab stale v9.2.0 package version guard"
+Assert-NotContains $mainContent 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent 'asm!("sti")' "kernel main still has no STI"
+Assert-NotContains $irrContent 'asm!("sti")' "irq source still has no STI"
+Assert-NotContains $mainContent 'keyboard_irq' "kernel main has no keyboard IRQ switch"
+Assert-NotContains $mainContent 'timer_irq' "kernel main has no timer IRQ activation"
+Assert-Contains $mainContent '"polling-only"' "kernel main keeps keyboard polling-only telemetry"
+Assert-Contains $mainContent '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "kernel main keeps runtime irq active no telemetry"
+
+Write-Host "[OK] v9.2.1 EOI runtime boundary hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
@@ -5702,6 +5780,34 @@ Get-ChildItem (Join-Path $repoRoot "kernel-lab\src") -Filter "*.rs" | ForEach-Ob
     }
 }
 Write-Host "[OK] Guard passed: EOI dispatch is dry-run only (no PIC_EOI writes in pic.rs)." -ForegroundColor Green
+
+$kernelRustSources = Get-ChildItem (Join-Path $repoRoot "kernel-lab\src") -Filter "*.rs"
+foreach ($sourceFile in $kernelRustSources) {
+    $sourceText = Get-Content $sourceFile.FullName -Raw
+    if ($sourceText -match 'asm!\(\s*"\s*sti\s*"\s*\)' -or $sourceText -match 'global_asm!\(\s*"\s*sti\s*"\s*\)') {
+        throw "v9.2.1 EOI boundary guard failed: STI instruction found in $($sourceFile.Name)"
+    }
+    if ($sourceText -match 'write_pic_port\(\s*PIC_(MASTER|SLAVE)_CMD\s*,\s*PIC_EOI\s*\)') {
+        throw "v9.2.1 EOI boundary guard failed: PIC_EOI hardware dispatch found in $($sourceFile.Name)"
+    }
+    if ($sourceText -match 'write_pic_port\(\s*PIC_(MASTER|SLAVE)_DATA\s*,\s*(0x00|0xFE|0xFC|0xFD|0xFB|0xF7|0xEF|0xDF|0xBF|0x7F)\s*\)') {
+        throw "v9.2.1 EOI boundary guard failed: PIC IRQ unmask literal found in $($sourceFile.Name)"
+    }
+    if ($sourceFile.Name -ne 'main.rs') {
+        if ($sourceText.Contains('entries[32].set_handler') -or $sourceText.Contains('entries[33].set_handler')) {
+            throw "v9.2.1 EOI boundary guard failed: IRQ0/IRQ1 IDT bind outside command dispatcher in $($sourceFile.Name)"
+        }
+    }
+    if ($sourceFile.Name -ne 'interrupts.rs') {
+        if ($sourceText.Contains('irq0_handler') -or $sourceText.Contains('irq1_handler')) {
+            throw "v9.2.1 EOI boundary guard failed: live IRQ0/IRQ1 handler symbol found in $($sourceFile.Name)"
+        }
+    }
+    if ($sourceText.Contains('keyboard_irq') -or $sourceText.Contains('timer_irq')) {
+        throw "v9.2.1 EOI boundary guard failed: runtime IRQ path found in $($sourceFile.Name)"
+    }
+}
+Write-Host "[OK] Guard passed: v9.2.1 EOI boundary static source scan remained dry-run only." -ForegroundColor Green
 
 if (Test-Path $elfPath) {
     $requiredEoiSymbols = @(
