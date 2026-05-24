@@ -93,25 +93,11 @@ function Invoke-Dbyte {
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     $oldCwd = Get-Location
-    if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
-        $WorkingDirectory = $repoRoot
-    }
-    $resolvedArguments = foreach ($arg in $Arguments) {
-        if ([string]::IsNullOrEmpty($arg)) {
-            $arg
-            continue
-        }
-        $candidate = Join-Path $WorkingDirectory $arg
-        if (-not $arg.StartsWith("-") -and ($arg.Contains("\") -or $arg.Contains("/") -or $arg.EndsWith(".dby")) -and (Test-Path $candidate)) {
-            (Resolve-Path $candidate).Path
-        }
-        else {
-            $arg
-        }
-    }
     try {
-        Set-Location $WorkingDirectory
-        $output = & $cli @resolvedArguments 2>&1
+        if ($null -ne $WorkingDirectory) {
+            Set-Location $WorkingDirectory
+        }
+        $output = & $cli @Arguments 2>&1
         $code = $LASTEXITCODE
     }
     finally {
@@ -250,267 +236,268 @@ function Bytes-Hex($path) {
 }
 
 Write-Host "Running VM hardening tests..."
+Set-Location $repoRoot
 
-$disasmResult = Invoke-Dbyte -Arguments @("disasm", "tests\vm\disasm_smoke.dby")
+$disasmResult = Invoke-Dbyte -Arguments @("disasm", "tests\vm\disasm_smoke.dby") -WorkingDirectory $repoRoot
 if ($disasmResult.Code -ne 0) { throw "disasm smoke failed: $($disasmResult.Text)" }
 Assert-Equal $disasmResult.Text (Expected-File "tests\vm\disasm_smoke.disasm") "disasm smoke"
 
-$traceResult = Invoke-Dbyte -Arguments @("run", "--vm", "--trace", "tests\vm\trace_smoke.dby")
+$traceResult = Invoke-Dbyte -Arguments @("run", "--vm", "--trace", "tests\vm\trace_smoke.dby") -WorkingDirectory $repoRoot
 if ($traceResult.Code -ne 0) { throw "trace smoke failed: $($traceResult.Text)" }
 Assert-Equal $traceResult.Text (Expected-File "tests\vm\trace_smoke.trace") "trace smoke"
 
-$arityResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\arity_mismatch.dby")
+$arityResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\arity_mismatch.dby") -WorkingDirectory $repoRoot
 if ($arityResult.Code -eq 0) { throw "vm arity mismatch unexpectedly passed" }
 Assert-Contains $arityResult.Text (Expected-File "tests\vm\arity_mismatch.err") "vm arity mismatch"
 
-$returnResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\return_outside_function.dby")
+$returnResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\return_outside_function.dby") -WorkingDirectory $repoRoot
 if ($returnResult.Code -eq 0) { throw "vm return outside function unexpectedly passed" }
 Assert-Contains $returnResult.Text (Expected-File "tests\vm\return_outside_function.err") "vm return outside function"
 
-$divisionResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\vm_division_by_zero.dby")
+$divisionResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\vm_division_by_zero.dby") -WorkingDirectory $repoRoot
 if ($divisionResult.Code -eq 0) { throw "vm division by zero unexpectedly passed" }
 Assert-Contains $divisionResult.Text (Expected-File "tests\vm\vm_division_by_zero.err") "vm division by zero"
 
-$listResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\vm_list_oob.dby")
+$listResult = Invoke-Dbyte -Arguments @("run", "--vm", "--no-check", "tests\vm\vm_list_oob.dby") -WorkingDirectory $repoRoot
 if ($listResult.Code -eq 0) { throw "vm list out of bounds unexpectedly passed" }
 Assert-Contains $listResult.Text (Expected-File "tests\vm\vm_list_oob.err") "vm list out of bounds"
 
 Write-Host "Running VM fast path disasm checks..."
 
-$loopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum.dby")
+$loopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum.dby") -WorkingDirectory $repoRoot
 if ($loopDisasm.Code -ne 0) { throw "loop_sum disasm failed: $($loopDisasm.Text)" }
 Assert-Contains $loopDisasm.Text "STORE_LOCAL_I64" "loop_sum typed store"
 Assert-Contains $loopDisasm.Text "ADD_LOCAL_I64" "loop_sum direct local add"
 Assert-Contains $loopDisasm.Text "ADD_LOCAL_CONST_I64" "loop_sum direct const increment"
 Assert-Contains $loopDisasm.Text "JUMP_IF_NOT_LT_LOCAL_CONST_I64" "loop_sum direct local less-than jump"
 
-$largeLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum_large.dby")
+$largeLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum_large.dby") -WorkingDirectory $repoRoot
 if ($largeLoopDisasm.Code -ne 0) { throw "loop_sum_large disasm failed: $($largeLoopDisasm.Text)" }
 Assert-Contains $largeLoopDisasm.Text "STORE_LOCAL_I64" "loop_sum_large typed store"
 Assert-Contains $largeLoopDisasm.Text "ADD_LOCAL_I64" "loop_sum_large direct local add"
 Assert-Contains $largeLoopDisasm.Text "ADD_LOCAL_CONST_I64" "loop_sum_large direct const increment"
 Assert-Contains $largeLoopDisasm.Text "JUMP_IF_NOT_LT_LOCAL_CONST_I64" "loop_sum_large direct local less-than jump"
 
-$compareLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\int_compare_loop.dby")
+$compareLoopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\int_compare_loop.dby") -WorkingDirectory $repoRoot
 if ($compareLoopDisasm.Code -ne 0) { throw "int_compare_loop disasm failed: $($compareLoopDisasm.Text)" }
 Assert-Contains $compareLoopDisasm.Text "JUMP_IF_NOT_GE_LOCAL_CONST_I64" "int_compare_loop direct greater-equal jump"
 Assert-Contains $compareLoopDisasm.Text "JUMP_IF_NOT_LE_LOCAL_CONST_I64" "int_compare_loop direct less-equal jump"
 Assert-Contains $compareLoopDisasm.Text "JUMP_IF_NOT_LT_LOCAL_CONST_I64" "int_compare_loop direct loop condition jump"
 
-$fallbackLocalDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\generic_local_fallback.dby")
+$fallbackLocalDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\generic_local_fallback.dby") -WorkingDirectory $repoRoot
 if ($fallbackLocalDisasm.Code -ne 0) { throw "generic local fallback disasm failed: $($fallbackLocalDisasm.Text)" }
 Assert-Contains $fallbackLocalDisasm.Text "STORE_LOCAL 0 ; nums" "generic list local fallback store"
 Assert-Contains $fallbackLocalDisasm.Text "LOAD_LOCAL 0 ; nums" "generic list local fallback load"
 
-$directLocalRhsDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\direct_add_local_rhs.dby")
+$directLocalRhsDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\direct_add_local_rhs.dby") -WorkingDirectory $repoRoot
 if ($directLocalRhsDisasm.Code -ne 0) { throw "direct local rhs disasm failed: $($directLocalRhsDisasm.Text)" }
 Assert-Contains $directLocalRhsDisasm.Text "ADD_LOCAL_I64" "direct local rhs add fast path"
 
-$commutedAddDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_commuted_add.dby")
+$commutedAddDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_commuted_add.dby") -WorkingDirectory $repoRoot
 if ($commutedAddDisasm.Code -ne 0) { throw "fallback commuted add disasm failed: $($commutedAddDisasm.Text)" }
 Assert-NotContains $commutedAddDisasm.Text "ADD_LOCAL_I64" "commuted add avoids direct local add"
 
-$mulAssignDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_mul_assign.dby")
+$mulAssignDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_mul_assign.dby") -WorkingDirectory $repoRoot
 if ($mulAssignDisasm.Code -ne 0) { throw "fallback mul assign disasm failed: $($mulAssignDisasm.Text)" }
 Assert-Contains $mulAssignDisasm.Text "MUL_I64" "mul assign uses typed stack multiply"
 Assert-NotContains $mulAssignDisasm.Text "ADD_LOCAL_I64" "mul assign avoids direct local add"
 Assert-NotContains $mulAssignDisasm.Text "ADD_LOCAL_CONST_I64" "mul assign avoids direct const add"
 
-$lenAddDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_len_add.dby")
+$lenAddDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_len_add.dby") -WorkingDirectory $repoRoot
 if ($lenAddDisasm.Code -ne 0) { throw "fallback len add disasm failed: $($lenAddDisasm.Text)" }
 Assert-Contains $lenAddDisasm.Text "CALL len 1" "len add keeps builtin call"
 Assert-Contains $lenAddDisasm.Text "ADD_I64" "len add uses typed stack add"
 Assert-NotContains $lenAddDisasm.Text "ADD_LOCAL_I64" "len add avoids direct local add"
 Assert-NotContains $lenAddDisasm.Text "ADD_LOCAL_CONST_I64" "len add avoids direct const add"
 
-$binaryDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\binary_read_u32.dby")
+$binaryDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\binary_read_u32.dby") -WorkingDirectory $repoRoot
 if ($binaryDisasm.Code -ne 0) { throw "binary_read_u32 disasm failed: $($binaryDisasm.Text)" }
 Assert-Contains $binaryDisasm.Text "READ_U32_LE" "binary_read_u32 intrinsic"
 
-$bufferDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\buffer_replace.dby")
+$bufferDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\buffer_replace.dby") -WorkingDirectory $repoRoot
 if ($bufferDisasm.Code -ne 0) { throw "buffer_replace disasm failed: $($bufferDisasm.Text)" }
 Assert-Contains $bufferDisasm.Text "BUFFER_REPLACE" "buffer_replace intrinsic"
 
-$binaryAliasDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\binary_alias_u32.dby")
+$binaryAliasDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\binary_alias_u32.dby") -WorkingDirectory $repoRoot
 if ($binaryAliasDisasm.Code -ne 0) { throw "binary alias disasm failed: $($binaryAliasDisasm.Text)" }
 Assert-Contains $binaryAliasDisasm.Text "READ_U32_LE" "binary alias intrinsic"
 
-$bufferAliasDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\buffer_alias_ops.dby")
+$bufferAliasDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\buffer_alias_ops.dby") -WorkingDirectory $repoRoot
 if ($bufferAliasDisasm.Code -ne 0) { throw "buffer alias disasm failed: $($bufferAliasDisasm.Text)" }
 Assert-Contains $bufferAliasDisasm.Text "BUFFER_FIND" "buffer alias find intrinsic"
 Assert-Contains $bufferAliasDisasm.Text "BUFFER_REPLACE" "buffer alias replace intrinsic"
 
-$bufferLoadSaveDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\patching\load_save_roundtrip.dby")
+$bufferLoadSaveDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\patching\load_save_roundtrip.dby") -WorkingDirectory $repoRoot
 if ($bufferLoadSaveDisasm.Code -ne 0) { throw "buffer load/save disasm failed: $($bufferLoadSaveDisasm.Text)" }
 Assert-Contains $bufferLoadSaveDisasm.Text "BUFFER_LOAD" "buffer load intrinsic"
 Assert-Contains $bufferLoadSaveDisasm.Text "BUFFER_SAVE" "buffer save intrinsic"
 
-$fsExistsDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\patching\fs_exists.dby")
+$fsExistsDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\patching\fs_exists.dby") -WorkingDirectory $repoRoot
 if ($fsExistsDisasm.Code -ne 0) { throw "fs exists disasm failed: $($fsExistsDisasm.Text)" }
 Assert-Contains $fsExistsDisasm.Text "CALL_NATIVE FsExists" "fs exists native call"
 
-$bufferLoadFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\patching\member_call_fallback_buffer_load.dby")
+$bufferLoadFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\patching\member_call_fallback_buffer_load.dby") -WorkingDirectory $repoRoot
 if ($bufferLoadFallbackDisasm.Code -ne 0) { throw "buffer load fallback disasm failed: $($bufferLoadFallbackDisasm.Text)" }
 Assert-Contains $bufferLoadFallbackDisasm.Text "MEMBER_CALL load 1" "non-std buffer load fallback member call"
 Assert-NotContains $bufferLoadFallbackDisasm.Text "BUFFER_LOAD" "non-std buffer load fallback avoids intrinsic"
 
-$fallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_member_call.dby")
+$fallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\typed\fallback_member_call.dby") -WorkingDirectory $repoRoot
 if ($fallbackDisasm.Code -ne 0) { throw "fallback member call disasm failed: $($fallbackDisasm.Text)" }
 Assert-Contains $fallbackDisasm.Text "MEMBER_CALL u32_le 2" "non-std fallback member call"
 Assert-NotContains $fallbackDisasm.Text "READ_U32_LE" "non-std fallback avoids binary intrinsic"
 
-$directCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\direct_call_disasm.dby")
+$directCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\direct_call_disasm.dby") -WorkingDirectory $repoRoot
 if ($directCallDisasm.Code -ne 0) { throw "direct function call disasm failed: $($directCallDisasm.Text)" }
 Assert-Contains $directCallDisasm.Text "ADD_I64_STACK" "direct function call fast path"
 Assert-Contains $directCallDisasm.Text "RETURN_I64" "typed int return fast path"
 Assert-NotContains $directCallDisasm.Text "CALL add 2" "direct function avoids string call"
 
 
-$directReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\call_i64_to_local_disasm.dby")
+$directReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\call_i64_to_local_disasm.dby") -WorkingDirectory $repoRoot
 if ($directReturnDisasm.Code -ne 0) { throw "direct return-to-local disasm failed: $($directReturnDisasm.Text)" }
 Assert-Contains $directReturnDisasm.Text "ADD_I64_STACK" "direct return-to-local fast path"
 Assert-Contains $directReturnDisasm.Text "RETURN_I64" "direct return-to-local typed return"
 Assert-NotContains $directReturnDisasm.Text "CALL add 2" "direct return-to-local avoids string call"
 
 
-$letInitDirectReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\let_init_i64_to_local.dby")
+$letInitDirectReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\let_init_i64_to_local.dby") -WorkingDirectory $repoRoot
 if ($letInitDirectReturnDisasm.Code -ne 0) { throw "let init direct return-to-local disasm failed: $($letInitDirectReturnDisasm.Text)" }
 Assert-Contains $letInitDirectReturnDisasm.Text "STORE_LOCAL_I64_STACK" "let init direct return-to-local fast path"
 
-$earlyReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\early_return_i64_to_local.dby")
+$earlyReturnDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\early_return_i64_to_local.dby") -WorkingDirectory $repoRoot
 if ($earlyReturnDisasm.Code -ne 0) { throw "early return direct return-to-local disasm failed: $($earlyReturnDisasm.Text)" }
 Assert-Contains $earlyReturnDisasm.Text "STORE_LOCAL_I64_STACK" "early return direct return-to-local fast path"
 
-$nestedArgFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\nested_call_fallback.dby")
+$nestedArgFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\nested_call_fallback.dby") -WorkingDirectory $repoRoot
 if ($nestedArgFallbackDisasm.Code -ne 0) { throw "nested argument fallback disasm failed: $($nestedArgFallbackDisasm.Text)" }
 Assert-Contains $nestedArgFallbackDisasm.Text "CALL_FN" "nested argument still uses direct function id fallback"
 Assert-NotContains $nestedArgFallbackDisasm.Text "CALL_FN_I64_TO_LOCAL" "nested argument avoids direct return-to-local"
 
-$directReturnGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\generic_return_no_fastpath.dby")
+$directReturnGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\generic_return_no_fastpath.dby") -WorkingDirectory $repoRoot
 if ($directReturnGenericDisasm.Code -ne 0) { throw "direct return generic fallback disasm failed: $($directReturnGenericDisasm.Text)" }
 Assert-Contains $directReturnGenericDisasm.Text "STORE_LOCAL" "direct return generic fallback uses direct id"
 Assert-Contains $directReturnGenericDisasm.Text "RETURN" "direct return generic fallback keeps generic return"
 Assert-NotContains $directReturnGenericDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return generic fallback avoids direct return-to-local"
 Assert-NotContains $directReturnGenericDisasm.Text "RETURN_I64" "direct return generic fallback avoids return_i64"
 
-$directReturnNonIntDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\non_int_return_no_fastpath.dby")
+$directReturnNonIntDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\non_int_return_no_fastpath.dby") -WorkingDirectory $repoRoot
 if ($directReturnNonIntDisasm.Code -ne 0) { throw "direct return non-int fallback disasm failed: $($directReturnNonIntDisasm.Text)" }
 Assert-Contains $directReturnNonIntDisasm.Text "STORE_LOCAL" "direct return non-int fallback uses direct id"
 Assert-NotContains $directReturnNonIntDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return non-int fallback avoids direct return-to-local"
 
-$directReturnBuiltinDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\builtin_len_no_fastpath.dby")
+$directReturnBuiltinDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\builtin_len_no_fastpath.dby") -WorkingDirectory $repoRoot
 if ($directReturnBuiltinDisasm.Code -ne 0) { throw "direct return builtin fallback disasm failed: $($directReturnBuiltinDisasm.Text)" }
 Assert-Contains $directReturnBuiltinDisasm.Text "CALL len 1" "direct return builtin fallback keeps builtin call"
 Assert-Contains $directReturnBuiltinDisasm.Text "STORE_LOCAL_I64" "direct return builtin fallback stores typed local"
 Assert-NotContains $directReturnBuiltinDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return builtin fallback avoids direct return-to-local"
 
-$directReturnStdMemberDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\std_member_no_fastpath.dby")
+$directReturnStdMemberDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\direct_return\std_member_no_fastpath.dby") -WorkingDirectory $repoRoot
 if ($directReturnStdMemberDisasm.Code -ne 0) { throw "direct return std member fallback disasm failed: $($directReturnStdMemberDisasm.Text)" }
 Assert-Contains $directReturnStdMemberDisasm.Text "MEMBER_CALL max 2" "direct return std member fallback keeps member dispatch"
 Assert-Contains $directReturnStdMemberDisasm.Text "STORE_LOCAL_I64" "direct return std member fallback stores typed local"
 Assert-NotContains $directReturnStdMemberDisasm.Text "CALL_FN_I64_TO_LOCAL" "direct return std member fallback avoids direct return-to-local"
 
-$directReturnMemberFallback = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\member_call_not_call_fn.dby")
+$directReturnMemberFallback = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\member_call_not_call_fn.dby") -WorkingDirectory $repoRoot
 if ($directReturnMemberFallback.Code -ne 0) { throw "direct return member fallback disasm failed: $($directReturnMemberFallback.Text)" }
 Assert-Contains $directReturnMemberFallback.Text "MEMBER_CALL max 2" "direct return member fallback keeps member dispatch"
 Assert-NotContains $directReturnMemberFallback.Text "CALL_FN_I64_TO_LOCAL" "direct return member fallback avoids direct return-to-local"
 
-$i64StackChainDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\typed_call_chain_disasm.dby")
+$i64StackChainDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\typed_call_chain_disasm.dby") -WorkingDirectory $repoRoot
 if ($i64StackChainDisasm.Code -ne 0) { throw "i64 stack chain disasm failed: $($i64StackChainDisasm.Text)" }
 Assert-Contains $i64StackChainDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack direct typed call"
 Assert-Contains $i64StackChainDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack typed return"
 Assert-Contains $i64StackChainDisasm.Text "ADD_I64_STACK" "i64 stack typed add"
 Assert-NotContains $i64StackChainDisasm.Text "CALL inc 1" "i64 stack chain avoids string call"
 
-$i64StackAssignDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\assign_call_plus_local.dby")
+$i64StackAssignDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\assign_call_plus_local.dby") -WorkingDirectory $repoRoot
 if ($i64StackAssignDisasm.Code -ne 0) { throw "i64 stack assign disasm failed: $($i64StackAssignDisasm.Text)" }
 Assert-Contains $i64StackAssignDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack assignment call result"
 Assert-Contains $i64StackAssignDisasm.Text "STORE_LOCAL_I64_STACK" "i64 stack assignment stores typed local"
 
-$i64StackFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\generic_return_no_i64_stack_call.dby")
+$i64StackFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\generic_return_no_i64_stack_call.dby") -WorkingDirectory $repoRoot
 if ($i64StackFallbackDisasm.Code -ne 0) { throw "i64 stack generic fallback disasm failed: $($i64StackFallbackDisasm.Text)" }
 Assert-Contains $i64StackFallbackDisasm.Text "STORE_LOCAL" "i64 stack generic fallback keeps direct id"
 Assert-NotContains $i64StackFallbackDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack generic fallback avoids typed call"
 Assert-NotContains $i64StackFallbackDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack generic fallback avoids typed return"
 
-$i64StackMemberFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\member_std_no_i64_stack_call.dby")
+$i64StackMemberFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack\member_std_no_i64_stack_call.dby") -WorkingDirectory $repoRoot
 if ($i64StackMemberFallbackDisasm.Code -ne 0) { throw "i64 stack member fallback disasm failed: $($i64StackMemberFallbackDisasm.Text)" }
 Assert-Contains $i64StackMemberFallbackDisasm.Text "MEMBER_CALL max 2" "i64 stack std member fallback keeps member dispatch"
 Assert-NotContains $i64StackMemberFallbackDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack std member fallback avoids typed call"
 
-$i64StackHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack_hardening\i64_stack_call_chain.dby")
+$i64StackHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack_hardening\i64_stack_call_chain.dby") -WorkingDirectory $repoRoot
 if ($i64StackHardeningDisasm.Code -ne 0) { throw "i64 stack hardening disasm failed: $($i64StackHardeningDisasm.Text)" }
 Assert-Contains $i64StackHardeningDisasm.Text "CONST_I64_STACK" "i64 stack hardening uses typed constants"
 Assert-Contains $i64StackHardeningDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack hardening uses typed call chain"
 Assert-Contains $i64StackHardeningDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack hardening uses typed return"
 
-$i64StackHardeningGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack_hardening\i64_stack_generic_return_fallback.dby")
+$i64StackHardeningGenericDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\i64_stack_hardening\i64_stack_generic_return_fallback.dby") -WorkingDirectory $repoRoot
 if ($i64StackHardeningGenericDisasm.Code -ne 0) { throw "i64 stack hardening generic fallback disasm failed: $($i64StackHardeningGenericDisasm.Text)" }
 Assert-Contains $i64StackHardeningGenericDisasm.Text "STORE_LOCAL" "i64 stack hardening generic fallback keeps direct id"
 Assert-NotContains $i64StackHardeningGenericDisasm.Text "CALL_FN_I64_TO_I64_STACK" "i64 stack hardening generic fallback avoids typed call"
 Assert-NotContains $i64StackHardeningGenericDisasm.Text "RETURN_I64_TO_I64_STACK" "i64 stack hardening generic fallback avoids typed return"
 
-$nestedCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\nested_function_call.dby")
+$nestedCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\nested_function_call.dby") -WorkingDirectory $repoRoot
 if ($nestedCallDisasm.Code -ne 0) { throw "nested function call disasm failed: $($nestedCallDisasm.Text)" }
 Assert-Contains $nestedCallDisasm.Text "ADD_I64_STACK" "nested function i64 stack direct call fast path"
 Assert-Contains $nestedCallDisasm.Text "RETURN_I64_TO_I64_STACK" "nested function i64 stack return fast path"
 
 
-$genericCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\generic_function_fallback.dby")
+$genericCallDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\function_fastpath\generic_function_fallback.dby") -WorkingDirectory $repoRoot
 if ($genericCallDisasm.Code -ne 0) { throw "generic function call disasm failed: $($genericCallDisasm.Text)" }
 Assert-Contains $genericCallDisasm.Text "STORE_LOCAL" "generic user function inlined"
 Assert-Contains $genericCallDisasm.Text "RETURN" "generic return keeps generic return path"
 Assert-NotContains $genericCallDisasm.Text "RETURN_I64" "generic return avoids typed int return"
 
-$discardCallDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\function_call.dby")
+$discardCallDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\function_call.dby") -WorkingDirectory $repoRoot
 if ($discardCallDisasm.Code -ne 0) { throw "function_call disasm failed: $($discardCallDisasm.Text)" }
 Assert-Contains $discardCallDisasm.Text "POP_I64_STACK" "discarded function call avoids return stack traffic"
 Assert-NotContains $discardCallDisasm.Text "CALL work 1" "discarded function avoids string call"
 
-$callFnHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\call_fn_disasm.dby")
+$callFnHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\call_fn_disasm.dby") -WorkingDirectory $repoRoot
 if ($callFnHardeningDisasm.Code -ne 0) { throw "call_fn hardening disasm failed: $($callFnHardeningDisasm.Text)" }
 Assert-Contains $callFnHardeningDisasm.Text "ADD_I64_STACK" "call_fn hardening direct call inlined"
 Assert-Contains $callFnHardeningDisasm.Text "RETURN_I64" "call_fn hardening typed return"
 Assert-NotContains $callFnHardeningDisasm.Text "CALL add 2" "call_fn hardening avoids string lookup"
 
 
-$returnI64Disasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\return_i64_correctness.dby")
+$returnI64Disasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\return_i64_correctness.dby") -WorkingDirectory $repoRoot
 if ($returnI64Disasm.Code -ne 0) { throw "return_i64 disasm failed: $($returnI64Disasm.Text)" }
 Assert-Contains $returnI64Disasm.Text "RETURN_I64" "int function uses return_i64"
 
-$discardHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\discard_call_stack_clean.dby")
+$discardHardeningDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\discard_call_stack_clean.dby") -WorkingDirectory $repoRoot
 if ($discardHardeningDisasm.Code -ne 0) { throw "discard call hardening disasm failed: $($discardHardeningDisasm.Text)" }
 Assert-Contains $discardHardeningDisasm.Text "POP_I64_STACK" "discarded call hardening inlined"
 Assert-NotContains $discardHardeningDisasm.Text "CALL value 1" "discarded call hardening avoids string lookup"
 
-$genericFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\generic_call_fallback.dby")
+$genericFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\generic_call_fallback.dby") -WorkingDirectory $repoRoot
 if ($genericFallbackDisasm.Code -ne 0) { throw "generic call fallback disasm failed: $($genericFallbackDisasm.Text)" }
 Assert-Contains $genericFallbackDisasm.Text "STORE_LOCAL" "generic user function inlined"
 Assert-Contains $genericFallbackDisasm.Text "RETURN" "generic function keeps generic return"
 Assert-NotContains $genericFallbackDisasm.Text "RETURN_I64" "generic function avoids return_i64"
 
-$memberFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\member_call_not_call_fn.dby")
+$memberFallbackDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\vm\call_fastpath\member_call_not_call_fn.dby") -WorkingDirectory $repoRoot
 if ($memberFallbackDisasm.Code -ne 0) { throw "member call fallback disasm failed: $($memberFallbackDisasm.Text)" }
 Assert-Contains $memberFallbackDisasm.Text "MEMBER_CALL max 2" "member call keeps member dispatch"
 Assert-NotContains $memberFallbackDisasm.Text "CALL_FN" "member call avoids direct function opcode"
 
-$recursionDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\functions\recursion_factorial.dby")
+$recursionDisasm = Invoke-Dbyte -Arguments @("disasm", "tests\functions\recursion_factorial.dby") -WorkingDirectory $repoRoot
 if ($recursionDisasm.Code -ne 0) { throw "recursion factorial disasm failed: $($recursionDisasm.Text)" }
 Assert-Contains $recursionDisasm.Text "CALL_FN" "recursive function direct call"
 Assert-NotContains $recursionDisasm.Text "CALL fact" "recursive function avoids string call"
 
-$frameDispatchTypedArgs = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\typed_args_correctness.dby")
+$frameDispatchTypedArgs = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\typed_args_correctness.dby") -WorkingDirectory $repoRoot
 if ($frameDispatchTypedArgs.Code -ne 0) { throw "frame dispatch typed args disasm failed: $($frameDispatchTypedArgs.Text)" }
 Assert-Contains $frameDispatchTypedArgs.Text "ADD_I64_STACK" "frame dispatch direct user call inlined"
 Assert-Contains $frameDispatchTypedArgs.Text "RETURN_I64" "frame dispatch typed int return"
 Assert-NotContains $frameDispatchTypedArgs.Text "CALL add 2" "frame dispatch avoids string call"
 
 
-$frameDispatchDiscard = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\discard_call_stack_clean.dby")
+$frameDispatchDiscard = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\discard_call_stack_clean.dby") -WorkingDirectory $repoRoot
 if ($frameDispatchDiscard.Code -ne 0) { throw "frame dispatch discard disasm failed: $($frameDispatchDiscard.Text)" }
 Assert-Contains $frameDispatchDiscard.Text "POP_I64_STACK" "frame dispatch discarded call inlined"
 
-$frameDispatchGeneric = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\generic_return_fallback.dby")
+$frameDispatchGeneric = Invoke-Dbyte -Arguments @("disasm", "tests\vm\frame_dispatch\generic_return_fallback.dby") -WorkingDirectory $repoRoot
 if ($frameDispatchGeneric.Code -ne 0) { throw "frame dispatch generic return disasm failed: $($frameDispatchGeneric.Text)" }
 Assert-Contains $frameDispatchGeneric.Text "STORE_LOCAL" "frame dispatch generic function inlined"
 Assert-Contains $frameDispatchGeneric.Text "RETURN" "frame dispatch generic return path"
@@ -689,7 +676,7 @@ Assert-NotContains $mainContent 'asm!("sti")' "kernel main still has no STI"
 Assert-NotContains $irrContent 'asm!("sti")' "irq source still has no STI"
 Assert-NotContains $mainContent 'keyboard_irq' "kernel main has no keyboard IRQ switch"
 Assert-NotContains $mainContent 'timer_irq' "kernel main has no timer IRQ activation"
-Assert-Contains $mainContent '"polling-only"' "kernel main keeps keyboard polling-only telemetry"
+Assert-Contains $mainContent 'polling-only' "kernel main keeps keyboard polling-only telemetry"
 Assert-Contains $mainContent '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "kernel main keeps runtime irq active no telemetry"
 
 Write-Host "[OK] v9.2.1 EOI runtime boundary hardening verified"
@@ -786,17 +773,17 @@ Set-Content -Path (Join-Path $runNoRcRoot ".dbyterc") -Value "let bad: int = `"b
 Set-Content -Path (Join-Path $runNoRcRoot "main.dby") -Value "print(`"run ignores rc`")" -NoNewline
 Push-Location $runNoRcRoot
 try {
-    $runNoRc = Invoke-Dbyte -Arguments @("run", "main.dby")
+    $runNoRc = Invoke-Dbyte -Arguments @("run", "main.dby") -WorkingDirectory $runNoRcRoot
     if ($runNoRc.Code -ne 0) { throw "run loaded rc unexpectedly: $($runNoRc.Text)" }
     Assert-Equal $runNoRc.Text "run ignores rc" "run ignores rc"
-    $checkNoRc = Invoke-Dbyte -Arguments @("check", "main.dby")
+    $checkNoRc = Invoke-Dbyte -Arguments @("check", "main.dby") -WorkingDirectory $runNoRcRoot
     if ($checkNoRc.Code -ne 0) { throw "check loaded rc unexpectedly: $($checkNoRc.Text)" }
     Assert-Contains $checkNoRc.Text "no type errors found" "check ignores rc"
     $newNoRcRoot = Join-Path $runNoRcRoot "new-no-rc"
     New-Item -ItemType Directory -Path $newNoRcRoot | Out-Null
     Push-Location $newNoRcRoot
     try {
-        $newNoRc = Invoke-Dbyte -Arguments @("new", "rcsafe")
+        $newNoRc = Invoke-Dbyte -Arguments @("new", "rcsafe") -WorkingDirectory $newNoRcRoot
         if ($newNoRc.Code -ne 0) { throw "new loaded parent rc unexpectedly: $($newNoRc.Text)" }
         Assert-Contains $newNoRc.Text "created DByte project" "new ignores rc"
     }
@@ -864,6 +851,7 @@ if ($scriptArgsShellRun.Code -ne 0) { throw "script args shell run failed: $($sc
 Assert-Contains $scriptArgsShellRun.Text "2`nalpha`ntwo words" "shell run quoted script path and args"
 
 Write-Host "Running personal tools smoke tests..."
+Set-Location $repoRoot
 
 $personalToolsStatus = Git-Status-Short
 
@@ -3890,7 +3878,7 @@ quit
     Assert-Equal $searchDaily.Text $expectedDailyOut "search daily exact snapshot"
 
     # --- v9.0.2 Deterministic Rejections ---
-    $searchEmpty = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "workspace", "search", '""') -WorkingDirectory $dbyteosRoot
+    $searchEmpty = Invoke-DbyteExact -Arguments @("run", "bin\search.dby", "workspace", "search", "") -WorkingDirectory $dbyteosRoot
     if ($searchEmpty.Code -ne 0) { throw "search empty failed: $($searchEmpty.Text)" }
     Assert-Equal $searchEmpty.Text "error: search: invalid query" "search empty query reject"
 
@@ -4015,7 +4003,7 @@ quit
     Assert-Equal $uxJournalCached.Text $expectedJournalCached "search journal cached output"
 
     # UX Argument Rejections
-    $uxProjectsEmpty = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "projects", '""') -WorkingDirectory $dbyteosRoot
+    $uxProjectsEmpty = Invoke-DbyteExact -Arguments @("run", "bin\search.dby", "projects", "") -WorkingDirectory $dbyteosRoot
     if ($uxProjectsEmpty.Code -ne 0) { throw "search projects empty failed" }
     Assert-Equal $uxProjectsEmpty.Text "error: search: invalid query" "search projects empty query reject"
 
@@ -4070,7 +4058,7 @@ quit
     Assert-Equal $cacheIndexSearch.Text $expectedCacheSearchOut "search index results match"
     
     # 6. Rejections on cache search
-    $cacheIndexSearchEmpty = Invoke-Dbyte -Arguments @("run", "bin\search.dby", "index", '""') -WorkingDirectory $dbyteosRoot
+    $cacheIndexSearchEmpty = Invoke-DbyteExact -Arguments @("run", "bin\search.dby", "index", "") -WorkingDirectory $dbyteosRoot
     if ($cacheIndexSearchEmpty.Code -ne 0) { throw "search index empty failed" }
     Assert-Equal $cacheIndexSearchEmpty.Text "error: search: invalid query" "cache search empty query reject"
     
