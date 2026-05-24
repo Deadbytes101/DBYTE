@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.5.0"' "kernel-lab version 9.5.0"
+Assert-Contains $cargoContent 'version = "9.5.1"' "kernel-lab version 9.5.1"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.5.0"' "kernel-lab current version 9.5.0"
+Assert-Contains $cargoContent930 'version = "9.5.1"' "kernel-lab current version 9.5.1"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "9.5.0"' "kernel-lab current version 9.5.0"
+Assert-Contains $cargoContent931 'version = "9.5.1"' "kernel-lab current version 9.5.1"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "9.5.0"' "kernel-lab current version 9.5.0"
+Assert-Contains $cargoContent940 'version = "9.5.1"' "kernel-lab current version 9.5.1"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -916,7 +916,7 @@ $irrContent941 = Get-Content $irrRs -Raw
 $picContent941 = Get-Content $picRs -Raw
 $mainContent941 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent941 'version = "9.5.0"' "kernel-lab current version 9.5.0"
+Assert-Contains $cargoContent941 'version = "9.5.1"' "kernel-lab current version 9.5.1"
 Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
 
 $matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
@@ -1023,7 +1023,7 @@ $irrContent950 = Get-Content $irrRs -Raw
 $picContent950 = Get-Content $picRs -Raw
 $mainContent950 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent950 'version = "9.5.0"' "kernel-lab version 9.5.0"
+Assert-Contains $cargoContent950 'version = "9.5.1"' "kernel-lab current version 9.5.1"
 Assert-NotContains $cargoContent950 'version = "9.4.1"' "kernel-lab stale v9.4.1 package version guard"
 Assert-Contains $mainContent950 'irq-runtime-next irq-runtime-activation-plan' "help string includes v9.5.0 activation command"
 Assert-Contains $mainContent950 'line_str == "irq-runtime-activation-plan"' "irq-runtime-activation-plan dispatcher"
@@ -1087,6 +1087,113 @@ Assert-Contains $mainContent950 'polling-only' "v9.5.0 keyboard polling telemetr
 Assert-Contains $mainContent950 'runtime irq active: {}' "v9.5.0 runtime IRQ remains inactive"
 
 Write-Host "[OK] v9.5.0 IRQ Runtime Activation Dry-Run Integration verified"
+
+# v9.5.1: IRQ Runtime Activation Dry-Run Hardening
+Write-Host "Verifying v9.5.1 IRQ Runtime Activation Dry-Run Hardening contracts..."
+$v950Tag = & git rev-list -n 1 v9.5.0 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v950Tag) { throw "v9.5.0 tag not found (required baseline)" }
+if ($HEAD -eq $v950Tag) { throw "HEAD is still v9.5.0, v9.5.1 work not completed" }
+Write-Host "[OK] v9.5.1 branch is beyond v9.5.0 locked baseline"
+
+$cargoContent951 = Get-Content $cargoToml -Raw
+$irrContent951 = Get-Content $irrRs -Raw
+$picContent951 = Get-Content $picRs -Raw
+$mainContent951 = Get-Content $mainRs -Raw
+
+Assert-Contains $cargoContent951 'version = "9.5.1"' "kernel-lab version 9.5.1"
+Assert-NotContains $cargoContent951 'version = "9.5.0"' "kernel-lab stale v9.5.0 package version guard"
+Assert-Contains $mainContent951 'irq-runtime-activation-plan' "v9.5.1 activation plan command remains exposed"
+Assert-Contains $mainContent951 'line_str == "irq-runtime-commit"' "v9.5.1 irq-runtime-commit dispatcher remains exposed"
+Assert-Contains $mainContent951 'line_str == "irq-runtime-matrix"' "v9.5.1 irq-runtime-matrix dispatcher remains exposed"
+Assert-Contains $mainContent951 'line_str == "irq-runtime-readiness"' "v9.5.1 irq-runtime-readiness dispatcher remains exposed"
+Assert-Contains $mainContent951 'line_str == "irq-runtime-next"' "v9.5.1 irq-runtime-next dispatcher remains exposed"
+
+$commitBlockStart951 = $mainContent951.IndexOf('} else if line_str == "irq-runtime-commit" {')
+$commitBlockEnd951 = $mainContent951.IndexOf('}else if line_str == "irq-runtime-status" {', $commitBlockStart951)
+$activationBlockStart951 = $mainContent951.IndexOf('} else if line_str == "irq-runtime-activation-plan" {')
+$activationBlockEnd951 = $mainContent951.IndexOf('} else if line_str == "eoi-runtime-note" {', $activationBlockStart951)
+if ($commitBlockStart951 -lt 0 -or $commitBlockEnd951 -lt $commitBlockStart951 -or $activationBlockStart951 -lt 0 -or $activationBlockEnd951 -lt $activationBlockStart951) {
+    throw "v9.5.1 activation hardening block isolation failed"
+}
+$commitBlock951 = $mainContent951.Substring($commitBlockStart951, $commitBlockEnd951 - $commitBlockStart951)
+$activationBlock951 = $mainContent951.Substring($activationBlockStart951, $activationBlockEnd951 - $activationBlockStart951)
+
+$irqRuntimeCommitDryRunExact951 = 'IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n'
+$irqRuntimeActivationPlanExact951 = 'IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n'
+Assert-Contains $commitBlock951 $irqRuntimeCommitDryRunExact951 "v9.5.1 irq-runtime-commit exact matrix summary"
+Assert-Contains $activationBlock951 $irqRuntimeActivationPlanExact951 "v9.5.1 irq-runtime-activation-plan exact output"
+Assert-ContainsInOrder $commitBlock951 @(
+    'IRQ runtime activation commit dry-run',
+    'pic remap smoke: {}',
+    'irq gate bind smoke: {}',
+    'eoi runtime boundary: {}',
+    'pic mask policy: {}',
+    'unmask policy: {}',
+    'runtime latch: {}',
+    'sti: {}',
+    'runtime irq active: {}',
+    'dry-run commit allowed: {}',
+    'result: {}',
+    'if !activation.allowed {',
+    '"next: {}\n", activation.next'
+) "v9.5.1 commit matrix wording/order and blocked next action"
+Assert-ContainsInOrder $activationBlock951 @(
+    'IRQ runtime activation plan',
+    '1. require readiness matrix smoke prerequisites: yes',
+    '2. require EOI runtime boundary: ready (dry-run)',
+    '3. keep PIC mask policy: {}',
+    '4. keep unmask policy: {}',
+    '5. keep STI: {}',
+    '6. commit path remains dry-run only',
+    'runtime irq active: {}',
+    'dry-run commit allowed: {}'
+) "v9.5.1 activation plan wording/order"
+Assert-Contains $irrContent951 'pub const IRQ_ACTIVATION_DRY_RUN_ALLOWED_NO: &str = "no";' "v9.5.1 dry-run allowed no constant"
+Assert-Contains $irrContent951 'pub const IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED: &str = "blocked by readiness matrix";' "v9.5.1 blocked matrix decision wording"
+Assert-Contains $irrContent951 'pub const IRQ_ACTIVATION_PLAN_NEXT: &str = "execute irq-runtime-activation-plan";' "v9.5.1 next action wording"
+
+Assert-Contains $commitBlock951 'pic::ProgrammableInterruptController::pic_remap_state();' "v9.5.1 commit reads pic remap state"
+Assert-Contains $commitBlock951 'irq::irq_gate_bind_state();' "v9.5.1 commit reads irq gate state"
+Assert-Contains $commitBlock951 'pic::ProgrammableInterruptController::pic_mask_plan();' "v9.5.1 commit reads pic mask plan"
+Assert-Contains $commitBlock951 'pic::ProgrammableInterruptController::pic_mask_status();' "v9.5.1 commit reads pic mask status"
+Assert-Contains $commitBlock951 'irq::eoi_runtime_check_all_preconditions(pic_state.executed);' "v9.5.1 commit reads eoi preconditions"
+Assert-Contains $commitBlock951 'irq::irq_runtime_matrix(' "v9.5.1 commit derives readiness matrix"
+Assert-Contains $commitBlock951 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.5.1 commit derives activation decision"
+Assert-Contains $commitBlock951 'if !activation.allowed {' "v9.5.1 commit blocks on activation decision"
+Assert-NotContains $commitBlock951 'irq::irq_runtime_commit()' "v9.5.1 commit path does not call runtime commit"
+
+foreach ($blockedCall in @(
+    'write_pic_port(',
+    'set_handler(',
+    'irq::irq_runtime_commit()',
+    'irq::irq_runtime_arm()',
+    'pic::ProgrammableInterruptController::pic_remap_controlled_smoke()',
+    'irq::irq_gate_bind_smoke_mark_bound()',
+    'asm!("sti")'
+)) {
+    Assert-NotContains $activationBlock951 $blockedCall "v9.5.1 activation plan is read-only/advisory: $blockedCall"
+}
+
+Assert-NotContains $irrContent951 'asm!("sti")' "v9.5.1 irq source still has no STI"
+Assert-NotContains $mainContent951 'asm!("sti")' "v9.5.1 kernel main still has no STI"
+Assert-Contains $picContent951 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.5.1 safe mask-all constant remains allowed"
+foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
+    Assert-NotContains $mainContent951 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.5.1 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent951 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.5.1 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent951 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.5.1 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent951 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.5.1 no slave unmask literal $literal in pic.rs"
+}
+Assert-NotContains $mainContent951 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.5.1 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent951 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.5.1 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent951 'timer_interrupt_handler_stub' "v9.5.1 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent951 'keyboard_interrupt_handler_stub' "v9.5.1 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent951 'timer_irq' "v9.5.1 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent951 'keyboard_irq' "v9.5.1 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent951 'polling-only' "v9.5.1 keyboard polling telemetry unchanged"
+Assert-Contains $mainContent951 'runtime irq active: {}' "v9.5.1 runtime IRQ remains inactive"
+
+Write-Host "[OK] v9.5.1 IRQ Runtime Activation Dry-Run Hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
