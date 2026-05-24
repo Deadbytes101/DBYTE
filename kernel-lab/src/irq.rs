@@ -179,6 +179,13 @@ pub const EOI_RUNTIME_BLOCKER_EDGE_LEVEL: &str = "IRQ edge/level: detection stra
 pub const EOI_RUNTIME_BLOCKER_KEYBOARD: &str = "Keyboard fallback: state unknown";
 pub const EOI_RUNTIME_BLOCKER_STI: &str = "STI: not enabled for EOI dispatch";
 
+/// IRQ mask blocker messages (v9.3.0).
+pub const IRQ_MASK_BLOCKER_PIC_REMAP: &str = "[BLOCKER] pic remap not executed";
+pub const IRQ_MASK_BLOCKER_IRQ_GATES: &str = "[BLOCKER] irq gates not bound (vectors 32/33 unbound)";
+pub const IRQ_MASK_BLOCKER_STI: &str = "[BLOCKER] sti not enabled";
+pub const IRQ_MASK_BLOCKER_EOI_DISPATCH: &str = "[BLOCKER] eoi dispatch not active";
+pub const IRQ_MASK_BLOCKER_IRQ_RUNTIME: &str = "[BLOCKER] irq runtime not committed";
+
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
@@ -708,4 +715,59 @@ pub fn irq_gate_bind_preflight() -> IrqGateBindPreflightTelemetry {
         keyboard_input: status.keyboard_input,
         result: IRQ_GATE_BIND_RESULT_TELEMETRY_ONLY,
     }
+}
+
+/// Structured report of all IRQ unmask activation blockers (v9.3.0).
+///
+/// Each field reflects whether the corresponding subsystem precondition
+/// is satisfied. In v9.3.0 all blockers are active (all_clear = false).
+#[derive(Copy, Clone, Debug)]
+pub struct IrqMaskBlockerReport {
+    /// PIC remap controlled smoke has been executed.
+    pub pic_remap_ready: bool,
+    /// IRQ gate bind smoke has been executed (vectors 32/33 bound).
+    pub irq_gates_ready: bool,
+    /// STI has been enabled. Hardcoded false in v9.3.0.
+    pub sti_ready: bool,
+    /// EOI dispatch is active. Hardcoded false in v9.3.0.
+    pub eoi_dispatch_ready: bool,
+    /// IRQ runtime has been committed.
+    pub irq_runtime_committed: bool,
+    /// True only when every field above is true. Always false in v9.3.0.
+    pub all_clear: bool,
+}
+
+/// Builds an `IrqMaskBlockerReport` from external state passed by the dispatcher.
+///
+/// `sti_ready` and `eoi_dispatch_ready` are hardcoded `false` in v9.3.0
+/// because neither STI nor EOI dispatch is enabled at this milestone.
+pub fn irq_mask_blocker_report(
+    pic_remap_executed: bool,
+    irq_gates_bound: bool,
+    irq_runtime_committed: bool,
+) -> IrqMaskBlockerReport {
+    // v9.3.0: STI and EOI dispatch remain disabled by invariant.
+    let sti_ready = false;
+    let eoi_dispatch_ready = false;
+    let all_clear = pic_remap_executed
+        && irq_gates_bound
+        && sti_ready
+        && eoi_dispatch_ready
+        && irq_runtime_committed;
+    IrqMaskBlockerReport {
+        pic_remap_ready: pic_remap_executed,
+        irq_gates_ready: irq_gates_bound,
+        sti_ready,
+        eoi_dispatch_ready,
+        irq_runtime_committed,
+        all_clear,
+    }
+}
+
+/// Returns `true` only when every blocker in `report` is cleared.
+///
+/// Convenience helper so callers can pass the struct around and query
+/// the aggregate result without re-reading individual fields.
+pub fn irq_mask_check_all_blockers(report: &IrqMaskBlockerReport) -> bool {
+    report.all_clear
 }

@@ -206,8 +206,8 @@ pub extern "C" fn kernel_main() -> ! {
                                     // Convert and process submitted line
                                     if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
@@ -1028,6 +1028,67 @@ pub extern "C" fn kernel_main() -> ! {
                                                 let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_STI);
                                                 let _ = write!(vga_writer, "eoi dispatch: disabled\n");
                                                 let _ = write!(serial_writer, "eoi dispatch: disabled\n");
+                                            } else if line_str == "pic-mask-plan" {
+                                                let plan = pic::ProgrammableInterruptController::pic_mask_plan();
+                                                let mask_plan_msg = "PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n";
+                                                core::hint::black_box(plan);
+                                                vga::print(mask_plan_msg);
+                                                serial::print(mask_plan_msg);
+                                            } else if line_str == "pic-mask-status" {
+                                                let status = pic::ProgrammableInterruptController::pic_mask_status();
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n",
+                                                    status.master_imr_planned,
+                                                    status.slave_imr_planned,
+                                                    status.unmask_candidates,
+                                                    status.unmask_blocked,
+                                                    status.mask_writes,
+                                                    status.live_unmask
+                                                );
+                                                let _ = write!(serial_writer, "PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n",
+                                                    status.master_imr_planned,
+                                                    status.slave_imr_planned,
+                                                    status.unmask_candidates,
+                                                    status.unmask_blocked,
+                                                    status.mask_writes,
+                                                    status.live_unmask
+                                                );
+                                            } else if line_str == "irq-mask-blockers" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
+                                                let report = irq::irq_mask_blocker_report(
+                                                    pic_state.executed,
+                                                    gate_state.executed,
+                                                    irq::irq_runtime_is_committed(),
+                                                );
+                                                core::hint::black_box(irq::irq_mask_check_all_blockers(&report));
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "PIC IRQ unmask activation blockers\n");
+                                                let _ = write!(serial_writer, "PIC IRQ unmask activation blockers\n");
+                                                if !report.pic_remap_ready {
+                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_PIC_REMAP);
+                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_PIC_REMAP);
+                                                }
+                                                if !report.irq_gates_ready {
+                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_GATES);
+                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_GATES);
+                                                }
+                                                if !report.sti_ready {
+                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_STI);
+                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_STI);
+                                                }
+                                                if !report.eoi_dispatch_ready {
+                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_EOI_DISPATCH);
+                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_EOI_DISPATCH);
+                                                }
+                                                if !report.irq_runtime_committed {
+                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_RUNTIME);
+                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_RUNTIME);
+                                                }
+                                                let _ = write!(vga_writer, "unmask gate: disabled\n");
+                                                let _ = write!(serial_writer, "unmask gate: disabled\n");
                                             } else if line_str == "pic-status --verbose" {
                                               let pic_status_verbose_msg = "pic subsystem:\nfoundation: dry-run telemetry\nremap function: present / not called\ndry-run plan: available\nmaster offset: 0x20\nslave offset: 0x28\nirq vectors: 0x20-0x2f\nhardware writes: disabled\nirq handlers: none\ninterrupts: disabled\n";
                                               vga::print(pic_status_verbose_msg);

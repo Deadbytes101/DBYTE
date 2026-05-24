@@ -55,6 +55,15 @@ pub const PIC_EOI: u8 = 0x20;
 /// Default mask value used by the disabled remap plan.
 pub const PIC_MASK_ALL: u8 = 0xFF;
 
+/// Mask plan policy constants (v9.3.0).
+pub const PIC_MASK_PLAN_POLICY:   &str = "all masked (0xFF)";
+pub const PIC_MASK_UNMASK_POLICY: &str = "no lines scheduled for unmask";
+pub const PIC_MASK_UNMASK_GATE:   &str = "disabled";
+pub const PIC_MASK_LIVE_UNMASK:   &str = "no";
+pub const PIC_MASK_WRITES_PATH:   &str = "controlled smoke path only";
+pub const PIC_MASK_BLOCKER_REMAP: &str = "pic remap required first";
+pub const PIC_MASK_CANDIDATES:    &str = "none";
+
 /// Controlled smoke state strings.
 pub const PIC_REMAP_GUARD_ARMED: &str = "armed";
 pub const PIC_REMAP_GUARD_NOT_ARMED: &str = "not armed";
@@ -451,3 +460,50 @@ pub struct EoiStrategyStatus {
     pub dispatch_enabled: bool,
 }
 
+/// Telemetry for the planned PIC IRQ mask policy (v9.3.0).
+#[derive(Copy, Clone, Debug)]
+pub struct PicMaskPlanTelemetry {
+    pub mask_policy: &'static str,
+    pub master_imr_planned: u8,
+    pub slave_imr_planned: u8,
+    pub unmask_policy: &'static str,
+    pub unmask_gate: &'static str,
+    pub unmask_candidates: &'static str,
+}
+
+/// Telemetry for the current PIC IRQ mask state (v9.3.0).
+#[derive(Copy, Clone, Debug)]
+pub struct PicMaskStatusTelemetry {
+    pub master_imr_planned: u8,
+    pub slave_imr_planned: u8,
+    pub unmask_candidates: &'static str,
+    pub unmask_blocked: &'static str,
+    pub mask_writes: &'static str,
+    pub live_unmask: &'static str,
+}
+
+impl ProgrammableInterruptController {
+    /// Returns the planned PIC IRQ mask policy telemetry without touching hardware.
+    pub fn pic_mask_plan() -> PicMaskPlanTelemetry {
+        PicMaskPlanTelemetry {
+            mask_policy: PIC_MASK_PLAN_POLICY,
+            master_imr_planned: PIC_MASK_ALL,
+            slave_imr_planned: PIC_MASK_ALL,
+            unmask_policy: PIC_MASK_UNMASK_POLICY,
+            unmask_gate: PIC_MASK_UNMASK_GATE,
+            unmask_candidates: PIC_MASK_CANDIDATES,
+        }
+    }
+
+    /// Returns the current PIC IRQ mask status telemetry without touching hardware.
+    pub fn pic_mask_status() -> PicMaskStatusTelemetry {
+        PicMaskStatusTelemetry {
+            master_imr_planned: PIC_MASK_ALL,
+            slave_imr_planned: PIC_MASK_ALL,
+            unmask_candidates: PIC_MASK_CANDIDATES,
+            unmask_blocked: PIC_MASK_BLOCKER_REMAP,
+            mask_writes: PIC_MASK_WRITES_PATH,
+            live_unmask: PIC_MASK_LIVE_UNMASK,
+        }
+    }
+}

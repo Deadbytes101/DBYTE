@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.2.1"' "kernel-lab version 9.2.1"
+Assert-Contains $cargoContent 'version = "9.3.0"' "kernel-lab version 9.3.0"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -670,6 +670,7 @@ Assert-ContainsInOrder $irrContent @(
     'pub const EOI_RUNTIME_BLOCKER_STI'
 ) "eoi-runtime blocker constant ordering"
 Assert-NotContains $cargoContent 'version = "9.2.0"' "kernel-lab stale v9.2.0 package version guard"
+Assert-NotContains $cargoContent 'version = "9.2.1"' "kernel-lab stale v9.2.1 package version guard"
 Assert-NotContains $mainContent 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "kernel main does not dispatch master EOI"
 Assert-NotContains $mainContent 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "kernel main does not dispatch slave EOI"
 Assert-NotContains $mainContent 'asm!("sti")' "kernel main still has no STI"
@@ -680,6 +681,112 @@ Assert-Contains $mainContent 'polling-only' "kernel main keeps keyboard polling-
 Assert-Contains $mainContent '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "kernel main keeps runtime irq active no telemetry"
 
 Write-Host "[OK] v9.2.1 EOI runtime boundary hardening verified"
+
+# v9.3.0: PIC IRQ Mask Plan Foundation
+Write-Host "Verifying v9.3.0 PIC IRQ Mask Plan Foundation contracts..."
+$v921Tag = & git rev-list -n 1 v9.2.1 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v921Tag) { throw "v9.2.1 tag not found (required baseline)" }
+if ($HEAD -eq $v921Tag) { throw "HEAD is still v9.2.1, v9.3.0 work not completed" }
+Write-Host "[OK] v9.3.0 branch is beyond v9.2.1 locked baseline"
+
+# v9.3.0: Re-read sources (Cargo.toml may have changed)
+$cargoToml930 = Join-Path $repoRoot "kernel-lab\Cargo.toml"
+$cargoContent930 = Get-Content $cargoToml930 -Raw
+$irrContent930 = Get-Content $irrRs -Raw
+$picRs = Join-Path $repoRoot "kernel-lab\src\pic.rs"
+$picContent930 = Get-Content $picRs -Raw
+$mainContent930 = Get-Content $mainRs -Raw
+
+# v9.3.0: Version guard
+Assert-Contains $cargoContent930 'version = "9.3.0"' "kernel-lab version 9.3.0"
+Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
+
+# v9.3.0: irq.rs — blocker constants present
+Assert-Contains $irrContent930 'pub const IRQ_MASK_BLOCKER_PIC_REMAP' "irq mask blocker pic remap constant"
+Assert-Contains $irrContent930 'pub const IRQ_MASK_BLOCKER_IRQ_GATES' "irq mask blocker irq gates constant"
+Assert-Contains $irrContent930 'pub const IRQ_MASK_BLOCKER_STI' "irq mask blocker sti constant"
+Assert-Contains $irrContent930 'pub const IRQ_MASK_BLOCKER_EOI_DISPATCH' "irq mask blocker eoi dispatch constant"
+Assert-Contains $irrContent930 'pub const IRQ_MASK_BLOCKER_IRQ_RUNTIME' "irq mask blocker irq runtime constant"
+
+# v9.3.0: irq.rs — IrqMaskBlockerReport struct and functions
+Assert-Contains $irrContent930 'pub struct IrqMaskBlockerReport' "IrqMaskBlockerReport struct"
+Assert-Contains $irrContent930 'pub fn irq_mask_blocker_report(' "irq_mask_blocker_report function"
+Assert-Contains $irrContent930 'pub fn irq_mask_check_all_blockers(' "irq_mask_check_all_blockers function"
+Assert-Contains $irrContent930 'pub pic_remap_ready: bool' "IrqMaskBlockerReport pic_remap_ready field"
+Assert-Contains $irrContent930 'pub irq_gates_ready: bool' "IrqMaskBlockerReport irq_gates_ready field"
+Assert-Contains $irrContent930 'pub sti_ready: bool' "IrqMaskBlockerReport sti_ready field"
+Assert-Contains $irrContent930 'pub eoi_dispatch_ready: bool' "IrqMaskBlockerReport eoi_dispatch_ready field"
+Assert-Contains $irrContent930 'pub irq_runtime_committed: bool' "IrqMaskBlockerReport irq_runtime_committed field"
+Assert-Contains $irrContent930 'pub all_clear: bool' "IrqMaskBlockerReport all_clear field"
+# v9.3.0: STI and EOI dispatch hardcoded false
+Assert-Contains $irrContent930 'let sti_ready = false;' "sti_ready hardcoded false in v9.3.0"
+Assert-Contains $irrContent930 'let eoi_dispatch_ready = false;' "eoi_dispatch_ready hardcoded false in v9.3.0"
+
+# v9.3.0: pic.rs — mask plan constants present
+Assert-Contains $picContent930 'pub const PIC_MASK_PLAN_POLICY' "pic mask plan policy constant"
+Assert-Contains $picContent930 'pub const PIC_MASK_UNMASK_POLICY' "pic mask unmask policy constant"
+Assert-Contains $picContent930 'pub const PIC_MASK_UNMASK_GATE' "pic mask unmask gate constant"
+Assert-Contains $picContent930 'pub const PIC_MASK_LIVE_UNMASK' "pic mask live unmask constant"
+Assert-Contains $picContent930 'pub const PIC_MASK_WRITES_PATH' "pic mask writes path constant"
+Assert-Contains $picContent930 'pub const PIC_MASK_BLOCKER_REMAP' "pic mask blocker remap constant"
+Assert-Contains $picContent930 'pub const PIC_MASK_CANDIDATES' "pic mask candidates constant"
+
+# v9.3.0: pic.rs — telemetry structs and methods
+Assert-Contains $picContent930 'pub struct PicMaskPlanTelemetry' "PicMaskPlanTelemetry struct"
+Assert-Contains $picContent930 'pub struct PicMaskStatusTelemetry' "PicMaskStatusTelemetry struct"
+Assert-Contains $picContent930 'pub fn pic_mask_plan()' "pic_mask_plan method"
+Assert-Contains $picContent930 'pub fn pic_mask_status()' "pic_mask_status method"
+
+# v9.3.0: main.rs — command dispatcher has all 3 new commands
+Assert-Contains $mainContent930 'line_str == "pic-mask-plan"' "pic-mask-plan command dispatcher"
+Assert-Contains $mainContent930 'line_str == "pic-mask-status"' "pic-mask-status command dispatcher"
+Assert-Contains $mainContent930 'line_str == "irq-mask-blockers"' "irq-mask-blockers command dispatcher"
+
+# v9.3.0: Exact output contract guards
+$picMaskPlanExact = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
+$irqMaskBlockersHeader = 'PIC IRQ unmask activation blockers\n'
+Assert-Contains $mainContent930 $picMaskPlanExact "pic-mask-plan exact output contract"
+Assert-Contains $mainContent930 $irqMaskBlockersHeader "irq-mask-blockers header exact contract"
+Assert-Contains $mainContent930 '"unmask gate: disabled\n"' "irq-mask-blockers unmask gate disabled footer"
+Assert-Contains $mainContent930 'live unmask: {}\n"' "pic-mask-status live unmask field format"
+
+# v9.3.0: help string updated with new commands
+Assert-Contains $mainContent930 'pic-mask-plan pic-mask-status irq-mask-blockers' "help string includes v9.3.0 commands"
+
+# v9.3.0: Invariant guards — no STI (carry forward)
+Assert-NotContains $irrContent930 'asm!("sti")' "irq source still has no STI"
+Assert-NotContains $mainContent930 'asm!("sti")' "kernel main still has no STI"
+
+# v9.3.0: Forbidden unmask pattern guards (specific byte values outside controlled path)
+# Allowed: PIC_MASK_ALL (0xFF) via write_pic_port in controlled smoke path only
+# Forbidden: any specific unmask value written directly as a literal
+Assert-NotContains $mainContent930 'write_pic_port(PIC_MASTER_DATA, 0x00)' "no master IMR unmask-all literal in main"
+Assert-NotContains $mainContent930 'write_pic_port(PIC_MASTER_DATA, 0xFC)' "no master IMR partial unmask 0xFC in main"
+Assert-NotContains $mainContent930 'write_pic_port(PIC_MASTER_DATA, 0xFD)' "no master IMR partial unmask 0xFD in main"
+Assert-NotContains $mainContent930 'write_pic_port(PIC_MASTER_DATA, 0xFE)' "no master IMR partial unmask 0xFE in main"
+Assert-NotContains $mainContent930 'write_pic_port(PIC_SLAVE_DATA, 0x00)' "no slave IMR unmask-all literal in main"
+Assert-NotContains $mainContent930 'write_pic_port(PIC_SLAVE_DATA, 0xFE)' "no slave IMR partial unmask 0xFE in main"
+Assert-NotContains $picContent930 'write_pic_port(PIC_MASTER_DATA, 0x00)' "no master IMR unmask literal in pic.rs"
+Assert-NotContains $picContent930 'write_pic_port(PIC_SLAVE_DATA, 0x00)' "no slave IMR unmask literal in pic.rs"
+
+# v9.3.0: Key phrase guards — live unmask / unmask gate / mask writes / runtime irq active
+Assert-Contains $picContent930 'pub const PIC_MASK_LIVE_UNMASK:   &str = "no";' "live unmask: no phrase present"
+Assert-Contains $mainContent930 '"unmask gate: disabled\n"' "unmask gate disabled phrase present"
+Assert-Contains $picContent930 'pub const PIC_MASK_WRITES_PATH:   &str = "controlled smoke path only";' "mask writes controlled smoke path only phrase"
+Assert-Contains $mainContent930 '"IRQ runtime activation committed.\nWARNING: this is currently a dry-run.\nruntime irq active: no\n"' "runtime irq active no phrase preserved"
+
+# v9.3.0: ELF symbol checks
+$kernelELF930 = Join-Path $repoRoot "kernel-lab\target\i686-unknown-linux-gnu\debug\dbyte_kernel"
+if (-not (Test-Path $kernelELF930)) { throw "Kernel ELF not found for v9.3.0 symbol check: $kernelELF930" }
+$nmTool = "nm"
+$elfSymbols930 = & $nmTool $kernelELF930 2>&1 | Out-String
+Assert-Contains $elfSymbols930 "pic_mask_plan" "ELF contains pic_mask_plan symbol"
+Assert-Contains $elfSymbols930 "pic_mask_status" "ELF contains pic_mask_status symbol"
+Assert-Contains $elfSymbols930 "irq_mask_blocker_report" "ELF contains irq_mask_blocker_report symbol"
+Assert-Contains $elfSymbols930 "irq_mask_check_all_blockers" "ELF contains irq_mask_check_all_blockers symbol"
+
+Write-Host "[OK] v9.3.0 PIC IRQ Mask Plan Foundation verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
@@ -5011,8 +5118,8 @@ $picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::Programmable
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
 }
-if ($picRemapStateCalls -ne 8 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
-    throw "Kernel PIC remap telemetry guard failed: expected state=8 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
+if ($picRemapStateCalls -ne 9 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=9 (pic-remap-state command + pic-remap-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers + irq-mask-blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
@@ -5032,6 +5139,7 @@ $irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-
 $irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
 $eciRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-status"')
 $eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-blockers"')
+$irqMaskBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-mask-blockers"')
 if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
     throw "Kernel PIC remap smoke guard failed: pic-remap dispatch not found"
 }
@@ -5054,8 +5162,9 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearBlockersCommand = ($callIndex -gt $irqRuntimeBlockersDispatch -and $callIndex -lt $irqRuntimeBlockersDispatch + 1024)
     $nearEoiStatusCommand = ($callIndex -gt $eciRuntimeStatusDispatch -and $callIndex -lt $eciRuntimeStatusDispatch + 1024)
     $nearEoiBlockersCommand = ($callIndex -gt $eciRuntimeBlockersDispatch -and $callIndex -lt $eciRuntimeBlockersDispatch + 1024)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand)) {
-        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime dispatch"
+    $nearIrqMaskBlockersCommand = ($callIndex -gt $irqMaskBlockersDispatch -and $callIndex -lt $irqMaskBlockersDispatch + 1024)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand)) {
+        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers dispatch"
     }
 }
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_history()') -lt $picRemapHistoryDispatch) {
@@ -5067,8 +5176,8 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_p
 $irqGateStateCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)').Count
 $irqGateHistoryCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_history\(\)').Count
 $irqGatePreflightCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_preflight\(\)').Count
-if ($irqGateStateCalls -ne 8 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
-    throw "Kernel IRQ gate bind telemetry guard failed: expected state=8 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
+if ($irqGateStateCalls -ne 9 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
+    throw "Kernel IRQ gate bind telemetry guard failed: expected state=9 (irq-gate-state command + irq-gate-bind-smoke system + irq-runtime-preflight + irq-runtime-commit + irq-runtime-status + irq-runtime-blockers + eoi-runtime-status + eoi-runtime-blockers + irq-mask-blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
 }
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot path does not read irq gate bind state telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
@@ -5092,8 +5201,9 @@ $irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-
 $irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
 $eciRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-status"')
 $eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-blockers"')
-if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0) {
-    throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers/eoi-runtime-status/blockers dispatch not found"
+$irqMaskBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-mask-blockers"')
+if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0 -or $irqMaskBlockersDispatch -lt 0) {
+    throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers/eoi-runtime-status/blockers/irq-mask-blockers dispatch not found"
 }
 # Now check irq_gate_bind_state calls are within allowed dispatches
 foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)')) {
@@ -5106,8 +5216,9 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearBlockersCommand = ($callIndex -gt $irqRuntimeBlockersDispatch -and $callIndex -lt $irqRuntimeBlockersDispatch + 1024)
     $nearEoiStatusCommand = ($callIndex -gt $eciRuntimeStatusDispatch -and $callIndex -lt $eciRuntimeStatusDispatch + 1024)
     $nearEoiBlockersCommand = ($callIndex -gt $eciRuntimeBlockersDispatch -and $callIndex -lt $eciRuntimeBlockersDispatch + 1024)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand)) {
-        throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime dispatch"
+    $nearIrqMaskBlockersCommand = ($callIndex -gt $irqMaskBlockersDispatch -and $callIndex -lt $irqMaskBlockersDispatch + 1024)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand)) {
+        throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers dispatch"
     }
 }
 Assert-NotContains $kernelMainSource "timer_interrupt_handler_stub" "kernel main does not bind timer interrupt stub"
