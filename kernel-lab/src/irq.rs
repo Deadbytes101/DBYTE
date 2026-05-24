@@ -186,6 +186,19 @@ pub const IRQ_MASK_BLOCKER_STI: &str = "[BLOCKER] sti not enabled";
 pub const IRQ_MASK_BLOCKER_EOI_DISPATCH: &str = "[BLOCKER] eoi dispatch not active";
 pub const IRQ_MASK_BLOCKER_IRQ_RUNTIME: &str = "[BLOCKER] irq runtime not committed";
 
+/// Runtime readiness matrix constants (v9.4.0).
+pub const IRQ_MATRIX_YES: &str = "yes";
+pub const IRQ_MATRIX_NO: &str = "no";
+pub const IRQ_MATRIX_EOI_READY_DRY_RUN: &str = "ready (dry-run)";
+pub const IRQ_MATRIX_EOI_DISABLED: &str = "disabled";
+pub const IRQ_MATRIX_UNMASK_POLICY_NO_UNMASK: &str = "no unmask";
+pub const IRQ_MATRIX_RUNTIME_LATCH_BLOCKED: &str = "blocked";
+pub const IRQ_MATRIX_RUNTIME_LATCH_ARMED: &str = "armed";
+pub const IRQ_MATRIX_RUNTIME_LATCH_COMMITTED_DRY_RUN: &str = "committed dry-run";
+pub const IRQ_MATRIX_KEYBOARD_MODE_POLLING: &str = "polling";
+pub const IRQ_MATRIX_STI_DISABLED: &str = "disabled";
+pub const IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 
@@ -260,6 +273,21 @@ pub struct IrqRuntimeRisk {
     pub reason: &'static str,
     pub required_before_enable: &'static str,
     pub sti_allowed: &'static str,
+}
+
+/// Aggregated read-only readiness matrix for future IRQ runtime activation.
+#[derive(Copy, Clone, Debug)]
+pub struct IrqRuntimeMatrix {
+    pub pic_remap_smoke: &'static str,
+    pub irq_gate_bind_smoke: &'static str,
+    pub eoi_runtime_boundary: &'static str,
+    pub pic_mask_policy: &'static str,
+    pub unmask_policy: &'static str,
+    pub runtime_latch: &'static str,
+    pub keyboard_mode: &'static str,
+    pub sti: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub smoke_prerequisites: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -770,4 +798,42 @@ pub fn irq_mask_blocker_report(
 /// the aggregate result without re-reading individual fields.
 pub fn irq_mask_check_all_blockers(report: &IrqMaskBlockerReport) -> bool {
     report.all_clear
+}
+
+/// Builds the v9.4.0 aggregate runtime readiness matrix from dispatcher state.
+pub fn irq_runtime_matrix(
+    pic_remap_executed: bool,
+    irq_gates_bound: bool,
+    eoi_runtime_ready: bool,
+    pic_mask_policy: &'static str,
+    runtime_armed: bool,
+    runtime_committed: bool,
+) -> IrqRuntimeMatrix {
+    let runtime_latch = if runtime_committed {
+        IRQ_MATRIX_RUNTIME_LATCH_COMMITTED_DRY_RUN
+    } else if runtime_armed {
+        IRQ_MATRIX_RUNTIME_LATCH_ARMED
+    } else {
+        IRQ_MATRIX_RUNTIME_LATCH_BLOCKED
+    };
+    IrqRuntimeMatrix {
+        pic_remap_smoke: if pic_remap_executed { IRQ_MATRIX_YES } else { IRQ_MATRIX_NO },
+        irq_gate_bind_smoke: if irq_gates_bound { IRQ_MATRIX_YES } else { IRQ_MATRIX_NO },
+        eoi_runtime_boundary: if eoi_runtime_ready {
+            IRQ_MATRIX_EOI_READY_DRY_RUN
+        } else {
+            IRQ_MATRIX_EOI_DISABLED
+        },
+        pic_mask_policy,
+        unmask_policy: IRQ_MATRIX_UNMASK_POLICY_NO_UNMASK,
+        runtime_latch,
+        keyboard_mode: IRQ_MATRIX_KEYBOARD_MODE_POLLING,
+        sti: IRQ_MATRIX_STI_DISABLED,
+        runtime_irq_active: IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO,
+        smoke_prerequisites: if pic_remap_executed && irq_gates_bound {
+            IRQ_MATRIX_YES
+        } else {
+            IRQ_MATRIX_NO
+        },
+    }
 }
