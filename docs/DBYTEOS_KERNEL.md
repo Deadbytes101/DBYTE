@@ -25,4 +25,4 @@ graph TD
 - **`0x00000000 - 0x000FFFFF`**: Real Mode IVT, BIOS Data Area, and VGA Framebuffer (`0x000B8000`).
 - **`0x00100000` (1MB)**: Kernel entry point (`_start`) and `.multiboot_header`.
 - **`0x00101000 - ...`**: Read-only segments (`.text`, `.rodata`).
-- **`0x... - 0x00500000`**: Read-write segments (`.data`, `.bss`) and the 16 KiB execution stack.
+- **`0x... - 0x00500000`**: Read-write segments (`.data`, `.bss`) and the 64 KiB execution stack.

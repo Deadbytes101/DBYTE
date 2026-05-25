@@ -133,6 +133,35 @@ runtime irq active: no
 
 Verification now pins the four `pic-unmask-smoke-*` command templates, rendered QEMU snapshots, helper and command blocks as read-only surfaces, and the absence of PIC data-port unmask writes through `write_pic_port(PIC_MASTER_DATA, ...)` or `write_pic_port(PIC_SLAVE_DATA, ...)`. The existing runtime invariants remain locked: no `sti`, no runtime EOI dispatch, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
 
+## Controlled IDT Runtime Bind Smoke Foundation
+
+`v10.3.0` adds read-only IDT runtime bind smoke commands that describe how future runtime vector/handler binding would be staged after activation token/gate, readiness matrix, controlled IRQ gate bind smoke state, EOI dispatch smoke, PIC unmask smoke, and STI plan telemetry exist. This is controlled dry-run telemetry only: no IDT handlers are bound, no `set_handler(` call is made by this surface, no `sti` runs, PIC IRQ lines remain masked, runtime EOI dispatch remains disabled, live IRQ0/IRQ1 handlers remain disabled, and runtime IRQ remains inactive.
+
+Commands:
+
+```text
+idt-runtime-bind-smoke-note
+idt-runtime-bind-smoke-status
+idt-runtime-bind-smoke-plan
+idt-runtime-bind-smoke-blockers
+```
+
+Expected baseline output:
+
+```text
+IDT runtime bind smoke status
+idt runtime bind smoke: blocked
+dispatch mode: dry-run
+target vectors: 32/33 planned
+irq gate bind smoke: not bound
+EOI dispatch smoke: blocked
+PIC unmask smoke: blocked
+STI plan: blocked
+live handler bind: no
+hardware mutation: no
+runtime irq active: no
+```
+
 ## IRQ Gate Binding Plan
 
 To support external hardware interrupts safely, the kernel maps Master and Slave PIC IRQ lines to CPU vectors 32 through 47. The gate binding plan outlines the future installation of these gates in the Interrupt Descriptor Table (IDT).
