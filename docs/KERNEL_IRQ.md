@@ -96,6 +96,37 @@ The smoke plan models IRQ0 and IRQ1 as master-PIC EOI routes only. Slave-PIC cas
 
 Verification now pins the four `eoi-dispatch-smoke-*` command templates, the rendered QEMU snapshots, the helper and command blocks as read-only surfaces, and the absence of actual `PIC_EOI` writes through `write_pic_port(PIC_MASTER_CMD, PIC_EOI)` or `write_pic_port(PIC_SLAVE_CMD, PIC_EOI)`. The existing runtime invariants remain locked: no `sti`, no PIC IRQ unmask, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
 
+## Controlled PIC Mask Unmask Smoke Foundation
+
+`v10.2.0` adds read-only PIC unmask smoke commands that describe how a future IRQ line unmask decision would be staged after PIC mask planning, readiness matrix, activation token/gate, EOI boundary, STI plan, and EOI dispatch smoke telemetry exist. This is controlled dry-run telemetry only: no PIC data-port unmask writes are emitted, target IRQ lines remain `none`, live unmask remains `no`, `sti` remains disabled, live IRQ0/IRQ1 handlers remain disabled, runtime EOI dispatch remains disabled, and runtime IRQ remains inactive.
+
+Commands:
+
+```text
+pic-unmask-smoke-note
+pic-unmask-smoke-status
+pic-unmask-smoke-plan
+pic-unmask-smoke-blockers
+```
+
+Expected baseline output:
+
+```text
+PIC unmask smoke status
+pic unmask smoke: blocked
+dispatch mode: dry-run
+target IRQ lines: none
+pic mask policy: all masked (0xFF)
+activation token: absent
+activation gate: activation blocked
+EOI boundary: disabled
+STI plan: blocked
+EOI dispatch smoke: blocked
+live unmask: no
+hardware mutation: no
+runtime irq active: no
+```
+
 ## IRQ Gate Binding Plan
 
 To support external hardware interrupts safely, the kernel maps Master and Slave PIC IRQ lines to CPU vectors 32 through 47. The gate binding plan outlines the future installation of these gates in the Interrupt Descriptor Table (IDT).

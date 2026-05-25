@@ -251,6 +251,13 @@ pub const EOI_DISPATCH_SMOKE_BLOCKER_STI: &str = "STI: disabled";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_PIC_UNMASK: &str = "PIC unmask: disabled";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_LIVE_IRQ: &str = "live IRQ0/IRQ1: disabled";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_KEYBOARD_IRQ: &str = "keyboard IRQ path: disabled";
+pub const PIC_UNMASK_SMOKE_BLOCKED: &str = "blocked";
+pub const PIC_UNMASK_SMOKE_MODE_DRY_RUN: &str = "dry-run";
+pub const PIC_UNMASK_SMOKE_TARGET_IRQ_LINES_NONE: &str = "none";
+pub const PIC_UNMASK_SMOKE_LIVE_UNMASK_NO: &str = "no";
+pub const PIC_UNMASK_SMOKE_DATA_WRITES_DISABLED: &str = "disabled";
+pub const PIC_UNMASK_SMOKE_RESULT_DRY_RUN_ONLY: &str = "dry-run only";
+pub const PIC_UNMASK_SMOKE_BLOCKER_KEYBOARD_IRQ: &str = "keyboard IRQ path: disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -456,6 +463,27 @@ pub struct EoiDispatchSmoke {
     pub hardware_mutation: &'static str,
     pub master_eoi_route: &'static str,
     pub slave_eoi_route: &'static str,
+    pub result: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct PicUnmaskSmoke {
+    pub pic_unmask_smoke: &'static str,
+    pub dispatch_mode: &'static str,
+    pub target_irq_lines: &'static str,
+    pub pic_mask_policy: &'static str,
+    pub unmask_policy: &'static str,
+    pub activation_token: &'static str,
+    pub activation_gate: &'static str,
+    pub eoi_runtime_boundary: &'static str,
+    pub sti_plan: &'static str,
+    pub sti_instruction: &'static str,
+    pub eoi_dispatch_smoke: &'static str,
+    pub live_unmask: &'static str,
+    pub pic_data_writes: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub keyboard_mode: &'static str,
     pub result: &'static str,
 }
 
@@ -1185,5 +1213,36 @@ pub fn eoi_dispatch_smoke(
         master_eoi_route: EOI_DISPATCH_SMOKE_MASTER_ROUTE,
         slave_eoi_route: EOI_DISPATCH_SMOKE_SLAVE_ROUTE,
         result: EOI_DISPATCH_SMOKE_RESULT_DRY_RUN_ONLY,
+    }
+}
+
+/// Derives the v10.2.0 controlled PIC unmask smoke without writing PIC masks.
+pub fn pic_unmask_smoke(
+    pic_mask_policy: &'static str,
+    unmask_policy: &'static str,
+    token: IrqRuntimeActivationTokenTelemetry,
+    matrix: IrqRuntimeMatrix,
+    gate: IrqRuntimeActivationGate,
+    sti_plan: StiControlledActivationPlan,
+    eoi_smoke: EoiDispatchSmoke,
+) -> PicUnmaskSmoke {
+    PicUnmaskSmoke {
+        pic_unmask_smoke: PIC_UNMASK_SMOKE_BLOCKED,
+        dispatch_mode: PIC_UNMASK_SMOKE_MODE_DRY_RUN,
+        target_irq_lines: PIC_UNMASK_SMOKE_TARGET_IRQ_LINES_NONE,
+        pic_mask_policy,
+        unmask_policy,
+        activation_token: token.token_state,
+        activation_gate: gate.result,
+        eoi_runtime_boundary: gate.eoi_runtime_boundary,
+        sti_plan: sti_plan.result,
+        sti_instruction: matrix.sti,
+        eoi_dispatch_smoke: eoi_smoke.eoi_dispatch_smoke,
+        live_unmask: PIC_UNMASK_SMOKE_LIVE_UNMASK_NO,
+        pic_data_writes: PIC_UNMASK_SMOKE_DATA_WRITES_DISABLED,
+        hardware_mutation: IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
+        runtime_irq_active: matrix.runtime_irq_active,
+        keyboard_mode: matrix.keyboard_mode,
+        result: PIC_UNMASK_SMOKE_RESULT_DRY_RUN_ONLY,
     }
 }
