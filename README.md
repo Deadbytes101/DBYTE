@@ -34,7 +34,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
 
-## DByteOS Personal Alpha (v5.1.0)
+## DByteOS Personal Workspace Beta Foundation (v9.0.2)
 
 DByteOS is a host-runnable personal computing environment built on the DByte runtime.
 
@@ -48,7 +48,8 @@ This configures the session environment, activates autopath resolving, and
 loads the DByteOS prompt from `system.prompt`.
 
 2. **Explore the System**:
-- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
+
+- [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
 - [Command Reference](docs/DBYTEOS_COMMANDS.md)
 - [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
@@ -56,9 +57,12 @@ loads the DByteOS prompt from `system.prompt`.
 - [Config Guide](docs/DBYTEOS_CONFIG.md)
 - [Snapshot Guide](docs/DBYTEOS_SNAPSHOT.md)
 - [Projects Guide](docs/DBYTEOS_PROJECTS.md)
+- [Tasks Guide](docs/DBYTEOS_TASKS.md)
 - [Security Policy](docs/DBYTEOS_SECURITY.md)
 - [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
+- [Kernel Exception Subsystem Foundation](docs/KERNEL_EXCEPTIONS.md)
+- [Kernel IRQ Handler Skeleton Foundation](docs/KERNEL_IRQ.md)
 
 3. **Initialize & Interact**:
 
@@ -70,10 +74,19 @@ dbyte-shell> profile show
 dbyte-shell> config show
 dbyte-shell> prefs set system.prompt dbyteos>
 dbyte-shell> snapshot
-dbyteos> project new demo
+dbyteos> project reset-demo
+dbyteos> task reset-demo
+dbyteos> task list demo
+dbyteos> task add demo write tests
+dbyteos> task done demo 1
+dbyteos> task status demo
+dbyteos> task summary demo
+dbyteos> task open demo
+dbyteos> task doctor demo
+dbyteos> task snapshot demo
+dbyteos> task clear-done demo
 dbyteos> project status demo
 dbyteos> project snapshot demo
-dbyteos> project reset-demo
 dbyteos> prefs reset-demo
 dbyte-shell> getting-started
 dbyte-shell> commands
@@ -102,10 +115,19 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
-project new demo
+project reset-demo
+task reset-demo
+task list demo
+task add demo write tests
+task done demo 1
+task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
 project status demo
 project snapshot demo
-project reset-demo
 prefs reset-demo
 profile show
 config show
@@ -260,16 +282,16 @@ dbyte run personal_tools\read_u32_table.dby firmware.bin 0 8
 
 ### Personal Tools Command Reference
 
-| Tool | Usage | Description |
-|---|---|---|
-| `hexdump.dby` | `hexdump.dby <file> [offset length]` | Hex dump file bytes, 8 bytes per row |
-| `bininfo.dby` | `bininfo.dby <file>` | File size, first 8 bytes hex, checksum |
-| `find_bytes.dby` | `find_bytes.dby <file> <hex_pattern>` | Find byte pattern, print offset (dec + hex) |
-| `patch_bytes.dby` | `patch_bytes.dby <file> <find> <replace>` | Patch first match, output to `<file>.patched` |
-| `patch_bytes.dby --all` | `patch_bytes.dby --all <file> <find> <replace>` | Patch all matches |
-| `patch_bytes.dby --offset` | `patch_bytes.dby --offset <N> <file> <replace>` | Patch at explicit byte offset |
-| `patch_bytes.dby --out` | append `--out <outfile>` to any mode | Write output to explicit path instead of `<file>.patched` |
-| `read_u32_table.dby` | `read_u32_table.dby <file> [offset count]` | Dump little-endian u32 table |
+| Tool                       | Usage                                           | Description                                               |
+| -------------------------- | ----------------------------------------------- | --------------------------------------------------------- |
+| `hexdump.dby`              | `hexdump.dby <file> [offset length]`            | Hex dump file bytes, 8 bytes per row                      |
+| `bininfo.dby`              | `bininfo.dby <file>`                            | File size, first 8 bytes hex, checksum                    |
+| `find_bytes.dby`           | `find_bytes.dby <file> <hex_pattern>`           | Find byte pattern, print offset (dec + hex)               |
+| `patch_bytes.dby`          | `patch_bytes.dby <file> <find> <replace>`       | Patch first match, output to `<file>.patched`             |
+| `patch_bytes.dby --all`    | `patch_bytes.dby --all <file> <find> <replace>` | Patch all matches                                         |
+| `patch_bytes.dby --offset` | `patch_bytes.dby --offset <N> <file> <replace>` | Patch at explicit byte offset                             |
+| `patch_bytes.dby --out`    | append `--out <outfile>` to any mode            | Write output to explicit path instead of `<file>.patched` |
+| `read_u32_table.dby`       | `read_u32_table.dby <file> [offset count]`      | Dump little-endian u32 table                              |
 
 All tools support `--help` / `-h`.
 
@@ -312,7 +334,7 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 - [INSTALL.md](INSTALL.md)
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
 - [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
-- [DByteOS Personal Alpha](docs/DBYTEOS_PERSONAL_ALPHA.md)
+- [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
 - [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
 - [DByteOS Profile](docs/DBYTEOS_PROFILE.md)
 - [DByteOS Config](docs/DBYTEOS_CONFIG.md)
