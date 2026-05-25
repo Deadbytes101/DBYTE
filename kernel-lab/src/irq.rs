@@ -216,6 +216,13 @@ pub const IRQ_ACTIVATION_GATE_RESULT_BLOCKED: &str = "activation blocked";
 pub const IRQ_ACTIVATION_GATE_NEXT_BLOCKERS: &str = "execute irq-runtime-gate-blockers";
 pub const IRQ_ACTIVATION_GATE_DRY_RUN_NOT_ALLOWED: &str = "not allowed";
 pub const IRQ_ACTIVATION_GATE_RUNTIME_READY_NO: &str = "runtime irq ready no";
+pub const IRQ_ACTIVATION_SIM_PURPOSE: &str = "controlled activation rehearsal";
+pub const IRQ_ACTIVATION_SIM_ALLOWED_NO: &str = "no";
+pub const IRQ_ACTIVATION_SIM_STI_WOULD_ENABLE_NO: &str = "no";
+pub const IRQ_ACTIVATION_SIM_PIC_UNMASK_WOULD_APPLY_NO: &str = "no";
+pub const IRQ_ACTIVATION_SIM_EOI_DISPATCH_WOULD_ENABLE_NO: &str = "no";
+pub const IRQ_ACTIVATION_SIM_RESULT_BLOCKED: &str = "simulation blocked";
+pub const IRQ_ACTIVATION_SIM_NEXT_BLOCKERS: &str = "execute irq-runtime-sim-blockers";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -342,6 +349,25 @@ pub struct IrqRuntimeActivationGate {
     pub unmask_policy: &'static str,
     pub hardware_mutation: &'static str,
     pub activation_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub result: &'static str,
+    pub next: &'static str,
+}
+
+/// Read-only simulation result for rehearsing future IRQ runtime activation.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeActivationSimulation {
+    pub token_gate: &'static str,
+    pub readiness_matrix: &'static str,
+    pub gate_decision: &'static str,
+    pub dry_run_commit_allowed: &'static str,
+    pub eoi_runtime_boundary: &'static str,
+    pub hardware_mutation: &'static str,
+    pub simulated_activation_allowed: &'static str,
+    pub sti_would_enable: &'static str,
+    pub pic_unmask_would_apply: &'static str,
+    pub eoi_dispatch_would_enable: &'static str,
+    pub keyboard_mode: &'static str,
     pub runtime_irq_active: &'static str,
     pub result: &'static str,
     pub next: &'static str,
@@ -966,5 +992,30 @@ pub fn irq_runtime_activation_gate(
         runtime_irq_active: matrix.runtime_irq_active,
         result: IRQ_ACTIVATION_GATE_RESULT_BLOCKED,
         next: IRQ_ACTIVATION_GATE_NEXT_BLOCKERS,
+    }
+}
+
+/// Derives the v9.8.0 controlled activation simulation without mutating runtime state.
+pub fn irq_runtime_activation_simulation(
+    token: IrqRuntimeActivationTokenTelemetry,
+    matrix: IrqRuntimeMatrix,
+    activation: IrqRuntimeActivationDryRun,
+    gate: IrqRuntimeActivationGate,
+) -> IrqRuntimeActivationSimulation {
+    IrqRuntimeActivationSimulation {
+        token_gate: token.token_state,
+        readiness_matrix: gate.readiness_matrix,
+        gate_decision: gate.result,
+        dry_run_commit_allowed: activation.allowed_text,
+        eoi_runtime_boundary: gate.eoi_runtime_boundary,
+        hardware_mutation: IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
+        simulated_activation_allowed: IRQ_ACTIVATION_SIM_ALLOWED_NO,
+        sti_would_enable: IRQ_ACTIVATION_SIM_STI_WOULD_ENABLE_NO,
+        pic_unmask_would_apply: IRQ_ACTIVATION_SIM_PIC_UNMASK_WOULD_APPLY_NO,
+        eoi_dispatch_would_enable: IRQ_ACTIVATION_SIM_EOI_DISPATCH_WOULD_ENABLE_NO,
+        keyboard_mode: matrix.keyboard_mode,
+        runtime_irq_active: matrix.runtime_irq_active,
+        result: IRQ_ACTIVATION_SIM_RESULT_BLOCKED,
+        next: IRQ_ACTIVATION_SIM_NEXT_BLOCKERS,
     }
 }
