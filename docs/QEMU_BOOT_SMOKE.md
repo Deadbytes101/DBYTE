@@ -935,6 +935,8 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     - live IRQ0/IRQ1: disabled
     - keyboard IRQ path: disabled
     eoi dispatch smoke: blocked
+
+    v10.1.1 hardens the EOI dispatch smoke verification surface without changing these rendered outputs.
     dbyte-kernel> irq-runtime-status
     IRQ runtime readiness status
     pic remap: not ready

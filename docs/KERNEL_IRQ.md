@@ -90,6 +90,12 @@ runtime irq active: no
 
 The smoke plan models IRQ0 and IRQ1 as master-PIC EOI routes only. Slave-PIC cascade routing remains documented for future IRQs and is not dispatched by this milestone.
 
+## Controlled Runtime EOI Dispatch Smoke Hardening
+
+`v10.1.1` hardens the controlled EOI dispatch smoke surface without adding runtime behavior. No output wording changes from v10.1.0 are introduced.
+
+Verification now pins the four `eoi-dispatch-smoke-*` command templates, the rendered QEMU snapshots, the helper and command blocks as read-only surfaces, and the absence of actual `PIC_EOI` writes through `write_pic_port(PIC_MASTER_CMD, PIC_EOI)` or `write_pic_port(PIC_SLAVE_CMD, PIC_EOI)`. The existing runtime invariants remain locked: no `sti`, no PIC IRQ unmask, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
+
 ## IRQ Gate Binding Plan
 
 To support external hardware interrupts safely, the kernel maps Master and Slave PIC IRQ lines to CPU vectors 32 through 47. The gate binding plan outlines the future installation of these gates in the Interrupt Descriptor Table (IDT).
