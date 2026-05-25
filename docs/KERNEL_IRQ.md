@@ -60,6 +60,36 @@ End Of Interrupt (EOI) processing is a hardware acknowledgment protocol required
 
 No EOI command functions are called in this release; they are compiled solely for verification and system preparation.
 
+## Controlled Runtime EOI Dispatch Smoke Foundation
+
+`v10.1.0` adds read-only EOI dispatch smoke commands that describe how runtime EOI acknowledgement would be wired after the existing activation smoke layer. This is controlled dry-run telemetry only: no `PIC_EOI` command is written to PIC ports, `sti` remains disabled, PIC IRQ lines remain masked, live IRQ0/IRQ1 handlers remain disabled, and keyboard input remains polling-only.
+
+Commands:
+
+```text
+eoi-dispatch-smoke-note
+eoi-dispatch-smoke-status
+eoi-dispatch-smoke-plan
+eoi-dispatch-smoke-blockers
+```
+
+Expected baseline output:
+
+```text
+EOI dispatch smoke status
+eoi dispatch smoke: blocked
+dispatch mode: dry-run
+pic remap smoke: not ready
+irq gates: not bound
+pic eoi writes: disabled
+sti instruction: disabled
+pic unmask: disabled
+keyboard mode: polling
+runtime irq active: no
+```
+
+The smoke plan models IRQ0 and IRQ1 as master-PIC EOI routes only. Slave-PIC cascade routing remains documented for future IRQs and is not dispatched by this milestone.
+
 ## IRQ Gate Binding Plan
 
 To support external hardware interrupts safely, the kernel maps Master and Slave PIC IRQ lines to CPU vectors 32 through 47. The gate binding plan outlines the future installation of these gates in the Interrupt Descriptor Table (IDT).

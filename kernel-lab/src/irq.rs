@@ -234,6 +234,23 @@ pub const IRQ_ACTIVATION_SMOKE_BLOCKED: &str = "blocked";
 pub const IRQ_ACTIVATION_SMOKE_RESULT_BLOCKED: &str = "smoke blocked";
 pub const IRQ_ACTIVATION_SMOKE_NEXT_BLOCKERS: &str =
     "execute irq-runtime-activation-smoke-blockers";
+pub const EOI_DISPATCH_SMOKE_BLOCKED: &str = "blocked";
+pub const EOI_DISPATCH_SMOKE_MODE_DRY_RUN: &str = "dry-run";
+pub const EOI_DISPATCH_SMOKE_ACK_WRITES_DISABLED: &str = "disabled";
+pub const EOI_DISPATCH_SMOKE_RESULT_DRY_RUN_ONLY: &str = "dry-run only";
+pub const EOI_DISPATCH_SMOKE_MASTER_ROUTE: &str = "command 0x20 -> port 0x20 (planned)";
+pub const EOI_DISPATCH_SMOKE_SLAVE_ROUTE: &str =
+    "command 0x20 -> port 0xA0 then 0x20 (planned)";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_PIC_REMAP: &str =
+    "PIC remap smoke: not ready for controlled smoke";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_IRQ_GATES: &str =
+    "IRQ gates: vectors 32/33 not bound";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_ACK_WRITES: &str =
+    "PIC EOI writes: disabled by guard";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_STI: &str = "STI: disabled";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_PIC_UNMASK: &str = "PIC unmask: disabled";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_LIVE_IRQ: &str = "live IRQ0/IRQ1: disabled";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_KEYBOARD_IRQ: &str = "keyboard IRQ path: disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -423,6 +440,23 @@ pub struct IrqRuntimeActivationSmoke {
     pub activation_smoke: &'static str,
     pub result: &'static str,
     pub next: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiDispatchSmoke {
+    pub eoi_dispatch_smoke: &'static str,
+    pub dispatch_mode: &'static str,
+    pub pic_remap_smoke: &'static str,
+    pub irq_gates: &'static str,
+    pub pic_eoi_writes: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub hardware_mutation: &'static str,
+    pub master_eoi_route: &'static str,
+    pub slave_eoi_route: &'static str,
+    pub result: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -1123,5 +1157,33 @@ pub fn irq_runtime_activation_smoke(
         activation_smoke: IRQ_ACTIVATION_SMOKE_BLOCKED,
         result: IRQ_ACTIVATION_SMOKE_RESULT_BLOCKED,
         next: IRQ_ACTIVATION_SMOKE_NEXT_BLOCKERS,
+    }
+}
+
+/// Derives the v10.1.0 controlled EOI dispatch smoke without dispatching EOI.
+pub fn eoi_dispatch_smoke(
+    pic_remap_executed: bool,
+    irq_gates_bound: bool,
+    matrix: IrqRuntimeMatrix,
+    smoke: IrqRuntimeActivationSmoke,
+) -> EoiDispatchSmoke {
+    EoiDispatchSmoke {
+        eoi_dispatch_smoke: EOI_DISPATCH_SMOKE_BLOCKED,
+        dispatch_mode: EOI_DISPATCH_SMOKE_MODE_DRY_RUN,
+        pic_remap_smoke: if pic_remap_executed {
+            "controlled smoke available"
+        } else {
+            "not ready"
+        },
+        irq_gates: if irq_gates_bound { "bound" } else { "not bound" },
+        pic_eoi_writes: EOI_DISPATCH_SMOKE_ACK_WRITES_DISABLED,
+        sti_instruction: matrix.sti,
+        pic_unmask: smoke.pic_unmask,
+        keyboard_mode: matrix.keyboard_mode,
+        runtime_irq_active: matrix.runtime_irq_active,
+        hardware_mutation: smoke.hardware_mutation,
+        master_eoi_route: EOI_DISPATCH_SMOKE_MASTER_ROUTE,
+        slave_eoi_route: EOI_DISPATCH_SMOKE_SLAVE_ROUTE,
+        result: EOI_DISPATCH_SMOKE_RESULT_DRY_RUN_ONLY,
     }
 }
