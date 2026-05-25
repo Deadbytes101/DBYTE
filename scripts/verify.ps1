@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.7.0"' "kernel-lab version 9.7.0"
+Assert-Contains $cargoContent 'version = "9.7.1"' "kernel-lab version 9.7.1"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.7.0"' "kernel-lab current version 9.7.0"
+Assert-Contains $cargoContent930 'version = "9.7.1"' "kernel-lab current version 9.7.1"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "9.7.0"' "kernel-lab current version 9.7.0"
+Assert-Contains $cargoContent931 'version = "9.7.1"' "kernel-lab current version 9.7.1"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "9.7.0"' "kernel-lab current version 9.7.0"
+Assert-Contains $cargoContent940 'version = "9.7.1"' "kernel-lab current version 9.7.1"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -916,7 +916,7 @@ $irrContent941 = Get-Content $irrRs -Raw
 $picContent941 = Get-Content $picRs -Raw
 $mainContent941 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent941 'version = "9.7.0"' "kernel-lab current version 9.7.0"
+Assert-Contains $cargoContent941 'version = "9.7.1"' "kernel-lab current version 9.7.1"
 Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
 
 $matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
@@ -1023,7 +1023,7 @@ $irrContent950 = Get-Content $irrRs -Raw
 $picContent950 = Get-Content $picRs -Raw
 $mainContent950 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent950 'version = "9.7.0"' "kernel-lab current version 9.7.0"
+Assert-Contains $cargoContent950 'version = "9.7.1"' "kernel-lab current version 9.7.1"
 Assert-NotContains $cargoContent950 'version = "9.4.1"' "kernel-lab stale v9.4.1 package version guard"
 Assert-Contains $mainContent950 'irq-runtime-next irq-runtime-activation-plan' "help string includes v9.5.0 activation command"
 Assert-Contains $mainContent950 'line_str == "irq-runtime-activation-plan"' "irq-runtime-activation-plan dispatcher"
@@ -1101,7 +1101,7 @@ $irrContent951 = Get-Content $irrRs -Raw
 $picContent951 = Get-Content $picRs -Raw
 $mainContent951 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent951 'version = "9.7.0"' "kernel-lab current version 9.7.0"
+Assert-Contains $cargoContent951 'version = "9.7.1"' "kernel-lab current version 9.7.1"
 Assert-NotContains $cargoContent951 'version = "9.5.0"' "kernel-lab stale v9.5.0 package version guard"
 Assert-Contains $mainContent951 'irq-runtime-activation-plan' "v9.5.1 activation plan command remains exposed"
 Assert-Contains $mainContent951 'line_str == "irq-runtime-commit"' "v9.5.1 irq-runtime-commit dispatcher remains exposed"
@@ -1210,7 +1210,7 @@ $mainContent960 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs960 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs960 = $kernelBootSmokeDocs960 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent960 'version = "9.7.0"' "kernel-lab version 9.7.0"
+Assert-Contains $cargoContent960 'version = "9.7.1"' "kernel-lab version 9.7.1"
 Assert-NotContains $cargoContent960 'version = "9.5.1"' "kernel-lab stale v9.5.1 package version guard"
 Assert-Contains $mainContent960 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string includes v9.6.0 token commands"
 Assert-Contains $mainContent960 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher"
@@ -1324,7 +1324,7 @@ $mainContent961 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs961 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs961 = $kernelBootSmokeDocs961 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent961 'version = "9.7.0"' "kernel-lab version 9.7.0"
+Assert-Contains $cargoContent961 'version = "9.7.1"' "kernel-lab version 9.7.1"
 Assert-NotContains $cargoContent961 'version = "9.6.0"' "kernel-lab stale v9.6.0 package version guard"
 Assert-Contains $mainContent961 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string preserves v9.6.1 token commands"
 Assert-Contains $mainContent961 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher remains exposed"
@@ -1434,77 +1434,102 @@ Assert-Contains $mainContent961 'polling-only' "v9.6.1 keyboard polling telemetr
 
 Write-Host "[OK] v9.6.1 IRQ Runtime Activation Token Hardening verified"
 
-# v9.7.0: Controlled Activation Preconditions Gate
-Write-Host "Verifying v9.7.0 Controlled Activation Preconditions Gate contracts..."
-$v961Tag = & git rev-list -n 1 v9.6.1 2>$null
+# v9.7.1: Controlled Activation Gate Hardening
+Write-Host "Verifying v9.7.1 Controlled Activation Gate Hardening contracts..."
+$v970Tag = & git rev-list -n 1 v9.7.0 2>$null
 $HEAD = & git rev-parse HEAD
-if ($null -eq $v961Tag) { throw "v9.6.1 tag not found (required baseline)" }
-if ($HEAD -eq $v961Tag) { throw "HEAD is still v9.6.1, v9.7.0 work not completed" }
-Write-Host "[OK] v9.7.0 branch is beyond v9.6.1 locked baseline"
+if ($null -eq $v970Tag) { throw "v9.7.0 tag not found (required baseline)" }
+if ($HEAD -eq $v970Tag) { throw "HEAD is still v9.7.0, v9.7.1 work not completed" }
+Write-Host "[OK] v9.7.1 branch is beyond v9.7.0 locked baseline"
 
-$cargoContent970 = Get-Content $cargoToml -Raw
-$irrContent970 = Get-Content $irrRs -Raw
-$picContent970 = Get-Content $picRs -Raw
-$mainContent970 = Get-Content $mainRs -Raw
-$kernelBootSmokeDocs970 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
-$kernelBootSmokeDocs970 = $kernelBootSmokeDocs970 -replace "`r`n", "`n"
+$cargoContent971 = Get-Content $cargoToml -Raw
+$irrContent971 = Get-Content $irrRs -Raw
+$picContent971 = Get-Content $picRs -Raw
+$mainContent971 = Get-Content $mainRs -Raw
+$kernelBootSmokeDocs971 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
+$kernelBootSmokeDocs971 = $kernelBootSmokeDocs971 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent970 'version = "9.7.0"' "kernel-lab version 9.7.0"
-Assert-NotContains $cargoContent970 'version = "9.6.1"' "kernel-lab stale v9.6.1 package version guard"
-Assert-Contains $mainContent970 'irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers' "help string includes v9.7.0 gate commands"
-Assert-Contains $mainContent970 'line_str == "irq-runtime-gate-note"' "irq-runtime-gate-note dispatcher"
-Assert-Contains $mainContent970 'line_str == "irq-runtime-gate-status"' "irq-runtime-gate-status dispatcher"
-Assert-Contains $mainContent970 'line_str == "irq-runtime-gate-check"' "irq-runtime-gate-check dispatcher"
-Assert-Contains $mainContent970 'line_str == "irq-runtime-gate-blockers"' "irq-runtime-gate-blockers dispatcher"
+Assert-Contains $cargoContent971 'version = "9.7.1"' "kernel-lab version 9.7.1"
+Assert-NotContains $cargoContent971 'version = "9.7.0"' "kernel-lab stale v9.7.0 package version guard"
+Assert-Contains $mainContent971 'irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers' "help string includes v9.7.1 gate commands"
+Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-note"' "irq-runtime-gate-note dispatcher"
+Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-status"' "irq-runtime-gate-status dispatcher"
+Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-check"' "irq-runtime-gate-check dispatcher"
+Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-blockers"' "irq-runtime-gate-blockers dispatcher"
 
-Assert-Contains $irrContent970 'pub struct IrqRuntimeActivationGate' "gate telemetry struct"
-Assert-Contains $irrContent970 'pub fn irq_runtime_activation_gate(' "gate telemetry helper"
-Assert-Contains $irrContent970 'pub const IRQ_ACTIVATION_GATE_PURPOSE: &str = "controlled activation preconditions";' "gate purpose wording"
-Assert-Contains $irrContent970 'pub const IRQ_ACTIVATION_GATE_READINESS_BLOCKED: &str = "blocked";' "gate readiness blocked wording"
-Assert-Contains $irrContent970 'pub const IRQ_ACTIVATION_GATE_ALLOWED_NO: &str = "no";' "gate allowed no wording"
-Assert-Contains $irrContent970 'pub const IRQ_ACTIVATION_GATE_RESULT_BLOCKED: &str = "activation blocked";' "gate blocked result wording"
-Assert-Contains $irrContent970 'pub const IRQ_ACTIVATION_GATE_NEXT_BLOCKERS: &str = "execute irq-runtime-gate-blockers";' "gate next blockers wording"
+Assert-Contains $irrContent971 'pub struct IrqRuntimeActivationGate' "gate telemetry struct"
+Assert-Contains $irrContent971 'pub fn irq_runtime_activation_gate(' "gate telemetry helper"
+Assert-Contains $irrContent971 'pub const IRQ_ACTIVATION_GATE_PURPOSE: &str = "controlled activation preconditions";' "gate purpose wording"
+Assert-Contains $irrContent971 'pub const IRQ_ACTIVATION_GATE_READINESS_BLOCKED: &str = "blocked";' "gate readiness blocked wording"
+Assert-Contains $irrContent971 'pub const IRQ_ACTIVATION_GATE_ALLOWED_NO: &str = "no";' "gate allowed no wording"
+Assert-Contains $irrContent971 'pub const IRQ_ACTIVATION_GATE_RESULT_BLOCKED: &str = "activation blocked";' "gate blocked result wording"
+Assert-Contains $irrContent971 'pub const IRQ_ACTIVATION_GATE_NEXT_BLOCKERS: &str = "execute irq-runtime-gate-blockers";' "gate next blockers wording"
 
-$gateHelperStart970 = $irrContent970.IndexOf('pub fn irq_runtime_activation_gate(')
-$gateHelperEnd970 = $irrContent970.Length
-if ($gateHelperStart970 -lt 0) { throw "v9.7.0 gate helper isolation failed" }
-$gateHelperBlock970 = $irrContent970.Substring($gateHelperStart970, $gateHelperEnd970 - $gateHelperStart970)
+$gateHelperStart971 = $irrContent971.IndexOf('pub fn irq_runtime_activation_gate(')
+$gateHelperEnd971 = $irrContent971.Length
+if ($gateHelperStart971 -lt 0) { throw "v9.7.1 gate helper isolation failed" }
+$gateHelperBlock971 = $irrContent971.Substring($gateHelperStart971, $gateHelperEnd971 - $gateHelperStart971)
 
-$gateNoteStart970 = $mainContent970.IndexOf('} else if line_str == "irq-runtime-gate-note" {')
-$gateStatusStart970 = $mainContent970.IndexOf('} else if line_str == "irq-runtime-gate-status" {')
-$gateCheckStart970 = $mainContent970.IndexOf('} else if line_str == "irq-runtime-gate-check" {')
-$gateBlockersStart970 = $mainContent970.IndexOf('} else if line_str == "irq-runtime-gate-blockers" {')
-$gateBlockersEnd970 = $mainContent970.IndexOf('} else if line_str == "eoi-runtime-note" {', $gateBlockersStart970)
-if ($gateNoteStart970 -lt 0 -or $gateStatusStart970 -lt $gateNoteStart970 -or $gateCheckStart970 -lt $gateStatusStart970 -or $gateBlockersStart970 -lt $gateCheckStart970 -or $gateBlockersEnd970 -lt $gateBlockersStart970) {
-    throw "v9.7.0 gate command block isolation failed"
+$gateNoteStart971 = $mainContent971.IndexOf('} else if line_str == "irq-runtime-gate-note" {')
+$gateStatusStart971 = $mainContent971.IndexOf('} else if line_str == "irq-runtime-gate-status" {')
+$gateCheckStart971 = $mainContent971.IndexOf('} else if line_str == "irq-runtime-gate-check" {')
+$gateBlockersStart971 = $mainContent971.IndexOf('} else if line_str == "irq-runtime-gate-blockers" {')
+$gateBlockersEnd971 = $mainContent971.IndexOf('} else if line_str == "eoi-runtime-note" {', $gateBlockersStart971)
+if ($gateNoteStart971 -lt 0 -or $gateStatusStart971 -lt $gateNoteStart971 -or $gateCheckStart971 -lt $gateStatusStart971 -or $gateBlockersStart971 -lt $gateCheckStart971 -or $gateBlockersEnd971 -lt $gateBlockersStart971) {
+    throw "v9.7.1 gate command block isolation failed"
 }
-$gateNoteBlock970 = $mainContent970.Substring($gateNoteStart970, $gateStatusStart970 - $gateNoteStart970)
-$gateStatusBlock970 = $mainContent970.Substring($gateStatusStart970, $gateCheckStart970 - $gateStatusStart970)
-$gateCheckBlock970 = $mainContent970.Substring($gateCheckStart970, $gateBlockersStart970 - $gateCheckStart970)
-$gateBlockersBlock970 = $mainContent970.Substring($gateBlockersStart970, $gateBlockersEnd970 - $gateBlockersStart970)
+$gateNoteBlock971 = $mainContent971.Substring($gateNoteStart971, $gateStatusStart971 - $gateNoteStart971)
+$gateStatusBlock971 = $mainContent971.Substring($gateStatusStart971, $gateCheckStart971 - $gateStatusStart971)
+$gateCheckBlock971 = $mainContent971.Substring($gateCheckStart971, $gateBlockersStart971 - $gateCheckStart971)
+$gateBlockersBlock971 = $mainContent971.Substring($gateBlockersStart971, $gateBlockersEnd971 - $gateBlockersStart971)
 
-$irqRuntimeGateNoteExact970 = 'IRQ runtime activation gate note\ngate purpose: {}\ntoken required: {}\nmatrix required: {}\ndry-run commit required: {}\nhardware mutation: {}\nactivation allowed: {}\n'
-$irqRuntimeGateStatusExact970 = 'IRQ runtime activation gate status\ntoken gate: {}\nreadiness matrix: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\ndry-run commit allowed: {}\nruntime irq active: {}\nactivation allowed: {}\n'
-$irqRuntimeGateCheckExact970 = 'IRQ runtime activation gate check\ntoken gate: {}\nmatrix decision: {}\neoi boundary: {}\nmask policy: {}\nhardware mutation: {}\nresult: {}\nnext: {}\n'
-$irqRuntimeGateBlockersExact970 = 'IRQ runtime activation gate blockers\n- activation token: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI: {}\nactivation allowed: {}\n'
-Assert-Contains $gateNoteBlock970 $irqRuntimeGateNoteExact970 "v9.7.0 gate note exact output"
-Assert-Contains $gateStatusBlock970 $irqRuntimeGateStatusExact970 "v9.7.0 gate status exact output"
-Assert-Contains $gateCheckBlock970 $irqRuntimeGateCheckExact970 "v9.7.0 gate check exact output"
-Assert-Contains $gateBlockersBlock970 $irqRuntimeGateBlockersExact970 "v9.7.0 gate blockers exact output"
+$irqRuntimeGateNoteExact971 = 'IRQ runtime activation gate note\ngate purpose: {}\ntoken required: {}\nmatrix required: {}\ndry-run commit required: {}\nhardware mutation: {}\nactivation allowed: {}\n'
+$irqRuntimeGateStatusExact971 = 'IRQ runtime activation gate status\ntoken gate: {}\nreadiness matrix: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\ndry-run commit allowed: {}\nruntime irq active: {}\nactivation allowed: {}\n'
+$irqRuntimeGateCheckExact971 = 'IRQ runtime activation gate check\ntoken gate: {}\nmatrix decision: {}\neoi boundary: {}\nmask policy: {}\nhardware mutation: {}\nresult: {}\nnext: {}\n'
+$irqRuntimeGateBlockersExact971 = 'IRQ runtime activation gate blockers\n- activation token: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI: {}\nactivation allowed: {}\n'
+Assert-Contains $gateNoteBlock971 $irqRuntimeGateNoteExact971 "v9.7.1 gate note exact output"
+Assert-Contains $gateStatusBlock971 $irqRuntimeGateStatusExact971 "v9.7.1 gate status exact output"
+Assert-Contains $gateCheckBlock971 $irqRuntimeGateCheckExact971 "v9.7.1 gate check exact output"
+Assert-Contains $gateBlockersBlock971 $irqRuntimeGateBlockersExact971 "v9.7.1 gate blockers exact output"
+Assert-ContainsInOrder $gateBlockersBlock971 @(
+    '- activation token: {}',
+    '- readiness matrix: {}',
+    '- dry-run commit: {}',
+    '- EOI runtime boundary: {}',
+    '- STI: {}',
+    'activation allowed: {}'
+) "v9.7.1 gate blocker ordering"
 
-foreach ($gateReadBlock in @($gateStatusBlock970, $gateCheckBlock970, $gateBlockersBlock970)) {
-    Assert-Contains $gateReadBlock 'pic::ProgrammableInterruptController::pic_remap_state();' "v9.7.0 gate reads pic remap state"
-    Assert-Contains $gateReadBlock 'irq::irq_gate_bind_state();' "v9.7.0 gate reads irq gate state"
-    Assert-Contains $gateReadBlock 'pic::ProgrammableInterruptController::pic_mask_plan();' "v9.7.0 gate reads pic mask plan"
-    Assert-Contains $gateReadBlock 'pic::ProgrammableInterruptController::pic_mask_status();' "v9.7.0 gate reads pic mask status"
-    Assert-Contains $gateReadBlock 'irq::eoi_runtime_check_all_preconditions(pic_state.executed);' "v9.7.0 gate reads eoi preconditions"
-    Assert-Contains $gateReadBlock 'irq::irq_runtime_matrix(' "v9.7.0 gate derives readiness matrix"
-    Assert-Contains $gateReadBlock 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.7.0 gate derives activation dry-run"
-    Assert-Contains $gateReadBlock 'irq::irq_runtime_activation_token_status();' "v9.7.0 gate reads token state"
-    Assert-Contains $gateReadBlock 'irq::irq_runtime_activation_gate(' "v9.7.0 gate derives activation gate"
+foreach ($gateReadBlock in @($gateStatusBlock971, $gateCheckBlock971, $gateBlockersBlock971)) {
+    Assert-Contains $gateReadBlock 'pic::ProgrammableInterruptController::pic_remap_state();' "v9.7.1 gate reads pic remap state"
+    Assert-Contains $gateReadBlock 'irq::irq_gate_bind_state();' "v9.7.1 gate reads irq gate state"
+    Assert-Contains $gateReadBlock 'pic::ProgrammableInterruptController::pic_mask_plan();' "v9.7.1 gate reads pic mask plan"
+    Assert-Contains $gateReadBlock 'pic::ProgrammableInterruptController::pic_mask_status();' "v9.7.1 gate reads pic mask status"
+    Assert-Contains $gateReadBlock 'irq::eoi_runtime_check_all_preconditions(pic_state.executed);' "v9.7.1 gate reads eoi preconditions"
+    Assert-Contains $gateReadBlock 'irq::irq_runtime_matrix(' "v9.7.1 gate derives readiness matrix"
+    Assert-Contains $gateReadBlock 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.7.1 gate derives activation dry-run"
+    Assert-Contains $gateReadBlock 'irq::irq_runtime_activation_token_status();' "v9.7.1 gate reads token state"
+    Assert-Contains $gateReadBlock 'irq::irq_runtime_activation_gate(' "v9.7.1 gate derives activation gate"
+    foreach ($forbiddenRead in @(
+        'pic::ProgrammableInterruptController::pic_remap_smoke_arm()',
+        'pic::ProgrammableInterruptController::pic_remap_controlled_smoke()',
+        'pic::ProgrammableInterruptController::pic_remap_smoke_status()',
+        'pic::ProgrammableInterruptController::pic_remap_history()',
+        'pic::ProgrammableInterruptController::pic_remap_preflight()',
+        'irq::irq_gate_bind_smoke_arm()',
+        'irq::irq_gate_bind_smoke_is_armed()',
+        'irq::irq_gate_bind_smoke_status()',
+        'irq::irq_gate_bind_history()',
+        'irq::irq_gate_bind_preflight()',
+        'irq::irq_runtime_readiness()',
+        'irq::irq_runtime_risk()',
+        'irq::irq_runtime_preflight()'
+    )) {
+        Assert-NotContains $gateReadBlock $forbiddenRead "v9.7.1 gate read surface excludes $forbiddenRead"
+    }
 }
 
-foreach ($gateBlock in @($gateNoteBlock970, $gateStatusBlock970, $gateCheckBlock970, $gateBlockersBlock970, $gateHelperBlock970)) {
+foreach ($gateBlock in @($gateNoteBlock971, $gateStatusBlock971, $gateCheckBlock971, $gateBlockersBlock971, $gateHelperBlock971)) {
     foreach ($blockedCall in @(
         'write_pic_port(',
         'outb(',
@@ -1519,49 +1544,57 @@ foreach ($gateBlock in @($gateNoteBlock970, $gateStatusBlock970, $gateCheckBlock
         'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)',
         'asm!("sti")'
     )) {
-        Assert-NotContains $gateBlock $blockedCall "v9.7.0 gate path is read-only: $blockedCall"
+        Assert-NotContains $gateBlock $blockedCall "v9.7.1 gate path is read-only: $blockedCall"
     }
 }
 
-$expectedQemuIrqRuntimeGateNoteOutput970 = "IRQ runtime activation gate note`n    gate purpose: controlled activation preconditions`n    token required: yes`n    matrix required: ready`n    dry-run commit required: yes`n    hardware mutation: no`n    activation allowed: no"
-$expectedQemuIrqRuntimeGateStatusOutput970 = "IRQ runtime activation gate status`n    token gate: absent`n    readiness matrix: blocked`n    eoi runtime boundary: disabled`n    pic mask policy: all masked (0xFF)`n    unmask policy: no unmask`n    dry-run commit allowed: no`n    runtime irq active: no`n    activation allowed: no"
-$expectedQemuIrqRuntimeGateCheckOutput970 = "IRQ runtime activation gate check`n    token gate: absent`n    matrix decision: blocked`n    eoi boundary: disabled`n    mask policy: all masked (0xFF)`n    hardware mutation: no`n    result: activation blocked`n    next: execute irq-runtime-gate-blockers"
-$expectedQemuIrqRuntimeGateBlockersOutput970 = "IRQ runtime activation gate blockers`n    - activation token: absent`n    - readiness matrix: runtime irq ready no`n    - dry-run commit: not allowed`n    - EOI runtime boundary: disabled`n    - STI: disabled`n    activation allowed: no"
-Assert-Contains $kernelBootSmokeDocs970 $expectedQemuIrqRuntimeGateNoteOutput970 "qemu docs gate note exact rendered contract"
-Assert-Contains $kernelBootSmokeDocs970 $expectedQemuIrqRuntimeGateStatusOutput970 "qemu docs gate status exact rendered contract"
-Assert-Contains $kernelBootSmokeDocs970 $expectedQemuIrqRuntimeGateCheckOutput970 "qemu docs gate check exact rendered contract"
-Assert-Contains $kernelBootSmokeDocs970 $expectedQemuIrqRuntimeGateBlockersOutput970 "qemu docs gate blockers exact rendered contract"
+$expectedQemuIrqRuntimeGateNoteOutput971 = "IRQ runtime activation gate note`n    gate purpose: controlled activation preconditions`n    token required: yes`n    matrix required: ready`n    dry-run commit required: yes`n    hardware mutation: no`n    activation allowed: no"
+$expectedQemuIrqRuntimeGateStatusOutput971 = "IRQ runtime activation gate status`n    token gate: absent`n    readiness matrix: blocked`n    eoi runtime boundary: disabled`n    pic mask policy: all masked (0xFF)`n    unmask policy: no unmask`n    dry-run commit allowed: no`n    runtime irq active: no`n    activation allowed: no"
+$expectedQemuIrqRuntimeGateCheckOutput971 = "IRQ runtime activation gate check`n    token gate: absent`n    matrix decision: blocked`n    eoi boundary: disabled`n    mask policy: all masked (0xFF)`n    hardware mutation: no`n    result: activation blocked`n    next: execute irq-runtime-gate-blockers"
+$expectedQemuIrqRuntimeGateBlockersOutput971 = "IRQ runtime activation gate blockers`n    - activation token: absent`n    - readiness matrix: runtime irq ready no`n    - dry-run commit: not allowed`n    - EOI runtime boundary: disabled`n    - STI: disabled`n    activation allowed: no"
+Assert-Contains $kernelBootSmokeDocs971 $expectedQemuIrqRuntimeGateNoteOutput971 "qemu docs gate note exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs971 $expectedQemuIrqRuntimeGateStatusOutput971 "qemu docs gate status exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs971 $expectedQemuIrqRuntimeGateCheckOutput971 "qemu docs gate check exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs971 $expectedQemuIrqRuntimeGateBlockersOutput971 "qemu docs gate blockers exact rendered contract"
+Assert-ContainsInOrder $kernelBootSmokeDocs971 @(
+    "- activation token: absent",
+    "- readiness matrix: runtime irq ready no",
+    "- dry-run commit: not allowed",
+    "- EOI runtime boundary: disabled",
+    "- STI: disabled",
+    "activation allowed: no"
+) "qemu docs gate blockers rendered ordering"
 
-$commitBlockStart970 = $mainContent970.IndexOf('} else if line_str == "irq-runtime-commit" {')
-$commitBlockEnd970 = $mainContent970.IndexOf('}else if line_str == "irq-runtime-status" {', $commitBlockStart970)
-if ($commitBlockStart970 -lt 0 -or $commitBlockEnd970 -lt $commitBlockStart970) { throw "v9.7.0 commit block isolation failed" }
-$commitBlock970 = $mainContent970.Substring($commitBlockStart970, $commitBlockEnd970 - $commitBlockStart970)
-Assert-Contains $commitBlock970 'irq::irq_runtime_matrix(' "v9.7.0 commit remains matrix-driven"
-Assert-Contains $commitBlock970 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.7.0 commit remains activation dry-run driven"
-Assert-Contains $commitBlock970 'if !activation.allowed {' "v9.7.0 commit remains blocked by activation decision"
-Assert-NotContains $commitBlock970 'irq::irq_runtime_commit()' "v9.7.0 commit path still does not call runtime commit"
-Assert-Contains $mainContent970 'runtime irq active: {}' "v9.7.0 runtime IRQ remains inactive"
-Assert-Contains $mainContent970 'dry-run commit allowed: {}' "v9.7.0 dry-run commit remains disallowed in output"
-Assert-Contains $irrContent970 'pub const IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED: &str = "blocked by readiness matrix";' "v9.7.0 blocked matrix decision wording"
+$commitBlockStart971 = $mainContent971.IndexOf('} else if line_str == "irq-runtime-commit" {')
+$commitBlockEnd971 = $mainContent971.IndexOf('}else if line_str == "irq-runtime-status" {', $commitBlockStart971)
+if ($commitBlockStart971 -lt 0 -or $commitBlockEnd971 -lt $commitBlockStart971) { throw "v9.7.1 commit block isolation failed" }
+$commitBlock971 = $mainContent971.Substring($commitBlockStart971, $commitBlockEnd971 - $commitBlockStart971)
+Assert-Contains $commitBlock971 'irq::irq_runtime_matrix(' "v9.7.1 commit remains matrix-driven"
+Assert-Contains $commitBlock971 'irq::irq_runtime_activation_dry_run(&matrix);' "v9.7.1 commit remains activation dry-run driven"
+Assert-Contains $commitBlock971 'if !activation.allowed {' "v9.7.1 commit remains blocked by activation decision"
+Assert-NotContains $commitBlock971 'irq::irq_runtime_commit()' "v9.7.1 commit path still does not call runtime commit"
+Assert-Contains $mainContent971 'runtime irq active: {}' "v9.7.1 runtime IRQ remains inactive"
+Assert-Contains $mainContent971 'dry-run commit allowed: {}' "v9.7.1 dry-run commit remains disallowed in output"
+Assert-Contains $irrContent971 'pub const IRQ_ACTIVATION_COMMIT_RESULT_BLOCKED: &str = "blocked by readiness matrix";' "v9.7.1 blocked matrix decision wording"
 
-Assert-NotContains $irrContent970 'asm!("sti")' "v9.7.0 irq source still has no STI"
-Assert-NotContains $mainContent970 'asm!("sti")' "v9.7.0 kernel main still has no STI"
-Assert-Contains $picContent970 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.7.0 safe mask-all constant remains allowed"
+Assert-NotContains $irrContent971 'asm!("sti")' "v9.7.1 irq source still has no STI"
+Assert-NotContains $mainContent971 'asm!("sti")' "v9.7.1 kernel main still has no STI"
+Assert-Contains $picContent971 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.7.1 safe mask-all constant remains allowed"
 foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
-    Assert-NotContains $mainContent970 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.7.0 no master unmask literal $literal in main"
-    Assert-NotContains $mainContent970 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.7.0 no slave unmask literal $literal in main"
-    Assert-NotContains $picContent970 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.7.0 no master unmask literal $literal in pic.rs"
-    Assert-NotContains $picContent970 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.7.0 no slave unmask literal $literal in pic.rs"
+    Assert-NotContains $mainContent971 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.7.1 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent971 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.7.1 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent971 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.7.1 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent971 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.7.1 no slave unmask literal $literal in pic.rs"
 }
-Assert-NotContains $mainContent970 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.7.0 kernel main does not dispatch master EOI"
-Assert-NotContains $mainContent970 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.7.0 kernel main does not dispatch slave EOI"
-Assert-NotContains $mainContent970 'timer_interrupt_handler_stub' "v9.7.0 kernel main has no live timer IRQ handler"
-Assert-NotContains $mainContent970 'keyboard_interrupt_handler_stub' "v9.7.0 kernel main has no live keyboard IRQ handler"
-Assert-NotContains $mainContent970 'timer_irq' "v9.7.0 kernel main has no timer IRQ activation path"
-Assert-NotContains $mainContent970 'keyboard_irq' "v9.7.0 kernel main has no keyboard IRQ activation path"
-Assert-Contains $mainContent970 'polling-only' "v9.7.0 keyboard polling telemetry unchanged"
+Assert-NotContains $mainContent971 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.7.1 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent971 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.7.1 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent971 'timer_interrupt_handler_stub' "v9.7.1 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent971 'keyboard_interrupt_handler_stub' "v9.7.1 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent971 'timer_irq' "v9.7.1 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent971 'keyboard_irq' "v9.7.1 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent971 'polling-only' "v9.7.1 keyboard polling telemetry unchanged"
 
-Write-Host "[OK] v9.7.0 Controlled Activation Preconditions Gate verified"
+Write-Host "[OK] v9.7.1 Controlled Activation Gate Hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
@@ -1752,7 +1785,7 @@ if ($blockLocalLets) {
 }
 
 foreach ($tool in $personalToolFiles) {
-    $result = Invoke-Dbyte -Arguments @("run", "personal_tools\$($tool.Path)")
+    $result = Invoke-Dbyte -Arguments @("run", "personal_tools\$($tool.Path)") -WorkingDirectory $repoRoot
     if ($result.Code -ne 0) { throw "personal tool from repo root failed [$($tool.Name)]: $($result.Text)" }
     Assert-PersonalToolOutput $tool.Name $result.Text
 }
@@ -1761,7 +1794,7 @@ Assert-GitStatus-Unchanged $personalToolsStatus "personal tools repo-root run cl
 Push-Location (Join-Path $repoRoot "personal_tools")
 try {
     foreach ($tool in $personalToolFiles) {
-        $result = Invoke-Dbyte -Arguments @("run", $tool.Path)
+        $result = Invoke-Dbyte -Arguments @("run", $tool.Path) -WorkingDirectory (Join-Path $repoRoot "personal_tools")
         if ($result.Code -ne 0) { throw "personal tool from personal_tools cwd failed [$($tool.Name)]: $($result.Text)" }
         Assert-PersonalToolOutput $tool.Name $result.Text
     }
@@ -1779,32 +1812,32 @@ New-Item -ItemType Directory -Path $personalArgsRoot | Out-Null
 $personalArgsFile = Join-Path $personalArgsRoot "sample.bin"
 [System.IO.File]::WriteAllBytes($personalArgsFile, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x78, 0x56, 0x34, 0x12))
 
-$personalHexArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile)
+$personalHexArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile) -WorkingDirectory $repoRoot
 if ($personalHexArgs.Code -ne 0) { throw "personal hexdump args failed: $($personalHexArgs.Text)" }
 Assert-Contains $personalHexArgs.Text "bytes: 10" "personal hexdump args size"
 Assert-Contains $personalHexArgs.Text "0000: 00deadbeef007856" "personal hexdump args first row"
 Assert-Contains $personalHexArgs.Text "0008: 3412" "personal hexdump args second row"
 
-$personalHexRange = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "1", "6")
+$personalHexRange = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "1", "6") -WorkingDirectory $repoRoot
 if ($personalHexRange.Code -ne 0) { throw "personal hexdump range failed: $($personalHexRange.Text)" }
 Assert-Contains $personalHexRange.Text "range: 1 6" "personal hexdump range header"
 Assert-Contains $personalHexRange.Text "1 : deadbeef0078" "personal hexdump range row"
 
-$personalBinArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby", $personalArgsFile)
+$personalBinArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby", $personalArgsFile) -WorkingDirectory $repoRoot
 if ($personalBinArgs.Code -ne 0) { throw "personal bininfo args failed: $($personalBinArgs.Text)" }
 Assert-Contains $personalBinArgs.Text "bytes: 10" "personal bininfo args size"
 Assert-Contains $personalBinArgs.Text "first8: 00deadbeef007856" "personal bininfo args first bytes"
 
-$personalFindArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile, "DEADBEEF")
+$personalFindArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile, "DEADBEEF") -WorkingDirectory $repoRoot
 if ($personalFindArgs.Code -ne 0) { throw "personal find args failed: $($personalFindArgs.Text)" }
 Assert-Contains $personalFindArgs.Text "pattern: 1" "personal find args offset"
 Assert-Contains $personalFindArgs.Text "pattern: 1 0x1" "personal find args hex offset"
 
-$personalFindInvalidHex = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile, "NOTHEX")
+$personalFindInvalidHex = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile, "NOTHEX") -WorkingDirectory $repoRoot
 if ($personalFindInvalidHex.Code -ne 0) { throw "personal find invalid hex failed: $($personalFindInvalidHex.Text)" }
 Assert-Equal $personalFindInvalidHex.Text "error: invalid hex_pattern" "personal find invalid hex"
 
-$personalPatchArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF", "CAFEBABE")
+$personalPatchArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF", "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchArgs.Code -ne 0) { throw "personal patch args failed: $($personalPatchArgs.Text)" }
 Assert-Contains $personalPatchArgs.Text "patched first match at offset 1" "personal patch args offset"
 Assert-Contains $personalPatchArgs.Text "wrote $personalArgsFile.patched" "personal patch args output path"
@@ -1814,7 +1847,7 @@ Assert-Equal (Bytes-Hex "$personalArgsFile.patched") "00cafebabe0078563412" "per
 
 $personalPatchFirstMatch = Join-Path $personalArgsRoot "first-match.bin"
 [System.IO.File]::WriteAllBytes($personalPatchFirstMatch, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x11, 0xde, 0xad, 0xbe, 0xef, 0x22))
-$personalPatchFirstMatchResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchFirstMatch, "DEADBEEF", "CAFEBABE")
+$personalPatchFirstMatchResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchFirstMatch, "DEADBEEF", "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchFirstMatchResult.Code -ne 0) { throw "personal patch first-match failed: $($personalPatchFirstMatchResult.Text)" }
 Assert-Contains $personalPatchFirstMatchResult.Text "patched first match at offset 1" "personal patch first-match offset"
 Assert-Equal (Bytes-Hex $personalPatchFirstMatch) "00deadbeef11deadbeef22" "personal patch first-match original unchanged"
@@ -1822,7 +1855,7 @@ Assert-Equal (Bytes-Hex "$personalPatchFirstMatch.patched") "00cafebabe11deadbee
 
 $personalPatchAll = Join-Path $personalArgsRoot "all.bin"
 [System.IO.File]::WriteAllBytes($personalPatchAll, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x11, 0xde, 0xad, 0xbe, 0xef, 0x22))
-$personalPatchAllResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--all", $personalPatchAll, "DEADBEEF", "CAFEBABE")
+$personalPatchAllResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--all", $personalPatchAll, "DEADBEEF", "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchAllResult.Code -ne 0) { throw "personal patch all failed: $($personalPatchAllResult.Text)" }
 Assert-Contains $personalPatchAllResult.Text "patched count: 2" "personal patch all count"
 Assert-Equal (Bytes-Hex $personalPatchAll) "00deadbeef11deadbeef22" "personal patch all original unchanged"
@@ -1830,7 +1863,7 @@ Assert-Equal (Bytes-Hex "$personalPatchAll.patched") "00cafebabe11cafebabe22" "p
 
 $personalPatchOffset = Join-Path $personalArgsRoot "offset.bin"
 [System.IO.File]::WriteAllBytes($personalPatchOffset, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x11))
-$personalPatchOffsetResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "1", $personalPatchOffset, "CAFEBABE")
+$personalPatchOffsetResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "1", $personalPatchOffset, "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchOffsetResult.Code -ne 0) { throw "personal patch offset failed: $($personalPatchOffsetResult.Text)" }
 Assert-Contains $personalPatchOffsetResult.Text "patched offset 1" "personal patch offset marker"
 Assert-Equal (Bytes-Hex $personalPatchOffset) "00deadbeef11" "personal patch offset original unchanged"
@@ -1838,35 +1871,35 @@ Assert-Equal (Bytes-Hex "$personalPatchOffset.patched") "00cafebabe11" "personal
 
 $personalPatchOffsetOob = Join-Path $personalArgsRoot "offset-oob.bin"
 [System.IO.File]::WriteAllBytes($personalPatchOffsetOob, [byte[]](0x00, 0xde, 0xad))
-$personalPatchOffsetOobResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "2", $personalPatchOffsetOob, "CAFEBABE")
+$personalPatchOffsetOobResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "2", $personalPatchOffsetOob, "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchOffsetOobResult.Code -ne 0) { throw "personal patch offset oob failed: $($personalPatchOffsetOobResult.Text)" }
 Assert-Equal $personalPatchOffsetOobResult.Text "error: offset out of bounds" "personal patch offset oob"
 if (Test-Path "$personalPatchOffsetOob.patched") { throw "personal patch offset oob unexpectedly wrote output" }
 
 $personalPatchOffsetBadDecimal = Join-Path $personalArgsRoot "offset-bad-decimal.bin"
 [System.IO.File]::WriteAllBytes($personalPatchOffsetBadDecimal, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef))
-$personalPatchOffsetBadDecimalResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "nope", $personalPatchOffsetBadDecimal, "CAFEBABE")
+$personalPatchOffsetBadDecimalResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "nope", $personalPatchOffsetBadDecimal, "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchOffsetBadDecimalResult.Code -ne 0) { throw "personal patch offset bad decimal failed: $($personalPatchOffsetBadDecimalResult.Text)" }
 Assert-Equal $personalPatchOffsetBadDecimalResult.Text "error: offset must be a decimal integer" "personal patch offset bad decimal"
 if (Test-Path "$personalPatchOffsetBadDecimal.patched") { throw "personal patch offset bad decimal unexpectedly wrote output" }
 
 $personalPatchInvalidHex = Join-Path $personalArgsRoot "invalid-hex.bin"
 [System.IO.File]::WriteAllBytes($personalPatchInvalidHex, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef))
-$personalPatchInvalidHexResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchInvalidHex, "NOTHEX", "CAFEBABE")
+$personalPatchInvalidHexResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchInvalidHex, "NOTHEX", "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchInvalidHexResult.Code -ne 0) { throw "personal patch invalid hex failed: $($personalPatchInvalidHexResult.Text)" }
 Assert-Equal $personalPatchInvalidHexResult.Text "error: invalid find_hex" "personal patch invalid hex"
 if (Test-Path "$personalPatchInvalidHex.patched") { throw "personal patch invalid hex unexpectedly wrote output" }
 
 $personalPatchMissing = Join-Path $personalArgsRoot "missing.bin"
 [System.IO.File]::WriteAllBytes($personalPatchMissing, [byte[]](0x01, 0x02, 0x03, 0x04))
-$personalPatchMissingResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchMissing, "DEADBEEF", "CAFEBABE")
+$personalPatchMissingResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchMissing, "DEADBEEF", "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchMissingResult.Code -ne 0) { throw "personal patch missing failed: $($personalPatchMissingResult.Text)" }
 Assert-Equal $personalPatchMissingResult.Text "pattern not found" "personal patch missing output"
 if (Test-Path "$personalPatchMissing.patched") { throw "personal patch missing unexpectedly wrote output" }
 
 $personalPatchUnequalFile = Join-Path $personalArgsRoot "unequal.bin"
 [System.IO.File]::WriteAllBytes($personalPatchUnequalFile, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00))
-$personalPatchUnequal = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchUnequalFile, "DEADBEEF", "CAFE")
+$personalPatchUnequal = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchUnequalFile, "DEADBEEF", "CAFE") -WorkingDirectory $repoRoot
 if ($personalPatchUnequal.Code -ne 0) { throw "personal patch unequal failed: $($personalPatchUnequal.Text)" }
 Assert-Equal $personalPatchUnequal.Text "error: find_hex and replace_hex must have the same byte length" "personal patch unequal length"
 Assert-Equal (Bytes-Hex $personalPatchUnequalFile) "00deadbeef00" "personal patch unequal original unchanged"
@@ -1874,67 +1907,67 @@ if (Test-Path "$personalPatchUnequalFile.patched") { throw "personal patch unequ
 
 $personalPatchOffsetNeg = Join-Path $personalArgsRoot "offset-neg.bin"
 [System.IO.File]::WriteAllBytes($personalPatchOffsetNeg, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef))
-$personalPatchOffsetNegResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "-1", $personalPatchOffsetNeg, "CAFEBABE")
+$personalPatchOffsetNegResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "-1", $personalPatchOffsetNeg, "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchOffsetNegResult.Code -ne 0) { throw "personal patch offset negative failed: $($personalPatchOffsetNegResult.Text)" }
 Assert-Equal $personalPatchOffsetNegResult.Text "error: offset must be a non-negative decimal integer" "personal patch offset negative"
 if (Test-Path "$personalPatchOffsetNeg.patched") { throw "personal patch offset negative unexpectedly wrote output" }
 
 $personalPatchBadReplace = Join-Path $personalArgsRoot "bad-replace.bin"
 [System.IO.File]::WriteAllBytes($personalPatchBadReplace, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef))
-$personalPatchBadReplaceResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchBadReplace, "DEADBEEF", "ZZZZZZZZ")
+$personalPatchBadReplaceResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalPatchBadReplace, "DEADBEEF", "ZZZZZZZZ") -WorkingDirectory $repoRoot
 if ($personalPatchBadReplaceResult.Code -ne 0) { throw "personal patch invalid replace failed: $($personalPatchBadReplaceResult.Text)" }
 Assert-Equal $personalPatchBadReplaceResult.Text "error: invalid replace_hex" "personal patch invalid replace"
 if (Test-Path "$personalPatchBadReplace.patched") { throw "personal patch invalid replace unexpectedly wrote output" }
 
-$personalPatchOffsetBadReplaceResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "0", $personalPatchBadReplace, "NOTHEX")
+$personalPatchOffsetBadReplaceResult = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "0", $personalPatchBadReplace, "NOTHEX") -WorkingDirectory $repoRoot
 if ($personalPatchOffsetBadReplaceResult.Code -ne 0) { throw "personal patch offset invalid replace failed: $($personalPatchOffsetBadReplaceResult.Text)" }
 Assert-Equal $personalPatchOffsetBadReplaceResult.Text "error: invalid replace_hex" "personal patch offset invalid replace"
 if (Test-Path "$personalPatchBadReplace.patched") { throw "personal patch offset invalid replace unexpectedly wrote output" }
 
 $personalFindNoMatch = Join-Path $personalArgsRoot "no-pattern.bin"
 [System.IO.File]::WriteAllBytes($personalFindNoMatch, [byte[]](0x01, 0x02, 0x03, 0x04))
-$personalFindNoMatchResult = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalFindNoMatch, "DEADBEEF")
+$personalFindNoMatchResult = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalFindNoMatch, "DEADBEEF") -WorkingDirectory $repoRoot
 if ($personalFindNoMatchResult.Code -ne 0) { throw "personal find no match failed: $($personalFindNoMatchResult.Text)" }
 Assert-Contains $personalFindNoMatchResult.Text "pattern: not found" "personal find no match"
 
-$personalHexOob = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "11", "1")
+$personalHexOob = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "11", "1") -WorkingDirectory $repoRoot
 if ($personalHexOob.Code -ne 0) { throw "personal hexdump offset oob failed: $($personalHexOob.Text)" }
 Assert-Equal $personalHexOob.Text "error: offset out of bounds" "personal hexdump offset oob"
 
-$personalHexClamp = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "1", "999")
+$personalHexClamp = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "1", "999") -WorkingDirectory $repoRoot
 if ($personalHexClamp.Code -ne 0) { throw "personal hexdump length clamp failed: $($personalHexClamp.Text)" }
 Assert-Contains $personalHexClamp.Text "range: 1 9" "personal hexdump length clamp header"
 Assert-Contains $personalHexClamp.Text "1 : deadbeef00785634" "personal hexdump length clamp row1"
 Assert-Contains $personalHexClamp.Text "9 : 12" "personal hexdump length clamp row2"
 
-$personalHexNeg = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "-1", "4")
+$personalHexNeg = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "-1", "4") -WorkingDirectory $repoRoot
 if ($personalHexNeg.Code -ne 0) { throw "personal hexdump negative offset failed: $($personalHexNeg.Text)" }
 Assert-Equal $personalHexNeg.Text "error: offset must be a non-negative decimal integer" "personal hexdump negative offset"
 
-$personalHexTwoArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "0")
+$personalHexTwoArgs = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalArgsFile, "0") -WorkingDirectory $repoRoot
 if ($personalHexTwoArgs.Code -ne 0) { throw "personal hexdump two args failed: $($personalHexTwoArgs.Text)" }
 Assert-Contains $personalHexTwoArgs.Text "usage: hexdump <file> [offset length]" "personal hexdump two args usage line"
 Assert-Contains $personalHexTwoArgs.Text "-h, --help" "personal hexdump two args options"
 Assert-Contains $personalHexTwoArgs.Text "example: dbyte run personal_tools/hexdump.dby sample.bin 0 16" "personal hexdump two args example"
 
-$personalU32BadOffset = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "nope", "1")
+$personalU32BadOffset = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "nope", "1") -WorkingDirectory $repoRoot
 if ($personalU32BadOffset.Code -ne 0) { throw "personal u32 bad offset failed: $($personalU32BadOffset.Text)" }
 Assert-Equal $personalU32BadOffset.Text "error: offset must be a decimal integer" "personal u32 bad offset"
 
-$personalU32NegCount = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "0", "-1")
+$personalU32NegCount = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "0", "-1") -WorkingDirectory $repoRoot
 if ($personalU32NegCount.Code -ne 0) { throw "personal u32 negative count failed: $($personalU32NegCount.Text)" }
 Assert-Equal $personalU32NegCount.Text "error: count must be a non-negative decimal integer" "personal u32 negative count"
 
-$personalU32OobStart = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "11", "1")
+$personalU32OobStart = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "11", "1") -WorkingDirectory $repoRoot
 if ($personalU32OobStart.Code -ne 0) { throw "personal u32 start offset oob failed: $($personalU32OobStart.Text)" }
 Assert-Equal $personalU32OobStart.Text "error: offset out of bounds" "personal u32 start offset oob"
 
-$personalU32Args = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile)
+$personalU32Args = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile) -WorkingDirectory $repoRoot
 if ($personalU32Args.Code -ne 0) { throw "personal u32 args failed: $($personalU32Args.Text)" }
 Assert-Contains $personalU32Args.Text "0 -> 3199065600" "personal u32 args first row"
 Assert-Contains $personalU32Args.Text "4 -> 1450705135" "personal u32 args second row"
 
-$personalU32Range = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "6", "1")
+$personalU32Range = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalArgsFile, "6", "1") -WorkingDirectory $repoRoot
 if ($personalU32Range.Code -ne 0) { throw "personal u32 range failed: $($personalU32Range.Text)" }
 Assert-Contains $personalU32Range.Text "6 -> 305419896" "personal u32 range row"
 
@@ -1942,24 +1975,24 @@ $personalSpacedRoot = Join-Path $personalArgsRoot "path with spaces"
 New-Item -ItemType Directory -Path $personalSpacedRoot | Out-Null
 $personalSpacedFile = Join-Path $personalSpacedRoot "quoted sample.bin"
 [System.IO.File]::WriteAllBytes($personalSpacedFile, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00))
-$personalFindSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalSpacedFile, "DEADBEEF")
+$personalFindSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalSpacedFile, "DEADBEEF") -WorkingDirectory $repoRoot
 if ($personalFindSpaced.Code -ne 0) { throw "personal find spaced path failed: $($personalFindSpaced.Text)" }
 Assert-Contains $personalFindSpaced.Text "pattern: 1 0x1" "personal find spaced path"
 
-$personalHexSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalSpacedFile)
+$personalHexSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\hexdump.dby", $personalSpacedFile) -WorkingDirectory $repoRoot
 if ($personalHexSpaced.Code -ne 0) { throw "personal hexdump spaced path failed: $($personalHexSpaced.Text)" }
 Assert-Contains $personalHexSpaced.Text "bytes: 6" "personal hexdump spaced path size"
 
-$personalBinSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby", $personalSpacedFile)
+$personalBinSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\bininfo.dby", $personalSpacedFile) -WorkingDirectory $repoRoot
 if ($personalBinSpaced.Code -ne 0) { throw "personal bininfo spaced path failed: $($personalBinSpaced.Text)" }
 Assert-Contains $personalBinSpaced.Text "bytes: 6" "personal bininfo spaced path size"
 
-$personalPatchSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalSpacedFile, "DEADBEEF", "CAFEBABE")
+$personalPatchSpaced = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalSpacedFile, "DEADBEEF", "CAFEBABE") -WorkingDirectory $repoRoot
 if ($personalPatchSpaced.Code -ne 0) { throw "personal patch spaced path failed: $($personalPatchSpaced.Text)" }
 Assert-Contains $personalPatchSpaced.Text "patched first match at offset 1" "personal patch spaced path"
 Assert-Equal (Bytes-Hex $personalSpacedFile) "00deadbeef00" "personal patch spaced original unchanged"
 
-$personalU32Spaced = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalSpacedFile, "1", "1")
+$personalU32Spaced = Invoke-Dbyte -Arguments @("run", "personal_tools\read_u32_table.dby", $personalSpacedFile, "1", "1") -WorkingDirectory $repoRoot
 if ($personalU32Spaced.Code -ne 0) { throw "personal u32 spaced path failed: $($personalU32Spaced.Text)" }
 Assert-Contains $personalU32Spaced.Text "1 -> 4022250974" "personal u32 spaced path row"
 
@@ -1967,13 +2000,13 @@ if (Test-Path "$personalSpacedFile.patched") {
     Remove-Item -Force "$personalSpacedFile.patched"
 }
 
-$personalUsageFind = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile)
+$personalUsageFind = Invoke-Dbyte -Arguments @("run", "personal_tools\find_bytes.dby", $personalArgsFile) -WorkingDirectory $repoRoot
 if ($personalUsageFind.Code -ne 0) { throw "personal find usage failed: $($personalUsageFind.Text)" }
 Assert-Contains $personalUsageFind.Text "usage: find_bytes <file> <hex_pattern>" "personal find usage line"
 Assert-Contains $personalUsageFind.Text "-h, --help" "personal find usage options"
 Assert-Contains $personalUsageFind.Text "example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF" "personal find usage example"
 
-$personalUsagePatch = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF")
+$personalUsagePatch = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $personalArgsFile, "DEADBEEF") -WorkingDirectory $repoRoot
 if ($personalUsagePatch.Code -ne 0) { throw "personal patch usage failed: $($personalUsagePatch.Text)" }
 Assert-Contains $personalUsagePatch.Text "usage: patch_bytes <file> <find_hex> <replace_hex>" "personal patch usage first line"
 Assert-Contains $personalUsagePatch.Text "patch_bytes --all" "personal patch usage all line"
@@ -2026,13 +2059,13 @@ foreach ($toolEntry in @(
     @{ Name = "read_u32_table"; Path = "read_u32_table.dby" },
     @{ Name = "patch_bytes"; Path = "patch_bytes.dby" }
 )) {
-    $helpResult = Invoke-Dbyte -Arguments @("run", "personal_tools\$($toolEntry.Path)", "--help")
+    $helpResult = Invoke-Dbyte -Arguments @("run", "personal_tools\$($toolEntry.Path)", "--help") -WorkingDirectory $repoRoot
     if ($helpResult.Code -ne 0) { throw "$($toolEntry.Name) --help failed: $($helpResult.Text)" }
     Assert-Contains $helpResult.Text "usage:" "$($toolEntry.Name) --help contains usage:"
     Assert-Contains $helpResult.Text "-h, --help" "$($toolEntry.Name) --help contains -h flag"
     Assert-Contains $helpResult.Text "example:" "$($toolEntry.Name) --help contains example:"
 
-    $shortHelpResult = Invoke-Dbyte -Arguments @("run", "personal_tools\$($toolEntry.Path)", "-h")
+    $shortHelpResult = Invoke-Dbyte -Arguments @("run", "personal_tools\$($toolEntry.Path)", "-h") -WorkingDirectory $repoRoot
     if ($shortHelpResult.Code -ne 0) { throw "$($toolEntry.Name) -h failed: $($shortHelpResult.Text)" }
     Assert-Contains $shortHelpResult.Text "usage:" "$($toolEntry.Name) -h contains usage:"
     Assert-Contains $shortHelpResult.Text "-h, --help" "$($toolEntry.Name) -h contains -h flag"
@@ -2047,7 +2080,7 @@ $patchOutSrc = Join-Path $patchOutRoot "src.bin"
 $patchOutDst = Join-Path $patchOutRoot "dst.bin"
 [System.IO.File]::WriteAllBytes($patchOutSrc, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00))
 
-$patchOutFirst = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $patchOutSrc, "DEADBEEF", "CAFEBABE", "--out", $patchOutDst)
+$patchOutFirst = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", $patchOutSrc, "DEADBEEF", "CAFEBABE", "--out", $patchOutDst) -WorkingDirectory $repoRoot
 if ($patchOutFirst.Code -ne 0) { throw "patch_bytes --out first mode failed: $($patchOutFirst.Text)" }
 Assert-Contains $patchOutFirst.Text "patched first match at offset 1" "patch --out first offset"
 Assert-Contains $patchOutFirst.Text "wrote $patchOutDst" "patch --out first wrote path"
@@ -2061,7 +2094,7 @@ $patchAllOutSrc = Join-Path $patchOutRoot "all-src.bin"
 $patchAllOutDst = Join-Path $patchOutRoot "all-dst.bin"
 [System.IO.File]::WriteAllBytes($patchAllOutSrc, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x11, 0xde, 0xad, 0xbe, 0xef, 0x22))
 
-$patchAllOut = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--all", $patchAllOutSrc, "DEADBEEF", "CAFEBABE", "--out", $patchAllOutDst)
+$patchAllOut = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--all", $patchAllOutSrc, "DEADBEEF", "CAFEBABE", "--out", $patchAllOutDst) -WorkingDirectory $repoRoot
 if ($patchAllOut.Code -ne 0) { throw "patch_bytes --all --out failed: $($patchAllOut.Text)" }
 Assert-Contains $patchAllOut.Text "patched count: 2" "patch --all --out count"
 Assert-Contains $patchAllOut.Text "wrote $patchAllOutDst" "patch --all --out wrote path"
@@ -2075,7 +2108,7 @@ $patchOffOutSrc = Join-Path $patchOutRoot "off-src.bin"
 $patchOffOutDst = Join-Path $patchOutRoot "off-dst.bin"
 [System.IO.File]::WriteAllBytes($patchOffOutSrc, [byte[]](0x00, 0xde, 0xad, 0xbe, 0xef, 0x00))
 
-$patchOffOut = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "1", $patchOffOutSrc, "CAFEBABE", "--out", $patchOffOutDst)
+$patchOffOut = Invoke-Dbyte -Arguments @("run", "personal_tools\patch_bytes.dby", "--offset", "1", $patchOffOutSrc, "CAFEBABE", "--out", $patchOffOutDst) -WorkingDirectory $repoRoot
 if ($patchOffOut.Code -ne 0) { throw "patch_bytes --offset --out failed: $($patchOffOut.Text)" }
 Assert-Contains $patchOffOut.Text "patched offset 1" "patch --offset --out marker"
 Assert-Contains $patchOffOut.Text "wrote $patchOffOutDst" "patch --offset --out wrote path"
@@ -2116,7 +2149,7 @@ try {
     if (Test-Path (Join-Path $sanctumRoot "workspace\sample.bin")) { throw "sanctum clean failed to remove sample.bin" }
 
     # 4. Cross-directory verify
-    $sanctumStatusRoot = Invoke-Dbyte -Arguments @("run", "examples\sanctum\sanctum_status.dby")
+    $sanctumStatusRoot = Invoke-Dbyte -Arguments @("run", "examples\sanctum\sanctum_status.dby") -WorkingDirectory $repoRoot
     if ($sanctumStatusRoot.Code -ne 0) { throw "sanctum status from root failed: $($sanctumStatusRoot.Text)" }
     Assert-Contains $sanctumStatusRoot.Text "[OK] workspace" "sanctum status from root"
 
@@ -5267,16 +5300,17 @@ Assert-Contains $readme "dbyte run personal_tools\read_u32_table.dby" "README pe
 
 Write-Host "Running project workflow tests..."
 
-Push-Location (Join-Path $repoRoot "tests\project\basic")
+$basicProjectRoot = Join-Path $repoRoot "tests\project\basic"
+Push-Location $basicProjectRoot
 try {
-    $result = Invoke-Dbyte -Arguments @("run")
+    $result = Invoke-Dbyte -Arguments @("run") -WorkingDirectory $basicProjectRoot
     if ($result.Code -ne 0) { throw "basic project run failed: $($result.Text)" }
     $expected = (Get-Content "expected.out" -Raw).Trim()
     Assert-Equal $result.Text $expected "basic project run"
-    $vmResult = Invoke-Dbyte -Arguments @("run", "--vm")
+    $vmResult = Invoke-Dbyte -Arguments @("run", "--vm") -WorkingDirectory $basicProjectRoot
     if ($vmResult.Code -ne 0) { throw "basic project vm run failed: $($vmResult.Text)" }
     Assert-Equal $vmResult.Text $expected "basic project vm run"
-    $checkResult = Invoke-Dbyte -Arguments @("check")
+    $checkResult = Invoke-Dbyte -Arguments @("check") -WorkingDirectory $basicProjectRoot
     if ($checkResult.Code -ne 0) { throw "basic project check failed: $($checkResult.Text)" }
     Assert-Contains $checkResult.Text "no type errors found" "basic project check"
 }
@@ -5284,9 +5318,10 @@ finally {
     Pop-Location
 }
 
-Push-Location (Join-Path $repoRoot "tests\project\missing_manifest")
+$missingManifestProjectRoot = Join-Path $repoRoot "tests\project\missing_manifest"
+Push-Location $missingManifestProjectRoot
 try {
-    $result = Invoke-Dbyte -Arguments @("run")
+    $result = Invoke-Dbyte -Arguments @("run") -WorkingDirectory $missingManifestProjectRoot
     if ($result.Code -eq 0) { throw "missing manifest project unexpectedly passed" }
     $expected = (Get-Content "expected.err" -Raw).Trim()
     Assert-Contains $result.Text $expected "missing manifest project"
@@ -5295,9 +5330,10 @@ finally {
     Pop-Location
 }
 
-Push-Location (Join-Path $repoRoot "tests\project\missing_entry")
+$missingEntryProjectRoot = Join-Path $repoRoot "tests\project\missing_entry"
+Push-Location $missingEntryProjectRoot
 try {
-    $result = Invoke-Dbyte -Arguments @("run")
+    $result = Invoke-Dbyte -Arguments @("run") -WorkingDirectory $missingEntryProjectRoot
     if ($result.Code -eq 0) { throw "missing entry project unexpectedly passed" }
     $expected = (Get-Content "expected.err" -Raw).Trim()
     Assert-Contains $result.Text $expected "missing entry project"
@@ -5306,9 +5342,10 @@ finally {
     Pop-Location
 }
 
-Push-Location (Join-Path $repoRoot "tests\project\invalid_manifest")
+$invalidManifestProjectRoot = Join-Path $repoRoot "tests\project\invalid_manifest"
+Push-Location $invalidManifestProjectRoot
 try {
-    $result = Invoke-Dbyte -Arguments @("run")
+    $result = Invoke-Dbyte -Arguments @("run") -WorkingDirectory $invalidManifestProjectRoot
     if ($result.Code -eq 0) { throw "invalid manifest project unexpectedly passed" }
     $expected = (Get-Content "expected.err" -Raw).Trim()
     Assert-Contains $result.Text $expected "invalid manifest project"
@@ -5317,13 +5354,14 @@ finally {
     Pop-Location
 }
 
-Push-Location (Join-Path $repoRoot "tests\project\nested_run\src\tools")
+$nestedProjectRoot = Join-Path $repoRoot "tests\project\nested_run\src\tools"
+Push-Location $nestedProjectRoot
 try {
-    $result = Invoke-Dbyte -Arguments @("run")
+    $result = Invoke-Dbyte -Arguments @("run") -WorkingDirectory $nestedProjectRoot
     if ($result.Code -ne 0) { throw "nested project run failed: $($result.Text)" }
     $expected = (Get-Content "..\..\expected.out" -Raw).Trim()
     Assert-Equal $result.Text $expected "nested project run"
-    $vmResult = Invoke-Dbyte -Arguments @("run", "--vm")
+    $vmResult = Invoke-Dbyte -Arguments @("run", "--vm") -WorkingDirectory $nestedProjectRoot
     if ($vmResult.Code -ne 0) { throw "nested project vm run failed: $($vmResult.Text)" }
     Assert-Equal $vmResult.Text $expected "nested project vm run"
 }
@@ -5338,17 +5376,18 @@ if (Test-Path $newRoot) {
 New-Item -ItemType Directory -Path $newRoot | Out-Null
 Push-Location $newRoot
 try {
-    $result = Invoke-Dbyte -Arguments @("new", "scanner")
+    $result = Invoke-Dbyte -Arguments @("new", "scanner") -WorkingDirectory $newRoot
     if ($result.Code -ne 0) { throw "dbyte new failed: $($result.Text)" }
-    Push-Location "scanner"
+    $scannerProjectRoot = Join-Path $newRoot "scanner"
+    Push-Location $scannerProjectRoot
     try {
-        $runResult = Invoke-Dbyte -Arguments @("run")
+        $runResult = Invoke-Dbyte -Arguments @("run") -WorkingDirectory $scannerProjectRoot
         if ($runResult.Code -ne 0) { throw "new project run failed: $($runResult.Text)" }
         Assert-Equal $runResult.Text "hello from scanner" "new project run"
-        $vmRunResult = Invoke-Dbyte -Arguments @("run", "--vm")
+        $vmRunResult = Invoke-Dbyte -Arguments @("run", "--vm") -WorkingDirectory $scannerProjectRoot
         if ($vmRunResult.Code -ne 0) { throw "new project vm run failed: $($vmRunResult.Text)" }
         Assert-Equal $vmRunResult.Text "hello from scanner" "new project vm run"
-        $testResult = Invoke-Dbyte -Arguments @("test")
+        $testResult = Invoke-Dbyte -Arguments @("test") -WorkingDirectory $scannerProjectRoot
         if ($testResult.Code -ne 0) { throw "new project test failed: $($testResult.Text)" }
         Assert-Contains $testResult.Text "Test result: 1 passed, 0 failed" "new project test"
     }
