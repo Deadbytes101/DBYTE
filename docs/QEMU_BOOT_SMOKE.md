@@ -985,6 +985,8 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     - runtime IRQ active: no
     - keyboard IRQ path: disabled
     pic unmask smoke: blocked
+
+    v10.2.1 hardens the PIC unmask smoke verification surface without changing these rendered outputs.
     dbyte-kernel> irq-runtime-status
     IRQ runtime readiness status
     pic remap: not ready

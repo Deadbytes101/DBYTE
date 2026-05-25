@@ -127,6 +127,12 @@ hardware mutation: no
 runtime irq active: no
 ```
 
+## Controlled PIC Mask Unmask Smoke Hardening
+
+`v10.2.1` hardens the controlled PIC unmask smoke surface without adding runtime behavior or changing output wording from v10.2.0.
+
+Verification now pins the four `pic-unmask-smoke-*` command templates, rendered QEMU snapshots, helper and command blocks as read-only surfaces, and the absence of PIC data-port unmask writes through `write_pic_port(PIC_MASTER_DATA, ...)` or `write_pic_port(PIC_SLAVE_DATA, ...)`. The existing runtime invariants remain locked: no `sti`, no runtime EOI dispatch, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
+
 ## IRQ Gate Binding Plan
 
 To support external hardware interrupts safely, the kernel maps Master and Slave PIC IRQ lines to CPU vectors 32 through 47. The gate binding plan outlines the future installation of these gates in the Interrupt Descriptor Table (IDT).
