@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.8.0"' "kernel-lab version 9.8.0"
+Assert-Contains $cargoContent 'version = "9.8.1"' "kernel-lab version 9.8.1"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.8.0"' "kernel-lab current version 9.8.0"
+Assert-Contains $cargoContent930 'version = "9.8.1"' "kernel-lab current version 9.8.1"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "9.8.0"' "kernel-lab current version 9.8.0"
+Assert-Contains $cargoContent931 'version = "9.8.1"' "kernel-lab current version 9.8.1"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "9.8.0"' "kernel-lab current version 9.8.0"
+Assert-Contains $cargoContent940 'version = "9.8.1"' "kernel-lab current version 9.8.1"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -916,7 +916,7 @@ $irrContent941 = Get-Content $irrRs -Raw
 $picContent941 = Get-Content $picRs -Raw
 $mainContent941 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent941 'version = "9.8.0"' "kernel-lab current version 9.8.0"
+Assert-Contains $cargoContent941 'version = "9.8.1"' "kernel-lab current version 9.8.1"
 Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
 
 $matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
@@ -1023,7 +1023,7 @@ $irrContent950 = Get-Content $irrRs -Raw
 $picContent950 = Get-Content $picRs -Raw
 $mainContent950 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent950 'version = "9.8.0"' "kernel-lab current version 9.8.0"
+Assert-Contains $cargoContent950 'version = "9.8.1"' "kernel-lab current version 9.8.1"
 Assert-NotContains $cargoContent950 'version = "9.4.1"' "kernel-lab stale v9.4.1 package version guard"
 Assert-Contains $mainContent950 'irq-runtime-next irq-runtime-activation-plan' "help string includes v9.5.0 activation command"
 Assert-Contains $mainContent950 'line_str == "irq-runtime-activation-plan"' "irq-runtime-activation-plan dispatcher"
@@ -1101,7 +1101,7 @@ $irrContent951 = Get-Content $irrRs -Raw
 $picContent951 = Get-Content $picRs -Raw
 $mainContent951 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent951 'version = "9.8.0"' "kernel-lab current version 9.8.0"
+Assert-Contains $cargoContent951 'version = "9.8.1"' "kernel-lab current version 9.8.1"
 Assert-NotContains $cargoContent951 'version = "9.5.0"' "kernel-lab stale v9.5.0 package version guard"
 Assert-Contains $mainContent951 'irq-runtime-activation-plan' "v9.5.1 activation plan command remains exposed"
 Assert-Contains $mainContent951 'line_str == "irq-runtime-commit"' "v9.5.1 irq-runtime-commit dispatcher remains exposed"
@@ -1210,7 +1210,7 @@ $mainContent960 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs960 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs960 = $kernelBootSmokeDocs960 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent960 'version = "9.8.0"' "kernel-lab version 9.8.0"
+Assert-Contains $cargoContent960 'version = "9.8.1"' "kernel-lab version 9.8.1"
 Assert-NotContains $cargoContent960 'version = "9.5.1"' "kernel-lab stale v9.5.1 package version guard"
 Assert-Contains $mainContent960 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string includes v9.6.0 token commands"
 Assert-Contains $mainContent960 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher"
@@ -1324,7 +1324,7 @@ $mainContent961 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs961 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs961 = $kernelBootSmokeDocs961 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent961 'version = "9.8.0"' "kernel-lab version 9.8.0"
+Assert-Contains $cargoContent961 'version = "9.8.1"' "kernel-lab version 9.8.1"
 Assert-NotContains $cargoContent961 'version = "9.6.0"' "kernel-lab stale v9.6.0 package version guard"
 Assert-Contains $mainContent961 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string preserves v9.6.1 token commands"
 Assert-Contains $mainContent961 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher remains exposed"
@@ -1449,7 +1449,7 @@ $mainContent971 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs971 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs971 = $kernelBootSmokeDocs971 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent971 'version = "9.8.0"' "kernel-lab version 9.8.0"
+Assert-Contains $cargoContent971 'version = "9.8.1"' "kernel-lab version 9.8.1"
 Assert-NotContains $cargoContent971 'version = "9.7.0"' "kernel-lab stale v9.7.0 package version guard"
 Assert-Contains $mainContent971 'irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers' "help string includes v9.7.1 gate commands"
 Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-note"' "irq-runtime-gate-note dispatcher"
@@ -1612,9 +1612,9 @@ $mainContent980 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs980 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs980 = $kernelBootSmokeDocs980 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent980 'version = "9.8.0"' "kernel-lab version 9.8.0"
+Assert-Contains $cargoContent980 'version = "9.8.1"' "kernel-lab version 9.8.1"
 Assert-NotContains $cargoContent980 'version = "9.7.1"' "kernel-lab stale v9.7.1 package version guard"
-Assert-Contains $kernelCargoLockContent980 'version = "9.8.0"' "kernel-lab lockfile version 9.8.0"
+Assert-Contains $kernelCargoLockContent980 'version = "9.8.1"' "kernel-lab lockfile version 9.8.1"
 Assert-NotContains $kernelCargoLockContent980 'version = "9.7.1"' "kernel-lab stale v9.7.1 lockfile version guard"
 Assert-Contains $mainContent980 'irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers' "help string includes v9.8.0 simulation commands"
 Assert-Contains $mainContent980 'line_str == "irq-runtime-sim-note"' "irq-runtime-sim-note dispatcher"
@@ -1757,6 +1757,148 @@ Assert-NotContains $mainContent980 'keyboard_irq' "v9.8.0 kernel main has no key
 Assert-Contains $mainContent980 'polling-only' "v9.8.0 keyboard polling telemetry unchanged"
 
 Write-Host "[OK] v9.8.0 Controlled Activation Simulation Harness verified"
+
+# v9.8.1: Controlled Activation Simulation Harness Hardening
+Write-Host "Verifying v9.8.1 Controlled Activation Simulation Harness Hardening contracts..."
+$v980Tag = & git rev-list -n 1 v9.8.0 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v980Tag) { throw "v9.8.0 tag not found (required baseline)" }
+if ($HEAD -eq $v980Tag) { throw "HEAD is still v9.8.0, v9.8.1 work not completed" }
+Write-Host "[OK] v9.8.1 branch is beyond v9.8.0 locked baseline"
+
+$cargoContent981 = Get-Content $cargoToml -Raw
+$kernelCargoLockContent981 = Get-Content (Join-Path $repoRoot "kernel-lab\Cargo.lock") -Raw
+$irrContent981 = Get-Content $irrRs -Raw
+$picContent981 = Get-Content $picRs -Raw
+$mainContent981 = Get-Content $mainRs -Raw
+$kernelBootSmokeDocs981 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
+$kernelBootSmokeDocs981 = $kernelBootSmokeDocs981 -replace "`r`n", "`n"
+
+Assert-Contains $cargoContent981 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-NotContains $cargoContent981 'version = "9.8.0"' "kernel-lab stale v9.8.0 package version guard"
+Assert-Contains $kernelCargoLockContent981 'version = "9.8.1"' "kernel-lab lockfile version 9.8.1"
+Assert-NotContains $kernelCargoLockContent981 'version = "9.8.0"' "kernel-lab stale v9.8.0 lockfile version guard"
+
+$simHelperStart981 = $irrContent981.IndexOf('pub fn irq_runtime_activation_simulation(')
+$simHelperEnd981 = $irrContent981.Length
+if ($simHelperStart981 -lt 0) { throw "v9.8.1 simulation helper isolation failed" }
+$simHelperBlock981 = $irrContent981.Substring($simHelperStart981, $simHelperEnd981 - $simHelperStart981)
+
+$simNoteStart981 = $mainContent981.IndexOf('} else if line_str == "irq-runtime-sim-note" {')
+$simStatusStart981 = $mainContent981.IndexOf('} else if line_str == "irq-runtime-sim-status" {')
+$simRunStart981 = $mainContent981.IndexOf('} else if line_str == "irq-runtime-sim-run" {')
+$simBlockersStart981 = $mainContent981.IndexOf('} else if line_str == "irq-runtime-sim-blockers" {')
+$simBlockersEnd981 = $mainContent981.IndexOf('} else if line_str == "eoi-runtime-note" {', $simBlockersStart981)
+if ($simNoteStart981 -lt 0 -or $simStatusStart981 -lt $simNoteStart981 -or $simRunStart981 -lt $simStatusStart981 -or $simBlockersStart981 -lt $simRunStart981 -or $simBlockersEnd981 -lt $simBlockersStart981) {
+    throw "v9.8.1 simulation command block isolation failed"
+}
+$simNoteBlock981 = $mainContent981.Substring($simNoteStart981, $simStatusStart981 - $simNoteStart981)
+$simStatusBlock981 = $mainContent981.Substring($simStatusStart981, $simRunStart981 - $simStatusStart981)
+$simRunBlock981 = $mainContent981.Substring($simRunStart981, $simBlockersStart981 - $simRunStart981)
+$simBlockersBlock981 = $mainContent981.Substring($simBlockersStart981, $simBlockersEnd981 - $simBlockersStart981)
+
+Assert-Contains $mainContent981 'irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers' "help string includes v9.8.1 simulation commands"
+Assert-Contains $mainContent981 'line_str == "irq-runtime-sim-note"' "v9.8.1 irq-runtime-sim-note dispatcher"
+Assert-Contains $mainContent981 'line_str == "irq-runtime-sim-status"' "v9.8.1 irq-runtime-sim-status dispatcher"
+Assert-Contains $mainContent981 'line_str == "irq-runtime-sim-run"' "v9.8.1 irq-runtime-sim-run dispatcher"
+Assert-Contains $mainContent981 'line_str == "irq-runtime-sim-blockers"' "v9.8.1 irq-runtime-sim-blockers dispatcher"
+Assert-Contains $irrContent981 'pub struct IrqRuntimeActivationSimulation' "v9.8.1 simulation telemetry struct"
+Assert-Contains $irrContent981 'pub fn irq_runtime_activation_simulation(' "v9.8.1 simulation telemetry helper"
+
+Assert-Contains $simNoteBlock981 $irqRuntimeSimNoteExact980 "v9.8.1 simulation note exact output"
+Assert-Contains $simStatusBlock981 $irqRuntimeSimStatusExact980 "v9.8.1 simulation status exact output"
+Assert-Contains $simRunBlock981 $irqRuntimeSimRunExact980 "v9.8.1 simulation run exact output"
+Assert-Contains $simBlockersBlock981 $irqRuntimeSimBlockersExact980 "v9.8.1 simulation blockers exact output"
+Assert-Contains $kernelBootSmokeDocs981 $expectedQemuIrqRuntimeSimNoteOutput980 "v9.8.1 qemu docs simulation note exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs981 $expectedQemuIrqRuntimeSimStatusOutput980 "v9.8.1 qemu docs simulation status exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs981 $expectedQemuIrqRuntimeSimRunOutput980 "v9.8.1 qemu docs simulation run exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs981 $expectedQemuIrqRuntimeSimBlockersOutput980 "v9.8.1 qemu docs simulation blockers exact rendered contract"
+Assert-ContainsInOrder $simBlockersBlock981 @(
+    '- activation token: {}',
+    '- gate decision: {}',
+    '- readiness matrix: {}',
+    '- dry-run commit: {}',
+    '- EOI runtime boundary: {}',
+    '- STI would enable: {}',
+    '- PIC unmask would apply: {}',
+    '- EOI dispatch would enable: {}',
+    'activation allowed: {}'
+) "v9.8.1 simulation blocker ordering"
+
+foreach ($simReadBlock981 in @($simStatusBlock981, $simRunBlock981, $simBlockersBlock981)) {
+    Assert-ContainsInOrder $simReadBlock981 @(
+        'pic::ProgrammableInterruptController::pic_remap_state();',
+        'irq::irq_gate_bind_state();',
+        'pic::ProgrammableInterruptController::pic_mask_plan();',
+        'pic::ProgrammableInterruptController::pic_mask_status();',
+        'irq::eoi_runtime_check_all_preconditions(pic_state.executed);',
+        'irq::irq_runtime_matrix(',
+        'irq::irq_runtime_activation_dry_run(&matrix);',
+        'irq::irq_runtime_activation_token_status();',
+        'irq::irq_runtime_activation_gate(',
+        'irq::irq_runtime_activation_simulation('
+    ) "v9.8.1 simulation reader ordering"
+}
+
+foreach ($forbiddenSimNoteRead in @(
+    'pic::ProgrammableInterruptController::pic_remap_state();',
+    'irq::irq_gate_bind_state();',
+    'pic::ProgrammableInterruptController::pic_mask_plan();',
+    'pic::ProgrammableInterruptController::pic_mask_status();',
+    'irq::eoi_runtime_check_all_preconditions(',
+    'irq::irq_runtime_matrix(',
+    'irq::irq_runtime_activation_dry_run(',
+    'irq::irq_runtime_activation_token_status();',
+    'irq::irq_runtime_activation_gate(',
+    'irq::irq_runtime_activation_simulation('
+)) {
+    Assert-NotContains $simNoteBlock981 $forbiddenSimNoteRead "v9.8.1 simulation note remains constant-only: $forbiddenSimNoteRead"
+}
+
+foreach ($simBlock981 in @($simNoteBlock981, $simStatusBlock981, $simRunBlock981, $simBlockersBlock981, $simHelperBlock981)) {
+    foreach ($blockedCall981 in @(
+        'write_pic_port(',
+        'outb(',
+        'set_handler(',
+        'irq::irq_runtime_commit()',
+        'irq::irq_runtime_arm()',
+        'irq_runtime_activation_token_arm()',
+        'irq_runtime_activation_token_clear()',
+        'pic::ProgrammableInterruptController::pic_remap_controlled_smoke()',
+        'irq::irq_gate_bind_smoke_mark_bound()',
+        'write_pic_port(PIC_MASTER_CMD, PIC_EOI)',
+        'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)',
+        'asm!("sti")'
+    )) {
+        Assert-NotContains $simBlock981 $blockedCall981 "v9.8.1 simulation path is read-only: $blockedCall981"
+    }
+}
+
+Assert-Contains $simStatusBlock981 'simulation.simulated_activation_allowed' "v9.8.1 simulation status reports activation denied"
+Assert-Contains $simStatusBlock981 'simulation.runtime_irq_active' "v9.8.1 simulation status reports inactive runtime IRQ"
+Assert-Contains $simRunBlock981 'simulation.hardware_mutation' "v9.8.1 simulation run reports no hardware mutation"
+Assert-Contains $simRunBlock981 'simulation.sti_would_enable' "v9.8.1 simulation run reports STI would not enable"
+Assert-Contains $simRunBlock981 'simulation.pic_unmask_would_apply' "v9.8.1 simulation run reports PIC unmask would not apply"
+Assert-Contains $simRunBlock981 'simulation.eoi_dispatch_would_enable' "v9.8.1 simulation run reports EOI dispatch would not enable"
+Assert-Contains $simRunBlock981 'simulation.keyboard_mode' "v9.8.1 simulation run keeps keyboard polling"
+Assert-NotContains $irrContent981 'asm!("sti")' "v9.8.1 irq source still has no STI"
+Assert-NotContains $mainContent981 'asm!("sti")' "v9.8.1 kernel main still has no STI"
+Assert-Contains $picContent981 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.8.1 safe mask-all constant remains allowed"
+foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
+    Assert-NotContains $mainContent981 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.8.1 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent981 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.8.1 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent981 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.8.1 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent981 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.8.1 no slave unmask literal $literal in pic.rs"
+}
+Assert-NotContains $mainContent981 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.8.1 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent981 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.8.1 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent981 'timer_interrupt_handler_stub' "v9.8.1 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent981 'keyboard_interrupt_handler_stub' "v9.8.1 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent981 'timer_irq' "v9.8.1 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent981 'keyboard_irq' "v9.8.1 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent981 'polling-only' "v9.8.1 keyboard polling telemetry unchanged"
+
+Write-Host "[OK] v9.8.1 Controlled Activation Simulation Harness Hardening verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
