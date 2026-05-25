@@ -991,6 +991,7 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     pic unmask smoke: blocked
 
     v10.2.1 hardens the PIC unmask smoke verification surface without changing these rendered outputs.
+    v10.3.1 hardens the IDT runtime bind smoke verification surface without changing these rendered outputs; this surface remains a runtime bind smoke plan, not a live runtime handler bind.
     dbyte-kernel> idt-runtime-bind-smoke-note
     IDT runtime bind smoke note
     scope: controlled dry-run foundation

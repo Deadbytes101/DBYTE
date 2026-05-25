@@ -162,6 +162,12 @@ hardware mutation: no
 runtime irq active: no
 ```
 
+## Controlled IDT Runtime Bind Smoke Hardening
+
+`v10.3.1` hardens the controlled IDT runtime bind smoke surface without adding commands, changing output wording, or changing runtime behavior. The `idt-runtime-bind-smoke-*` commands remain a smoke plan and contract surface only; they do not bind runtime handlers, do not call `set_handler(`, do not enable `sti`, do not unmask PIC IRQ lines, do not dispatch runtime EOI, and do not activate live IRQ0/IRQ1 paths.
+
+Verification now pins the four command templates, rendered QEMU snapshots, helper and command blocks as read-only surfaces, and the rule that `idt::IDT.entries[32].set_handler` / `idt::IDT.entries[33].set_handler` remain allowed only inside the older armed `irq-gate-bind-smoke` controlled smoke path. Keyboard input remains polling-only through PS/2 status/scancode reads.
+
 ## IRQ Gate Binding Plan
 
 To support external hardware interrupts safely, the kernel maps Master and Slave PIC IRQ lines to CPU vectors 32 through 47. The gate binding plan outlines the future installation of these gates in the Interrupt Descriptor Table (IDT).
