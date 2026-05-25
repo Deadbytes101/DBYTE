@@ -206,8 +206,8 @@ pub extern "C" fn kernel_main() -> ! {
                                     // Convert and process submitted line
                                     if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
@@ -1538,6 +1538,206 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.pic_unmask_would_apply,
                                                     simulation.eoi_dispatch_would_enable,
                                                     simulation.simulated_activation_allowed
+                                                );
+                                            } else if line_str == "sti-plan" {
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
+                                                    irq::IRQ_MATRIX_STI_DISABLED,
+                                                    irq::STI_PLAN_TOKEN_REQUIRED,
+                                                    irq::STI_PLAN_RUNTIME_GATE_NOT_ALLOWED,
+                                                    irq::IRQ_ACTIVATION_GATE_READINESS_BLOCKED,
+                                                    irq::STI_PLAN_PIC_UNMASK_DISABLED,
+                                                    irq::STI_PLAN_EOI_DISPATCH_DISABLED,
+                                                    irq::IRQ_MATRIX_KEYBOARD_MODE_POLLING,
+                                                    irq::IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO
+                                                );
+                                                let _ = write!(serial_writer, "STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
+                                                    irq::IRQ_MATRIX_STI_DISABLED,
+                                                    irq::STI_PLAN_TOKEN_REQUIRED,
+                                                    irq::STI_PLAN_RUNTIME_GATE_NOT_ALLOWED,
+                                                    irq::IRQ_ACTIVATION_GATE_READINESS_BLOCKED,
+                                                    irq::STI_PLAN_PIC_UNMASK_DISABLED,
+                                                    irq::STI_PLAN_EOI_DISPATCH_DISABLED,
+                                                    irq::IRQ_MATRIX_KEYBOARD_MODE_POLLING,
+                                                    irq::IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO
+                                                );
+                                            } else if line_str == "sti-status" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
+                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
+                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                                let matrix = irq::irq_runtime_matrix(
+                                                    pic_state.executed,
+                                                    gate_state.executed,
+                                                    eoi_ready,
+                                                    mask_plan.mask_policy,
+                                                    irq::irq_runtime_is_armed(),
+                                                    irq::irq_runtime_is_committed(),
+                                                );
+                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
+                                                let token = irq::irq_runtime_activation_token_status();
+                                                let gate = irq::irq_runtime_activation_gate(
+                                                    token,
+                                                    matrix,
+                                                    activation,
+                                                    eoi_ready,
+                                                    mask_plan.mask_policy,
+                                                    mask_plan.unmask_policy,
+                                                );
+                                                let simulation = irq::irq_runtime_activation_simulation(
+                                                    token,
+                                                    matrix,
+                                                    activation,
+                                                    gate,
+                                                );
+                                                let sti_plan = irq::sti_controlled_activation_plan(
+                                                    token,
+                                                    matrix,
+                                                    gate,
+                                                    simulation,
+                                                );
+                                                core::hint::black_box(mask_status);
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n",
+                                                    sti_plan.activation_token,
+                                                    sti_plan.runtime_gate,
+                                                    sti_plan.readiness_matrix,
+                                                    sti_plan.simulation,
+                                                    sti_plan.sti_instruction,
+                                                    sti_plan.sti_allowed,
+                                                    sti_plan.runtime_irq_active
+                                                );
+                                                let _ = write!(serial_writer, "STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n",
+                                                    sti_plan.activation_token,
+                                                    sti_plan.runtime_gate,
+                                                    sti_plan.readiness_matrix,
+                                                    sti_plan.simulation,
+                                                    sti_plan.sti_instruction,
+                                                    sti_plan.sti_allowed,
+                                                    sti_plan.runtime_irq_active
+                                                );
+                                            } else if line_str == "sti-preflight" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
+                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
+                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                                let matrix = irq::irq_runtime_matrix(
+                                                    pic_state.executed,
+                                                    gate_state.executed,
+                                                    eoi_ready,
+                                                    mask_plan.mask_policy,
+                                                    irq::irq_runtime_is_armed(),
+                                                    irq::irq_runtime_is_committed(),
+                                                );
+                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
+                                                let token = irq::irq_runtime_activation_token_status();
+                                                let gate = irq::irq_runtime_activation_gate(
+                                                    token,
+                                                    matrix,
+                                                    activation,
+                                                    eoi_ready,
+                                                    mask_plan.mask_policy,
+                                                    mask_plan.unmask_policy,
+                                                );
+                                                let simulation = irq::irq_runtime_activation_simulation(
+                                                    token,
+                                                    matrix,
+                                                    activation,
+                                                    gate,
+                                                );
+                                                let sti_plan = irq::sti_controlled_activation_plan(
+                                                    token,
+                                                    matrix,
+                                                    gate,
+                                                    simulation,
+                                                );
+                                                core::hint::black_box(mask_status);
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                                    sti_plan.token_gate,
+                                                    sti_plan.readiness_matrix,
+                                                    sti_plan.eoi_runtime_boundary,
+                                                    sti_plan.pic_unmask_policy,
+                                                    sti_plan.hardware_mutation,
+                                                    sti_plan.keyboard_mode,
+                                                    sti_plan.result,
+                                                    sti_plan.next
+                                                );
+                                                let _ = write!(serial_writer, "STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                                    sti_plan.token_gate,
+                                                    sti_plan.readiness_matrix,
+                                                    sti_plan.eoi_runtime_boundary,
+                                                    sti_plan.pic_unmask_policy,
+                                                    sti_plan.hardware_mutation,
+                                                    sti_plan.keyboard_mode,
+                                                    sti_plan.result,
+                                                    sti_plan.next
+                                                );
+                                            } else if line_str == "sti-blockers" {
+                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                                let gate_state = irq::irq_gate_bind_state();
+                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
+                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                                let matrix = irq::irq_runtime_matrix(
+                                                    pic_state.executed,
+                                                    gate_state.executed,
+                                                    eoi_ready,
+                                                    mask_plan.mask_policy,
+                                                    irq::irq_runtime_is_armed(),
+                                                    irq::irq_runtime_is_committed(),
+                                                );
+                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
+                                                let token = irq::irq_runtime_activation_token_status();
+                                                let gate = irq::irq_runtime_activation_gate(
+                                                    token,
+                                                    matrix,
+                                                    activation,
+                                                    eoi_ready,
+                                                    mask_plan.mask_policy,
+                                                    mask_plan.unmask_policy,
+                                                );
+                                                let simulation = irq::irq_runtime_activation_simulation(
+                                                    token,
+                                                    matrix,
+                                                    activation,
+                                                    gate,
+                                                );
+                                                let sti_plan = irq::sti_controlled_activation_plan(
+                                                    token,
+                                                    matrix,
+                                                    gate,
+                                                    simulation,
+                                                );
+                                                core::hint::black_box(mask_status);
+                                                let mut vga_writer = vga::VgaWriter;
+                                                let mut serial_writer = serial::SerialWriter;
+                                                let _ = write!(vga_writer, "STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n",
+                                                    sti_plan.activation_token,
+                                                    sti_plan.runtime_gate,
+                                                    irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
+                                                    sti_plan.simulation,
+                                                    sti_plan.eoi_runtime_boundary,
+                                                    sti_plan.pic_unmask,
+                                                    sti_plan.eoi_dispatch,
+                                                    sti_plan.keyboard_mode,
+                                                    sti_plan.sti_allowed
+                                                );
+                                                let _ = write!(serial_writer, "STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n",
+                                                    sti_plan.activation_token,
+                                                    sti_plan.runtime_gate,
+                                                    irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
+                                                    sti_plan.simulation,
+                                                    sti_plan.eoi_runtime_boundary,
+                                                    sti_plan.pic_unmask,
+                                                    sti_plan.eoi_dispatch,
+                                                    sti_plan.keyboard_mode,
+                                                    sti_plan.sti_allowed
                                                 );
                                             } else if line_str == "eoi-runtime-note" {
                                                 let mut vga_writer = vga::VgaWriter;

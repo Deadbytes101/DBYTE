@@ -223,6 +223,13 @@ pub const IRQ_ACTIVATION_SIM_PIC_UNMASK_WOULD_APPLY_NO: &str = "no";
 pub const IRQ_ACTIVATION_SIM_EOI_DISPATCH_WOULD_ENABLE_NO: &str = "no";
 pub const IRQ_ACTIVATION_SIM_RESULT_BLOCKED: &str = "simulation blocked";
 pub const IRQ_ACTIVATION_SIM_NEXT_BLOCKERS: &str = "execute irq-runtime-sim-blockers";
+pub const STI_PLAN_TOKEN_REQUIRED: &str = "required";
+pub const STI_PLAN_RUNTIME_GATE_NOT_ALLOWED: &str = "not allowed";
+pub const STI_PLAN_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const STI_PLAN_EOI_DISPATCH_DISABLED: &str = "disabled";
+pub const STI_PLAN_ALLOWED_NO: &str = "no";
+pub const STI_PLAN_RESULT_BLOCKED: &str = "blocked";
+pub const STI_PLAN_NEXT_BLOCKERS: &str = "execute sti-blockers";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -368,6 +375,27 @@ pub struct IrqRuntimeActivationSimulation {
     pub pic_unmask_would_apply: &'static str,
     pub eoi_dispatch_would_enable: &'static str,
     pub keyboard_mode: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub result: &'static str,
+    pub next: &'static str,
+}
+
+/// Read-only STI activation plan derived from the controlled activation telemetry stack.
+#[derive(Copy, Clone)]
+pub struct StiControlledActivationPlan {
+    pub activation_token: &'static str,
+    pub token_gate: &'static str,
+    pub runtime_gate: &'static str,
+    pub readiness_matrix: &'static str,
+    pub simulation: &'static str,
+    pub eoi_runtime_boundary: &'static str,
+    pub pic_unmask_policy: &'static str,
+    pub pic_unmask: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub hardware_mutation: &'static str,
+    pub keyboard_mode: &'static str,
+    pub sti_instruction: &'static str,
+    pub sti_allowed: &'static str,
     pub runtime_irq_active: &'static str,
     pub result: &'static str,
     pub next: &'static str,
@@ -1017,5 +1045,32 @@ pub fn irq_runtime_activation_simulation(
         runtime_irq_active: matrix.runtime_irq_active,
         result: IRQ_ACTIVATION_SIM_RESULT_BLOCKED,
         next: IRQ_ACTIVATION_SIM_NEXT_BLOCKERS,
+    }
+}
+
+/// Derives the v9.9.0 controlled STI plan without enabling CPU interrupts.
+pub fn sti_controlled_activation_plan(
+    token: IrqRuntimeActivationTokenTelemetry,
+    matrix: IrqRuntimeMatrix,
+    gate: IrqRuntimeActivationGate,
+    simulation: IrqRuntimeActivationSimulation,
+) -> StiControlledActivationPlan {
+    StiControlledActivationPlan {
+        activation_token: token.token_state,
+        token_gate: simulation.token_gate,
+        runtime_gate: gate.result,
+        readiness_matrix: gate.readiness_matrix,
+        simulation: simulation.result,
+        eoi_runtime_boundary: gate.eoi_runtime_boundary,
+        pic_unmask_policy: gate.unmask_policy,
+        pic_unmask: STI_PLAN_PIC_UNMASK_DISABLED,
+        eoi_dispatch: STI_PLAN_EOI_DISPATCH_DISABLED,
+        hardware_mutation: simulation.hardware_mutation,
+        keyboard_mode: matrix.keyboard_mode,
+        sti_instruction: matrix.sti,
+        sti_allowed: STI_PLAN_ALLOWED_NO,
+        runtime_irq_active: matrix.runtime_irq_active,
+        result: STI_PLAN_RESULT_BLOCKED,
+        next: STI_PLAN_NEXT_BLOCKERS,
     }
 }

@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-Contains $cargoContent 'version = "9.9.0"' "kernel-lab version 9.9.0"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "9.8.1"' "kernel-lab current version 9.8.1"
+Assert-Contains $cargoContent930 'version = "9.9.0"' "kernel-lab current version 9.9.0"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "9.8.1"' "kernel-lab current version 9.8.1"
+Assert-Contains $cargoContent931 'version = "9.9.0"' "kernel-lab current version 9.9.0"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "9.8.1"' "kernel-lab current version 9.8.1"
+Assert-Contains $cargoContent940 'version = "9.9.0"' "kernel-lab current version 9.9.0"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -916,7 +916,7 @@ $irrContent941 = Get-Content $irrRs -Raw
 $picContent941 = Get-Content $picRs -Raw
 $mainContent941 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent941 'version = "9.8.1"' "kernel-lab current version 9.8.1"
+Assert-Contains $cargoContent941 'version = "9.9.0"' "kernel-lab current version 9.9.0"
 Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
 
 $matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
@@ -1023,7 +1023,7 @@ $irrContent950 = Get-Content $irrRs -Raw
 $picContent950 = Get-Content $picRs -Raw
 $mainContent950 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent950 'version = "9.8.1"' "kernel-lab current version 9.8.1"
+Assert-Contains $cargoContent950 'version = "9.9.0"' "kernel-lab current version 9.9.0"
 Assert-NotContains $cargoContent950 'version = "9.4.1"' "kernel-lab stale v9.4.1 package version guard"
 Assert-Contains $mainContent950 'irq-runtime-next irq-runtime-activation-plan' "help string includes v9.5.0 activation command"
 Assert-Contains $mainContent950 'line_str == "irq-runtime-activation-plan"' "irq-runtime-activation-plan dispatcher"
@@ -1101,7 +1101,7 @@ $irrContent951 = Get-Content $irrRs -Raw
 $picContent951 = Get-Content $picRs -Raw
 $mainContent951 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent951 'version = "9.8.1"' "kernel-lab current version 9.8.1"
+Assert-Contains $cargoContent951 'version = "9.9.0"' "kernel-lab current version 9.9.0"
 Assert-NotContains $cargoContent951 'version = "9.5.0"' "kernel-lab stale v9.5.0 package version guard"
 Assert-Contains $mainContent951 'irq-runtime-activation-plan' "v9.5.1 activation plan command remains exposed"
 Assert-Contains $mainContent951 'line_str == "irq-runtime-commit"' "v9.5.1 irq-runtime-commit dispatcher remains exposed"
@@ -1210,7 +1210,7 @@ $mainContent960 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs960 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs960 = $kernelBootSmokeDocs960 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent960 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-Contains $cargoContent960 'version = "9.9.0"' "kernel-lab version 9.9.0"
 Assert-NotContains $cargoContent960 'version = "9.5.1"' "kernel-lab stale v9.5.1 package version guard"
 Assert-Contains $mainContent960 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string includes v9.6.0 token commands"
 Assert-Contains $mainContent960 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher"
@@ -1324,7 +1324,7 @@ $mainContent961 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs961 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs961 = $kernelBootSmokeDocs961 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent961 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-Contains $cargoContent961 'version = "9.9.0"' "kernel-lab version 9.9.0"
 Assert-NotContains $cargoContent961 'version = "9.6.0"' "kernel-lab stale v9.6.0 package version guard"
 Assert-Contains $mainContent961 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string preserves v9.6.1 token commands"
 Assert-Contains $mainContent961 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher remains exposed"
@@ -1449,7 +1449,7 @@ $mainContent971 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs971 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs971 = $kernelBootSmokeDocs971 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent971 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-Contains $cargoContent971 'version = "9.9.0"' "kernel-lab version 9.9.0"
 Assert-NotContains $cargoContent971 'version = "9.7.0"' "kernel-lab stale v9.7.0 package version guard"
 Assert-Contains $mainContent971 'irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers' "help string includes v9.7.1 gate commands"
 Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-note"' "irq-runtime-gate-note dispatcher"
@@ -1612,9 +1612,9 @@ $mainContent980 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs980 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs980 = $kernelBootSmokeDocs980 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent980 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-Contains $cargoContent980 'version = "9.9.0"' "kernel-lab version 9.9.0"
 Assert-NotContains $cargoContent980 'version = "9.7.1"' "kernel-lab stale v9.7.1 package version guard"
-Assert-Contains $kernelCargoLockContent980 'version = "9.8.1"' "kernel-lab lockfile version 9.8.1"
+Assert-Contains $kernelCargoLockContent980 'version = "9.9.0"' "kernel-lab lockfile version 9.9.0"
 Assert-NotContains $kernelCargoLockContent980 'version = "9.7.1"' "kernel-lab stale v9.7.1 lockfile version guard"
 Assert-Contains $mainContent980 'irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers' "help string includes v9.8.0 simulation commands"
 Assert-Contains $mainContent980 'line_str == "irq-runtime-sim-note"' "irq-runtime-sim-note dispatcher"
@@ -1774,9 +1774,9 @@ $mainContent981 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs981 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs981 = $kernelBootSmokeDocs981 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent981 'version = "9.8.1"' "kernel-lab version 9.8.1"
+Assert-Contains $cargoContent981 'version = "9.9.0"' "kernel-lab version 9.9.0"
 Assert-NotContains $cargoContent981 'version = "9.8.0"' "kernel-lab stale v9.8.0 package version guard"
-Assert-Contains $kernelCargoLockContent981 'version = "9.8.1"' "kernel-lab lockfile version 9.8.1"
+Assert-Contains $kernelCargoLockContent981 'version = "9.9.0"' "kernel-lab lockfile version 9.9.0"
 Assert-NotContains $kernelCargoLockContent981 'version = "9.8.0"' "kernel-lab stale v9.8.0 lockfile version guard"
 
 $simHelperStart981 = $irrContent981.IndexOf('pub fn irq_runtime_activation_simulation(')
@@ -1899,6 +1899,173 @@ Assert-NotContains $mainContent981 'keyboard_irq' "v9.8.1 kernel main has no key
 Assert-Contains $mainContent981 'polling-only' "v9.8.1 keyboard polling telemetry unchanged"
 
 Write-Host "[OK] v9.8.1 Controlled Activation Simulation Harness Hardening verified"
+
+# v9.9.0: Controlled STI Plan Foundation
+Write-Host "Verifying v9.9.0 Controlled STI Plan Foundation contracts..."
+$v981Tag = & git rev-list -n 1 v9.8.1 2>$null
+$HEAD = & git rev-parse HEAD
+if ($null -eq $v981Tag) { throw "v9.8.1 tag not found (required baseline)" }
+if ($HEAD -eq $v981Tag) { throw "HEAD is still v9.8.1, v9.9.0 work not completed" }
+Write-Host "[OK] v9.9.0 branch is beyond v9.8.1 locked baseline"
+
+$cargoContent990 = Get-Content $cargoToml -Raw
+$kernelCargoLockContent990 = Get-Content (Join-Path $repoRoot "kernel-lab\Cargo.lock") -Raw
+$irrContent990 = Get-Content $irrRs -Raw
+$picContent990 = Get-Content $picRs -Raw
+$mainContent990 = Get-Content $mainRs -Raw
+$kernelBootSmokeDocs990 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
+$kernelBootSmokeDocs990 = $kernelBootSmokeDocs990 -replace "`r`n", "`n"
+
+Assert-Contains $cargoContent990 'version = "9.9.0"' "kernel-lab version 9.9.0"
+Assert-NotContains $cargoContent990 'version = "9.8.1"' "kernel-lab stale v9.8.1 package version guard"
+Assert-Contains $kernelCargoLockContent990 'version = "9.9.0"' "kernel-lab lockfile version 9.9.0"
+Assert-NotContains $kernelCargoLockContent990 'version = "9.8.1"' "kernel-lab stale v9.8.1 lockfile version guard"
+Assert-Contains $mainContent990 'sti-plan sti-status sti-preflight sti-blockers' "help string includes v9.9.0 STI commands"
+Assert-Contains $mainContent990 'line_str == "sti-plan"' "sti-plan dispatcher"
+Assert-Contains $mainContent990 'line_str == "sti-status"' "sti-status dispatcher"
+Assert-Contains $mainContent990 'line_str == "sti-preflight"' "sti-preflight dispatcher"
+Assert-Contains $mainContent990 'line_str == "sti-blockers"' "sti-blockers dispatcher"
+Assert-Contains $irrContent990 'pub struct StiControlledActivationPlan' "STI plan telemetry struct"
+Assert-Contains $irrContent990 'pub fn sti_controlled_activation_plan(' "STI plan telemetry helper"
+Assert-Contains $irrContent990 'pub const STI_PLAN_ALLOWED_NO: &str = "no";' "STI plan allowed no wording"
+Assert-Contains $irrContent990 'pub const STI_PLAN_RESULT_BLOCKED: &str = "blocked";' "STI plan blocked result wording"
+Assert-Contains $irrContent990 'pub const STI_PLAN_NEXT_BLOCKERS: &str = "execute sti-blockers";' "STI plan next blockers wording"
+
+$stiHelperStart990 = $irrContent990.IndexOf('pub fn sti_controlled_activation_plan(')
+$stiHelperEnd990 = $irrContent990.Length
+if ($stiHelperStart990 -lt 0) { throw "v9.9.0 STI helper isolation failed" }
+$stiHelperBlock990 = $irrContent990.Substring($stiHelperStart990, $stiHelperEnd990 - $stiHelperStart990)
+
+$stiPlanStart990 = $mainContent990.IndexOf('} else if line_str == "sti-plan" {')
+$stiStatusStart990 = $mainContent990.IndexOf('} else if line_str == "sti-status" {')
+$stiPreflightStart990 = $mainContent990.IndexOf('} else if line_str == "sti-preflight" {')
+$stiBlockersStart990 = $mainContent990.IndexOf('} else if line_str == "sti-blockers" {')
+$stiBlockersEnd990 = $mainContent990.IndexOf('} else if line_str == "eoi-runtime-note" {', $stiBlockersStart990)
+if ($stiPlanStart990 -lt 0 -or $stiStatusStart990 -lt $stiPlanStart990 -or $stiPreflightStart990 -lt $stiStatusStart990 -or $stiBlockersStart990 -lt $stiPreflightStart990 -or $stiBlockersEnd990 -lt $stiBlockersStart990) {
+    throw "v9.9.0 STI command block isolation failed"
+}
+$stiPlanBlock990 = $mainContent990.Substring($stiPlanStart990, $stiStatusStart990 - $stiPlanStart990)
+$stiStatusBlock990 = $mainContent990.Substring($stiStatusStart990, $stiPreflightStart990 - $stiStatusStart990)
+$stiPreflightBlock990 = $mainContent990.Substring($stiPreflightStart990, $stiBlockersStart990 - $stiPreflightStart990)
+$stiBlockersBlock990 = $mainContent990.Substring($stiBlockersStart990, $stiBlockersEnd990 - $stiBlockersStart990)
+
+$stiPlanExact990 = 'STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n'
+$stiStatusExact990 = 'STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n'
+$stiPreflightExact990 = 'STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n'
+$stiBlockersExact990 = 'STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n'
+Assert-Contains $stiPlanBlock990 $stiPlanExact990 "v9.9.0 sti-plan exact output"
+Assert-Contains $stiStatusBlock990 $stiStatusExact990 "v9.9.0 sti-status exact output"
+Assert-Contains $stiPreflightBlock990 $stiPreflightExact990 "v9.9.0 sti-preflight exact output"
+Assert-Contains $stiBlockersBlock990 $stiBlockersExact990 "v9.9.0 sti-blockers exact output"
+Assert-ContainsInOrder $stiBlockersBlock990 @(
+    '- activation token: {}',
+    '- runtime gate: {}',
+    '- readiness matrix: {}',
+    '- simulation: {}',
+    '- EOI runtime boundary: {}',
+    '- PIC unmask: {}',
+    '- EOI dispatch: {}',
+    '- keyboard mode: {}',
+    'sti allowed: {}'
+) "v9.9.0 STI blockers ordering"
+
+foreach ($stiReadBlock in @($stiStatusBlock990, $stiPreflightBlock990, $stiBlockersBlock990)) {
+    Assert-ContainsInOrder $stiReadBlock @(
+        'pic::ProgrammableInterruptController::pic_remap_state();',
+        'irq::irq_gate_bind_state();',
+        'pic::ProgrammableInterruptController::pic_mask_plan();',
+        'pic::ProgrammableInterruptController::pic_mask_status();',
+        'irq::eoi_runtime_check_all_preconditions(pic_state.executed);',
+        'irq::irq_runtime_matrix(',
+        'irq::irq_runtime_activation_dry_run(&matrix);',
+        'irq::irq_runtime_activation_token_status();',
+        'irq::irq_runtime_activation_gate(',
+        'irq::irq_runtime_activation_simulation(',
+        'irq::sti_controlled_activation_plan('
+    ) "v9.9.0 STI reader ordering"
+}
+
+foreach ($forbiddenStiPlanRead in @(
+    'pic::ProgrammableInterruptController::pic_remap_state();',
+    'irq::irq_gate_bind_state();',
+    'pic::ProgrammableInterruptController::pic_mask_plan();',
+    'pic::ProgrammableInterruptController::pic_mask_status();',
+    'irq::eoi_runtime_check_all_preconditions(',
+    'irq::irq_runtime_matrix(',
+    'irq::irq_runtime_activation_dry_run(',
+    'irq::irq_runtime_activation_token_status();',
+    'irq::irq_runtime_activation_gate(',
+    'irq::irq_runtime_activation_simulation(',
+    'irq::sti_controlled_activation_plan('
+)) {
+    Assert-NotContains $stiPlanBlock990 $forbiddenStiPlanRead "v9.9.0 sti-plan remains constant-only: $forbiddenStiPlanRead"
+}
+
+foreach ($stiBlock in @($stiPlanBlock990, $stiStatusBlock990, $stiPreflightBlock990, $stiBlockersBlock990, $stiHelperBlock990)) {
+    foreach ($blockedStiCall in @(
+        'write_pic_port(',
+        'outb(',
+        'set_handler(',
+        'irq::irq_runtime_commit()',
+        'irq::irq_runtime_arm()',
+        'irq_runtime_activation_token_arm()',
+        'irq_runtime_activation_token_clear()',
+        'pic::ProgrammableInterruptController::pic_remap_controlled_smoke()',
+        'irq::irq_gate_bind_smoke_mark_bound()',
+        'write_pic_port(PIC_MASTER_CMD, PIC_EOI)',
+        'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)',
+        'asm!("sti")',
+        'global_asm!("sti")'
+    )) {
+        Assert-NotContains $stiBlock $blockedStiCall "v9.9.0 STI plan path is read-only: $blockedStiCall"
+    }
+}
+
+$expectedQemuStiPlanOutput990 = "STI controlled activation plan`n    sti instruction: disabled`n    activation token: required`n    runtime gate: not allowed`n    readiness matrix: blocked`n    PIC unmask: disabled`n    EOI dispatch: disabled`n    keyboard mode: polling`n    runtime irq active: no"
+$expectedQemuStiStatusOutput990 = "STI controlled activation status`n    activation token: absent`n    runtime gate: activation blocked`n    readiness matrix: blocked`n    simulation: simulation blocked`n    sti instruction: disabled`n    sti allowed: no`n    runtime irq active: no"
+$expectedQemuStiPreflightOutput990 = "STI controlled activation preflight`n    token gate: absent`n    readiness matrix: blocked`n    EOI runtime boundary: disabled`n    PIC unmask policy: no unmask`n    hardware mutation: no`n    keyboard mode: polling`n    result: blocked`n    next: execute sti-blockers"
+$expectedQemuStiBlockersOutput990 = "STI controlled activation blockers`n    - activation token: absent`n    - runtime gate: activation blocked`n    - readiness matrix: runtime irq ready no`n    - simulation: simulation blocked`n    - EOI runtime boundary: disabled`n    - PIC unmask: disabled`n    - EOI dispatch: disabled`n    - keyboard mode: polling`n    sti allowed: no"
+Assert-Contains $kernelBootSmokeDocs990 $expectedQemuStiPlanOutput990 "qemu docs sti-plan exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs990 $expectedQemuStiStatusOutput990 "qemu docs sti-status exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs990 $expectedQemuStiPreflightOutput990 "qemu docs sti-preflight exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs990 $expectedQemuStiBlockersOutput990 "qemu docs sti-blockers exact rendered contract"
+Assert-ContainsInOrder $kernelBootSmokeDocs990 @(
+    "- activation token: absent",
+    "- runtime gate: activation blocked",
+    "- readiness matrix: runtime irq ready no",
+    "- simulation: simulation blocked",
+    "- EOI runtime boundary: disabled",
+    "- PIC unmask: disabled",
+    "- EOI dispatch: disabled",
+    "- keyboard mode: polling",
+    "sti allowed: no"
+) "qemu docs STI blockers rendered ordering"
+
+Assert-Contains $stiStatusBlock990 'sti_plan.sti_allowed' "v9.9.0 sti-status reports STI denied"
+Assert-Contains $stiStatusBlock990 'sti_plan.runtime_irq_active' "v9.9.0 sti-status reports inactive runtime IRQ"
+Assert-Contains $stiPreflightBlock990 'sti_plan.hardware_mutation' "v9.9.0 sti-preflight reports no hardware mutation"
+Assert-Contains $stiPreflightBlock990 'sti_plan.keyboard_mode' "v9.9.0 sti-preflight keeps keyboard polling"
+Assert-Contains $stiBlockersBlock990 'sti_plan.pic_unmask' "v9.9.0 sti-blockers reports PIC unmask disabled"
+Assert-Contains $stiBlockersBlock990 'sti_plan.eoi_dispatch' "v9.9.0 sti-blockers reports EOI dispatch disabled"
+Assert-NotContains $irrContent990 'asm!("sti")' "v9.9.0 irq source still has no STI"
+Assert-NotContains $mainContent990 'asm!("sti")' "v9.9.0 kernel main still has no STI"
+Assert-NotContains $mainContent990 'global_asm!("sti")' "v9.9.0 kernel main still has no STI global asm"
+Assert-Contains $picContent990 'pub const PIC_MASK_ALL: u8 = 0xFF;' "v9.9.0 safe mask-all constant remains allowed"
+foreach ($literal in @('0x00', '0xFC', '0xFD', '0xFE')) {
+    Assert-NotContains $mainContent990 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.9.0 no master unmask literal $literal in main"
+    Assert-NotContains $mainContent990 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.9.0 no slave unmask literal $literal in main"
+    Assert-NotContains $picContent990 "write_pic_port(PIC_MASTER_DATA, $literal)" "v9.9.0 no master unmask literal $literal in pic.rs"
+    Assert-NotContains $picContent990 "write_pic_port(PIC_SLAVE_DATA, $literal)" "v9.9.0 no slave unmask literal $literal in pic.rs"
+}
+Assert-NotContains $mainContent990 'write_pic_port(PIC_MASTER_CMD, PIC_EOI)' "v9.9.0 kernel main does not dispatch master EOI"
+Assert-NotContains $mainContent990 'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)' "v9.9.0 kernel main does not dispatch slave EOI"
+Assert-NotContains $mainContent990 'timer_interrupt_handler_stub' "v9.9.0 kernel main has no live timer IRQ handler"
+Assert-NotContains $mainContent990 'keyboard_interrupt_handler_stub' "v9.9.0 kernel main has no live keyboard IRQ handler"
+Assert-NotContains $mainContent990 'timer_irq' "v9.9.0 kernel main has no timer IRQ activation path"
+Assert-NotContains $mainContent990 'keyboard_irq' "v9.9.0 kernel main has no keyboard IRQ activation path"
+Assert-Contains $mainContent990 'polling-only' "v9.9.0 keyboard polling telemetry unchanged"
+
+Write-Host "[OK] v9.9.0 Controlled STI Plan Foundation verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
@@ -5838,7 +6005,7 @@ $kernelBootSmokeDocs = $kernelBootSmokeDocs -replace "`r`n", "`n"
 Write-Host "Verifying DByteOS Kernel Lab (v9.0.2) exception status UX contracts..."
 Assert-Contains $kernelMainSource "mod page_fault;" "kernel page fault skeleton module is compiled"
 Assert-Contains $kernelMainSource "mod irq;" "kernel irq skeleton module is compiled"
-$expectedKernelHelp = "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose"
+$expectedKernelHelp = "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose"
 Assert-Contains $kernelMainSource $expectedKernelHelp "kernel help lists exception and irq UX commands"
 Assert-Contains $kernelMainSource "irq::irq_gate_bind_smoke_status()" "kernel handlers reads irq gate bind status"
 Assert-Contains $kernelMainSource "skeleton planned: irq0 timer, irq1 keyboard" "kernel handlers unbound irq section"
@@ -6228,8 +6395,8 @@ $picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::Programmable
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
 }
-if ($picRemapStateCalls -ne 18 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
-    throw "Kernel PIC remap telemetry guard failed: expected state=18 (existing telemetry readers plus irq-runtime-gate-status/check/blockers and irq-runtime-sim-status/run/blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
+if ($picRemapStateCalls -ne 21 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=21 (existing telemetry readers plus irq-runtime-gate-status/check/blockers, irq-runtime-sim-status/run/blockers, and sti-status/preflight/blockers), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
@@ -6259,6 +6426,9 @@ $irqRuntimeGateBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-ru
 $irqRuntimeSimStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-status"')
 $irqRuntimeSimRunDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-run"')
 $irqRuntimeSimBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-blockers"')
+$stiStatusDispatch = $kernelMainSource.IndexOf('line_str == "sti-status"')
+$stiPreflightDispatch = $kernelMainSource.IndexOf('line_str == "sti-preflight"')
+$stiBlockersDispatch = $kernelMainSource.IndexOf('line_str == "sti-blockers"')
 if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
     throw "Kernel PIC remap smoke guard failed: pic-remap dispatch not found"
 }
@@ -6291,7 +6461,10 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearIrqRuntimeSimStatusCommand = ($callIndex -gt $irqRuntimeSimStatusDispatch -and $callIndex -lt $irqRuntimeSimStatusDispatch + 2048)
     $nearIrqRuntimeSimRunCommand = ($callIndex -gt $irqRuntimeSimRunDispatch -and $callIndex -lt $irqRuntimeSimRunDispatch + 2048)
     $nearIrqRuntimeSimBlockersCommand = ($callIndex -gt $irqRuntimeSimBlockersDispatch -and $callIndex -lt $irqRuntimeSimBlockersDispatch + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand)) {
+    $nearStiStatusCommand = ($callIndex -gt $stiStatusDispatch -and $callIndex -lt $stiStatusDispatch + 2048)
+    $nearStiPreflightCommand = ($callIndex -gt $stiPreflightDispatch -and $callIndex -lt $stiPreflightDispatch + 2048)
+    $nearStiBlockersCommand = ($callIndex -gt $stiBlockersDispatch -and $callIndex -lt $stiBlockersDispatch + 2048)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand)) {
         throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
@@ -6304,8 +6477,8 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_p
 $irqGateStateCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)').Count
 $irqGateHistoryCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_history\(\)').Count
 $irqGatePreflightCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_preflight\(\)').Count
-if ($irqGateStateCalls -ne 18 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
-    throw "Kernel IRQ gate bind telemetry guard failed: expected state=18 (existing telemetry readers plus irq-runtime-gate-status/check/blockers and irq-runtime-sim-status/run/blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
+if ($irqGateStateCalls -ne 21 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
+    throw "Kernel IRQ gate bind telemetry guard failed: expected state=21 (existing telemetry readers plus irq-runtime-gate-status/check/blockers, irq-runtime-sim-status/run/blockers, and sti-status/preflight/blockers), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
 }
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot path does not read irq gate bind state telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
@@ -6339,7 +6512,10 @@ $irqRuntimeGateBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-ru
 $irqRuntimeSimStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-status"')
 $irqRuntimeSimRunDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-run"')
 $irqRuntimeSimBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-blockers"')
-if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0 -or $irqMaskBlockersDispatch -lt 0 -or $irqRuntimeMatrixDispatch -lt 0 -or $irqRuntimeReadinessMatrixDispatch -lt 0 -or $irqRuntimeActivationPlanDispatch -lt 0 -or $irqRuntimeGateStatusDispatch -lt 0 -or $irqRuntimeGateCheckDispatch -lt 0 -or $irqRuntimeGateBlockersDispatch -lt 0 -or $irqRuntimeSimStatusDispatch -lt 0 -or $irqRuntimeSimRunDispatch -lt 0 -or $irqRuntimeSimBlockersDispatch -lt 0) {
+$stiStatusDispatch = $kernelMainSource.IndexOf('line_str == "sti-status"')
+$stiPreflightDispatch = $kernelMainSource.IndexOf('line_str == "sti-preflight"')
+$stiBlockersDispatch = $kernelMainSource.IndexOf('line_str == "sti-blockers"')
+if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0 -or $irqMaskBlockersDispatch -lt 0 -or $irqRuntimeMatrixDispatch -lt 0 -or $irqRuntimeReadinessMatrixDispatch -lt 0 -or $irqRuntimeActivationPlanDispatch -lt 0 -or $irqRuntimeGateStatusDispatch -lt 0 -or $irqRuntimeGateCheckDispatch -lt 0 -or $irqRuntimeGateBlockersDispatch -lt 0 -or $irqRuntimeSimStatusDispatch -lt 0 -or $irqRuntimeSimRunDispatch -lt 0 -or $irqRuntimeSimBlockersDispatch -lt 0 -or $stiStatusDispatch -lt 0 -or $stiPreflightDispatch -lt 0 -or $stiBlockersDispatch -lt 0) {
     throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers/eoi-runtime-status/blockers/irq-mask-blockers/matrix/readiness dispatch not found"
 }
 # Now check irq_gate_bind_state calls are within allowed dispatches
@@ -6363,7 +6539,10 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearIrqRuntimeSimStatusCommand = ($callIndex -gt $irqRuntimeSimStatusDispatch -and $callIndex -lt $irqRuntimeSimStatusDispatch + 2048)
     $nearIrqRuntimeSimRunCommand = ($callIndex -gt $irqRuntimeSimRunDispatch -and $callIndex -lt $irqRuntimeSimRunDispatch + 2048)
     $nearIrqRuntimeSimBlockersCommand = ($callIndex -gt $irqRuntimeSimBlockersDispatch -and $callIndex -lt $irqRuntimeSimBlockersDispatch + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand)) {
+    $nearStiStatusCommand = ($callIndex -gt $stiStatusDispatch -and $callIndex -lt $stiStatusDispatch + 2048)
+    $nearStiPreflightCommand = ($callIndex -gt $stiPreflightDispatch -and $callIndex -lt $stiPreflightDispatch + 2048)
+    $nearStiBlockersCommand = ($callIndex -gt $stiBlockersDispatch -and $callIndex -lt $stiBlockersDispatch + 2048)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand)) {
         throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
