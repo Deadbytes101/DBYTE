@@ -36,3 +36,4 @@ Selected files in the root directory (`boot.dby`, `.dbyterc`) are granted **Read
 
 ---
 [Home](../README.md) | [Alpha Status](DBYTEOS_ALPHA.md) | [Commands](DBYTEOS_COMMANDS.md) | [Boot](DBYTEOS_BOOT.md)
+

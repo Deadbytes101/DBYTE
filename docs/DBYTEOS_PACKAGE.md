@@ -1,6 +1,6 @@
-# DByteOS Personal Alpha Package Smoke Guide
+# DByteOS Personal Workspace Beta Foundation Package Smoke Guide
 
-DByteOS release packages include the DByte executable, examples, documentation, and the Personal Alpha userland so a zip download can be smoke-tested without a source checkout.
+DByteOS release packages include the DByte executable, examples, documentation, and the Personal Workspace Beta Foundation userland so a zip download can be smoke-tested without a source checkout.
 
 ## Package contents
 
@@ -32,10 +32,21 @@ check-system
 doctor
 prefs set system.prompt dbyteos>
 snapshot
-project new demo
-project status demo
-project snapshot demo
 project reset-demo
+task reset-demo
+task list demo
+task add demo write tests
+task done demo 1
+task status demo
+task summary demo
+task open demo
+task doctor demo
+task snapshot demo
+task clear-done demo
+project status demo
+project notes demo
+project snapshot demo
+project doctor demo
 prefs reset-demo
 profile show
 config show
@@ -62,9 +73,9 @@ quit
 - `prefs set system.prompt dbyteos>` changes the next DByteOS shell prompt.
 - `prefs reset-demo` restores the default DByteOS shell prompt.
 - `snapshot` prints the read-only system summary.
-- `project new demo` creates a deterministic workspace project.
-- `project status demo` and `project snapshot demo` verify project state.
-- `project reset-demo` restores deterministic project demo data.
+- `project reset-demo` restores a deterministic workspace project.
+- `task reset-demo`, `task list demo`, `task add demo write tests`, `task done demo 1`, `task status demo`, `task summary demo`, `task open demo`, `task doctor demo`, `task snapshot demo`, and `task clear-done demo` verify project task state and UX.
+- `project status demo`, `project notes demo`, `project snapshot demo`, and `project doctor demo` verify project state.
 - `profile show` prints the deterministic profile summary.
 - `config show` prints read-only preferences.
 - `getting-started` prints the first-run checklist.
@@ -82,3 +93,5 @@ quit
 - Temporary session artifacts live under `examples/dbyteos/tmp/`.
 - `clean` removes session logs such as `tmp/security.log`.
 - User data such as `home/deadbyte/journal.txt` and `home/deadbyte/projects/` is preserved by clean.
+- v9.0.2 disabled path foundation keeps workspace project names path-like safe and reports missing projects as `error: project not found: missing`.
+
