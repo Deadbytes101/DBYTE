@@ -230,6 +230,10 @@ pub const STI_PLAN_EOI_DISPATCH_DISABLED: &str = "disabled";
 pub const STI_PLAN_ALLOWED_NO: &str = "no";
 pub const STI_PLAN_RESULT_BLOCKED: &str = "blocked";
 pub const STI_PLAN_NEXT_BLOCKERS: &str = "execute sti-blockers";
+pub const IRQ_ACTIVATION_SMOKE_BLOCKED: &str = "blocked";
+pub const IRQ_ACTIVATION_SMOKE_RESULT_BLOCKED: &str = "smoke blocked";
+pub const IRQ_ACTIVATION_SMOKE_NEXT_BLOCKERS: &str =
+    "execute irq-runtime-activation-smoke-blockers";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -397,6 +401,26 @@ pub struct StiControlledActivationPlan {
     pub sti_instruction: &'static str,
     pub sti_allowed: &'static str,
     pub runtime_irq_active: &'static str,
+    pub result: &'static str,
+    pub next: &'static str,
+}
+
+/// Read-only activation smoke foundation derived from the pre-activation telemetry stack.
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeActivationSmoke {
+    pub activation_token: &'static str,
+    pub runtime_gate: &'static str,
+    pub readiness_matrix: &'static str,
+    pub simulation: &'static str,
+    pub sti_plan: &'static str,
+    pub eoi_runtime_boundary: &'static str,
+    pub pic_unmask: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub hardware_mutation: &'static str,
+    pub keyboard_mode: &'static str,
+    pub sti_instruction: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub activation_smoke: &'static str,
     pub result: &'static str,
     pub next: &'static str,
 }
@@ -1072,5 +1096,32 @@ pub fn sti_controlled_activation_plan(
         runtime_irq_active: matrix.runtime_irq_active,
         result: STI_PLAN_RESULT_BLOCKED,
         next: STI_PLAN_NEXT_BLOCKERS,
+    }
+}
+
+/// Derives the v10.0.0 activation smoke foundation without mutating runtime state.
+pub fn irq_runtime_activation_smoke(
+    token: IrqRuntimeActivationTokenTelemetry,
+    matrix: IrqRuntimeMatrix,
+    gate: IrqRuntimeActivationGate,
+    simulation: IrqRuntimeActivationSimulation,
+    sti_plan: StiControlledActivationPlan,
+) -> IrqRuntimeActivationSmoke {
+    IrqRuntimeActivationSmoke {
+        activation_token: token.token_state,
+        runtime_gate: gate.result,
+        readiness_matrix: gate.readiness_matrix,
+        simulation: simulation.result,
+        sti_plan: sti_plan.result,
+        eoi_runtime_boundary: sti_plan.eoi_runtime_boundary,
+        pic_unmask: sti_plan.pic_unmask,
+        eoi_dispatch: sti_plan.eoi_dispatch,
+        hardware_mutation: IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
+        keyboard_mode: matrix.keyboard_mode,
+        sti_instruction: matrix.sti,
+        runtime_irq_active: matrix.runtime_irq_active,
+        activation_smoke: IRQ_ACTIVATION_SMOKE_BLOCKED,
+        result: IRQ_ACTIVATION_SMOKE_RESULT_BLOCKED,
+        next: IRQ_ACTIVATION_SMOKE_NEXT_BLOCKERS,
     }
 }
