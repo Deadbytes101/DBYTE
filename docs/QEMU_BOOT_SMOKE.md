@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.4.0)
+# DByteOS QEMU Boot Smoke (v10.4.1)
 
-`v10.4.0` is a Controlled IRQ Runtime Readiness Final Gate release. It consolidates the activation token, activation gate, readiness matrix, simulation, STI plan, activation smoke, EOI dispatch smoke, PIC unmask smoke, IDT runtime bind smoke, and keyboard fallback into final read-only gate commands (`irq-runtime-final-gate-note`, `irq-runtime-final-gate-status`, `irq-runtime-final-gate-check`, `irq-runtime-final-gate-blockers`). Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, or execute `sti`.
+`v10.4.1` is a Controlled IRQ Runtime Readiness Final Gate Hardening release. It keeps the `v10.4.0` final gate command output and runtime state unchanged while tightening verification for exact output, read-only surfaces, stale version metadata, disabled `sti`, disabled PIC unmask, disabled EOI dispatch, disabled live IRQ0/IRQ1, disabled live IDT runtime binding, and polling-only keyboard fallback. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, or execute `sti`.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
