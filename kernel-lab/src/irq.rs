@@ -155,10 +155,12 @@ pub const IRQ_RUNTIME_PRECONDITION_SATISFIED: &str = "satisfied";
 pub const IRQ_RUNTIME_PRECONDITION_UNSATISFIED: &str = "unsatisfied";
 
 /// PIC remap precondition blocker message.
-pub const IRQ_RUNTIME_BLOCKER_PIC_REMAP: &str = "PIC remap: not ready for controlled smoke (run: pic-remap-arm, pic-remap-smoke)";
+pub const IRQ_RUNTIME_BLOCKER_PIC_REMAP: &str =
+    "PIC remap: not ready for controlled smoke (run: pic-remap-arm, pic-remap-smoke)";
 
 /// IRQ gates precondition blocker message.
-pub const IRQ_RUNTIME_BLOCKER_IRQ_GATES: &str = "IRQ gates: vectors 32/33 not bound (run: irq-gate-arm, irq-gate-bind-smoke)";
+pub const IRQ_RUNTIME_BLOCKER_IRQ_GATES: &str =
+    "IRQ gates: vectors 32/33 not bound (run: irq-gate-arm, irq-gate-bind-smoke)";
 
 /// EOI dispatch precondition blocker message.
 pub const IRQ_RUNTIME_BLOCKER_EOI_DISPATCH: &str = "EOI dispatch: not enabled";
@@ -173,15 +175,18 @@ pub const IRQ_RUNTIME_PRECONDITION_KEYBOARD_FALLBACK: &str = "keyboard fallback:
 pub const IRQ_RUNTIME_PRECONDITION_PF_SMOKE: &str = "pf-smoke: stable (ok)";
 
 /// EOI precondition blocker messages (v9.2.0).
-pub const EOI_RUNTIME_BLOCKER_PIC_REMAP: &str = "PIC remap: not ready for EOI dispatch (run: pic-remap-arm, pic-remap-smoke)";
-pub const EOI_RUNTIME_BLOCKER_IRQ_GATES: &str = "IRQ gates: vectors 32/33 not bound for EOI (run: irq-gate-arm, irq-gate-bind-smoke)";
+pub const EOI_RUNTIME_BLOCKER_PIC_REMAP: &str =
+    "PIC remap: not ready for EOI dispatch (run: pic-remap-arm, pic-remap-smoke)";
+pub const EOI_RUNTIME_BLOCKER_IRQ_GATES: &str =
+    "IRQ gates: vectors 32/33 not bound for EOI (run: irq-gate-arm, irq-gate-bind-smoke)";
 pub const EOI_RUNTIME_BLOCKER_EDGE_LEVEL: &str = "IRQ edge/level: detection strategy not planned";
 pub const EOI_RUNTIME_BLOCKER_KEYBOARD: &str = "Keyboard fallback: state unknown";
 pub const EOI_RUNTIME_BLOCKER_STI: &str = "STI: not enabled for EOI dispatch";
 
 /// IRQ mask blocker messages (v9.3.0).
 pub const IRQ_MASK_BLOCKER_PIC_REMAP: &str = "[BLOCKER] pic remap not executed";
-pub const IRQ_MASK_BLOCKER_IRQ_GATES: &str = "[BLOCKER] irq gates not bound (vectors 32/33 unbound)";
+pub const IRQ_MASK_BLOCKER_IRQ_GATES: &str =
+    "[BLOCKER] irq gates not bound (vectors 32/33 unbound)";
 pub const IRQ_MASK_BLOCKER_STI: &str = "[BLOCKER] sti not enabled";
 pub const IRQ_MASK_BLOCKER_EOI_DISPATCH: &str = "[BLOCKER] eoi dispatch not active";
 pub const IRQ_MASK_BLOCKER_IRQ_RUNTIME: &str = "[BLOCKER] irq runtime not committed";
@@ -239,14 +244,11 @@ pub const EOI_DISPATCH_SMOKE_MODE_DRY_RUN: &str = "dry-run";
 pub const EOI_DISPATCH_SMOKE_ACK_WRITES_DISABLED: &str = "disabled";
 pub const EOI_DISPATCH_SMOKE_RESULT_DRY_RUN_ONLY: &str = "dry-run only";
 pub const EOI_DISPATCH_SMOKE_MASTER_ROUTE: &str = "command 0x20 -> port 0x20 (planned)";
-pub const EOI_DISPATCH_SMOKE_SLAVE_ROUTE: &str =
-    "command 0x20 -> port 0xA0 then 0x20 (planned)";
+pub const EOI_DISPATCH_SMOKE_SLAVE_ROUTE: &str = "command 0x20 -> port 0xA0 then 0x20 (planned)";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_PIC_REMAP: &str =
     "PIC remap smoke: not ready for controlled smoke";
-pub const EOI_DISPATCH_SMOKE_BLOCKER_IRQ_GATES: &str =
-    "IRQ gates: vectors 32/33 not bound";
-pub const EOI_DISPATCH_SMOKE_BLOCKER_ACK_WRITES: &str =
-    "PIC EOI writes: disabled by guard";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_IRQ_GATES: &str = "IRQ gates: vectors 32/33 not bound";
+pub const EOI_DISPATCH_SMOKE_BLOCKER_ACK_WRITES: &str = "PIC EOI writes: disabled by guard";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_STI: &str = "STI: disabled";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_PIC_UNMASK: &str = "PIC unmask: disabled";
 pub const EOI_DISPATCH_SMOKE_BLOCKER_LIVE_IRQ: &str = "live IRQ0/IRQ1: disabled";
@@ -263,6 +265,13 @@ pub const IDT_RUNTIME_BIND_SMOKE_MODE_DRY_RUN: &str = "dry-run";
 pub const IDT_RUNTIME_BIND_SMOKE_TARGET_VECTORS: &str = "32/33 planned";
 pub const IDT_RUNTIME_BIND_SMOKE_LIVE_HANDLER_BIND_NO: &str = "no";
 pub const IDT_RUNTIME_BIND_SMOKE_RESULT_DRY_RUN_ONLY: &str = "dry-run only";
+pub const IRQ_RUNTIME_FINAL_GATE_SCOPE: &str = "controlled read-only release proof";
+pub const IRQ_RUNTIME_FINAL_GATE_INPUTS: &str =
+    "token/gate/matrix/simulation/sti/activation-smoke/eoi/pic-unmask/idt-bind";
+pub const IRQ_RUNTIME_FINAL_GATE_ALLOWED_NO: &str = "no";
+pub const IRQ_RUNTIME_FINAL_GATE_LIVE_IDT_BIND_NO: &str = "no";
+pub const IRQ_RUNTIME_FINAL_GATE_RESULT_BLOCKED: &str = "release proof blocked";
+pub const IRQ_RUNTIME_FINAL_GATE_NEXT_NONE: &str = "none";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -509,6 +518,31 @@ pub struct IdtRuntimeBindSmoke {
     pub runtime_irq_active: &'static str,
     pub keyboard_mode: &'static str,
     pub result: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeFinalGate {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub activation_token: &'static str,
+    pub activation_gate: &'static str,
+    pub readiness_matrix: &'static str,
+    pub simulation: &'static str,
+    pub sti_plan: &'static str,
+    pub activation_smoke: &'static str,
+    pub eoi_dispatch_smoke: &'static str,
+    pub pic_unmask_smoke: &'static str,
+    pub idt_runtime_bind_smoke: &'static str,
+    pub keyboard_mode: &'static str,
+    pub final_activation_allowed: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub live_idt_bind: &'static str,
+    pub result: &'static str,
+    pub next: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -798,7 +832,7 @@ pub fn irq_runtime_commit() {
 pub fn irq_runtime_check_pic_remap_precondition() -> bool {
     // Need to use pic module, but we can't import it here due to circular deps
     // Instead, we'll mark this via a getter function from main that passes state
-    false  // Will be properly checked in main
+    false // Will be properly checked in main
 }
 
 /// Checks if IRQ gate bind precondition is satisfied.
@@ -1038,8 +1072,16 @@ pub fn irq_runtime_matrix(
         IRQ_MATRIX_RUNTIME_LATCH_BLOCKED
     };
     IrqRuntimeMatrix {
-        pic_remap_smoke: if pic_remap_executed { IRQ_MATRIX_YES } else { IRQ_MATRIX_NO },
-        irq_gate_bind_smoke: if irq_gates_bound { IRQ_MATRIX_YES } else { IRQ_MATRIX_NO },
+        pic_remap_smoke: if pic_remap_executed {
+            IRQ_MATRIX_YES
+        } else {
+            IRQ_MATRIX_NO
+        },
+        irq_gate_bind_smoke: if irq_gates_bound {
+            IRQ_MATRIX_YES
+        } else {
+            IRQ_MATRIX_NO
+        },
         eoi_runtime_boundary: if eoi_runtime_ready {
             IRQ_MATRIX_EOI_READY_DRY_RUN
         } else {
@@ -1227,7 +1269,11 @@ pub fn eoi_dispatch_smoke(
         } else {
             "not ready"
         },
-        irq_gates: if irq_gates_bound { "bound" } else { "not bound" },
+        irq_gates: if irq_gates_bound {
+            "bound"
+        } else {
+            "not bound"
+        },
         pic_eoi_writes: EOI_DISPATCH_SMOKE_ACK_WRITES_DISABLED,
         sti_instruction: matrix.sti,
         pic_unmask: smoke.pic_unmask,
@@ -1301,5 +1347,42 @@ pub fn idt_runtime_bind_smoke(
         runtime_irq_active: matrix.runtime_irq_active,
         keyboard_mode: matrix.keyboard_mode,
         result: IDT_RUNTIME_BIND_SMOKE_RESULT_DRY_RUN_ONLY,
+    }
+}
+
+/// Derives the v10.4.0 final IRQ runtime gate without mutating runtime state.
+pub fn irq_runtime_final_gate(
+    token: IrqRuntimeActivationTokenTelemetry,
+    matrix: IrqRuntimeMatrix,
+    gate: IrqRuntimeActivationGate,
+    simulation: IrqRuntimeActivationSimulation,
+    sti_plan: StiControlledActivationPlan,
+    activation_smoke: IrqRuntimeActivationSmoke,
+    eoi_smoke: EoiDispatchSmoke,
+    pic_unmask_smoke: PicUnmaskSmoke,
+    idt_bind_smoke: IdtRuntimeBindSmoke,
+) -> IrqRuntimeFinalGate {
+    IrqRuntimeFinalGate {
+        scope: IRQ_RUNTIME_FINAL_GATE_SCOPE,
+        inputs: IRQ_RUNTIME_FINAL_GATE_INPUTS,
+        activation_token: token.token_state,
+        activation_gate: gate.result,
+        readiness_matrix: gate.readiness_matrix,
+        simulation: simulation.result,
+        sti_plan: sti_plan.result,
+        activation_smoke: activation_smoke.activation_smoke,
+        eoi_dispatch_smoke: eoi_smoke.eoi_dispatch_smoke,
+        pic_unmask_smoke: pic_unmask_smoke.pic_unmask_smoke,
+        idt_runtime_bind_smoke: idt_bind_smoke.idt_runtime_bind_smoke,
+        keyboard_mode: matrix.keyboard_mode,
+        final_activation_allowed: IRQ_RUNTIME_FINAL_GATE_ALLOWED_NO,
+        hardware_mutation: IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
+        runtime_irq_active: matrix.runtime_irq_active,
+        sti_instruction: matrix.sti,
+        pic_unmask: sti_plan.pic_unmask,
+        eoi_dispatch: sti_plan.eoi_dispatch,
+        live_idt_bind: IRQ_RUNTIME_FINAL_GATE_LIVE_IDT_BIND_NO,
+        result: IRQ_RUNTIME_FINAL_GATE_RESULT_BLOCKED,
+        next: IRQ_RUNTIME_FINAL_GATE_NEXT_NONE,
     }
 }

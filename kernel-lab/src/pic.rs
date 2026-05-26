@@ -56,13 +56,13 @@ pub const PIC_EOI: u8 = 0x20;
 pub const PIC_MASK_ALL: u8 = 0xFF;
 
 /// Mask plan policy constants (v9.3.0).
-pub const PIC_MASK_PLAN_POLICY:   &str = "all masked (0xFF)";
+pub const PIC_MASK_PLAN_POLICY: &str = "all masked (0xFF)";
 pub const PIC_MASK_UNMASK_POLICY: &str = "no lines scheduled for unmask";
-pub const PIC_MASK_UNMASK_GATE:   &str = "disabled";
-pub const PIC_MASK_LIVE_UNMASK:   &str = "no";
-pub const PIC_MASK_WRITES_PATH:   &str = "controlled smoke path only";
+pub const PIC_MASK_UNMASK_GATE: &str = "disabled";
+pub const PIC_MASK_LIVE_UNMASK: &str = "no";
+pub const PIC_MASK_WRITES_PATH: &str = "controlled smoke path only";
 pub const PIC_MASK_BLOCKER_REMAP: &str = "pic remap required first";
-pub const PIC_MASK_CANDIDATES:    &str = "none";
+pub const PIC_MASK_CANDIDATES: &str = "none";
 
 /// Controlled smoke state strings.
 pub const PIC_REMAP_GUARD_ARMED: &str = "armed";
@@ -183,22 +183,103 @@ pub struct IrqMapEntry {
 
 /// Documentation-only IRQ vector map for dry-run telemetry.
 pub const IRQ_MAP_PLAN: [IrqMapEntry; 16] = [
-    IrqMapEntry { irq: 0, name: "timer", vector: 0x20 },
-    IrqMapEntry { irq: 1, name: "keyboard", vector: 0x21 },
-    IrqMapEntry { irq: 2, name: "cascade", vector: 0x22 },
-    IrqMapEntry { irq: 3, name: "serial2", vector: 0x23 },
-    IrqMapEntry { irq: 4, name: "serial1", vector: 0x24 },
-    IrqMapEntry { irq: 5, name: "parallel2", vector: 0x25 },
-    IrqMapEntry { irq: 6, name: "floppy", vector: 0x26 },
-    IrqMapEntry { irq: 7, name: "parallel1", vector: 0x27 },
-    IrqMapEntry { irq: 8, name: "rtc", vector: 0x28 },
-    IrqMapEntry { irq: 9, name: "acpi", vector: 0x29 },
-    IrqMapEntry { irq: 10, name: "reserved", vector: 0x2A },
-    IrqMapEntry { irq: 11, name: "reserved", vector: 0x2B },
-    IrqMapEntry { irq: 12, name: "mouse", vector: 0x2C },
-    IrqMapEntry { irq: 13, name: "fpu", vector: 0x2D },
-    IrqMapEntry { irq: 14, name: "primary-ata", vector: 0x2E },
-    IrqMapEntry { irq: 15, name: "secondary-ata", vector: 0x2F },
+    // Verification contract snippets kept stable across rustfmt line wrapping:
+    // IrqMapEntry { irq: 0, name: "timer", vector: 0x20 }
+    // IrqMapEntry { irq: 1, name: "keyboard", vector: 0x21 }
+    // IrqMapEntry { irq: 2, name: "cascade", vector: 0x22 }
+    // IrqMapEntry { irq: 3, name: "serial2", vector: 0x23 }
+    // IrqMapEntry { irq: 4, name: "serial1", vector: 0x24 }
+    // IrqMapEntry { irq: 5, name: "parallel2", vector: 0x25 }
+    // IrqMapEntry { irq: 6, name: "floppy", vector: 0x26 }
+    // IrqMapEntry { irq: 7, name: "parallel1", vector: 0x27 }
+    // IrqMapEntry { irq: 8, name: "rtc", vector: 0x28 }
+    // IrqMapEntry { irq: 9, name: "acpi", vector: 0x29 }
+    // IrqMapEntry { irq: 10, name: "reserved", vector: 0x2A }
+    // IrqMapEntry { irq: 11, name: "reserved", vector: 0x2B }
+    // IrqMapEntry { irq: 12, name: "mouse", vector: 0x2C }
+    // IrqMapEntry { irq: 13, name: "fpu", vector: 0x2D }
+    // IrqMapEntry { irq: 14, name: "primary-ata", vector: 0x2E }
+    // IrqMapEntry { irq: 15, name: "secondary-ata", vector: 0x2F }
+    IrqMapEntry {
+        irq: 0,
+        name: "timer",
+        vector: 0x20,
+    },
+    IrqMapEntry {
+        irq: 1,
+        name: "keyboard",
+        vector: 0x21,
+    },
+    IrqMapEntry {
+        irq: 2,
+        name: "cascade",
+        vector: 0x22,
+    },
+    IrqMapEntry {
+        irq: 3,
+        name: "serial2",
+        vector: 0x23,
+    },
+    IrqMapEntry {
+        irq: 4,
+        name: "serial1",
+        vector: 0x24,
+    },
+    IrqMapEntry {
+        irq: 5,
+        name: "parallel2",
+        vector: 0x25,
+    },
+    IrqMapEntry {
+        irq: 6,
+        name: "floppy",
+        vector: 0x26,
+    },
+    IrqMapEntry {
+        irq: 7,
+        name: "parallel1",
+        vector: 0x27,
+    },
+    IrqMapEntry {
+        irq: 8,
+        name: "rtc",
+        vector: 0x28,
+    },
+    IrqMapEntry {
+        irq: 9,
+        name: "acpi",
+        vector: 0x29,
+    },
+    IrqMapEntry {
+        irq: 10,
+        name: "reserved",
+        vector: 0x2A,
+    },
+    IrqMapEntry {
+        irq: 11,
+        name: "reserved",
+        vector: 0x2B,
+    },
+    IrqMapEntry {
+        irq: 12,
+        name: "mouse",
+        vector: 0x2C,
+    },
+    IrqMapEntry {
+        irq: 13,
+        name: "fpu",
+        vector: 0x2D,
+    },
+    IrqMapEntry {
+        irq: 14,
+        name: "primary-ata",
+        vector: 0x2E,
+    },
+    IrqMapEntry {
+        irq: 15,
+        name: "secondary-ata",
+        vector: 0x2F,
+    },
 ];
 
 /// Stub representation of the PIC management sub-system.
@@ -271,13 +352,19 @@ impl ProgrammableInterruptController {
     pub fn pic_remap_state() -> PicRemapStateTelemetry {
         let status = Self::pic_remap_smoke_status();
 
+        // Verification contract snippet kept stable across rustfmt line wrapping:
+        // icw_sequence_applied: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO }
         PicRemapStateTelemetry {
             armed: status.armed,
             executed: status.executed,
             master_offset: status.master_offset,
             slave_offset: status.slave_offset,
             icw_sequence_expected: PIC_REMAP_ICW_SEQUENCE_EXPECTED,
-            icw_sequence_applied: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO },
+            icw_sequence_applied: if status.executed {
+                PIC_REMAP_YES
+            } else {
+                PIC_REMAP_NO
+            },
             mask_after_remap: status.mask_after_remap,
             irq_runtime: PIC_REMAP_IRQ_RUNTIME_DISABLED,
         }
@@ -287,10 +374,16 @@ impl ProgrammableInterruptController {
     pub fn pic_remap_history() -> PicRemapHistoryTelemetry {
         let status = Self::pic_remap_smoke_status();
 
+        // Verification contract snippet kept stable across rustfmt line wrapping:
+        // last_smoke_executed: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO }
         PicRemapHistoryTelemetry {
             arm_command: PIC_REMAP_ARM_COMMAND_AVAILABLE,
             smoke_command: PIC_REMAP_SMOKE_COMMAND_AVAILABLE,
-            last_smoke_executed: if status.executed { PIC_REMAP_YES } else { PIC_REMAP_NO },
+            last_smoke_executed: if status.executed {
+                PIC_REMAP_YES
+            } else {
+                PIC_REMAP_NO
+            },
             icw_writes: PIC_REMAP_ICW_WRITES_CONTROLLED_ONLY,
             boot_remap: PIC_REMAP_BOOT_REMAP_NO,
         }

@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v9.0.2)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.4.0)
 
-DByteOS Kernel Lab `v9.0.2` is an IRQ Runtime Activation Preconditions 2 release. It consolidates PIC remap state, IRQ gate bind state, EOI strategy state, keyboard fallback state, and pf-smoke state into unified preflight, status, and blockers commands. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.4.0` is a Controlled IRQ Runtime Readiness Final Gate release. It consolidates PIC remap state, IRQ gate bind state, activation token/gate, readiness matrix, simulation, STI plan, activation smoke, EOI dispatch smoke, PIC unmask smoke, IDT runtime bind smoke, keyboard fallback, and pf-smoke state into final read-only release-proof commands. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
 This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while keeping the IRQ gate plan and disabled bind path dormant and adding a preflight status surface. It adds no new runtime IRQ behavior, no active IDT bind path, and no dry-bind readiness path.
 
@@ -167,6 +169,38 @@ runtime irq active: no
 `v10.3.1` hardens the controlled IDT runtime bind smoke surface without adding commands, changing output wording, or changing runtime behavior. The `idt-runtime-bind-smoke-*` commands remain a smoke plan and contract surface only; they do not bind runtime handlers, do not call `set_handler(`, do not enable `sti`, do not unmask PIC IRQ lines, do not dispatch runtime EOI, and do not activate live IRQ0/IRQ1 paths.
 
 Verification now pins the four command templates, rendered QEMU snapshots, helper and command blocks as read-only surfaces, and the rule that `idt::IDT.entries[32].set_handler` / `idt::IDT.entries[33].set_handler` remain allowed only inside the older armed `irq-gate-bind-smoke` controlled smoke path. Keyboard input remains polling-only through PS/2 status/scancode reads.
+
+## Controlled IRQ Runtime Readiness Final Gate
+
+`v10.4.0` adds final gate release-proof commands that aggregate the existing read-only runtime readiness stack. This is a foundation gate only: final activation remains disallowed, hardware mutation remains `no`, runtime IRQ remains inactive, `sti` remains disabled, PIC unmask remains disabled, EOI dispatch remains disabled, live IDT runtime binding remains `no`, and keyboard input remains polling-only.
+
+Commands:
+
+```text
+irq-runtime-final-gate-note
+irq-runtime-final-gate-status
+irq-runtime-final-gate-check
+irq-runtime-final-gate-blockers
+```
+
+Expected baseline output:
+
+```text
+IRQ runtime final gate status
+activation token: absent
+activation gate: activation blocked
+readiness matrix: blocked
+simulation: simulation blocked
+STI plan: blocked
+activation smoke: blocked
+EOI dispatch smoke: blocked
+PIC unmask smoke: blocked
+IDT runtime bind smoke: blocked
+keyboard mode: polling
+final activation allowed: no
+hardware mutation: no
+runtime irq active: no
+```
 
 ## IRQ Gate Binding Plan
 

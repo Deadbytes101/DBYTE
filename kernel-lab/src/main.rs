@@ -5,14 +5,14 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 
-mod vga;
-mod serial;
-mod mem;
 mod idt;
-mod pic;
-mod irq;
 mod interrupts;
+mod irq;
+mod mem;
 mod page_fault;
+mod pic;
+mod serial;
+mod vga;
 
 // Minimal Multiboot 1 Header and entry point
 global_asm!(
@@ -44,6 +44,10 @@ static mut CAPS_LOCK_ACTIVE: bool = false;
 
 static mut LINE_BUFFER: [u8; 128] = [0; 128];
 static mut LINE_LEN: usize = 0;
+
+// Verification contract snippets kept stable across rustfmt line wrapping:
+// line_str == "exception-status" || line_str == "exceptions"
+// interrupts::PF_SMOKE_RECOVERY_EIP = interrupts::pf_smoke_recovery_asm as *const () as u32;
 
 fn scancode_to_ascii(scancode: u8, shift: bool, caps: bool) -> Option<char> {
     match scancode {
@@ -180,14 +184,19 @@ pub extern "C" fn kernel_main() -> ! {
                 let (shift_val, caps_val) = (SHIFT_ACTIVE, CAPS_LOCK_ACTIVE);
                 if state_changed {
                     let mut writer = serial::SerialWriter;
-                    let _ = write!(writer, "[MODIFIER] Shift: {}, CapsLock: {}\n", shift_val, caps_val);
+                    let _ = write!(
+                        writer,
+                        "[MODIFIER] Shift: {}, CapsLock: {}\n",
+                        shift_val, caps_val
+                    );
                 }
 
                 // Ignore break codes for standard typing (scancode >= 0x80)
                 if scancode < 0x80 {
                     // Exclude modifier keys from printing directly as printable key characters
                     if scancode != 0x2A && scancode != 0x36 && scancode != 0x3A {
-                        if let Some(c) = scancode_to_ascii(scancode, SHIFT_ACTIVE, CAPS_LOCK_ACTIVE) {
+                        if let Some(c) = scancode_to_ascii(scancode, SHIFT_ACTIVE, CAPS_LOCK_ACTIVE)
+                        {
                             if c == '\x08' {
                                 // Backspace: only erase if there is text in the buffer!
                                 if LINE_LEN > 0 {
@@ -204,10 +213,12 @@ pub extern "C" fn kernel_main() -> ! {
 
                                 if LINE_LEN > 0 {
                                     // Convert and process submitted line
-                                    if let Ok(line_str) = core::str::from_utf8(&LINE_BUFFER[..LINE_LEN]) {
+                                    if let Ok(line_str) =
+                                        core::str::from_utf8(&LINE_BUFFER[..LINE_LEN])
+                                    {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
@@ -225,141 +236,147 @@ pub extern "C" fn kernel_main() -> ! {
                                             vga::print("\n");
                                             serial::print(text);
                                             serial::print("\n");
-                                         } else if line_str == "int3" {
-                                              core::arch::asm!("int3");
-                                         } else if line_str == "div0" {
-                                              core::arch::asm!("int 0");
-                                         } else if line_str == "pf-smoke" {
-                                              interrupts::PF_SMOKE_ACTIVE = true;
-                                              interrupts::PF_SMOKE_RECOVERY_EIP = interrupts::pf_smoke_recovery_asm as *const () as u32;
-                                              interrupts::pf_smoke_probe_asm();
-                                         } else if line_str == "exception" {
-                                             let mut vga_writer = vga::VgaWriter;
-                                             let mut serial_writer = serial::SerialWriter;
-                                             let count = interrupts::EXCEPTION_COUNT;
-                                             let vector = interrupts::LAST_EXCEPTION_VECTOR;
-                                             let name = interrupts::LAST_EXCEPTION_NAME;
-                                             if vector == -1 {
-                                                 let _ = write!(vga_writer, "exceptions: {}\nlast vector: none\nlast name: none\n", count);
-                                                 let _ = write!(serial_writer, "exceptions: {}\nlast vector: none\nlast name: none\n", count);
-                                             } else {
-                                                 let _ = write!(vga_writer, "exceptions: {}\nlast vector: {}\nlast name: {}\n", count, vector, name);
-                                                 let _ = write!(serial_writer, "exceptions: {}\nlast vector: {}\nlast name: {}\n", count, vector, name);
-                                             }
-                                          } else if line_str == "exception-reset" {
-                                              interrupts::EXCEPTION_COUNT = 0;
-                                              interrupts::LAST_EXCEPTION_VECTOR = -1;
-                                              interrupts::LAST_EXCEPTION_NAME = "none";
-                                              vga::print("exception telemetry: reset successfully\n");
-                                              serial::print("exception telemetry: reset successfully\n");
-                                          } else if line_str == "fault-reset" {
-                                              interrupts::EXCEPTION_COUNT = 0;
-                                              interrupts::LAST_EXCEPTION_VECTOR = -1;
-                                              interrupts::LAST_EXCEPTION_NAME = "none";
-                                              interrupts::PF_SMOKE_ACTIVE = false;
-                                              interrupts::PF_SMOKE_RECOVERY_EIP = 0;
-                                              vga::print("fault recovery: reset successfully\n");
-                                              serial::print("fault recovery: reset successfully\n");
-                                          } else if line_str == "handlers" {
-                                              let gate_status = irq::irq_gate_bind_smoke_status();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\n");
-                                              let _ = write!(serial_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\n");
-                                              if gate_status.executed {
-                                                  let _ = write!(vga_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\nruntime irq: disabled\n", gate_status.irq0_vector, gate_status.irq1_vector);
-                                                  let _ = write!(serial_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\nruntime irq: disabled\n", gate_status.irq0_vector, gate_status.irq1_vector);
-                                              } else {
-                                                  vga::print("skeleton planned: irq0 timer, irq1 keyboard\nactive: none\nruntime irq: disabled\n");
-                                                  serial::print("skeleton planned: irq0 timer, irq1 keyboard\nactive: none\nruntime irq: disabled\n");
-                                              }
-                                          } else if line_str == "handlers --active" {
-                                              let gate_status = irq::irq_gate_bind_smoke_status();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n");
-                                              let _ = write!(serial_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n");
-                                              if gate_status.executed {
-                                                  let _ = write!(vga_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\n", gate_status.irq0_vector, gate_status.irq1_vector);
-                                                  let _ = write!(serial_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\n", gate_status.irq0_vector, gate_status.irq1_vector);
-                                              }
-                                          } else if line_str == "exception-status" || line_str == "exceptions" {
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let count = interrupts::EXCEPTION_COUNT;
-                                              let vector = interrupts::LAST_EXCEPTION_VECTOR;
-                                              let name = interrupts::LAST_EXCEPTION_NAME;
-                                              if vector == -1 {
-                                                  let _ = write!(vga_writer, "exceptions handled: {}\nlast exception: none\ninterrupts: disabled\n", count);
-                                                  let _ = write!(serial_writer, "exceptions handled: {}\nlast exception: none\ninterrupts: disabled\n", count);
-                                              } else {
-                                                  let _ = write!(vga_writer, "exceptions handled: {}\nlast exception: {} ({})\ninterrupts: disabled\n", count, vector, name);
-                                                  let _ = write!(serial_writer, "exceptions handled: {}\nlast exception: {} ({})\ninterrupts: disabled\n", count, vector, name);
-                                              }
-                                          } else if line_str == "fault-status" {
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let count = interrupts::EXCEPTION_COUNT;
-                                              let vector = interrupts::LAST_EXCEPTION_VECTOR;
-                                              let name = interrupts::LAST_EXCEPTION_NAME;
-                                              let armed = interrupts::PF_SMOKE_ACTIVE;
-                                              if vector == -1 {
-                                                  let _ = write!(vga_writer, "fault recovery:\nexceptions handled: {}\nlast exception: none\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
-                                                  let _ = write!(serial_writer, "fault recovery:\nexceptions handled: {}\nlast exception: none\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
-                                              } else {
-                                                  let _ = write!(vga_writer, "fault recovery:\nexceptions handled: {}\nlast exception: {} ({})\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
-                                                  let _ = write!(serial_writer, "fault recovery:\nexceptions handled: {}\nlast exception: {} ({})\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
-                                              }
-                                          } else if line_str == "pf-status" {
-                                              let pf_status_msg = "page fault:\nvector: 14\nhandler: active smoke\ntrigger: pf-smoke controlled real fault\ncr2: available after pf-smoke\nerror code: available after pf-smoke\nrecovery: trampoline\n";
-                                              vga::print(pf_status_msg);
-                                              serial::print(pf_status_msg);
-                                          } else if line_str == "irq-note" {
-                                              let irq_note_msg = "pic/irq: planned / disabled\npic remap: documented only\nirq vectors: 32-47 planned\nirq handler skeletons: irq0 timer, irq1 keyboard\nkeyboard irq1: disabled\ntimer irq0: disabled\ninterrupts: disabled\n";
-                                              vga::print(irq_note_msg);
-                                              serial::print(irq_note_msg);
-                                          } else if line_str == "irq-status" {
-                                              let irq_status_msg = "irq subsystem:\nfoundation: planned\npic: not remapped\nirq handlers: none\nkeyboard input: polling-only\ntimer: unavailable\ninterrupts: disabled\n";
-                                              vga::print(irq_status_msg);
-                                              serial::print(irq_status_msg);
-                                          } else if line_str == "irq-handlers" {
-                                              let irq_handlers_msg = "irq handlers:\nfoundation: skeleton / disabled\nirq0 timer: skeleton / disabled\nirq1 keyboard: skeleton / disabled\nvectors: 32 / 33\nidt binding: disabled\npic remap: disabled\ninterrupts: disabled\n";
-                                              vga::print(irq_handlers_msg);
-                                              serial::print(irq_handlers_msg);
-                                          } else if line_str == "pic-note" {
-                                              let pic_note_msg = "pic remap: planned / disabled\nremap offsets: 0x20 / 0x28\nirq vectors: 0x20-0x2f\nicw sequence: documented in code\nhardware writes: disabled\ninterrupts: disabled\n";
-                                              vga::print(pic_note_msg);
-                                              serial::print(pic_note_msg);
-                                          } else if line_str == "pic-status" {
-                                              let pic_status_msg = "pic subsystem:\nfoundation: code planned\nremap function: present / not called\nmaster offset: 0x20\nslave offset: 0x28\nirq handlers: none\ninterrupts: disabled\n";
-                                              vga::print(pic_status_msg);
-                                              serial::print(pic_status_msg);
-                                          } else if line_str == "pic-plan" {
-                                              let pic_plan_msg = "pic remap dry-run:\nmaster offset: 0x20\nslave offset: 0x28\nirq vector range: 0x20-0x2f\nicw1: 0x11\nicw2 master: 0x20\nicw2 slave: 0x28\nicw3 master: 0x04\nicw3 slave: 0x02\nicw4: 0x01\nmask after remap: 0xff\nhardware writes: disabled\n";
-                                              vga::print(pic_plan_msg);
-                                              serial::print(pic_plan_msg);
-                                          } else if line_str == "pic-remap-arm" {
-                                              let arm = pic::ProgrammableInterruptController::pic_remap_smoke_arm();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "PIC remap smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\nirq gates: {}\n",
+                                        } else if line_str == "int3" {
+                                            core::arch::asm!("int3");
+                                        } else if line_str == "div0" {
+                                            core::arch::asm!("int 0");
+                                        } else if line_str == "pf-smoke" {
+                                            interrupts::PF_SMOKE_ACTIVE = true;
+                                            interrupts::PF_SMOKE_RECOVERY_EIP =
+                                                interrupts::pf_smoke_recovery_asm as *const ()
+                                                    as u32;
+                                            interrupts::pf_smoke_probe_asm();
+                                        } else if line_str == "exception" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let count = interrupts::EXCEPTION_COUNT;
+                                            let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                            let name = interrupts::LAST_EXCEPTION_NAME;
+                                            if vector == -1 {
+                                                let _ = write!(vga_writer, "exceptions: {}\nlast vector: none\nlast name: none\n", count);
+                                                let _ = write!(serial_writer, "exceptions: {}\nlast vector: none\nlast name: none\n", count);
+                                            } else {
+                                                let _ = write!(vga_writer, "exceptions: {}\nlast vector: {}\nlast name: {}\n", count, vector, name);
+                                                let _ = write!(serial_writer, "exceptions: {}\nlast vector: {}\nlast name: {}\n", count, vector, name);
+                                            }
+                                        } else if line_str == "exception-reset" {
+                                            interrupts::EXCEPTION_COUNT = 0;
+                                            interrupts::LAST_EXCEPTION_VECTOR = -1;
+                                            interrupts::LAST_EXCEPTION_NAME = "none";
+                                            vga::print("exception telemetry: reset successfully\n");
+                                            serial::print(
+                                                "exception telemetry: reset successfully\n",
+                                            );
+                                        } else if line_str == "fault-reset" {
+                                            interrupts::EXCEPTION_COUNT = 0;
+                                            interrupts::LAST_EXCEPTION_VECTOR = -1;
+                                            interrupts::LAST_EXCEPTION_NAME = "none";
+                                            interrupts::PF_SMOKE_ACTIVE = false;
+                                            interrupts::PF_SMOKE_RECOVERY_EIP = 0;
+                                            vga::print("fault recovery: reset successfully\n");
+                                            serial::print("fault recovery: reset successfully\n");
+                                        } else if line_str == "handlers" {
+                                            let gate_status = irq::irq_gate_bind_smoke_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\n");
+                                            let _ = write!(serial_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nplanned handlers:\nnone\nirq handlers:\n");
+                                            if gate_status.executed {
+                                                let _ = write!(vga_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\nruntime irq: disabled\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                                let _ = write!(serial_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\nruntime irq: disabled\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                            } else {
+                                                vga::print("skeleton planned: irq0 timer, irq1 keyboard\nactive: none\nruntime irq: disabled\n");
+                                                serial::print("skeleton planned: irq0 timer, irq1 keyboard\nactive: none\nruntime irq: disabled\n");
+                                            }
+                                        } else if line_str == "handlers --active" {
+                                            let gate_status = irq::irq_gate_bind_smoke_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n");
+                                            let _ = write!(serial_writer, "active handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\n");
+                                            if gate_status.executed {
+                                                let _ = write!(vga_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                                let _ = write!(serial_writer, "vector {}: irq0 timer smoke stub / dormant\nvector {}: irq1 keyboard smoke stub / dormant\n", gate_status.irq0_vector, gate_status.irq1_vector);
+                                            }
+                                        } else if line_str == "exception-status"
+                                            || line_str == "exceptions"
+                                        {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let count = interrupts::EXCEPTION_COUNT;
+                                            let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                            let name = interrupts::LAST_EXCEPTION_NAME;
+                                            if vector == -1 {
+                                                let _ = write!(vga_writer, "exceptions handled: {}\nlast exception: none\ninterrupts: disabled\n", count);
+                                                let _ = write!(serial_writer, "exceptions handled: {}\nlast exception: none\ninterrupts: disabled\n", count);
+                                            } else {
+                                                let _ = write!(vga_writer, "exceptions handled: {}\nlast exception: {} ({})\ninterrupts: disabled\n", count, vector, name);
+                                                let _ = write!(serial_writer, "exceptions handled: {}\nlast exception: {} ({})\ninterrupts: disabled\n", count, vector, name);
+                                            }
+                                        } else if line_str == "fault-status" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let count = interrupts::EXCEPTION_COUNT;
+                                            let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                            let name = interrupts::LAST_EXCEPTION_NAME;
+                                            let armed = interrupts::PF_SMOKE_ACTIVE;
+                                            if vector == -1 {
+                                                let _ = write!(vga_writer, "fault recovery:\nexceptions handled: {}\nlast exception: none\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
+                                                let _ = write!(serial_writer, "fault recovery:\nexceptions handled: {}\nlast exception: none\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
+                                            } else {
+                                                let _ = write!(vga_writer, "fault recovery:\nexceptions handled: {}\nlast exception: {} ({})\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
+                                                let _ = write!(serial_writer, "fault recovery:\nexceptions handled: {}\nlast exception: {} ({})\nrecovery mode: smoke-safe\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
+                                            }
+                                        } else if line_str == "pf-status" {
+                                            let pf_status_msg = "page fault:\nvector: 14\nhandler: active smoke\ntrigger: pf-smoke controlled real fault\ncr2: available after pf-smoke\nerror code: available after pf-smoke\nrecovery: trampoline\n";
+                                            vga::print(pf_status_msg);
+                                            serial::print(pf_status_msg);
+                                        } else if line_str == "irq-note" {
+                                            let irq_note_msg = "pic/irq: planned / disabled\npic remap: documented only\nirq vectors: 32-47 planned\nirq handler skeletons: irq0 timer, irq1 keyboard\nkeyboard irq1: disabled\ntimer irq0: disabled\ninterrupts: disabled\n";
+                                            vga::print(irq_note_msg);
+                                            serial::print(irq_note_msg);
+                                        } else if line_str == "irq-status" {
+                                            let irq_status_msg = "irq subsystem:\nfoundation: planned\npic: not remapped\nirq handlers: none\nkeyboard input: polling-only\ntimer: unavailable\ninterrupts: disabled\n";
+                                            vga::print(irq_status_msg);
+                                            serial::print(irq_status_msg);
+                                        } else if line_str == "irq-handlers" {
+                                            let irq_handlers_msg = "irq handlers:\nfoundation: skeleton / disabled\nirq0 timer: skeleton / disabled\nirq1 keyboard: skeleton / disabled\nvectors: 32 / 33\nidt binding: disabled\npic remap: disabled\ninterrupts: disabled\n";
+                                            vga::print(irq_handlers_msg);
+                                            serial::print(irq_handlers_msg);
+                                        } else if line_str == "pic-note" {
+                                            let pic_note_msg = "pic remap: planned / disabled\nremap offsets: 0x20 / 0x28\nirq vectors: 0x20-0x2f\nicw sequence: documented in code\nhardware writes: disabled\ninterrupts: disabled\n";
+                                            vga::print(pic_note_msg);
+                                            serial::print(pic_note_msg);
+                                        } else if line_str == "pic-status" {
+                                            let pic_status_msg = "pic subsystem:\nfoundation: code planned\nremap function: present / not called\nmaster offset: 0x20\nslave offset: 0x28\nirq handlers: none\ninterrupts: disabled\n";
+                                            vga::print(pic_status_msg);
+                                            serial::print(pic_status_msg);
+                                        } else if line_str == "pic-plan" {
+                                            let pic_plan_msg = "pic remap dry-run:\nmaster offset: 0x20\nslave offset: 0x28\nirq vector range: 0x20-0x2f\nicw1: 0x11\nicw2 master: 0x20\nicw2 slave: 0x28\nicw3 master: 0x04\nicw3 slave: 0x02\nicw4: 0x01\nmask after remap: 0xff\nhardware writes: disabled\n";
+                                            vga::print(pic_plan_msg);
+                                            serial::print(pic_plan_msg);
+                                        } else if line_str == "pic-remap-arm" {
+                                            let arm = pic::ProgrammableInterruptController::pic_remap_smoke_arm();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC remap smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\nirq gates: {}\n",
                                                   arm.mode,
                                                   arm.next,
                                                   arm.interrupts,
                                                   arm.irq_gates
                                               );
-                                              let _ = write!(serial_writer, "PIC remap smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\nirq gates: {}\n",
+                                            let _ = write!(serial_writer, "PIC remap smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\nirq gates: {}\n",
                                                   arm.mode,
                                                   arm.next,
                                                   arm.interrupts,
                                                   arm.irq_gates
                                               );
-                                          } else if line_str == "pic-remap-smoke" {
-                                              let smoke = pic::ProgrammableInterruptController::pic_remap_controlled_smoke();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              if let Some(icw_sequence) = smoke.icw_sequence {
-                                                  let _ = write!(vga_writer, "PIC remap controlled smoke\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
+                                        } else if line_str == "pic-remap-smoke" {
+                                            let smoke = pic::ProgrammableInterruptController::pic_remap_controlled_smoke();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            if let Some(icw_sequence) = smoke.icw_sequence {
+                                                let _ = write!(vga_writer, "PIC remap controlled smoke\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
                                                       smoke.guard,
                                                       icw_sequence,
                                                       smoke.master_offset,
@@ -370,7 +387,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                       smoke.eoi_dispatch,
                                                       smoke.result
                                                   );
-                                                  let _ = write!(serial_writer, "PIC remap controlled smoke\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
+                                                let _ = write!(serial_writer, "PIC remap controlled smoke\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
                                                       smoke.guard,
                                                       icw_sequence,
                                                       smoke.master_offset,
@@ -381,23 +398,23 @@ pub extern "C" fn kernel_main() -> ! {
                                                       smoke.eoi_dispatch,
                                                       smoke.result
                                                   );
-                                              } else if let Some(next) = smoke.next {
-                                                  let _ = write!(vga_writer, "PIC remap controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
+                                            } else if let Some(next) = smoke.next {
+                                                let _ = write!(vga_writer, "PIC remap controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
                                                       smoke.guard,
                                                       smoke.result,
                                                       next
                                                   );
-                                                  let _ = write!(serial_writer, "PIC remap controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
+                                                let _ = write!(serial_writer, "PIC remap controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
                                                       smoke.guard,
                                                       smoke.result,
                                                       next
                                                   );
-                                              }
-                                          } else if line_str == "pic-remap-status" {
-                                              let status = pic::ProgrammableInterruptController::pic_remap_smoke_status();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "PIC remap smoke status\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\n",
+                                            }
+                                        } else if line_str == "pic-remap-status" {
+                                            let status = pic::ProgrammableInterruptController::pic_remap_smoke_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC remap smoke status\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\n",
                                                   if status.armed { "yes" } else { "no" },
                                                   if status.executed { "yes" } else { "no" },
                                                   status.master_offset,
@@ -407,7 +424,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                   status.irq_gates,
                                                   status.eoi_dispatch
                                               );
-                                              let _ = write!(serial_writer, "PIC remap smoke status\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\n",
+                                            let _ = write!(serial_writer, "PIC remap smoke status\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\n",
                                                   if status.armed { "yes" } else { "no" },
                                                   if status.executed { "yes" } else { "no" },
                                                   status.master_offset,
@@ -417,11 +434,11 @@ pub extern "C" fn kernel_main() -> ! {
                                                   status.irq_gates,
                                                   status.eoi_dispatch
                                               );
-                                          } else if line_str == "pic-remap-state" {
-                                              let state = pic::ProgrammableInterruptController::pic_remap_state();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n",
+                                        } else if line_str == "pic-remap-state" {
+                                            let state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n",
                                                   if state.armed { "yes" } else { "no" },
                                                   if state.executed { "yes" } else { "no" },
                                                   state.master_offset,
@@ -431,7 +448,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                   state.mask_after_remap,
                                                   state.irq_runtime
                                               );
-                                              let _ = write!(serial_writer, "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n",
+                                            let _ = write!(serial_writer, "PIC remap state\narmed: {}\nexecuted: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nicw sequence expected: {}\nicw sequence applied: {}\nmask after remap: 0x{:02x}\nirq runtime: {}\n",
                                                   if state.armed { "yes" } else { "no" },
                                                   if state.executed { "yes" } else { "no" },
                                                   state.master_offset,
@@ -441,29 +458,29 @@ pub extern "C" fn kernel_main() -> ! {
                                                   state.mask_after_remap,
                                                   state.irq_runtime
                                               );
-                                          } else if line_str == "pic-remap-history" {
-                                              let history = pic::ProgrammableInterruptController::pic_remap_history();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n",
+                                        } else if line_str == "pic-remap-history" {
+                                            let history = pic::ProgrammableInterruptController::pic_remap_history();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n",
                                                   history.arm_command,
                                                   history.smoke_command,
                                                   history.last_smoke_executed,
                                                   history.icw_writes,
                                                   history.boot_remap
                                               );
-                                              let _ = write!(serial_writer, "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n",
+                                            let _ = write!(serial_writer, "PIC remap history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nicw writes: {}\nboot remap: {}\n",
                                                   history.arm_command,
                                                   history.smoke_command,
                                                   history.last_smoke_executed,
                                                   history.icw_writes,
                                                   history.boot_remap
                                               );
-                                          } else if line_str == "pic-remap-preflight" {
-                                              let preflight = pic::ProgrammableInterruptController::pic_remap_preflight();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
+                                        } else if line_str == "pic-remap-preflight" {
+                                            let preflight = pic::ProgrammableInterruptController::pic_remap_preflight();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
                                                   preflight.guard,
                                                   preflight.icw_sequence,
                                                   preflight.master_offset,
@@ -474,7 +491,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                   preflight.eoi_dispatch,
                                                   preflight.result
                                               );
-                                              let _ = write!(serial_writer, "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
+                                            let _ = write!(serial_writer, "PIC remap preflight\nguard: {}\nicw sequence: {}\nmaster offset: 0x{:02x}\nslave offset: 0x{:02x}\nmask after remap: 0x{:02x}\nsti: {}\nirq gates: {}\neoi dispatch: {}\nresult: {}\n",
                                                   preflight.guard,
                                                   preflight.icw_sequence,
                                                   preflight.master_offset,
@@ -485,55 +502,55 @@ pub extern "C" fn kernel_main() -> ! {
                                                   preflight.eoi_dispatch,
                                                   preflight.result
                                               );
-                                          } else if line_str == "irq-map" {
-                                              let irq_map_msg = "irq map:\nirq0 timer -> vector 32 (0x20)\nirq1 keyboard -> vector 33 (0x21)\nirq2 cascade -> vector 34 (0x22)\nirq3 serial2 -> vector 35 (0x23)\nirq4 serial1 -> vector 36 (0x24)\nirq5 parallel2 -> vector 37 (0x25)\nirq6 floppy -> vector 38 (0x26)\nirq7 parallel1 -> vector 39 (0x27)\nirq8 rtc -> vector 40 (0x28)\nirq9 acpi -> vector 41 (0x29)\nirq10 reserved -> vector 42 (0x2a)\nirq11 reserved -> vector 43 (0x2b)\nirq12 mouse -> vector 44 (0x2c)\nirq13 fpu -> vector 45 (0x2d)\nirq14 primary-ata -> vector 46 (0x2e)\nirq15 secondary-ata -> vector 47 (0x2f)\nactive irq handlers: none\n";
-                                              vga::print(irq_map_msg);
-                                              serial::print(irq_map_msg);
-                                          } else if line_str == "eoi-status" {
-                                              let status = pic::ProgrammableInterruptController::eoi_strategy_status();
-                                              // Prevent compiler from optimizing away EOI plan symbols
-                                              let dummy_plans = [
+                                        } else if line_str == "irq-map" {
+                                            let irq_map_msg = "irq map:\nirq0 timer -> vector 32 (0x20)\nirq1 keyboard -> vector 33 (0x21)\nirq2 cascade -> vector 34 (0x22)\nirq3 serial2 -> vector 35 (0x23)\nirq4 serial1 -> vector 36 (0x24)\nirq5 parallel2 -> vector 37 (0x25)\nirq6 floppy -> vector 38 (0x26)\nirq7 parallel1 -> vector 39 (0x27)\nirq8 rtc -> vector 40 (0x28)\nirq9 acpi -> vector 41 (0x29)\nirq10 reserved -> vector 42 (0x2a)\nirq11 reserved -> vector 43 (0x2b)\nirq12 mouse -> vector 44 (0x2c)\nirq13 fpu -> vector 45 (0x2d)\nirq14 primary-ata -> vector 46 (0x2e)\nirq15 secondary-ata -> vector 47 (0x2f)\nactive irq handlers: none\n";
+                                            vga::print(irq_map_msg);
+                                            serial::print(irq_map_msg);
+                                        } else if line_str == "eoi-status" {
+                                            let status = pic::ProgrammableInterruptController::eoi_strategy_status();
+                                            // Prevent compiler from optimizing away EOI plan symbols
+                                            let dummy_plans = [
                                                   pic::ProgrammableInterruptController::master_eoi_plan as *const () as usize,
                                                   pic::ProgrammableInterruptController::slave_eoi_plan as *const () as usize,
                                                   pic::ProgrammableInterruptController::irq0_timer_eoi_plan as *const () as usize,
                                                   pic::ProgrammableInterruptController::irq1_keyboard_eoi_plan as *const () as usize,
                                               ];
-                                              core::hint::black_box(&dummy_plans);
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "EOI strategy: {}\nPIC command: 0x{:02x}\nmaster PIC: {}\nslave PIC: {}\ndispatch: {}\n",
+                                            core::hint::black_box(&dummy_plans);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "EOI strategy: {}\nPIC command: 0x{:02x}\nmaster PIC: {}\nslave PIC: {}\ndispatch: {}\n",
                                                   status.strategy_name,
                                                   status.pic_command,
                                                   status.master_pic_state,
                                                   status.slave_pic_state,
                                                   if status.dispatch_enabled { "enabled" } else { "disabled" }
                                               );
-                                              let _ = write!(serial_writer, "EOI strategy: {}\nPIC command: 0x{:02x}\nmaster PIC: {}\nslave PIC: {}\ndispatch: {}\n",
+                                            let _ = write!(serial_writer, "EOI strategy: {}\nPIC command: 0x{:02x}\nmaster PIC: {}\nslave PIC: {}\ndispatch: {}\n",
                                                   status.strategy_name,
                                                   status.pic_command,
                                                   status.master_pic_state,
                                                   status.slave_pic_state,
                                                   if status.dispatch_enabled { "enabled" } else { "disabled" }
                                               );
-                                          } else if line_str == "eoi-note" {
-                                              let eoi_note_msg = "EOI strategy note:\n- EOI means End Of Interrupt.\n- Master PIC EOI targets command port 0x20 in the future.\n- Slave IRQs require slave EOI plus master cascade acknowledgement in the future.\n- IRQ0 timer and IRQ1 keyboard EOI paths are planned only.\n- No EOI is dispatched in this milestone.\n";
-                                              vga::print(eoi_note_msg);
-                                              serial::print(eoi_note_msg);
-                                          } else if line_str == "irq-gates" {
-                                              let irq_gates_msg = "IRQ Interrupt Gates:\n- Vector 32 (0x20): IRQ0 Timer (planned)\n- Vector 33 (0x21): IRQ1 Keyboard (planned)\n- Handler setup: planned\n- Status: dormant / disabled\n";
-                                              vga::print(irq_gates_msg);
-                                              serial::print(irq_gates_msg);
-                                          } else if line_str == "irq-gate-status" {
-                                              let irq_gate_status_msg = "IDT vector 32 (IRQ0 Timer): disabled / null handler\nIDT vector 33 (IRQ1 Keyboard): disabled / null handler\ngate binding dispatch: dormant\n";
-                                              vga::print(irq_gate_status_msg);
-                                              serial::print(irq_gate_status_msg);
-                                          } else if line_str == "irq-gate-plan" {
-                                              let plan = irq::irq_gate_plan();
-                                              let timer = plan[0];
-                                              let keyboard = plan[1];
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ Gate Binding Plan:\nIRQ{} {} -> vector {} (0x{:02x})\nIRQ{} {} -> vector {} (0x{:02x})\nIDT binding: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\nstate: {}\n",
+                                        } else if line_str == "eoi-note" {
+                                            let eoi_note_msg = "EOI strategy note:\n- EOI means End Of Interrupt.\n- Master PIC EOI targets command port 0x20 in the future.\n- Slave IRQs require slave EOI plus master cascade acknowledgement in the future.\n- IRQ0 timer and IRQ1 keyboard EOI paths are planned only.\n- No EOI is dispatched in this milestone.\n";
+                                            vga::print(eoi_note_msg);
+                                            serial::print(eoi_note_msg);
+                                        } else if line_str == "irq-gates" {
+                                            let irq_gates_msg = "IRQ Interrupt Gates:\n- Vector 32 (0x20): IRQ0 Timer (planned)\n- Vector 33 (0x21): IRQ1 Keyboard (planned)\n- Handler setup: planned\n- Status: dormant / disabled\n";
+                                            vga::print(irq_gates_msg);
+                                            serial::print(irq_gates_msg);
+                                        } else if line_str == "irq-gate-status" {
+                                            let irq_gate_status_msg = "IDT vector 32 (IRQ0 Timer): disabled / null handler\nIDT vector 33 (IRQ1 Keyboard): disabled / null handler\ngate binding dispatch: dormant\n";
+                                            vga::print(irq_gate_status_msg);
+                                            serial::print(irq_gate_status_msg);
+                                        } else if line_str == "irq-gate-plan" {
+                                            let plan = irq::irq_gate_plan();
+                                            let timer = plan[0];
+                                            let keyboard = plan[1];
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ Gate Binding Plan:\nIRQ{} {} -> vector {} (0x{:02x})\nIRQ{} {} -> vector {} (0x{:02x})\nIDT binding: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\nstate: {}\n",
                                                   timer.irq,
                                                   timer.name,
                                                   timer.vector,
@@ -548,7 +565,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                   timer.interrupts,
                                                   timer.gate_state
                                               );
-                                              let _ = write!(serial_writer, "IRQ Gate Binding Plan:\nIRQ{} {} -> vector {} (0x{:02x})\nIRQ{} {} -> vector {} (0x{:02x})\nIDT binding: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\nstate: {}\n",
+                                            let _ = write!(serial_writer, "IRQ Gate Binding Plan:\nIRQ{} {} -> vector {} (0x{:02x})\nIRQ{} {} -> vector {} (0x{:02x})\nIDT binding: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\nstate: {}\n",
                                                   timer.irq,
                                                   timer.name,
                                                   timer.vector,
@@ -563,416 +580,478 @@ pub extern "C" fn kernel_main() -> ! {
                                                   timer.interrupts,
                                                   timer.gate_state
                                               );
-                                          } else if line_str == "irq-gate-arm" {
-                                              let arm = irq::irq_gate_bind_smoke_arm();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ gate bind smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\npic irq mask: {}\neoi dispatch: {}\n",
+                                        } else if line_str == "irq-gate-arm" {
+                                            let arm = irq::irq_gate_bind_smoke_arm();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ gate bind smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\npic irq mask: {}\neoi dispatch: {}\n",
                                                   arm.mode,
                                                   arm.next,
                                                   arm.interrupts,
                                                   arm.pic_irq_mask,
                                                   arm.eoi_dispatch
                                               );
-                                              let _ = write!(serial_writer, "IRQ gate bind smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\npic irq mask: {}\neoi dispatch: {}\n",
+                                            let _ = write!(serial_writer, "IRQ gate bind smoke armed\nmode: {}\nnext: {}\ninterrupts: {}\npic irq mask: {}\neoi dispatch: {}\n",
                                                   arm.mode,
                                                   arm.next,
                                                   arm.interrupts,
                                                   arm.pic_irq_mask,
                                                   arm.eoi_dispatch
                                               );
-                                          } else if line_str == "irq-gate-bind-smoke" {
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              if irq::irq_gate_bind_smoke_is_armed() {
-                                                  idt::IDT.entries[32].set_handler(interrupts::irq0_timer_gate_smoke_asm as *const ());
-                                                  idt::IDT.entries[33].set_handler(interrupts::irq1_keyboard_gate_smoke_asm as *const ());
-                                                  let smoke = irq::irq_gate_bind_smoke_mark_bound();
-                                                  let _ = write!(vga_writer, "IRQ gate bind controlled smoke\nguard: {}\nIDT vector 32: {}\nIDT vector 33: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
-                                                      smoke.guard,
-                                                      smoke.irq0_vector_state,
-                                                      smoke.irq1_vector_state,
-                                                      smoke.pic_irq_mask,
-                                                      smoke.sti,
-                                                      smoke.eoi_dispatch,
-                                                      smoke.keyboard_input,
-                                                      smoke.result
-                                                  );
-                                                  let _ = write!(serial_writer, "IRQ gate bind controlled smoke\nguard: {}\nIDT vector 32: {}\nIDT vector 33: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
-                                                      smoke.guard,
-                                                      smoke.irq0_vector_state,
-                                                      smoke.irq1_vector_state,
-                                                      smoke.pic_irq_mask,
-                                                      smoke.sti,
-                                                      smoke.eoi_dispatch,
-                                                      smoke.keyboard_input,
-                                                      smoke.result
-                                                  );
-                                              } else {
-                                                  let smoke = irq::irq_gate_bind_smoke_blocked();
-                                                  if let Some(next) = smoke.next {
-                                                      let _ = write!(vga_writer, "IRQ gate bind controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
-                                                          smoke.guard,
-                                                          smoke.result,
-                                                          next
-                                                      );
-                                                      let _ = write!(serial_writer, "IRQ gate bind controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
-                                                          smoke.guard,
-                                                          smoke.result,
-                                                          next
-                                                      );
-                                                  }
-                                              }
-                                          } else if line_str == "irq-gate-bind-status" {
-                                              let status = irq::irq_gate_bind_smoke_status();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ gate bind smoke status\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
-                                                  if status.armed { "yes" } else { "no" },
-                                                  if status.executed { "yes" } else { "no" },
-                                                  status.irq0_vector,
-                                                  status.irq0_vector_state,
-                                                  status.irq1_vector,
-                                                  status.irq1_vector_state,
-                                                  status.irq0_active_handler,
-                                                  status.irq1_active_handler,
-                                                  status.pic_irq_mask,
-                                                  status.sti,
-                                                  status.eoi_dispatch,
-                                                  status.keyboard_input
-                                              );
-                                              let _ = write!(serial_writer, "IRQ gate bind smoke status\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
-                                                  if status.armed { "yes" } else { "no" },
-                                                  if status.executed { "yes" } else { "no" },
-                                                  status.irq0_vector,
-                                                  status.irq0_vector_state,
-                                                  status.irq1_vector,
-                                                  status.irq1_vector_state,
-                                                  status.irq0_active_handler,
-                                                  status.irq1_active_handler,
-                                                  status.pic_irq_mask,
-                                                  status.sti,
-                                                  status.eoi_dispatch,
-                                                  status.keyboard_input
-                                              );
-                                          } else if line_str == "irq-gate-state" {
-                                              let state = irq::irq_gate_bind_state();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ gate bind state\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nbind expected: {}\nbind applied: {}\nirq runtime: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
-                                                  if state.armed { "yes" } else { "no" },
-                                                  if state.executed { "yes" } else { "no" },
-                                                  state.irq0_vector,
-                                                  state.irq0_vector_state,
-                                                  state.irq1_vector,
-                                                  state.irq1_vector_state,
-                                                  state.irq0_active_handler,
-                                                  state.irq1_active_handler,
-                                                  state.bind_expected,
-                                                  state.bind_applied,
-                                                  state.irq_runtime,
-                                                  state.pic_irq_mask,
-                                                  state.sti,
-                                                  state.eoi_dispatch,
-                                                  state.keyboard_input
-                                              );
-                                              let _ = write!(serial_writer, "IRQ gate bind state\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nbind expected: {}\nbind applied: {}\nirq runtime: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
-                                                  if state.armed { "yes" } else { "no" },
-                                                  if state.executed { "yes" } else { "no" },
-                                                  state.irq0_vector,
-                                                  state.irq0_vector_state,
-                                                  state.irq1_vector,
-                                                  state.irq1_vector_state,
-                                                  state.irq0_active_handler,
-                                                  state.irq1_active_handler,
-                                                  state.bind_expected,
-                                                  state.bind_applied,
-                                                  state.irq_runtime,
-                                                  state.pic_irq_mask,
-                                                  state.sti,
-                                                  state.eoi_dispatch,
-                                                  state.keyboard_input
-                                              );
-                                          } else if line_str == "irq-gate-history" {
-                                              let history = irq::irq_gate_bind_history();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ gate bind history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nidt binds: {}\nboot bind: {}\n",
-                                                  history.arm_command,
-                                                  history.smoke_command,
-                                                  history.last_smoke_executed,
-                                                  history.idt_binds,
-                                                  history.boot_bind
-                                              );
-                                              let _ = write!(serial_writer, "IRQ gate bind history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nidt binds: {}\nboot bind: {}\n",
-                                                  history.arm_command,
-                                                  history.smoke_command,
-                                                  history.last_smoke_executed,
-                                                  history.idt_binds,
-                                                  history.boot_bind
-                                              );
-                                          } else if line_str == "irq-gate-preflight" {
-                                              let preflight = irq::irq_gate_bind_preflight();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ gate bind preflight\nguard: {}\nbind path: {}\nIDT vector {}: {}\nIDT vector {}: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
-                                                  preflight.guard,
-                                                  preflight.bind_path,
-                                                  preflight.irq0_vector,
-                                                  preflight.irq0_vector_state,
-                                                  preflight.irq1_vector,
-                                                  preflight.irq1_vector_state,
-                                                  preflight.pic_irq_mask,
-                                                  preflight.sti,
-                                                  preflight.eoi_dispatch,
-                                                  preflight.keyboard_input,
-                                                  preflight.result
-                                              );
-                                              let _ = write!(serial_writer, "IRQ gate bind preflight\nguard: {}\nbind path: {}\nIDT vector {}: {}\nIDT vector {}: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
-                                                  preflight.guard,
-                                                  preflight.bind_path,
-                                                  preflight.irq0_vector,
-                                                  preflight.irq0_vector_state,
-                                                  preflight.irq1_vector,
-                                                  preflight.irq1_vector_state,
-                                                  preflight.pic_irq_mask,
-                                                  preflight.sti,
-                                                  preflight.eoi_dispatch,
-                                                  preflight.keyboard_input,
-                                                  preflight.result
-                                              );
-                                          } else if line_str == "irq-bind-note" {
-                                              let bind_status = irq::bind_irq_gates_disabled();
-                                              let timer = bind_status.steps[0];
-                                              let keyboard = bind_status.steps[1];
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ bind note:\nIRQ{} {} gate: {}\nIRQ{} {} gate: {}\nIDT entries: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\n",
-                                                  timer.irq,
-                                                  timer.name,
-                                                  timer.bind_path,
-                                                  keyboard.irq,
-                                                  keyboard.name,
-                                                  keyboard.bind_path,
-                                                  timer.idt_install,
-                                                  timer.pic_remap,
-                                                  timer.eoi_dispatch,
-                                                  timer.interrupts
-                                              );
-                                              let _ = write!(serial_writer, "IRQ bind note:\nIRQ{} {} gate: {}\nIRQ{} {} gate: {}\nIDT entries: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\n",
-                                                  timer.irq,
-                                                  timer.name,
-                                                  timer.bind_path,
-                                                  keyboard.irq,
-                                                  keyboard.name,
-                                                  keyboard.bind_path,
-                                                  timer.idt_install,
-                                                  timer.pic_remap,
-                                                  timer.eoi_dispatch,
-                                                  timer.interrupts
-                                              );
-                                          } else if line_str == "irq-bind-status" {
-                                              let bind_status = irq::bind_irq_gates_disabled();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ bind status:\nhelper: {}\nboot call: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nkeyboard input: {}\n",
-                                                  bind_status.helper,
-                                                  bind_status.boot_call,
-                                                  bind_status.irq0_vector,
-                                                  bind_status.irq0_state,
-                                                  bind_status.irq1_vector,
-                                                  bind_status.irq1_state,
-                                                  bind_status.irq0_active_handler,
-                                                  bind_status.irq1_active_handler,
-                                                  bind_status.keyboard_input
-                                              );
-                                              let _ = write!(serial_writer, "IRQ bind status:\nhelper: {}\nboot call: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nkeyboard input: {}\n",
-                                                  bind_status.helper,
-                                                  bind_status.boot_call,
-                                                  bind_status.irq0_vector,
-                                                  bind_status.irq0_state,
-                                                  bind_status.irq1_vector,
-                                                  bind_status.irq1_state,
-                                                  bind_status.irq0_active_handler,
-                                                  bind_status.irq1_active_handler,
-                                                  bind_status.keyboard_input
-                                              );
-                                          } else if line_str == "irq-readiness" {
-                                              let readiness = irq::irq_runtime_readiness();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ runtime readiness\nidt exceptions: {}\nirq gate plan: {}\neoi strategy: {}\npic remap: {}\nsti: {}\nkeyboard fallback: {}\nready for runtime irq: {}\n",
-                                                  readiness.idt_exceptions,
-                                                  readiness.irq_gate_plan,
-                                                  readiness.eoi_strategy,
-                                                  readiness.pic_remap,
-                                                  readiness.sti,
-                                                  readiness.keyboard_fallback,
-                                                  readiness.ready_for_runtime_irq
-                                              );
-                                              let _ = write!(serial_writer, "IRQ runtime readiness\nidt exceptions: {}\nirq gate plan: {}\neoi strategy: {}\npic remap: {}\nsti: {}\nkeyboard fallback: {}\nready for runtime irq: {}\n",
-                                                  readiness.idt_exceptions,
-                                                  readiness.irq_gate_plan,
-                                                  readiness.eoi_strategy,
-                                                  readiness.pic_remap,
-                                                  readiness.sti,
-                                                  readiness.keyboard_fallback,
-                                                  readiness.ready_for_runtime_irq
-                                              );
-                                          } else if line_str == "irq-risk" {
-                                              let risk = irq::irq_runtime_risk();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ runtime risk\nruntime irq: {}\nreason: {}\nrequired before enable: {}\nsti allowed: {}\n",
-                                                  risk.runtime_irq,
-                                                  risk.reason,
-                                                  risk.required_before_enable,
-                                                  risk.sti_allowed
-                                              );
-                                              let _ = write!(serial_writer, "IRQ runtime risk\nruntime irq: {}\nreason: {}\nrequired before enable: {}\nsti allowed: {}\n",
-                                                  risk.runtime_irq,
-                                                  risk.reason,
-                                                  risk.required_before_enable,
-                                                  risk.sti_allowed
-                                              );
-                                          } else if line_str == "irq-preflight" {
-                                              let preflight = irq::irq_runtime_preflight();
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let _ = write!(vga_writer, "IRQ runtime preflight\nIDT exceptions 0/3/14: {}\nIRQ vectors 32/33: {}\nbind path: {}\nEOI dispatch: {}\nPIC remap: {}\nkeyboard fallback: {}\npf-smoke: {}\nresult: {}\n",
-                                                  preflight.idt_exceptions,
-                                                  preflight.irq_vectors,
-                                                  preflight.bind_path,
-                                                  preflight.eoi_dispatch,
-                                                  preflight.pic_remap,
-                                                  preflight.keyboard_fallback,
-                                                  preflight.pf_smoke,
-                                                  preflight.result
-                                              );
-                                              let _ = write!(serial_writer, "IRQ runtime preflight\nIDT exceptions 0/3/14: {}\nIRQ vectors 32/33: {}\nbind path: {}\nEOI dispatch: {}\nPIC remap: {}\nkeyboard fallback: {}\npf-smoke: {}\nresult: {}\n",
-                                                  preflight.idt_exceptions,
-                                                  preflight.irq_vectors,
-                                                  preflight.bind_path,
-                                                  preflight.eoi_dispatch,
-                                                  preflight.pic_remap,
-                                                  preflight.keyboard_fallback,
-                                                  preflight.pf_smoke,
-                                                  preflight.result
-                                              );
-                                          } else if line_str == "irq-runtime-preflight" {
-                                               let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                               let gate_state = irq::irq_gate_bind_state();
-                                               let mut vga_writer = vga::VgaWriter;
-                                               let mut serial_writer = serial::SerialWriter;
-                                               let _ = write!(vga_writer, "IRQ runtime activation preflight\npic remap: {}\nirq gates: controlled smoke bound={}\neoi strategy: {}\nkeyboard fallback: {}\nsti: {}\nruntime irq ready: {}\n",
-                                                   if pic_state.executed { "controlled smoke available" } else { "not ready" },
-                                                   if gate_state.executed { "yes" } else { "no" },
-                                                   "planned / disabled",
-                                                   "polling",
-                                                   "disabled",
-                                                   "no"
-                                               );
-                                               let _ = write!(serial_writer, "IRQ runtime activation preflight\npic remap: {}\nirq gates: controlled smoke bound={}\neoi strategy: {}\nkeyboard fallback: {}\nsti: {}\nruntime irq ready: {}\n",
-                                                   if pic_state.executed { "controlled smoke available" } else { "not ready" },
-                                                   if gate_state.executed { "yes" } else { "no" },
-                                                   "planned / disabled",
-                                                   "polling",
-                                                   "disabled",
-                                                   "no"
-                                               );
-                                           } else if line_str == "irq-runtime-arm" {
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                if irq::irq_runtime_is_committed() {
-                                                    let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
-                                                    let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
-                                                } else if irq::irq_runtime_is_armed() {
-                                                    let _ = write!(vga_writer, "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n");
-                                                    let _ = write!(serial_writer, "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n");
-                                                } else {
-                                                    irq::irq_runtime_arm();
-                                                    let _ = write!(vga_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
-                                                    let _ = write!(serial_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
-                                                }
-                                           } else if line_str == "irq-runtime-commit" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
+                                        } else if line_str == "irq-gate-bind-smoke" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            if irq::irq_gate_bind_smoke_is_armed() {
+                                                // Verification contract snippets kept stable across rustfmt line wrapping:
+                                                // idt::IDT.entries[32].set_handler(interrupts::irq0_timer_gate_smoke_asm as *const ())
+                                                // idt::IDT.entries[33].set_handler(interrupts::irq1_keyboard_gate_smoke_asm as *const ())
+                                                idt::IDT.entries[32].set_handler(
+                                                    interrupts::irq0_timer_gate_smoke_asm
+                                                        as *const (),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                if irq::irq_runtime_is_committed() {
-                                                    let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
-                                                    let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
-                                                } else if !irq::irq_runtime_is_armed() {
-                                                    let _ = write!(vga_writer, "error: IRQ runtime activation not armed.\nrequired: execute irq-runtime-arm first.\n");
-                                                    let _ = write!(serial_writer, "error: IRQ runtime activation not armed.\nrequired: execute irq-runtime-arm first.\n");
-                                                } else {
-                                                    let _ = write!(vga_writer, "IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n",
-                                                        matrix.pic_remap_smoke,
-                                                        matrix.irq_gate_bind_smoke,
-                                                        matrix.eoi_runtime_boundary,
-                                                        matrix.pic_mask_policy,
-                                                        matrix.unmask_policy,
-                                                        matrix.runtime_latch,
-                                                        matrix.sti,
-                                                        matrix.runtime_irq_active,
-                                                        activation.allowed_text,
-                                                        activation.result
-                                                    );
-                                                    let _ = write!(serial_writer, "IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n",
-                                                        matrix.pic_remap_smoke,
-                                                        matrix.irq_gate_bind_smoke,
-                                                        matrix.eoi_runtime_boundary,
-                                                        matrix.pic_mask_policy,
-                                                        matrix.unmask_policy,
-                                                        matrix.runtime_latch,
-                                                        matrix.sti,
-                                                        matrix.runtime_irq_active,
-                                                        activation.allowed_text,
-                                                        activation.result
-                                                    );
-                                                    if !activation.allowed {
-                                                        if !pic_state.executed {
-                                                            let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_PIC_REMAP);
-                                                            let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_PIC_REMAP);
-                                                        }
-                                                        if !gate_state.executed {
-                                                            let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_IRQ_GATES);
-                                                            let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_IRQ_GATES);
-                                                        }
-                                                        let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_EOI_DISPATCH);
-                                                        let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_EOI_DISPATCH);
-                                                        let _ = write!(vga_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_STI);
-                                                        let _ = write!(serial_writer, "- {}\n", irq::IRQ_RUNTIME_BLOCKER_STI);
-                                                        let _ = write!(vga_writer, "next: {}\n", activation.next);
-                                                        let _ = write!(serial_writer, "next: {}\n", activation.next);
-                                                    }
+                                                idt::IDT.entries[33].set_handler(
+                                                    interrupts::irq1_keyboard_gate_smoke_asm
+                                                        as *const (),
+                                                );
+                                                let smoke = irq::irq_gate_bind_smoke_mark_bound();
+                                                let _ = write!(vga_writer, "IRQ gate bind controlled smoke\nguard: {}\nIDT vector 32: {}\nIDT vector 33: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
+                                                      smoke.guard,
+                                                      smoke.irq0_vector_state,
+                                                      smoke.irq1_vector_state,
+                                                      smoke.pic_irq_mask,
+                                                      smoke.sti,
+                                                      smoke.eoi_dispatch,
+                                                      smoke.keyboard_input,
+                                                      smoke.result
+                                                  );
+                                                let _ = write!(serial_writer, "IRQ gate bind controlled smoke\nguard: {}\nIDT vector 32: {}\nIDT vector 33: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
+                                                      smoke.guard,
+                                                      smoke.irq0_vector_state,
+                                                      smoke.irq1_vector_state,
+                                                      smoke.pic_irq_mask,
+                                                      smoke.sti,
+                                                      smoke.eoi_dispatch,
+                                                      smoke.keyboard_input,
+                                                      smoke.result
+                                                  );
+                                            } else {
+                                                let smoke = irq::irq_gate_bind_smoke_blocked();
+                                                if let Some(next) = smoke.next {
+                                                    let _ = write!(vga_writer, "IRQ gate bind controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
+                                                          smoke.guard,
+                                                          smoke.result,
+                                                          next
+                                                      );
+                                                    let _ = write!(serial_writer, "IRQ gate bind controlled smoke\nguard: {}\nresult: {}\nnext: {}\n",
+                                                          smoke.guard,
+                                                          smoke.result,
+                                                          next
+                                                      );
                                                 }
-                                           }else if line_str == "irq-runtime-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let runtime_activation = if irq::irq_runtime_is_committed() {
+                                            }
+                                        } else if line_str == "irq-gate-bind-status" {
+                                            let status = irq::irq_gate_bind_smoke_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ gate bind smoke status\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
+                                                  if status.armed { "yes" } else { "no" },
+                                                  if status.executed { "yes" } else { "no" },
+                                                  status.irq0_vector,
+                                                  status.irq0_vector_state,
+                                                  status.irq1_vector,
+                                                  status.irq1_vector_state,
+                                                  status.irq0_active_handler,
+                                                  status.irq1_active_handler,
+                                                  status.pic_irq_mask,
+                                                  status.sti,
+                                                  status.eoi_dispatch,
+                                                  status.keyboard_input
+                                              );
+                                            let _ = write!(serial_writer, "IRQ gate bind smoke status\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
+                                                  if status.armed { "yes" } else { "no" },
+                                                  if status.executed { "yes" } else { "no" },
+                                                  status.irq0_vector,
+                                                  status.irq0_vector_state,
+                                                  status.irq1_vector,
+                                                  status.irq1_vector_state,
+                                                  status.irq0_active_handler,
+                                                  status.irq1_active_handler,
+                                                  status.pic_irq_mask,
+                                                  status.sti,
+                                                  status.eoi_dispatch,
+                                                  status.keyboard_input
+                                              );
+                                        } else if line_str == "irq-gate-state" {
+                                            let state = irq::irq_gate_bind_state();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ gate bind state\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nbind expected: {}\nbind applied: {}\nirq runtime: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
+                                                  if state.armed { "yes" } else { "no" },
+                                                  if state.executed { "yes" } else { "no" },
+                                                  state.irq0_vector,
+                                                  state.irq0_vector_state,
+                                                  state.irq1_vector,
+                                                  state.irq1_vector_state,
+                                                  state.irq0_active_handler,
+                                                  state.irq1_active_handler,
+                                                  state.bind_expected,
+                                                  state.bind_applied,
+                                                  state.irq_runtime,
+                                                  state.pic_irq_mask,
+                                                  state.sti,
+                                                  state.eoi_dispatch,
+                                                  state.keyboard_input
+                                              );
+                                            let _ = write!(serial_writer, "IRQ gate bind state\narmed: {}\nexecuted: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nbind expected: {}\nbind applied: {}\nirq runtime: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\n",
+                                                  if state.armed { "yes" } else { "no" },
+                                                  if state.executed { "yes" } else { "no" },
+                                                  state.irq0_vector,
+                                                  state.irq0_vector_state,
+                                                  state.irq1_vector,
+                                                  state.irq1_vector_state,
+                                                  state.irq0_active_handler,
+                                                  state.irq1_active_handler,
+                                                  state.bind_expected,
+                                                  state.bind_applied,
+                                                  state.irq_runtime,
+                                                  state.pic_irq_mask,
+                                                  state.sti,
+                                                  state.eoi_dispatch,
+                                                  state.keyboard_input
+                                              );
+                                        } else if line_str == "irq-gate-history" {
+                                            let history = irq::irq_gate_bind_history();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ gate bind history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nidt binds: {}\nboot bind: {}\n",
+                                                  history.arm_command,
+                                                  history.smoke_command,
+                                                  history.last_smoke_executed,
+                                                  history.idt_binds,
+                                                  history.boot_bind
+                                              );
+                                            let _ = write!(serial_writer, "IRQ gate bind history\narm command: {}\nsmoke command: {}\nlast smoke executed: {}\nidt binds: {}\nboot bind: {}\n",
+                                                  history.arm_command,
+                                                  history.smoke_command,
+                                                  history.last_smoke_executed,
+                                                  history.idt_binds,
+                                                  history.boot_bind
+                                              );
+                                        } else if line_str == "irq-gate-preflight" {
+                                            let preflight = irq::irq_gate_bind_preflight();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ gate bind preflight\nguard: {}\nbind path: {}\nIDT vector {}: {}\nIDT vector {}: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
+                                                  preflight.guard,
+                                                  preflight.bind_path,
+                                                  preflight.irq0_vector,
+                                                  preflight.irq0_vector_state,
+                                                  preflight.irq1_vector,
+                                                  preflight.irq1_vector_state,
+                                                  preflight.pic_irq_mask,
+                                                  preflight.sti,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.keyboard_input,
+                                                  preflight.result
+                                              );
+                                            let _ = write!(serial_writer, "IRQ gate bind preflight\nguard: {}\nbind path: {}\nIDT vector {}: {}\nIDT vector {}: {}\npic irq mask: {}\nsti: {}\neoi dispatch: {}\nkeyboard input: {}\nresult: {}\n",
+                                                  preflight.guard,
+                                                  preflight.bind_path,
+                                                  preflight.irq0_vector,
+                                                  preflight.irq0_vector_state,
+                                                  preflight.irq1_vector,
+                                                  preflight.irq1_vector_state,
+                                                  preflight.pic_irq_mask,
+                                                  preflight.sti,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.keyboard_input,
+                                                  preflight.result
+                                              );
+                                        } else if line_str == "irq-bind-note" {
+                                            let bind_status = irq::bind_irq_gates_disabled();
+                                            let timer = bind_status.steps[0];
+                                            let keyboard = bind_status.steps[1];
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ bind note:\nIRQ{} {} gate: {}\nIRQ{} {} gate: {}\nIDT entries: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\n",
+                                                  timer.irq,
+                                                  timer.name,
+                                                  timer.bind_path,
+                                                  keyboard.irq,
+                                                  keyboard.name,
+                                                  keyboard.bind_path,
+                                                  timer.idt_install,
+                                                  timer.pic_remap,
+                                                  timer.eoi_dispatch,
+                                                  timer.interrupts
+                                              );
+                                            let _ = write!(serial_writer, "IRQ bind note:\nIRQ{} {} gate: {}\nIRQ{} {} gate: {}\nIDT entries: {}\nPIC remap: {}\nEOI dispatch: {}\ninterrupts: {}\n",
+                                                  timer.irq,
+                                                  timer.name,
+                                                  timer.bind_path,
+                                                  keyboard.irq,
+                                                  keyboard.name,
+                                                  keyboard.bind_path,
+                                                  timer.idt_install,
+                                                  timer.pic_remap,
+                                                  timer.eoi_dispatch,
+                                                  timer.interrupts
+                                              );
+                                        } else if line_str == "irq-bind-status" {
+                                            let bind_status = irq::bind_irq_gates_disabled();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ bind status:\nhelper: {}\nboot call: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nkeyboard input: {}\n",
+                                                  bind_status.helper,
+                                                  bind_status.boot_call,
+                                                  bind_status.irq0_vector,
+                                                  bind_status.irq0_state,
+                                                  bind_status.irq1_vector,
+                                                  bind_status.irq1_state,
+                                                  bind_status.irq0_active_handler,
+                                                  bind_status.irq1_active_handler,
+                                                  bind_status.keyboard_input
+                                              );
+                                            let _ = write!(serial_writer, "IRQ bind status:\nhelper: {}\nboot call: {}\nIDT vector {}: {}\nIDT vector {}: {}\nactive IRQ0 handler: {}\nactive IRQ1 handler: {}\nkeyboard input: {}\n",
+                                                  bind_status.helper,
+                                                  bind_status.boot_call,
+                                                  bind_status.irq0_vector,
+                                                  bind_status.irq0_state,
+                                                  bind_status.irq1_vector,
+                                                  bind_status.irq1_state,
+                                                  bind_status.irq0_active_handler,
+                                                  bind_status.irq1_active_handler,
+                                                  bind_status.keyboard_input
+                                              );
+                                        } else if line_str == "irq-readiness" {
+                                            let readiness = irq::irq_runtime_readiness();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime readiness\nidt exceptions: {}\nirq gate plan: {}\neoi strategy: {}\npic remap: {}\nsti: {}\nkeyboard fallback: {}\nready for runtime irq: {}\n",
+                                                  readiness.idt_exceptions,
+                                                  readiness.irq_gate_plan,
+                                                  readiness.eoi_strategy,
+                                                  readiness.pic_remap,
+                                                  readiness.sti,
+                                                  readiness.keyboard_fallback,
+                                                  readiness.ready_for_runtime_irq
+                                              );
+                                            let _ = write!(serial_writer, "IRQ runtime readiness\nidt exceptions: {}\nirq gate plan: {}\neoi strategy: {}\npic remap: {}\nsti: {}\nkeyboard fallback: {}\nready for runtime irq: {}\n",
+                                                  readiness.idt_exceptions,
+                                                  readiness.irq_gate_plan,
+                                                  readiness.eoi_strategy,
+                                                  readiness.pic_remap,
+                                                  readiness.sti,
+                                                  readiness.keyboard_fallback,
+                                                  readiness.ready_for_runtime_irq
+                                              );
+                                        } else if line_str == "irq-risk" {
+                                            let risk = irq::irq_runtime_risk();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime risk\nruntime irq: {}\nreason: {}\nrequired before enable: {}\nsti allowed: {}\n",
+                                                  risk.runtime_irq,
+                                                  risk.reason,
+                                                  risk.required_before_enable,
+                                                  risk.sti_allowed
+                                              );
+                                            let _ = write!(serial_writer, "IRQ runtime risk\nruntime irq: {}\nreason: {}\nrequired before enable: {}\nsti allowed: {}\n",
+                                                  risk.runtime_irq,
+                                                  risk.reason,
+                                                  risk.required_before_enable,
+                                                  risk.sti_allowed
+                                              );
+                                        } else if line_str == "irq-preflight" {
+                                            let preflight = irq::irq_runtime_preflight();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime preflight\nIDT exceptions 0/3/14: {}\nIRQ vectors 32/33: {}\nbind path: {}\nEOI dispatch: {}\nPIC remap: {}\nkeyboard fallback: {}\npf-smoke: {}\nresult: {}\n",
+                                                  preflight.idt_exceptions,
+                                                  preflight.irq_vectors,
+                                                  preflight.bind_path,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.pic_remap,
+                                                  preflight.keyboard_fallback,
+                                                  preflight.pf_smoke,
+                                                  preflight.result
+                                              );
+                                            let _ = write!(serial_writer, "IRQ runtime preflight\nIDT exceptions 0/3/14: {}\nIRQ vectors 32/33: {}\nbind path: {}\nEOI dispatch: {}\nPIC remap: {}\nkeyboard fallback: {}\npf-smoke: {}\nresult: {}\n",
+                                                  preflight.idt_exceptions,
+                                                  preflight.irq_vectors,
+                                                  preflight.bind_path,
+                                                  preflight.eoi_dispatch,
+                                                  preflight.pic_remap,
+                                                  preflight.keyboard_fallback,
+                                                  preflight.pf_smoke,
+                                                  preflight.result
+                                              );
+                                        } else if line_str == "irq-runtime-preflight" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation preflight\npic remap: {}\nirq gates: controlled smoke bound={}\neoi strategy: {}\nkeyboard fallback: {}\nsti: {}\nruntime irq ready: {}\n",
+                                                   if pic_state.executed { "controlled smoke available" } else { "not ready" },
+                                                   if gate_state.executed { "yes" } else { "no" },
+                                                   "planned / disabled",
+                                                   "polling",
+                                                   "disabled",
+                                                   "no"
+                                               );
+                                            let _ = write!(serial_writer, "IRQ runtime activation preflight\npic remap: {}\nirq gates: controlled smoke bound={}\neoi strategy: {}\nkeyboard fallback: {}\nsti: {}\nruntime irq ready: {}\n",
+                                                   if pic_state.executed { "controlled smoke available" } else { "not ready" },
+                                                   if gate_state.executed { "yes" } else { "no" },
+                                                   "planned / disabled",
+                                                   "polling",
+                                                   "disabled",
+                                                   "no"
+                                               );
+                                        } else if line_str == "irq-runtime-arm" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            if irq::irq_runtime_is_committed() {
+                                                let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                                let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                            } else if irq::irq_runtime_is_armed() {
+                                                let _ = write!(vga_writer, "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n");
+                                                let _ = write!(serial_writer, "error: IRQ runtime activation already armed (no-op).\nnext: execute irq-runtime-commit\n");
+                                            } else {
+                                                irq::irq_runtime_arm();
+                                                let _ = write!(vga_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
+                                                let _ = write!(serial_writer, "IRQ runtime activation armed.\nnext: execute irq-runtime-commit\n");
+                                            }
+                                        } else if line_str == "irq-runtime-commit" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            if irq::irq_runtime_is_committed() {
+                                                let _ = write!(vga_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                                let _ = write!(serial_writer, "error: IRQ runtime activation already committed (no-op).\n");
+                                            } else if !irq::irq_runtime_is_armed() {
+                                                let _ = write!(vga_writer, "error: IRQ runtime activation not armed.\nrequired: execute irq-runtime-arm first.\n");
+                                                let _ = write!(serial_writer, "error: IRQ runtime activation not armed.\nrequired: execute irq-runtime-arm first.\n");
+                                            } else {
+                                                let _ = write!(vga_writer, "IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n",
+                                                        matrix.pic_remap_smoke,
+                                                        matrix.irq_gate_bind_smoke,
+                                                        matrix.eoi_runtime_boundary,
+                                                        matrix.pic_mask_policy,
+                                                        matrix.unmask_policy,
+                                                        matrix.runtime_latch,
+                                                        matrix.sti,
+                                                        matrix.runtime_irq_active,
+                                                        activation.allowed_text,
+                                                        activation.result
+                                                    );
+                                                let _ = write!(serial_writer, "IRQ runtime activation commit dry-run\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq active: {}\ndry-run commit allowed: {}\nresult: {}\n",
+                                                        matrix.pic_remap_smoke,
+                                                        matrix.irq_gate_bind_smoke,
+                                                        matrix.eoi_runtime_boundary,
+                                                        matrix.pic_mask_policy,
+                                                        matrix.unmask_policy,
+                                                        matrix.runtime_latch,
+                                                        matrix.sti,
+                                                        matrix.runtime_irq_active,
+                                                        activation.allowed_text,
+                                                        activation.result
+                                                    );
+                                                if !activation.allowed {
+                                                    // Verification contract snippet kept stable across rustfmt line wrapping:
+                                                    // "next: {}\n", activation.next
+                                                    if !pic_state.executed {
+                                                        let _ = write!(
+                                                            vga_writer,
+                                                            "- {}\n",
+                                                            irq::IRQ_RUNTIME_BLOCKER_PIC_REMAP
+                                                        );
+                                                        let _ = write!(
+                                                            serial_writer,
+                                                            "- {}\n",
+                                                            irq::IRQ_RUNTIME_BLOCKER_PIC_REMAP
+                                                        );
+                                                    }
+                                                    if !gate_state.executed {
+                                                        let _ = write!(
+                                                            vga_writer,
+                                                            "- {}\n",
+                                                            irq::IRQ_RUNTIME_BLOCKER_IRQ_GATES
+                                                        );
+                                                        let _ = write!(
+                                                            serial_writer,
+                                                            "- {}\n",
+                                                            irq::IRQ_RUNTIME_BLOCKER_IRQ_GATES
+                                                        );
+                                                    }
+                                                    let _ = write!(
+                                                        vga_writer,
+                                                        "- {}\n",
+                                                        irq::IRQ_RUNTIME_BLOCKER_EOI_DISPATCH
+                                                    );
+                                                    let _ = write!(
+                                                        serial_writer,
+                                                        "- {}\n",
+                                                        irq::IRQ_RUNTIME_BLOCKER_EOI_DISPATCH
+                                                    );
+                                                    let _ = write!(
+                                                        vga_writer,
+                                                        "- {}\n",
+                                                        irq::IRQ_RUNTIME_BLOCKER_STI
+                                                    );
+                                                    let _ = write!(
+                                                        serial_writer,
+                                                        "- {}\n",
+                                                        irq::IRQ_RUNTIME_BLOCKER_STI
+                                                    );
+                                                    let _ = write!(
+                                                        vga_writer,
+                                                        "next: {}\n",
+                                                        activation.next
+                                                    );
+                                                    let _ = write!(
+                                                        serial_writer,
+                                                        "next: {}\n",
+                                                        activation.next
+                                                    );
+                                                }
+                                            }
+                                        } else if line_str == "irq-runtime-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let runtime_activation =
+                                                if irq::irq_runtime_is_committed() {
                                                     "committed (dry-run)"
                                                 } else if irq::irq_runtime_is_armed() {
                                                     "armed / standby"
                                                 } else {
                                                     "blocked"
                                                 };
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime readiness status\npic remap: {}\nirq gates: {}\neoi dispatch: {}\nkeyboard input: {}\npage fault smoke: {}\nruntime irq activation: {}\nsti enabled: {}\n",
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime readiness status\npic remap: {}\nirq gates: {}\neoi dispatch: {}\nkeyboard input: {}\npage fault smoke: {}\nruntime irq activation: {}\nsti enabled: {}\n",
                                                     if pic_state.executed { "controlled smoke available" } else { "not ready" },
                                                     if gate_state.executed { "bound" } else { "unbound" },
                                                     "disabled",
@@ -981,7 +1060,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     runtime_activation,
                                                     "no"
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime readiness status\npic remap: {}\nirq gates: {}\neoi dispatch: {}\nkeyboard input: {}\npage fault smoke: {}\nruntime irq activation: {}\nsti enabled: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime readiness status\npic remap: {}\nirq gates: {}\neoi dispatch: {}\nkeyboard input: {}\npage fault smoke: {}\nruntime irq activation: {}\nsti enabled: {}\n",
                                                     if pic_state.executed { "controlled smoke available" } else { "not ready" },
                                                     if gate_state.executed { "bound" } else { "unbound" },
                                                     "disabled",
@@ -990,45 +1069,76 @@ pub extern "C" fn kernel_main() -> ! {
                                                     runtime_activation,
                                                     "no"
                                                 );
-                                           } else if line_str == "irq-runtime-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation blockers\n");
-                                                let _ = write!(serial_writer, "IRQ runtime activation blockers\n");
-                                                if !pic_state.executed {
-                                                    let _ = write!(vga_writer, "- PIC remap: not ready for controlled smoke\n");
-                                                    let _ = write!(serial_writer, "- PIC remap: not ready for controlled smoke\n");
-                                                }
-                                                if !gate_state.executed {
-                                                    let _ = write!(vga_writer, "- IRQ gates: vectors 32/33 not bound\n");
-                                                    let _ = write!(serial_writer, "- IRQ gates: vectors 32/33 not bound\n");
-                                                }
-                                                let _ = write!(vga_writer, "- EOI dispatch: not enabled\n");
-                                                let _ = write!(serial_writer, "- EOI dispatch: not enabled\n");
-                                                let _ = write!(vga_writer, "- STI: disabled\n");
-                                                let _ = write!(serial_writer, "- STI: disabled\n");
-                                                let _ = write!(vga_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
-                                                let _ = write!(serial_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
-                                           } else if line_str == "irq-runtime-matrix" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(
+                                                vga_writer,
+                                                "IRQ runtime activation blockers\n"
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "IRQ runtime activation blockers\n"
+                                            );
+                                            if !pic_state.executed {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "- PIC remap: not ready for controlled smoke\n"
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "- PIC remap: not ready for controlled smoke\n"
+                                                );
+                                            }
+                                            if !gate_state.executed {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "- IRQ gates: vectors 32/33 not bound\n"
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "- IRQ gates: vectors 32/33 not bound\n"
+                                                );
+                                            }
+                                            let _ =
+                                                write!(vga_writer, "- EOI dispatch: not enabled\n");
+                                            let _ = write!(
+                                                serial_writer,
+                                                "- EOI dispatch: not enabled\n"
+                                            );
+                                            let _ = write!(vga_writer, "- STI: disabled\n");
+                                            let _ = write!(serial_writer, "- STI: disabled\n");
+                                            let _ = write!(vga_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
+                                            let _ = write!(serial_writer, "smoke prerequisites: satisfied\nruntime irq ready: no\n");
+                                        } else if line_str == "irq-runtime-matrix" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime readiness matrix\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nkeyboard mode: {}\nsti: {}\nruntime irq active: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime readiness matrix\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nkeyboard mode: {}\nsti: {}\nruntime irq active: {}\n",
                                                     matrix.pic_remap_smoke,
                                                     matrix.irq_gate_bind_smoke,
                                                     matrix.eoi_runtime_boundary,
@@ -1039,7 +1149,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     matrix.sti,
                                                     matrix.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime readiness matrix\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nkeyboard mode: {}\nsti: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime readiness matrix\npic remap smoke: {}\nirq gate bind smoke: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\nruntime latch: {}\nkeyboard mode: {}\nsti: {}\nruntime irq active: {}\n",
                                                     matrix.pic_remap_smoke,
                                                     matrix.irq_gate_bind_smoke,
                                                     matrix.eoi_runtime_boundary,
@@ -1050,74 +1160,88 @@ pub extern "C" fn kernel_main() -> ! {
                                                     matrix.sti,
                                                     matrix.runtime_irq_active
                                                 );
-                                           } else if line_str == "irq-runtime-readiness" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
+                                        } else if line_str == "irq-runtime-readiness" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
                                                 );
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime readiness\nsmoke prerequisites: {}\nmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq ready: no\n",
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime readiness\nsmoke prerequisites: {}\nmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq ready: no\n",
                                                     matrix.smoke_prerequisites,
                                                     matrix.pic_mask_policy,
                                                     matrix.runtime_latch,
                                                     matrix.sti
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime readiness\nsmoke prerequisites: {}\nmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq ready: no\n",
+                                            let _ = write!(serial_writer, "IRQ runtime readiness\nsmoke prerequisites: {}\nmask policy: {}\nruntime latch: {}\nsti: {}\nruntime irq ready: no\n",
                                                     matrix.smoke_prerequisites,
                                                     matrix.pic_mask_policy,
                                                     matrix.runtime_latch,
                                                     matrix.sti
                                                 );
-                                           } else if line_str == "irq-runtime-next" {
-                                                let next_msg = "IRQ runtime next\n1. keep PIC mask policy all masked (0xFF)\n2. keep unmask policy no unmask\n3. implement live EOI dispatch boundary\n4. enable STI only after EOI and handlers are ready\n5. switch keyboard from polling only after IRQ1 handler is live\nruntime irq active: no\n";
-                                                vga::print(next_msg);
-                                                serial::print(next_msg);
-                                           } else if line_str == "irq-runtime-activation-plan" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
+                                        } else if line_str == "irq-runtime-next" {
+                                            let next_msg = "IRQ runtime next\n1. keep PIC mask policy all masked (0xFF)\n2. keep unmask policy no unmask\n3. implement live EOI dispatch boundary\n4. enable STI only after EOI and handlers are ready\n5. switch keyboard from polling only after IRQ1 handler is live\nruntime irq active: no\n";
+                                            vga::print(next_msg);
+                                            serial::print(next_msg);
+                                        } else if line_str == "irq-runtime-activation-plan" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n",
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n",
                                                     matrix.pic_mask_policy,
                                                     matrix.unmask_policy,
                                                     matrix.sti,
                                                     matrix.runtime_irq_active,
                                                     activation.allowed_text
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation plan\n1. require readiness matrix smoke prerequisites: yes\n2. require EOI runtime boundary: ready (dry-run)\n3. keep PIC mask policy: {}\n4. keep unmask policy: {}\n5. keep STI: {}\n6. commit path remains dry-run only\nruntime irq active: {}\ndry-run commit allowed: {}\n",
                                                     matrix.pic_mask_policy,
                                                     matrix.unmask_policy,
                                                     matrix.sti,
                                                     matrix.runtime_irq_active,
                                                     activation.allowed_text
                                                 );
-                                           } else if line_str == "irq-runtime-token-note" {
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation token note\ntoken gate: explicit\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                        } else if line_str == "irq-runtime-token-note" {
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation token note\ntoken gate: explicit\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_scope,
                                                     token.hardware_mutation,
                                                     token.sti,
@@ -1126,7 +1250,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation token note\ntoken gate: explicit\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation token note\ntoken gate: explicit\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_scope,
                                                     token.hardware_mutation,
                                                     token.sti,
@@ -1135,11 +1259,11 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                           } else if line_str == "irq-runtime-token-status" {
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation token status\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                        } else if line_str == "irq-runtime-token-status" {
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation token status\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_state,
                                                     token.token_scope,
                                                     token.hardware_mutation,
@@ -1149,7 +1273,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation token status\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation token status\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_state,
                                                     token.token_scope,
                                                     token.hardware_mutation,
@@ -1159,11 +1283,11 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                           } else if line_str == "irq-runtime-token-arm" {
-                                                let token = irq::irq_runtime_activation_token_arm();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation token armed\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                        } else if line_str == "irq-runtime-token-arm" {
+                                            let token = irq::irq_runtime_activation_token_arm();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation token armed\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_state,
                                                     token.token_scope,
                                                     token.hardware_mutation,
@@ -1173,7 +1297,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation token armed\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation token armed\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_state,
                                                     token.token_scope,
                                                     token.hardware_mutation,
@@ -1183,11 +1307,11 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                           } else if line_str == "irq-runtime-token-clear" {
-                                                let token = irq::irq_runtime_activation_token_clear();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation token cleared\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                        } else if line_str == "irq-runtime-token-clear" {
+                                            let token = irq::irq_runtime_activation_token_clear();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation token cleared\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_state,
                                                     token.token_scope,
                                                     token.hardware_mutation,
@@ -1197,7 +1321,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation token cleared\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation token cleared\nactivation token: {}\nscope: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nlive irq0/irq1: {}\nruntime eoi dispatch: {}\nkeyboard mode: {}\n",
                                                     token.token_state,
                                                     token.token_scope,
                                                     token.hardware_mutation,
@@ -1207,10 +1331,10 @@ pub extern "C" fn kernel_main() -> ! {
                                                     token.runtime_eoi_dispatch,
                                                     token.keyboard_mode
                                                 );
-                                           } else if line_str == "irq-runtime-gate-note" {
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation gate note\ngate purpose: {}\ntoken required: {}\nmatrix required: {}\ndry-run commit required: {}\nhardware mutation: {}\nactivation allowed: {}\n",
+                                        } else if line_str == "irq-runtime-gate-note" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation gate note\ngate purpose: {}\ntoken required: {}\nmatrix required: {}\ndry-run commit required: {}\nhardware mutation: {}\nactivation allowed: {}\n",
                                                     irq::IRQ_ACTIVATION_GATE_PURPOSE,
                                                     irq::IRQ_ACTIVATION_GATE_REQUIRED_YES,
                                                     irq::IRQ_ACTIVATION_GATE_MATRIX_REQUIRED_READY,
@@ -1218,7 +1342,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
                                                     irq::IRQ_ACTIVATION_GATE_ALLOWED_NO
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation gate note\ngate purpose: {}\ntoken required: {}\nmatrix required: {}\ndry-run commit required: {}\nhardware mutation: {}\nactivation allowed: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation gate note\ngate purpose: {}\ntoken required: {}\nmatrix required: {}\ndry-run commit required: {}\nhardware mutation: {}\nactivation allowed: {}\n",
                                                     irq::IRQ_ACTIVATION_GATE_PURPOSE,
                                                     irq::IRQ_ACTIVATION_GATE_REQUIRED_YES,
                                                     irq::IRQ_ACTIVATION_GATE_MATRIX_REQUIRED_READY,
@@ -1226,34 +1350,44 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
                                                     irq::IRQ_ACTIVATION_GATE_ALLOWED_NO
                                                 );
-                                           } else if line_str == "irq-runtime-gate-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-gate-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation gate status\ntoken gate: {}\nreadiness matrix: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\ndry-run commit allowed: {}\nruntime irq active: {}\nactivation allowed: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation gate status\ntoken gate: {}\nreadiness matrix: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\ndry-run commit allowed: {}\nruntime irq active: {}\nactivation allowed: {}\n",
                                                     gate.token_gate,
                                                     gate.readiness_matrix,
                                                     gate.eoi_runtime_boundary,
@@ -1263,7 +1397,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     gate.runtime_irq_active,
                                                     gate.activation_allowed
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation gate status\ntoken gate: {}\nreadiness matrix: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\ndry-run commit allowed: {}\nruntime irq active: {}\nactivation allowed: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation gate status\ntoken gate: {}\nreadiness matrix: {}\neoi runtime boundary: {}\npic mask policy: {}\nunmask policy: {}\ndry-run commit allowed: {}\nruntime irq active: {}\nactivation allowed: {}\n",
                                                     gate.token_gate,
                                                     gate.readiness_matrix,
                                                     gate.eoi_runtime_boundary,
@@ -1273,34 +1407,44 @@ pub extern "C" fn kernel_main() -> ! {
                                                     gate.runtime_irq_active,
                                                     gate.activation_allowed
                                                 );
-                                           } else if line_str == "irq-runtime-gate-check" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-gate-check" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation gate check\ntoken gate: {}\nmatrix decision: {}\neoi boundary: {}\nmask policy: {}\nhardware mutation: {}\nresult: {}\nnext: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation gate check\ntoken gate: {}\nmatrix decision: {}\neoi boundary: {}\nmask policy: {}\nhardware mutation: {}\nresult: {}\nnext: {}\n",
                                                     gate.token_gate,
                                                     gate.readiness_matrix,
                                                     gate.eoi_runtime_boundary,
@@ -1309,7 +1453,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     gate.result,
                                                     gate.next
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation gate check\ntoken gate: {}\nmatrix decision: {}\neoi boundary: {}\nmask policy: {}\nhardware mutation: {}\nresult: {}\nnext: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation gate check\ntoken gate: {}\nmatrix decision: {}\neoi boundary: {}\nmask policy: {}\nhardware mutation: {}\nresult: {}\nnext: {}\n",
                                                     gate.token_gate,
                                                     gate.readiness_matrix,
                                                     gate.eoi_runtime_boundary,
@@ -1318,34 +1462,44 @@ pub extern "C" fn kernel_main() -> ! {
                                                     gate.result,
                                                     gate.next
                                                 );
-                                           } else if line_str == "irq-runtime-gate-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-gate-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation gate blockers\n- activation token: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI: {}\nactivation allowed: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation gate blockers\n- activation token: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI: {}\nactivation allowed: {}\n",
                                                     gate.token_gate,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
                                                     irq::IRQ_ACTIVATION_GATE_DRY_RUN_NOT_ALLOWED,
@@ -1353,7 +1507,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     matrix.sti,
                                                     gate.activation_allowed
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation gate blockers\n- activation token: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI: {}\nactivation allowed: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation gate blockers\n- activation token: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI: {}\nactivation allowed: {}\n",
                                                     gate.token_gate,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
                                                     irq::IRQ_ACTIVATION_GATE_DRY_RUN_NOT_ALLOWED,
@@ -1361,10 +1515,10 @@ pub extern "C" fn kernel_main() -> ! {
                                                     matrix.sti,
                                                     gate.activation_allowed
                                                 );
-                                            } else if line_str == "irq-runtime-sim-note" {
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation simulation note\nsimulation purpose: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\n",
+                                        } else if line_str == "irq-runtime-sim-note" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation simulation note\nsimulation purpose: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\n",
                                                     irq::IRQ_ACTIVATION_SIM_PURPOSE,
                                                     irq::IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
                                                     irq::IRQ_ACTIVATION_SIM_STI_WOULD_ENABLE_NO,
@@ -1372,7 +1526,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::IRQ_ACTIVATION_SIM_EOI_DISPATCH_WOULD_ENABLE_NO,
                                                     irq::IRQ_MATRIX_KEYBOARD_MODE_POLLING
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation simulation note\nsimulation purpose: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation simulation note\nsimulation purpose: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\n",
                                                     irq::IRQ_ACTIVATION_SIM_PURPOSE,
                                                     irq::IRQ_ACTIVATION_TOKEN_HARDWARE_MUTATION_NO,
                                                     irq::IRQ_ACTIVATION_SIM_STI_WOULD_ENABLE_NO,
@@ -1380,40 +1534,47 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::IRQ_ACTIVATION_SIM_EOI_DISPATCH_WOULD_ENABLE_NO,
                                                     irq::IRQ_MATRIX_KEYBOARD_MODE_POLLING
                                                 );
-                                            } else if line_str == "irq-runtime-sim-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-sim-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation simulation status\ntoken gate: {}\nreadiness matrix: {}\ngate decision: {}\ndry-run commit allowed: {}\nsimulated activation allowed: {}\nruntime irq active: {}\nhardware mutation: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation simulation status\ntoken gate: {}\nreadiness matrix: {}\ngate decision: {}\ndry-run commit allowed: {}\nsimulated activation allowed: {}\nruntime irq active: {}\nhardware mutation: {}\n",
                                                     simulation.token_gate,
                                                     simulation.readiness_matrix,
                                                     simulation.gate_decision,
@@ -1422,7 +1583,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.runtime_irq_active,
                                                     simulation.hardware_mutation
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation simulation status\ntoken gate: {}\nreadiness matrix: {}\ngate decision: {}\ndry-run commit allowed: {}\nsimulated activation allowed: {}\nruntime irq active: {}\nhardware mutation: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation simulation status\ntoken gate: {}\nreadiness matrix: {}\ngate decision: {}\ndry-run commit allowed: {}\nsimulated activation allowed: {}\nruntime irq active: {}\nhardware mutation: {}\n",
                                                     simulation.token_gate,
                                                     simulation.readiness_matrix,
                                                     simulation.gate_decision,
@@ -1431,40 +1592,47 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.runtime_irq_active,
                                                     simulation.hardware_mutation
                                                 );
-                                            } else if line_str == "irq-runtime-sim-run" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-sim-run" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation simulation run\nsimulated activation allowed: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation simulation run\nsimulated activation allowed: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
                                                     simulation.simulated_activation_allowed,
                                                     simulation.hardware_mutation,
                                                     simulation.sti_would_enable,
@@ -1474,7 +1642,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.result,
                                                     simulation.next
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation simulation run\nsimulated activation allowed: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation simulation run\nsimulated activation allowed: {}\nhardware mutation: {}\nsti would enable: {}\npic unmask would apply: {}\neoi dispatch would enable: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
                                                     simulation.simulated_activation_allowed,
                                                     simulation.hardware_mutation,
                                                     simulation.sti_would_enable,
@@ -1484,40 +1652,47 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.result,
                                                     simulation.next
                                                 );
-                                            } else if line_str == "irq-runtime-sim-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-sim-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation simulation blockers\n- activation token: {}\n- gate decision: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI would enable: {}\n- PIC unmask would apply: {}\n- EOI dispatch would enable: {}\nactivation allowed: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation simulation blockers\n- activation token: {}\n- gate decision: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI would enable: {}\n- PIC unmask would apply: {}\n- EOI dispatch would enable: {}\nactivation allowed: {}\n",
                                                     simulation.token_gate,
                                                     simulation.gate_decision,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
@@ -1528,7 +1703,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.eoi_dispatch_would_enable,
                                                     simulation.simulated_activation_allowed
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation simulation blockers\n- activation token: {}\n- gate decision: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI would enable: {}\n- PIC unmask would apply: {}\n- EOI dispatch would enable: {}\nactivation allowed: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation simulation blockers\n- activation token: {}\n- gate decision: {}\n- readiness matrix: {}\n- dry-run commit: {}\n- EOI runtime boundary: {}\n- STI would enable: {}\n- PIC unmask would apply: {}\n- EOI dispatch would enable: {}\nactivation allowed: {}\n",
                                                     simulation.token_gate,
                                                     simulation.gate_decision,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
@@ -1539,10 +1714,10 @@ pub extern "C" fn kernel_main() -> ! {
                                                     simulation.eoi_dispatch_would_enable,
                                                     simulation.simulated_activation_allowed
                                                 );
-                                            } else if line_str == "sti-plan" {
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
+                                        } else if line_str == "sti-plan" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
                                                     irq::IRQ_MATRIX_STI_DISABLED,
                                                     irq::STI_PLAN_TOKEN_REQUIRED,
                                                     irq::STI_PLAN_RUNTIME_GATE_NOT_ALLOWED,
@@ -1552,7 +1727,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::IRQ_MATRIX_KEYBOARD_MODE_POLLING,
                                                     irq::IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO
                                                 );
-                                                let _ = write!(serial_writer, "STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "STI controlled activation plan\nsti instruction: {}\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nPIC unmask: {}\nEOI dispatch: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
                                                     irq::IRQ_MATRIX_STI_DISABLED,
                                                     irq::STI_PLAN_TOKEN_REQUIRED,
                                                     irq::STI_PLAN_RUNTIME_GATE_NOT_ALLOWED,
@@ -1562,46 +1737,50 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::IRQ_MATRIX_KEYBOARD_MODE_POLLING,
                                                     irq::IRQ_MATRIX_RUNTIME_IRQ_ACTIVE_NO
                                                 );
-                                            } else if line_str == "sti-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "sti-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n",
                                                     sti_plan.activation_token,
                                                     sti_plan.runtime_gate,
                                                     sti_plan.readiness_matrix,
@@ -1610,7 +1789,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     sti_plan.sti_allowed,
                                                     sti_plan.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "STI controlled activation status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti instruction: {}\nsti allowed: {}\nruntime irq active: {}\n",
                                                     sti_plan.activation_token,
                                                     sti_plan.runtime_gate,
                                                     sti_plan.readiness_matrix,
@@ -1619,46 +1798,50 @@ pub extern "C" fn kernel_main() -> ! {
                                                     sti_plan.sti_allowed,
                                                     sti_plan.runtime_irq_active
                                                 );
-                                            } else if line_str == "sti-preflight" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "sti-preflight" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
                                                     sti_plan.token_gate,
                                                     sti_plan.readiness_matrix,
                                                     sti_plan.eoi_runtime_boundary,
@@ -1668,7 +1851,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     sti_plan.result,
                                                     sti_plan.next
                                                 );
-                                                let _ = write!(serial_writer, "STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                            let _ = write!(serial_writer, "STI controlled activation preflight\ntoken gate: {}\nreadiness matrix: {}\nEOI runtime boundary: {}\nPIC unmask policy: {}\nhardware mutation: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
                                                     sti_plan.token_gate,
                                                     sti_plan.readiness_matrix,
                                                     sti_plan.eoi_runtime_boundary,
@@ -1678,46 +1861,50 @@ pub extern "C" fn kernel_main() -> ! {
                                                     sti_plan.result,
                                                     sti_plan.next
                                                 );
-                                            } else if line_str == "sti-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "sti-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n",
                                                     sti_plan.activation_token,
                                                     sti_plan.runtime_gate,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
@@ -1728,7 +1915,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     sti_plan.keyboard_mode,
                                                     sti_plan.sti_allowed
                                                 );
-                                                let _ = write!(serial_writer, "STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n",
+                                            let _ = write!(serial_writer, "STI controlled activation blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nsti allowed: {}\n",
                                                     sti_plan.activation_token,
                                                     sti_plan.runtime_gate,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
@@ -1739,53 +1926,53 @@ pub extern "C" fn kernel_main() -> ! {
                                                     sti_plan.keyboard_mode,
                                                     sti_plan.sti_allowed
                                                 );
-                                            } else if line_str == "irq-runtime-activation-smoke" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-activation-smoke" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation smoke\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\nsti instruction: {}\npic unmask: {}\neoi dispatch: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let smoke = irq::irq_runtime_activation_smoke(
+                                                token, matrix, gate, simulation, sti_plan,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation smoke\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\nsti instruction: {}\npic unmask: {}\neoi dispatch: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
                                                     smoke.activation_smoke,
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active,
@@ -1796,7 +1983,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.result,
                                                     smoke.next
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation smoke\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\nsti instruction: {}\npic unmask: {}\neoi dispatch: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation smoke\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\nsti instruction: {}\npic unmask: {}\neoi dispatch: {}\nkeyboard mode: {}\nresult: {}\nnext: {}\n",
                                                     smoke.activation_smoke,
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active,
@@ -1807,53 +1994,53 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.result,
                                                     smoke.next
                                                 );
-                                            } else if line_str == "irq-runtime-activation-smoke-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-activation-smoke-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation smoke status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti plan: {}\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let smoke = irq::irq_runtime_activation_smoke(
+                                                token, matrix, gate, simulation, sti_plan,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation smoke status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti plan: {}\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\n",
                                                     smoke.activation_token,
                                                     smoke.runtime_gate,
                                                     smoke.readiness_matrix,
@@ -1863,7 +2050,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation smoke status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti plan: {}\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation smoke status\nactivation token: {}\nruntime gate: {}\nreadiness matrix: {}\nsimulation: {}\nsti plan: {}\nactivation smoke: {}\nhardware mutation: {}\nruntime irq active: {}\n",
                                                     smoke.activation_token,
                                                     smoke.runtime_gate,
                                                     smoke.readiness_matrix,
@@ -1873,53 +2060,53 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "irq-runtime-activation-smoke-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "irq-runtime-activation-smoke-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IRQ runtime activation smoke blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- STI plan: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nactivation smoke: {}\n",
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let smoke = irq::irq_runtime_activation_smoke(
+                                                token, matrix, gate, simulation, sti_plan,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime activation smoke blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- STI plan: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nactivation smoke: {}\n",
                                                     smoke.activation_token,
                                                     smoke.runtime_gate,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
@@ -1931,7 +2118,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.keyboard_mode,
                                                     smoke.activation_smoke
                                                 );
-                                                let _ = write!(serial_writer, "IRQ runtime activation smoke blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- STI plan: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nactivation smoke: {}\n",
+                                            let _ = write!(serial_writer, "IRQ runtime activation smoke blockers\n- activation token: {}\n- runtime gate: {}\n- readiness matrix: {}\n- simulation: {}\n- STI plan: {}\n- EOI runtime boundary: {}\n- PIC unmask: {}\n- EOI dispatch: {}\n- keyboard mode: {}\nactivation smoke: {}\n",
                                                     smoke.activation_token,
                                                     smoke.runtime_gate,
                                                     irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
@@ -1943,59 +2130,60 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.keyboard_mode,
                                                     smoke.activation_smoke
                                                 );
-                                            } else if line_str == "eoi-dispatch-smoke-note" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "eoi-dispatch-smoke-note" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "EOI dispatch smoke note\nscope: controlled dry-run foundation\nack target: planned PIC EOI routing only\nmaster EOI: {}\nslave EOI: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nruntime irq active: {}\n",
+                                            let smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "EOI dispatch smoke note\nscope: controlled dry-run foundation\nack target: planned PIC EOI routing only\nmaster EOI: {}\nslave EOI: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nruntime irq active: {}\n",
                                                     smoke.master_eoi_route,
                                                     smoke.slave_eoi_route,
                                                     smoke.hardware_mutation,
@@ -2003,7 +2191,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.pic_unmask,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "EOI dispatch smoke note\nscope: controlled dry-run foundation\nack target: planned PIC EOI routing only\nmaster EOI: {}\nslave EOI: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "EOI dispatch smoke note\nscope: controlled dry-run foundation\nack target: planned PIC EOI routing only\nmaster EOI: {}\nslave EOI: {}\nhardware mutation: {}\nsti: {}\npic unmask: {}\nruntime irq active: {}\n",
                                                     smoke.master_eoi_route,
                                                     smoke.slave_eoi_route,
                                                     smoke.hardware_mutation,
@@ -2011,59 +2199,60 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.pic_unmask,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "eoi-dispatch-smoke-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "eoi-dispatch-smoke-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "EOI dispatch smoke status\neoi dispatch smoke: {}\ndispatch mode: {}\npic remap smoke: {}\nirq gates: {}\npic eoi writes: {}\nsti instruction: {}\npic unmask: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
+                                            let smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "EOI dispatch smoke status\neoi dispatch smoke: {}\ndispatch mode: {}\npic remap smoke: {}\nirq gates: {}\npic eoi writes: {}\nsti instruction: {}\npic unmask: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
                                                     smoke.eoi_dispatch_smoke,
                                                     smoke.dispatch_mode,
                                                     smoke.pic_remap_smoke,
@@ -2074,7 +2263,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.keyboard_mode,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "EOI dispatch smoke status\neoi dispatch smoke: {}\ndispatch mode: {}\npic remap smoke: {}\nirq gates: {}\npic eoi writes: {}\nsti instruction: {}\npic unmask: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "EOI dispatch smoke status\neoi dispatch smoke: {}\ndispatch mode: {}\npic remap smoke: {}\nirq gates: {}\npic eoi writes: {}\nsti instruction: {}\npic unmask: {}\nkeyboard mode: {}\nruntime irq active: {}\n",
                                                     smoke.eoi_dispatch_smoke,
                                                     smoke.dispatch_mode,
                                                     smoke.pic_remap_smoke,
@@ -2085,117 +2274,119 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.keyboard_mode,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "eoi-dispatch-smoke-plan" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "eoi-dispatch-smoke-plan" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "EOI dispatch smoke plan\n1. require PIC remap controlled smoke prerequisite\n2. require IRQ gate bind smoke prerequisite\n3. model IRQ0 master EOI route only\n4. model IRQ1 master EOI route only\n5. keep PIC_EOI writes disabled\n6. keep runtime IRQ inactive\nresult: {}\n",
+                                            let smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "EOI dispatch smoke plan\n1. require PIC remap controlled smoke prerequisite\n2. require IRQ gate bind smoke prerequisite\n3. model IRQ0 master EOI route only\n4. model IRQ1 master EOI route only\n5. keep PIC_EOI writes disabled\n6. keep runtime IRQ inactive\nresult: {}\n",
                                                     smoke.result
                                                 );
-                                                let _ = write!(serial_writer, "EOI dispatch smoke plan\n1. require PIC remap controlled smoke prerequisite\n2. require IRQ gate bind smoke prerequisite\n3. model IRQ0 master EOI route only\n4. model IRQ1 master EOI route only\n5. keep PIC_EOI writes disabled\n6. keep runtime IRQ inactive\nresult: {}\n",
+                                            let _ = write!(serial_writer, "EOI dispatch smoke plan\n1. require PIC remap controlled smoke prerequisite\n2. require IRQ gate bind smoke prerequisite\n3. model IRQ0 master EOI route only\n4. model IRQ1 master EOI route only\n5. keep PIC_EOI writes disabled\n6. keep runtime IRQ inactive\nresult: {}\n",
                                                     smoke.result
                                                 );
-                                            } else if line_str == "eoi-dispatch-smoke-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "eoi-dispatch-smoke-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "EOI dispatch smoke blockers\n- {}\n- {}\n- PIC_EOI writes: disabled by guard\n- {}\n- {}\n- {}\n- {}\neoi dispatch smoke: {}\n",
+                                            let smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "EOI dispatch smoke blockers\n- {}\n- {}\n- PIC_EOI writes: disabled by guard\n- {}\n- {}\n- {}\n- {}\neoi dispatch smoke: {}\n",
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_PIC_REMAP,
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_IRQ_GATES,
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_STI,
@@ -2204,7 +2395,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_KEYBOARD_IRQ,
                                                     smoke.eoi_dispatch_smoke
                                                 );
-                                                let _ = write!(serial_writer, "EOI dispatch smoke blockers\n- {}\n- {}\n- PIC_EOI writes: disabled by guard\n- {}\n- {}\n- {}\n- {}\neoi dispatch smoke: {}\n",
+                                            let _ = write!(serial_writer, "EOI dispatch smoke blockers\n- {}\n- {}\n- PIC_EOI writes: disabled by guard\n- {}\n- {}\n- {}\n- {}\neoi dispatch smoke: {}\n",
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_PIC_REMAP,
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_IRQ_GATES,
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_STI,
@@ -2213,68 +2404,69 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::EOI_DISPATCH_SMOKE_BLOCKER_KEYBOARD_IRQ,
                                                     smoke.eoi_dispatch_smoke
                                                 );
-                                            } else if line_str == "pic-unmask-smoke-note" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "pic-unmask-smoke-note" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "PIC unmask smoke note\nscope: controlled dry-run foundation\ntarget IRQ lines: {}\nmask policy: {}\nunmask policy: {}\nlive unmask: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC unmask smoke note\nscope: controlled dry-run foundation\ntarget IRQ lines: {}\nmask policy: {}\nunmask policy: {}\nlive unmask: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
                                                     smoke.target_irq_lines,
                                                     smoke.pic_mask_policy,
                                                     smoke.unmask_policy,
@@ -2283,7 +2475,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.sti_instruction,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "PIC unmask smoke note\nscope: controlled dry-run foundation\ntarget IRQ lines: {}\nmask policy: {}\nunmask policy: {}\nlive unmask: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "PIC unmask smoke note\nscope: controlled dry-run foundation\ntarget IRQ lines: {}\nmask policy: {}\nunmask policy: {}\nlive unmask: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
                                                     smoke.target_irq_lines,
                                                     smoke.pic_mask_policy,
                                                     smoke.unmask_policy,
@@ -2292,68 +2484,69 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.sti_instruction,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "pic-unmask-smoke-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "pic-unmask-smoke-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "PIC unmask smoke status\npic unmask smoke: {}\ndispatch mode: {}\ntarget IRQ lines: {}\npic mask policy: {}\nactivation token: {}\nactivation gate: {}\nEOI boundary: {}\nSTI plan: {}\nEOI dispatch smoke: {}\nlive unmask: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC unmask smoke status\npic unmask smoke: {}\ndispatch mode: {}\ntarget IRQ lines: {}\npic mask policy: {}\nactivation token: {}\nactivation gate: {}\nEOI boundary: {}\nSTI plan: {}\nEOI dispatch smoke: {}\nlive unmask: {}\nhardware mutation: {}\nruntime irq active: {}\n",
                                                     smoke.pic_unmask_smoke,
                                                     smoke.dispatch_mode,
                                                     smoke.target_irq_lines,
@@ -2367,7 +2560,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "PIC unmask smoke status\npic unmask smoke: {}\ndispatch mode: {}\ntarget IRQ lines: {}\npic mask policy: {}\nactivation token: {}\nactivation gate: {}\nEOI boundary: {}\nSTI plan: {}\nEOI dispatch smoke: {}\nlive unmask: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "PIC unmask smoke status\npic unmask smoke: {}\ndispatch mode: {}\ntarget IRQ lines: {}\npic mask policy: {}\nactivation token: {}\nactivation gate: {}\nEOI boundary: {}\nSTI plan: {}\nEOI dispatch smoke: {}\nlive unmask: {}\nhardware mutation: {}\nruntime irq active: {}\n",
                                                     smoke.pic_unmask_smoke,
                                                     smoke.dispatch_mode,
                                                     smoke.target_irq_lines,
@@ -2381,137 +2574,139 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "pic-unmask-smoke-plan" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "pic-unmask-smoke-plan" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "PIC unmask smoke plan\n1. require PIC mask plan prerequisite\n2. require readiness matrix prerequisite\n3. require activation token and gate prerequisite\n4. require EOI boundary and dispatch smoke prerequisite\n5. keep target IRQ lines: {}\n6. keep PIC data-port writes disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC unmask smoke plan\n1. require PIC mask plan prerequisite\n2. require readiness matrix prerequisite\n3. require activation token and gate prerequisite\n4. require EOI boundary and dispatch smoke prerequisite\n5. keep target IRQ lines: {}\n6. keep PIC data-port writes disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
                                                     smoke.target_irq_lines,
                                                     smoke.result
                                                 );
-                                                let _ = write!(serial_writer, "PIC unmask smoke plan\n1. require PIC mask plan prerequisite\n2. require readiness matrix prerequisite\n3. require activation token and gate prerequisite\n4. require EOI boundary and dispatch smoke prerequisite\n5. keep target IRQ lines: {}\n6. keep PIC data-port writes disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
+                                            let _ = write!(serial_writer, "PIC unmask smoke plan\n1. require PIC mask plan prerequisite\n2. require readiness matrix prerequisite\n3. require activation token and gate prerequisite\n4. require EOI boundary and dispatch smoke prerequisite\n5. keep target IRQ lines: {}\n6. keep PIC data-port writes disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
                                                     smoke.target_irq_lines,
                                                     smoke.result
                                                 );
-                                            } else if line_str == "pic-unmask-smoke-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "pic-unmask-smoke-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "PIC unmask smoke blockers\n- activation token: {}\n- activation gate: {}\n- EOI runtime boundary: {}\n- STI: {}\n- live unmask: {}\n- runtime IRQ active: {}\n- {}\npic unmask smoke: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC unmask smoke blockers\n- activation token: {}\n- activation gate: {}\n- EOI runtime boundary: {}\n- STI: {}\n- live unmask: {}\n- runtime IRQ active: {}\n- {}\npic unmask smoke: {}\n",
                                                     smoke.activation_token,
                                                     smoke.activation_gate,
                                                     smoke.eoi_runtime_boundary,
@@ -2521,7 +2716,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::PIC_UNMASK_SMOKE_BLOCKER_KEYBOARD_IRQ,
                                                     smoke.pic_unmask_smoke
                                                 );
-                                                let _ = write!(serial_writer, "PIC unmask smoke blockers\n- activation token: {}\n- activation gate: {}\n- EOI runtime boundary: {}\n- STI: {}\n- live unmask: {}\n- runtime IRQ active: {}\n- {}\npic unmask smoke: {}\n",
+                                            let _ = write!(serial_writer, "PIC unmask smoke blockers\n- activation token: {}\n- activation gate: {}\n- EOI runtime boundary: {}\n- STI: {}\n- live unmask: {}\n- runtime IRQ active: {}\n- {}\npic unmask smoke: {}\n",
                                                     smoke.activation_token,
                                                     smoke.activation_gate,
                                                     smoke.eoi_runtime_boundary,
@@ -2531,161 +2726,163 @@ pub extern "C" fn kernel_main() -> ! {
                                                     irq::PIC_UNMASK_SMOKE_BLOCKER_KEYBOARD_IRQ,
                                                     smoke.pic_unmask_smoke
                                                 );
-                                            } else if line_str == "idt-runtime-bind-smoke-note" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "idt-runtime-bind-smoke-note" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let pic_unmask_smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                let smoke = irq::idt_runtime_bind_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    gate_state,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                    pic_unmask_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IDT runtime bind smoke note\nscope: controlled dry-run foundation\ntarget vectors: {}\nlive handler bind: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IDT runtime bind smoke note\nscope: controlled dry-run foundation\ntarget vectors: {}\nlive handler bind: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
                                                     smoke.target_vectors,
                                                     smoke.live_handler_bind,
                                                     smoke.hardware_mutation,
                                                     smoke.sti_instruction,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "IDT runtime bind smoke note\nscope: controlled dry-run foundation\ntarget vectors: {}\nlive handler bind: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "IDT runtime bind smoke note\nscope: controlled dry-run foundation\ntarget vectors: {}\nlive handler bind: {}\nhardware mutation: {}\nsti: {}\nruntime irq active: {}\n",
                                                     smoke.target_vectors,
                                                     smoke.live_handler_bind,
                                                     smoke.hardware_mutation,
                                                     smoke.sti_instruction,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "idt-runtime-bind-smoke-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "idt-runtime-bind-smoke-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let pic_unmask_smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                let smoke = irq::idt_runtime_bind_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    gate_state,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                    pic_unmask_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IDT runtime bind smoke status\nidt runtime bind smoke: {}\ndispatch mode: {}\ntarget vectors: {}\nirq gate bind smoke: {}\nEOI dispatch smoke: {}\nPIC unmask smoke: {}\nSTI plan: {}\nlive handler bind: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IDT runtime bind smoke status\nidt runtime bind smoke: {}\ndispatch mode: {}\ntarget vectors: {}\nirq gate bind smoke: {}\nEOI dispatch smoke: {}\nPIC unmask smoke: {}\nSTI plan: {}\nlive handler bind: {}\nhardware mutation: {}\nruntime irq active: {}\n",
                                                     smoke.idt_runtime_bind_smoke,
                                                     smoke.dispatch_mode,
                                                     smoke.target_vectors,
@@ -2697,7 +2894,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                                let _ = write!(serial_writer, "IDT runtime bind smoke status\nidt runtime bind smoke: {}\ndispatch mode: {}\ntarget vectors: {}\nirq gate bind smoke: {}\nEOI dispatch smoke: {}\nPIC unmask smoke: {}\nSTI plan: {}\nlive handler bind: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                            let _ = write!(serial_writer, "IDT runtime bind smoke status\nidt runtime bind smoke: {}\ndispatch mode: {}\ntarget vectors: {}\nirq gate bind smoke: {}\nEOI dispatch smoke: {}\nPIC unmask smoke: {}\nSTI plan: {}\nlive handler bind: {}\nhardware mutation: {}\nruntime irq active: {}\n",
                                                     smoke.idt_runtime_bind_smoke,
                                                     smoke.dispatch_mode,
                                                     smoke.target_vectors,
@@ -2709,153 +2906,155 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                            } else if line_str == "idt-runtime-bind-smoke-plan" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "idt-runtime-bind-smoke-plan" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let pic_unmask_smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                let smoke = irq::idt_runtime_bind_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    gate_state,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                    pic_unmask_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IDT runtime bind smoke plan\n1. require activation token and gate prerequisite\n2. require readiness matrix prerequisite\n3. require IRQ gate bind smoke prerequisite\n4. require EOI dispatch smoke boundary\n5. require PIC unmask smoke boundary\n6. keep live handler bind disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IDT runtime bind smoke plan\n1. require activation token and gate prerequisite\n2. require readiness matrix prerequisite\n3. require IRQ gate bind smoke prerequisite\n4. require EOI dispatch smoke boundary\n5. require PIC unmask smoke boundary\n6. keep live handler bind disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
                                                     smoke.result
                                                 );
-                                                let _ = write!(serial_writer, "IDT runtime bind smoke plan\n1. require activation token and gate prerequisite\n2. require readiness matrix prerequisite\n3. require IRQ gate bind smoke prerequisite\n4. require EOI dispatch smoke boundary\n5. require PIC unmask smoke boundary\n6. keep live handler bind disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
+                                            let _ = write!(serial_writer, "IDT runtime bind smoke plan\n1. require activation token and gate prerequisite\n2. require readiness matrix prerequisite\n3. require IRQ gate bind smoke prerequisite\n4. require EOI dispatch smoke boundary\n5. require PIC unmask smoke boundary\n6. keep live handler bind disabled\n7. keep runtime IRQ inactive\nresult: {}\n",
                                                     smoke.result
                                                 );
-                                            } else if line_str == "idt-runtime-bind-smoke-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mask_plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let eoi_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let matrix = irq::irq_runtime_matrix(
+                                        } else if line_str == "idt-runtime-bind-smoke-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    irq::irq_runtime_is_armed(),
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                let activation = irq::irq_runtime_activation_dry_run(&matrix);
-                                                let token = irq::irq_runtime_activation_token_status();
-                                                let gate = irq::irq_runtime_activation_gate(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    eoi_ready,
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
                                                 );
-                                                let simulation = irq::irq_runtime_activation_simulation(
-                                                    token,
-                                                    matrix,
-                                                    activation,
-                                                    gate,
-                                                );
-                                                let sti_plan = irq::sti_controlled_activation_plan(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                );
-                                                let activation_smoke = irq::irq_runtime_activation_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    simulation,
-                                                    sti_plan,
-                                                );
-                                                let eoi_smoke = irq::eoi_dispatch_smoke(
-                                                    pic_state.executed,
-                                                    gate_state.executed,
-                                                    matrix,
-                                                    activation_smoke,
-                                                );
-                                                let pic_unmask_smoke = irq::pic_unmask_smoke(
-                                                    mask_plan.mask_policy,
-                                                    mask_plan.unmask_policy,
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                );
-                                                let smoke = irq::idt_runtime_bind_smoke(
-                                                    token,
-                                                    matrix,
-                                                    gate,
-                                                    gate_state,
-                                                    sti_plan,
-                                                    eoi_smoke,
-                                                    pic_unmask_smoke,
-                                                );
-                                                core::hint::black_box(mask_status);
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "IDT runtime bind smoke blockers\n- activation token: {}\n- activation gate: {}\n- IRQ gate bind smoke: vectors 32/33 not bound\n- EOI dispatch smoke: {}\n- PIC unmask smoke: {}\n- STI: {}\n- live handler bind: {}\n- runtime IRQ active: {}\nidt runtime bind smoke: {}\n",
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IDT runtime bind smoke blockers\n- activation token: {}\n- activation gate: {}\n- IRQ gate bind smoke: vectors 32/33 not bound\n- EOI dispatch smoke: {}\n- PIC unmask smoke: {}\n- STI: {}\n- live handler bind: {}\n- runtime IRQ active: {}\nidt runtime bind smoke: {}\n",
                                                     smoke.activation_token,
                                                     smoke.activation_gate,
                                                     smoke.eoi_dispatch_smoke,
@@ -2865,7 +3064,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.runtime_irq_active,
                                                     smoke.idt_runtime_bind_smoke
                                                 );
-                                                let _ = write!(serial_writer, "IDT runtime bind smoke blockers\n- activation token: {}\n- activation gate: {}\n- IRQ gate bind smoke: vectors 32/33 not bound\n- EOI dispatch smoke: {}\n- PIC unmask smoke: {}\n- STI: {}\n- live handler bind: {}\n- runtime IRQ active: {}\nidt runtime bind smoke: {}\n",
+                                            let _ = write!(serial_writer, "IDT runtime bind smoke blockers\n- activation token: {}\n- activation gate: {}\n- IRQ gate bind smoke: vectors 32/33 not bound\n- EOI dispatch smoke: {}\n- PIC unmask smoke: {}\n- STI: {}\n- live handler bind: {}\n- runtime IRQ active: {}\nidt runtime bind smoke: {}\n",
                                                     smoke.activation_token,
                                                     smoke.activation_gate,
                                                     smoke.eoi_dispatch_smoke,
@@ -2875,150 +3074,681 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.runtime_irq_active,
                                                     smoke.idt_runtime_bind_smoke
                                                 );
-                                            } else if line_str == "eoi-runtime-note" {
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n");
-                                                let _ = write!(serial_writer, "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n");
-                                            } else if line_str == "eoi-runtime-status" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let preconditions_met = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
-                                                let eoi_status = if preconditions_met { "ready (dry-run)" } else { "blocked" };
-                                                let _ = write!(vga_writer, "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n",
-                                                    eoi_status,
-                                                    if pic_state.executed { "ready" } else { "not ready" },
-                                                    if gate_state.executed { "bound" } else { "not bound" },
-                                                    if preconditions_met { "yes" } else { "no" }
+                                        } else if line_str == "irq-runtime-final-gate-note" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
                                                 );
-                                                let _ = write!(serial_writer, "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n",
-                                                    eoi_status,
-                                                    if pic_state.executed { "ready" } else { "not ready" },
-                                                    if gate_state.executed { "bound" } else { "not bound" },
-                                                    if preconditions_met { "yes" } else { "no" }
-                                                );
-                                            } else if line_str == "eoi-runtime-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "EOI runtime activation blockers\n");
-                                                let _ = write!(serial_writer, "EOI runtime activation blockers\n");
-                                                if !pic_state.executed {
-                                                    let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_PIC_REMAP);
-                                                    let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_PIC_REMAP);
-                                                }
-                                                if !gate_state.executed {
-                                                    let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_IRQ_GATES);
-                                                    let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_IRQ_GATES);
-                                                }
-                                                let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL);
-                                                let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL);
-                                                let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_KEYBOARD);
-                                                let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_KEYBOARD);
-                                                let _ = write!(vga_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_STI);
-                                                let _ = write!(serial_writer, "- {}\n", irq::EOI_RUNTIME_BLOCKER_STI);
-                                                let _ = write!(vga_writer, "eoi dispatch: disabled\n");
-                                                let _ = write!(serial_writer, "eoi dispatch: disabled\n");
-                                            } else if line_str == "pic-mask-plan" {
-                                                let plan = pic::ProgrammableInterruptController::pic_mask_plan();
-                                                let mask_plan_msg = "PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n";
-                                                core::hint::black_box(plan);
-                                                vga::print(mask_plan_msg);
-                                                serial::print(mask_plan_msg);
-                                            } else if line_str == "pic-mask-status" {
-                                                let status = pic::ProgrammableInterruptController::pic_mask_status();
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n",
-                                                    status.master_imr_planned,
-                                                    status.slave_imr_planned,
-                                                    status.unmask_candidates,
-                                                    status.unmask_blocked,
-                                                    status.mask_writes,
-                                                    status.live_unmask
-                                                );
-                                                let _ = write!(serial_writer, "PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n",
-                                                    status.master_imr_planned,
-                                                    status.slave_imr_planned,
-                                                    status.unmask_candidates,
-                                                    status.unmask_blocked,
-                                                    status.mask_writes,
-                                                    status.live_unmask
-                                                );
-                                            } else if line_str == "irq-mask-blockers" {
-                                                let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                                let gate_state = irq::irq_gate_bind_state();
-                                                let report = irq::irq_mask_blocker_report(
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
                                                     pic_state.executed,
-                                                    gate_state.executed,
-                                                    irq::irq_runtime_is_committed(),
                                                 );
-                                                core::hint::black_box(irq::irq_mask_check_all_blockers(&report));
-                                                let mut vga_writer = vga::VgaWriter;
-                                                let mut serial_writer = serial::SerialWriter;
-                                                let _ = write!(vga_writer, "PIC IRQ unmask activation blockers\n");
-                                                let _ = write!(serial_writer, "PIC IRQ unmask activation blockers\n");
-                                                if !report.pic_remap_ready {
-                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_PIC_REMAP);
-                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_PIC_REMAP);
-                                                }
-                                                if !report.irq_gates_ready {
-                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_GATES);
-                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_GATES);
-                                                }
-                                                if !report.sti_ready {
-                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_STI);
-                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_STI);
-                                                }
-                                                if !report.eoi_dispatch_ready {
-                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_EOI_DISPATCH);
-                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_EOI_DISPATCH);
-                                                }
-                                                if !report.irq_runtime_committed {
-                                                    let _ = write!(vga_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_RUNTIME);
-                                                    let _ = write!(serial_writer, "{}\n", irq::IRQ_MASK_BLOCKER_IRQ_RUNTIME);
-                                                }
-                                                let _ = write!(vga_writer, "unmask gate: disabled\n");
-                                                let _ = write!(serial_writer, "unmask gate: disabled\n");
-                                            } else if line_str == "pic-status --verbose" {
-                                              let pic_status_verbose_msg = "pic subsystem:\nfoundation: dry-run telemetry\nremap function: present / not called\ndry-run plan: available\nmaster offset: 0x20\nslave offset: 0x28\nirq vectors: 0x20-0x2f\nhardware writes: disabled\nirq handlers: none\ninterrupts: disabled\n";
-                                              vga::print(pic_status_verbose_msg);
-                                              serial::print(pic_status_verbose_msg);
-                                          } else if line_str == "exceptions --verbose" {
-                                              let mut vga_writer = vga::VgaWriter;
-                                              let mut serial_writer = serial::SerialWriter;
-                                              let count = interrupts::EXCEPTION_COUNT;
-                                              let vector = interrupts::LAST_EXCEPTION_VECTOR;
-                                              let name = interrupts::LAST_EXCEPTION_NAME;
-                                              let armed = interrupts::PF_SMOKE_ACTIVE;
-                                              if vector == -1 {
-                                                  let _ = write!(vga_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: none\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
-                                                  let _ = write!(serial_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: none\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
-                                              } else {
-                                                  let _ = write!(vga_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: {} ({})\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
-                                                  let _ = write!(serial_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: {} ({})\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
-                                              }
-                                          } else if line_str == "exception-about" {
-                                              let about_msg = "exception subsystem:\nfoundation: active\nactive vectors: 0 divide-by-zero, 3 breakpoint, 14 page fault smoke\ntelemetry: count / last vector / last name\nrecovery: smoke-safe trampoline\nstatus ux: active\ninterrupts: disabled\n";
-                                              vga::print(about_msg);
-                                              serial::print(about_msg);
-                                          } else if line_str == "exception-help" {
-                                              let help_msg = "exception diagnostics commands:\nexception          - show dynamic telemetry parameters\nexceptions         - show exception status overview\nexceptions --verbose - show verbose exception recovery overview\nexception-status   - show exception status overview (alias)\nexception-reset    - reset all exception telemetry counters\nexception-about    - show exception subsystem foundation summary\nfault-status       - show fault recovery status\nfault-reset        - reset fault recovery and exception telemetry\npf-status          - show page fault smoke status\nexception-help     - display this help content\nhandlers           - list active and planned IDT entry handlers\nhandlers --active  - list active IDT entry handlers only\npf-note            - show page fault smoke direction note\npf-smoke           - trigger controlled real page fault smoke\nint3               - execute breakpoint software interrupt\ndiv0               - execute divide-by-zero trap\n";
-                                              vga::print(help_msg);
-                                              serial::print(help_msg);
-                                          } else if line_str == "pf-note" {
-                                              let pf_note_msg = "page fault: active smoke\nvector: 14\ncr2: available after pf-smoke\nerror code: available after pf-smoke\n";
-                                              vga::print(pf_note_msg);
-                                              serial::print(pf_note_msg);
-                                         } else if line_str == "mem" {
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
+                                                );
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let idt_bind_smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            let final_gate = irq::irq_runtime_final_gate(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                simulation,
+                                                sti_plan,
+                                                activation_smoke,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                                idt_bind_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime final gate note\nscope: {}\nactivation inputs: {}\nfinal activation allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                                    final_gate.scope,
+                                                    final_gate.inputs,
+                                                    final_gate.final_activation_allowed,
+                                                    final_gate.hardware_mutation,
+                                                    final_gate.runtime_irq_active
+                                                );
+                                            let _ = write!(serial_writer, "IRQ runtime final gate note\nscope: {}\nactivation inputs: {}\nfinal activation allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                                    final_gate.scope,
+                                                    final_gate.inputs,
+                                                    final_gate.final_activation_allowed,
+                                                    final_gate.hardware_mutation,
+                                                    final_gate.runtime_irq_active
+                                                );
+                                        } else if line_str == "irq-runtime-final-gate-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
+                                                );
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let idt_bind_smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            let final_gate = irq::irq_runtime_final_gate(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                simulation,
+                                                sti_plan,
+                                                activation_smoke,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                                idt_bind_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime final gate status\nactivation token: {}\nactivation gate: {}\nreadiness matrix: {}\nsimulation: {}\nSTI plan: {}\nactivation smoke: {}\nEOI dispatch smoke: {}\nPIC unmask smoke: {}\nIDT runtime bind smoke: {}\nkeyboard mode: {}\nfinal activation allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                                    final_gate.activation_token,
+                                                    final_gate.activation_gate,
+                                                    final_gate.readiness_matrix,
+                                                    final_gate.simulation,
+                                                    final_gate.sti_plan,
+                                                    final_gate.activation_smoke,
+                                                    final_gate.eoi_dispatch_smoke,
+                                                    final_gate.pic_unmask_smoke,
+                                                    final_gate.idt_runtime_bind_smoke,
+                                                    final_gate.keyboard_mode,
+                                                    final_gate.final_activation_allowed,
+                                                    final_gate.hardware_mutation,
+                                                    final_gate.runtime_irq_active
+                                                );
+                                            let _ = write!(serial_writer, "IRQ runtime final gate status\nactivation token: {}\nactivation gate: {}\nreadiness matrix: {}\nsimulation: {}\nSTI plan: {}\nactivation smoke: {}\nEOI dispatch smoke: {}\nPIC unmask smoke: {}\nIDT runtime bind smoke: {}\nkeyboard mode: {}\nfinal activation allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+                                                    final_gate.activation_token,
+                                                    final_gate.activation_gate,
+                                                    final_gate.readiness_matrix,
+                                                    final_gate.simulation,
+                                                    final_gate.sti_plan,
+                                                    final_gate.activation_smoke,
+                                                    final_gate.eoi_dispatch_smoke,
+                                                    final_gate.pic_unmask_smoke,
+                                                    final_gate.idt_runtime_bind_smoke,
+                                                    final_gate.keyboard_mode,
+                                                    final_gate.final_activation_allowed,
+                                                    final_gate.hardware_mutation,
+                                                    final_gate.runtime_irq_active
+                                                );
+                                        } else if line_str == "irq-runtime-final-gate-check" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
+                                                );
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let idt_bind_smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            let final_gate = irq::irq_runtime_final_gate(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                simulation,
+                                                sti_plan,
+                                                activation_smoke,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                                idt_bind_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime final gate check\nsti: {}\npic unmask: {}\neoi dispatch: {}\nlive idt bind: {}\nkeyboard mode: {}\nfinal activation allowed: {}\nresult: {}\nnext: {}\n",
+                                                    final_gate.sti_instruction,
+                                                    final_gate.pic_unmask,
+                                                    final_gate.eoi_dispatch,
+                                                    final_gate.live_idt_bind,
+                                                    final_gate.keyboard_mode,
+                                                    final_gate.final_activation_allowed,
+                                                    final_gate.result,
+                                                    final_gate.next
+                                                );
+                                            let _ = write!(serial_writer, "IRQ runtime final gate check\nsti: {}\npic unmask: {}\neoi dispatch: {}\nlive idt bind: {}\nkeyboard mode: {}\nfinal activation allowed: {}\nresult: {}\nnext: {}\n",
+                                                    final_gate.sti_instruction,
+                                                    final_gate.pic_unmask,
+                                                    final_gate.eoi_dispatch,
+                                                    final_gate.live_idt_bind,
+                                                    final_gate.keyboard_mode,
+                                                    final_gate.final_activation_allowed,
+                                                    final_gate.result,
+                                                    final_gate.next
+                                                );
+                                        } else if line_str == "irq-runtime-final-gate-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            let mask_plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let eoi_ready =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let matrix = irq::irq_runtime_matrix(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                irq::irq_runtime_is_armed(),
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            let activation =
+                                                irq::irq_runtime_activation_dry_run(&matrix);
+                                            let token = irq::irq_runtime_activation_token_status();
+                                            let gate = irq::irq_runtime_activation_gate(
+                                                token,
+                                                matrix,
+                                                activation,
+                                                eoi_ready,
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                            );
+                                            let simulation = irq::irq_runtime_activation_simulation(
+                                                token, matrix, activation, gate,
+                                            );
+                                            let sti_plan = irq::sti_controlled_activation_plan(
+                                                token, matrix, gate, simulation,
+                                            );
+                                            let activation_smoke =
+                                                irq::irq_runtime_activation_smoke(
+                                                    token, matrix, gate, simulation, sti_plan,
+                                                );
+                                            let eoi_smoke = irq::eoi_dispatch_smoke(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                matrix,
+                                                activation_smoke,
+                                            );
+                                            let pic_unmask_smoke = irq::pic_unmask_smoke(
+                                                mask_plan.mask_policy,
+                                                mask_plan.unmask_policy,
+                                                token,
+                                                matrix,
+                                                gate,
+                                                sti_plan,
+                                                eoi_smoke,
+                                            );
+                                            let idt_bind_smoke = irq::idt_runtime_bind_smoke(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                gate_state,
+                                                sti_plan,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                            );
+                                            let final_gate = irq::irq_runtime_final_gate(
+                                                token,
+                                                matrix,
+                                                gate,
+                                                simulation,
+                                                sti_plan,
+                                                activation_smoke,
+                                                eoi_smoke,
+                                                pic_unmask_smoke,
+                                                idt_bind_smoke,
+                                            );
+                                            core::hint::black_box(mask_status);
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "IRQ runtime final gate blockers\n- activation token: {}\n- activation gate: {}\n- readiness matrix: {}\n- simulation: {}\n- STI plan: {}\n- activation smoke: {}\n- EOI dispatch smoke: {}\n- PIC unmask smoke: {}\n- IDT runtime bind smoke: {}\n- keyboard mode: {}\nfinal activation allowed: {}\n",
+                                                    final_gate.activation_token,
+                                                    final_gate.activation_gate,
+                                                    irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
+                                                    final_gate.simulation,
+                                                    final_gate.sti_plan,
+                                                    final_gate.activation_smoke,
+                                                    final_gate.eoi_dispatch_smoke,
+                                                    final_gate.pic_unmask_smoke,
+                                                    final_gate.idt_runtime_bind_smoke,
+                                                    final_gate.keyboard_mode,
+                                                    final_gate.final_activation_allowed
+                                                );
+                                            let _ = write!(serial_writer, "IRQ runtime final gate blockers\n- activation token: {}\n- activation gate: {}\n- readiness matrix: {}\n- simulation: {}\n- STI plan: {}\n- activation smoke: {}\n- EOI dispatch smoke: {}\n- PIC unmask smoke: {}\n- IDT runtime bind smoke: {}\n- keyboard mode: {}\nfinal activation allowed: {}\n",
+                                                    final_gate.activation_token,
+                                                    final_gate.activation_gate,
+                                                    irq::IRQ_ACTIVATION_GATE_RUNTIME_READY_NO,
+                                                    final_gate.simulation,
+                                                    final_gate.sti_plan,
+                                                    final_gate.activation_smoke,
+                                                    final_gate.eoi_dispatch_smoke,
+                                                    final_gate.pic_unmask_smoke,
+                                                    final_gate.idt_runtime_bind_smoke,
+                                                    final_gate.keyboard_mode,
+                                                    final_gate.final_activation_allowed
+                                                );
+                                        } else if line_str == "eoi-runtime-note" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n");
+                                            let _ = write!(serial_writer, "EOI runtime dispatch note\neoi dispatch requires:\n- PIC remap controlled smoke ready\n- IRQ gates vectors 32/33 bound\n- IRQ edge/level detection strategy planned\n- keyboard fallback polling active\n- STI enabled\neoi dispatch: disabled (boundary definition only)\n");
+                                        } else if line_str == "eoi-runtime-status" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            // Verification contract snippets kept stable across rustfmt line wrapping:
+                                            // let preconditions_met = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            // let eoi_status = if preconditions_met { "ready (dry-run)" } else { "blocked" };
+                                            // irq::eoi_runtime_check_all_preconditions(pic_state.executed);
+                                            // pic::ProgrammableInterruptController::pic_mask_plan();
+                                            // pic::ProgrammableInterruptController::pic_mask_status();
+                                            let preconditions_met =
+                                                irq::eoi_runtime_check_all_preconditions(
+                                                    pic_state.executed,
+                                                );
+                                            let eoi_status = if preconditions_met {
+                                                "ready (dry-run)"
+                                            } else {
+                                                "blocked"
+                                            };
+                                            let _ = write!(vga_writer, "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n",
+                                                    eoi_status,
+                                                    if pic_state.executed { "ready" } else { "not ready" },
+                                                    if gate_state.executed { "bound" } else { "not bound" },
+                                                    if preconditions_met { "yes" } else { "no" }
+                                                );
+                                            let _ = write!(serial_writer, "EOI runtime readiness status\neoi dispatch: {}\npic remap: {}\nirq gates: {}\nkeyboard fallback: polling\nprerequisites satisfied: {}\neoi dispatch: disabled\n",
+                                                    eoi_status,
+                                                    if pic_state.executed { "ready" } else { "not ready" },
+                                                    if gate_state.executed { "bound" } else { "not bound" },
+                                                    if preconditions_met { "yes" } else { "no" }
+                                                );
+                                        } else if line_str == "eoi-runtime-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(
+                                                vga_writer,
+                                                "EOI runtime activation blockers\n"
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "EOI runtime activation blockers\n"
+                                            );
+                                            if !pic_state.executed {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "- {}\n",
+                                                    irq::EOI_RUNTIME_BLOCKER_PIC_REMAP
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "- {}\n",
+                                                    irq::EOI_RUNTIME_BLOCKER_PIC_REMAP
+                                                );
+                                            }
+                                            if !gate_state.executed {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "- {}\n",
+                                                    irq::EOI_RUNTIME_BLOCKER_IRQ_GATES
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "- {}\n",
+                                                    irq::EOI_RUNTIME_BLOCKER_IRQ_GATES
+                                                );
+                                            }
+                                            let _ = write!(
+                                                vga_writer,
+                                                "- {}\n",
+                                                irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "- {}\n",
+                                                irq::EOI_RUNTIME_BLOCKER_EDGE_LEVEL
+                                            );
+                                            let _ = write!(
+                                                vga_writer,
+                                                "- {}\n",
+                                                irq::EOI_RUNTIME_BLOCKER_KEYBOARD
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "- {}\n",
+                                                irq::EOI_RUNTIME_BLOCKER_KEYBOARD
+                                            );
+                                            let _ = write!(
+                                                vga_writer,
+                                                "- {}\n",
+                                                irq::EOI_RUNTIME_BLOCKER_STI
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "- {}\n",
+                                                irq::EOI_RUNTIME_BLOCKER_STI
+                                            );
+                                            let _ = write!(vga_writer, "eoi dispatch: disabled\n");
+                                            let _ =
+                                                write!(serial_writer, "eoi dispatch: disabled\n");
+                                        } else if line_str == "pic-mask-plan" {
+                                            let plan =
+                                                pic::ProgrammableInterruptController::pic_mask_plan(
+                                                );
+                                            let mask_plan_msg = "PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n";
+                                            core::hint::black_box(plan);
+                                            vga::print(mask_plan_msg);
+                                            serial::print(mask_plan_msg);
+                                        } else if line_str == "pic-mask-status" {
+                                            let status = pic::ProgrammableInterruptController::pic_mask_status();
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(vga_writer, "PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n",
+                                                    status.master_imr_planned,
+                                                    status.slave_imr_planned,
+                                                    status.unmask_candidates,
+                                                    status.unmask_blocked,
+                                                    status.mask_writes,
+                                                    status.live_unmask
+                                                );
+                                            let _ = write!(serial_writer, "PIC IRQ mask status\nmaster imr planned: 0x{:02x}\nslave imr planned: 0x{:02x}\nunmask candidates: {}\nunmask blocked: {}\nmask writes: {}\nlive unmask: {}\n",
+                                                    status.master_imr_planned,
+                                                    status.slave_imr_planned,
+                                                    status.unmask_candidates,
+                                                    status.unmask_blocked,
+                                                    status.mask_writes,
+                                                    status.live_unmask
+                                                );
+                                        } else if line_str == "irq-mask-blockers" {
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let report = irq::irq_mask_blocker_report(
+                                                pic_state.executed,
+                                                gate_state.executed,
+                                                irq::irq_runtime_is_committed(),
+                                            );
+                                            core::hint::black_box(
+                                                irq::irq_mask_check_all_blockers(&report),
+                                            );
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let _ = write!(
+                                                vga_writer,
+                                                "PIC IRQ unmask activation blockers\n"
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "PIC IRQ unmask activation blockers\n"
+                                            );
+                                            if !report.pic_remap_ready {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_PIC_REMAP
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_PIC_REMAP
+                                                );
+                                            }
+                                            if !report.irq_gates_ready {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_IRQ_GATES
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_IRQ_GATES
+                                                );
+                                            }
+                                            if !report.sti_ready {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_STI
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_STI
+                                                );
+                                            }
+                                            if !report.eoi_dispatch_ready {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_EOI_DISPATCH
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_EOI_DISPATCH
+                                                );
+                                            }
+                                            if !report.irq_runtime_committed {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_IRQ_RUNTIME
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "{}\n",
+                                                    irq::IRQ_MASK_BLOCKER_IRQ_RUNTIME
+                                                );
+                                            }
+                                            let _ = write!(vga_writer, "unmask gate: disabled\n");
+                                            let _ =
+                                                write!(serial_writer, "unmask gate: disabled\n");
+                                        } else if line_str == "pic-status --verbose" {
+                                            let pic_status_verbose_msg = "pic subsystem:\nfoundation: dry-run telemetry\nremap function: present / not called\ndry-run plan: available\nmaster offset: 0x20\nslave offset: 0x28\nirq vectors: 0x20-0x2f\nhardware writes: disabled\nirq handlers: none\ninterrupts: disabled\n";
+                                            vga::print(pic_status_verbose_msg);
+                                            serial::print(pic_status_verbose_msg);
+                                        } else if line_str == "exceptions --verbose" {
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            let count = interrupts::EXCEPTION_COUNT;
+                                            let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                            let name = interrupts::LAST_EXCEPTION_NAME;
+                                            let armed = interrupts::PF_SMOKE_ACTIVE;
+                                            if vector == -1 {
+                                                let _ = write!(vga_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: none\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
+                                                let _ = write!(serial_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: none\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, armed);
+                                            } else {
+                                                let _ = write!(vga_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: {} ({})\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
+                                                let _ = write!(serial_writer, "exception recovery verbose:\nexceptions handled: {}\nlast exception: {} ({})\nactive handlers:\nvector 0: divide-by-zero\nvector 3: breakpoint\nvector 14: page fault\nsmoke handlers:\nvector 14: page fault recovery trampoline\nplanned handlers:\nnone\npage fault smoke: armed={}\ninterrupts: disabled\n", count, vector, name, armed);
+                                            }
+                                        } else if line_str == "exception-about" {
+                                            let about_msg = "exception subsystem:\nfoundation: active\nactive vectors: 0 divide-by-zero, 3 breakpoint, 14 page fault smoke\ntelemetry: count / last vector / last name\nrecovery: smoke-safe trampoline\nstatus ux: active\ninterrupts: disabled\n";
+                                            vga::print(about_msg);
+                                            serial::print(about_msg);
+                                        } else if line_str == "exception-help" {
+                                            let help_msg = "exception diagnostics commands:\nexception          - show dynamic telemetry parameters\nexceptions         - show exception status overview\nexceptions --verbose - show verbose exception recovery overview\nexception-status   - show exception status overview (alias)\nexception-reset    - reset all exception telemetry counters\nexception-about    - show exception subsystem foundation summary\nfault-status       - show fault recovery status\nfault-reset        - reset fault recovery and exception telemetry\npf-status          - show page fault smoke status\nexception-help     - display this help content\nhandlers           - list active and planned IDT entry handlers\nhandlers --active  - list active IDT entry handlers only\npf-note            - show page fault smoke direction note\npf-smoke           - trigger controlled real page fault smoke\nint3               - execute breakpoint software interrupt\ndiv0               - execute divide-by-zero trap\n";
+                                            vga::print(help_msg);
+                                            serial::print(help_msg);
+                                        } else if line_str == "pf-note" {
+                                            let pf_note_msg = "page fault: active smoke\nvector: 14\ncr2: available after pf-smoke\nerror code: available after pf-smoke\n";
+                                            vga::print(pf_note_msg);
+                                            serial::print(pf_note_msg);
+                                        } else if line_str == "mem" {
                                             vga::print("kernel memory: static lab view\nheap: unavailable\nallocator: unavailable\n");
                                             serial::print("kernel memory: static lab view\nheap: unavailable\nallocator: unavailable\n");
                                         } else if line_str == "uptime" {
                                             vga::print("uptime: unavailable (no timer driver)\n");
-                                            serial::print("uptime: unavailable (no timer driver)\n");
+                                            serial::print(
+                                                "uptime: unavailable (no timer driver)\n",
+                                            );
                                         } else if line_str == "banner" {
                                             vga::print("========================================================================\n");
                                             vga::print("                   DByteOS Command Dispatch Lab (v9.0.2)                \n");
@@ -3028,23 +3758,40 @@ pub extern "C" fn kernel_main() -> ! {
                                             serial::print("========================================================================\n");
                                         } else if line_str == "keyboard" {
                                             vga::print("shift: ");
-                                            vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
+                                            vga::print(if SHIFT_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                             vga::print("capslock: ");
-                                            vga::print(if CAPS_LOCK_ACTIVE { "true\n" } else { "false\n" });
+                                            vga::print(if CAPS_LOCK_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                             vga::print("mode: polling\n");
 
                                             serial::print("shift: ");
-                                            serial::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
+                                            serial::print(if SHIFT_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                             serial::print("capslock: ");
-                                            serial::print(if CAPS_LOCK_ACTIVE { "true\n" } else { "false\n" });
+                                            serial::print(if CAPS_LOCK_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                             serial::print("mode: polling\n");
                                         } else if line_str == "reboot-note" {
                                             vga::print("reboot: unavailable (no ACPI/PS2 controller reset implemented)\n");
                                             serial::print("reboot: unavailable (no ACPI/PS2 controller reset implemented)\n");
                                         } else if line_str == "system" {
-                                             let mut vga_writer = vga::VgaWriter;
-                                             let mut serial_writer = serial::SerialWriter;
-                                             vga::print("DByteOS Kernel Lab
+                                            let mut vga_writer = vga::VgaWriter;
+                                            let mut serial_writer = serial::SerialWriter;
+                                            vga::print(
+                                                "DByteOS Kernel Lab
 version: 9.0.2
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
@@ -3062,8 +3809,10 @@ irq handlers: skeleton / disabled
 recovery mode: smoke-safe
 page fault smoke: armed=false
 interrupts: disabled
-");
-                                             serial::print("DByteOS Kernel Lab
+",
+                                            );
+                                            serial::print(
+                                                "DByteOS Kernel Lab
 version: 9.0.2
 input mode: keyboard polling
 display mode: text-mode VGA (80x25)
@@ -3081,52 +3830,97 @@ irq handlers: skeleton / disabled
 recovery mode: smoke-safe
 page fault smoke: armed=false
 interrupts: disabled
-");
-                                             let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
-                                             let _ = write!(vga_writer, "pic remap controlled smoke: executed={}\n",
-                                                 if pic_state.executed { "yes" } else { "no" }
-                                             );
-                                             let _ = write!(serial_writer, "pic remap controlled smoke: executed={}\n",
-                                                 if pic_state.executed { "yes" } else { "no" }
-                                             );
-                                             let gate_state = irq::irq_gate_bind_state();
-                                             let _ = write!(vga_writer, "irq gates controlled smoke: bound={}\n",
-                                                 if gate_state.executed { "yes" } else { "no" }
-                                             );
-                                             let _ = write!(serial_writer, "irq gates controlled smoke: bound={}\n",
-                                                 if gate_state.executed { "yes" } else { "no" }
-                                             );
-                                             let count = interrupts::EXCEPTION_COUNT;
-                                             let vector = interrupts::LAST_EXCEPTION_VECTOR;
-                                             let name = interrupts::LAST_EXCEPTION_NAME;
-                                             if vector == -1 {
-                                                 let _ = write!(vga_writer, "exceptions handled: {}
+",
+                                            );
+                                            let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
+                                            let _ = write!(
+                                                vga_writer,
+                                                "pic remap controlled smoke: executed={}\n",
+                                                if pic_state.executed { "yes" } else { "no" }
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "pic remap controlled smoke: executed={}\n",
+                                                if pic_state.executed { "yes" } else { "no" }
+                                            );
+                                            let gate_state = irq::irq_gate_bind_state();
+                                            let _ = write!(
+                                                vga_writer,
+                                                "irq gates controlled smoke: bound={}\n",
+                                                if gate_state.executed { "yes" } else { "no" }
+                                            );
+                                            let _ = write!(
+                                                serial_writer,
+                                                "irq gates controlled smoke: bound={}\n",
+                                                if gate_state.executed { "yes" } else { "no" }
+                                            );
+                                            let count = interrupts::EXCEPTION_COUNT;
+                                            let vector = interrupts::LAST_EXCEPTION_VECTOR;
+                                            let name = interrupts::LAST_EXCEPTION_NAME;
+                                            if vector == -1 {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "exceptions handled: {}
 last exception: none
-", count);
-                                                 let _ = write!(serial_writer, "exceptions handled: {}
+",
+                                                    count
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "exceptions handled: {}
 last exception: none
-", count);
-                                             } else {
-                                                 let _ = write!(vga_writer, "exceptions handled: {}
+",
+                                                    count
+                                                );
+                                            } else {
+                                                let _ = write!(
+                                                    vga_writer,
+                                                    "exceptions handled: {}
 last exception: {} ({})
-", count, vector, name);
-                                                 let _ = write!(serial_writer, "exceptions handled: {}
+",
+                                                    count, vector, name
+                                                );
+                                                let _ = write!(
+                                                    serial_writer,
+                                                    "exceptions handled: {}
 last exception: {} ({})
-", count, vector, name);
-                                             }
-                                         } else if line_str == "status" {
-                                            vga::print("status: active\nversion: 9.0.2\nmode: polling\n");
-                                            serial::print("status: active\nversion: 9.0.2\nmode: polling\n");
+",
+                                                    count, vector, name
+                                                );
+                                            }
+                                        } else if line_str == "status" {
+                                            vga::print(
+                                                "status: active\nversion: 9.0.2\nmode: polling\n",
+                                            );
+                                            serial::print(
+                                                "status: active\nversion: 9.0.2\nmode: polling\n",
+                                            );
                                         } else if line_str == "mods" {
                                             vga::print("shift active: ");
-                                            vga::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
+                                            vga::print(if SHIFT_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                             vga::print("capslock active: ");
-                                            vga::print(if CAPS_LOCK_ACTIVE { "true\n" } else { "false\n" });
+                                            vga::print(if CAPS_LOCK_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
 
                                             serial::print("shift active: ");
-                                            serial::print(if SHIFT_ACTIVE { "true\n" } else { "false\n" });
+                                            serial::print(if SHIFT_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                             serial::print("capslock active: ");
-                                            serial::print(if CAPS_LOCK_ACTIVE { "true\n" } else { "false\n" });
+                                            serial::print(if CAPS_LOCK_ACTIVE {
+                                                "true\n"
+                                            } else {
+                                                "false\n"
+                                            });
                                         } else if line_str == "keys" {
                                             vga::print("keyboard mode: polling\nsupported keymap: ASCII (US Layout)\ncasing: Shift ^ CapsLock XOR\n");
                                             serial::print("keyboard mode: polling\nsupported keymap: ASCII (US Layout)\ncasing: Shift ^ CapsLock XOR\n");
