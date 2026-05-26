@@ -351,6 +351,22 @@ pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_PIC_UNMASK: &str = "PIC unmask disab
 pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_IDT: &str = "IDT live bind disabled";
 pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_KEYBOARD: &str = "keyboard mode polling";
+pub const EOI_WRITE_PERMIT_SCOPE: &str = "controlled first PIC_EOI write permit model";
+pub const EOI_WRITE_PERMIT_INPUTS: &str =
+    "candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard";
+pub const EOI_WRITE_PERMIT_GRANTED_NO: &str = "no";
+pub const EOI_WRITE_PERMIT_FIRST_WRITE_ALLOWED_NO: &str = "no";
+pub const EOI_WRITE_PERMIT_TARGET_NONE: &str = "none";
+pub const EOI_WRITE_PERMIT_FIRE_DRY_RUN_BLOCKED: &str = "dry-run blocked";
+pub const EOI_WRITE_PERMIT_BLOCKER_DECISION: &str = "activation decision frozen blocked";
+pub const EOI_WRITE_PERMIT_BLOCKER_FINAL_GATE: &str = "final gate denied";
+pub const EOI_WRITE_PERMIT_BLOCKER_MUTATION: &str = "mutation checklist denied";
+pub const EOI_WRITE_PERMIT_BLOCKER_SEQUENCE: &str = "mutation sequencer denied";
+pub const EOI_WRITE_PERMIT_BLOCKER_CANDIDATE_FIRE: &str =
+    "EOI write candidate fire blocked";
+pub const EOI_WRITE_PERMIT_BLOCKER_STI: &str = "STI disabled";
+pub const EOI_WRITE_PERMIT_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_PERMIT_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -747,6 +763,29 @@ pub struct EoiWriteSmokeCandidate {
     pub hardware_mutation_ready: &'static str,
     pub activation_decision: &'static str,
     pub final_activation_allowed: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWritePermitModel {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub permit_granted: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
+    pub target_command_port: &'static str,
+    pub target_value: &'static str,
+    pub target_irq_line: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub fire_command: &'static str,
+    pub activation_decision: &'static str,
+    pub final_activation_allowed: &'static str,
+    pub hardware_mutation_ready: &'static str,
+    pub mutation_sequence_ready: &'static str,
+    pub candidate_fire_result: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -1763,5 +1802,37 @@ pub fn eoi_write_smoke_candidate(
         hardware_mutation_ready: mutation.hardware_mutation_ready,
         activation_decision: decision.activation_decision,
         final_activation_allowed: final_gate.final_activation_allowed,
+    }
+}
+
+/// Models the permit gate for a future first PIC EOI write without touching hardware.
+pub fn eoi_write_permit_model(
+    candidate: EoiWriteSmokeCandidate,
+    preflight: EoiWriteSmokePreflight,
+    sequence: IrqRuntimeMutationSmokeSequence,
+    mutation: IrqRuntimeHardwareMutationChecklist,
+    decision: IrqRuntimeActivationDecision,
+    final_gate: IrqRuntimeFinalGate,
+) -> EoiWritePermitModel {
+    EoiWritePermitModel {
+        scope: EOI_WRITE_PERMIT_SCOPE,
+        inputs: EOI_WRITE_PERMIT_INPUTS,
+        permit_granted: EOI_WRITE_PERMIT_GRANTED_NO,
+        first_pic_eoi_write_allowed: EOI_WRITE_PERMIT_FIRST_WRITE_ALLOWED_NO,
+        target_command_port: EOI_WRITE_PERMIT_TARGET_NONE,
+        target_value: EOI_WRITE_PERMIT_TARGET_NONE,
+        target_irq_line: EOI_WRITE_PERMIT_TARGET_NONE,
+        hardware_mutation: final_gate.hardware_mutation,
+        runtime_irq_active: final_gate.runtime_irq_active,
+        fire_command: EOI_WRITE_PERMIT_FIRE_DRY_RUN_BLOCKED,
+        activation_decision: decision.activation_decision,
+        final_activation_allowed: final_gate.final_activation_allowed,
+        hardware_mutation_ready: mutation.hardware_mutation_ready,
+        mutation_sequence_ready: sequence.mutation_sequence_ready,
+        candidate_fire_result: candidate.fire_result,
+        sti_instruction: final_gate.sti_instruction,
+        pic_unmask: final_gate.pic_unmask,
+        live_idt_bind: final_gate.live_idt_bind,
+        keyboard_mode: preflight.keyboard_mode,
     }
 }

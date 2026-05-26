@@ -616,7 +616,7 @@ Assert-Contains $irrContent 'pub fn eoi_runtime_check_all_preconditions' "eoi_ru
 # v9.2.0: Verify kernel version
 $cargoToml = Join-Path $repoRoot "kernel-lab\Cargo.toml"
 $cargoContent = Get-Content $cargoToml -Raw
-Assert-Contains $cargoContent 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent 'version = "10.10.0"' "kernel-lab version 10.7.0"
 
 # v9.2.0: Safety invariants still hold (from v9.1.1)
 $irrContent = Get-Content $irrRs -Raw
@@ -699,7 +699,7 @@ $picContent930 = Get-Content $picRs -Raw
 $mainContent930 = Get-Content $mainRs -Raw
 
 # v9.3.0: Version guard
-Assert-Contains $cargoContent930 'version = "10.9.1"' "kernel-lab current version 10.7.0"
+Assert-Contains $cargoContent930 'version = "10.10.0"' "kernel-lab current version 10.7.0"
 Assert-NotContains $cargoContent930 'version = "9.2.1"' "kernel-lab stale v9.2.1 guard"
 
 # v9.3.0: irq.rs — blocker constants present
@@ -801,7 +801,7 @@ $irrContent931 = Get-Content $irrRs -Raw
 $picContent931 = Get-Content $picRs -Raw
 $mainContent931 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent931 'version = "10.9.1"' "kernel-lab current version 10.7.0"
+Assert-Contains $cargoContent931 'version = "10.10.0"' "kernel-lab current version 10.7.0"
 Assert-NotContains $cargoContent931 'version = "9.3.0"' "kernel-lab stale v9.3.0 package version guard"
 
 $picMaskPlanExact931 = 'PIC IRQ mask plan\nmask policy: all masked (0xFF)\nmaster imr: 0xFF (all masked)\nslave imr: 0xFF (all masked)\nunmask candidates: none\nunmask policy: no lines scheduled for unmask\nunmask gate: disabled\n'
@@ -853,7 +853,7 @@ $irrContent940 = Get-Content $irrRs -Raw
 $picContent940 = Get-Content $picRs -Raw
 $mainContent940 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent940 'version = "10.9.1"' "kernel-lab current version 10.7.0"
+Assert-Contains $cargoContent940 'version = "10.10.0"' "kernel-lab current version 10.7.0"
 Assert-NotContains $cargoContent940 'version = "9.3.1"' "kernel-lab stale v9.3.1 package version guard"
 
 Assert-Contains $mainContent940 'irq-runtime-matrix irq-runtime-readiness irq-runtime-next' "help string includes v9.4.0 commands"
@@ -916,7 +916,7 @@ $irrContent941 = Get-Content $irrRs -Raw
 $picContent941 = Get-Content $picRs -Raw
 $mainContent941 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent941 'version = "10.9.1"' "kernel-lab current version 10.7.0"
+Assert-Contains $cargoContent941 'version = "10.10.0"' "kernel-lab current version 10.7.0"
 Assert-NotContains $cargoContent941 'version = "9.4.0"' "kernel-lab stale v9.4.0 package version guard"
 
 $matrixBlockStart = $mainContent941.IndexOf('} else if line_str == "irq-runtime-matrix" {')
@@ -1023,7 +1023,7 @@ $irrContent950 = Get-Content $irrRs -Raw
 $picContent950 = Get-Content $picRs -Raw
 $mainContent950 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent950 'version = "10.9.1"' "kernel-lab current version 10.7.0"
+Assert-Contains $cargoContent950 'version = "10.10.0"' "kernel-lab current version 10.7.0"
 Assert-NotContains $cargoContent950 'version = "9.4.1"' "kernel-lab stale v9.4.1 package version guard"
 Assert-Contains $mainContent950 'irq-runtime-next irq-runtime-activation-plan' "help string includes v9.5.0 activation command"
 Assert-Contains $mainContent950 'line_str == "irq-runtime-activation-plan"' "irq-runtime-activation-plan dispatcher"
@@ -1101,7 +1101,7 @@ $irrContent951 = Get-Content $irrRs -Raw
 $picContent951 = Get-Content $picRs -Raw
 $mainContent951 = Get-Content $mainRs -Raw
 
-Assert-Contains $cargoContent951 'version = "10.9.1"' "kernel-lab current version 10.7.0"
+Assert-Contains $cargoContent951 'version = "10.10.0"' "kernel-lab current version 10.7.0"
 Assert-NotContains $cargoContent951 'version = "9.5.0"' "kernel-lab stale v9.5.0 package version guard"
 Assert-Contains $mainContent951 'irq-runtime-activation-plan' "v9.5.1 activation plan command remains exposed"
 Assert-Contains $mainContent951 'line_str == "irq-runtime-commit"' "v9.5.1 irq-runtime-commit dispatcher remains exposed"
@@ -1210,7 +1210,7 @@ $mainContent960 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs960 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs960 = $kernelBootSmokeDocs960 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent960 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent960 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent960 'version = "9.5.1"' "kernel-lab stale v9.5.1 package version guard"
 Assert-Contains $mainContent960 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string includes v9.6.0 token commands"
 Assert-Contains $mainContent960 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher"
@@ -1324,7 +1324,7 @@ $mainContent961 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs961 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs961 = $kernelBootSmokeDocs961 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent961 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent961 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent961 'version = "9.6.0"' "kernel-lab stale v9.6.0 package version guard"
 Assert-Contains $mainContent961 'irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear' "help string preserves v9.6.1 token commands"
 Assert-Contains $mainContent961 'line_str == "irq-runtime-token-note"' "irq-runtime-token-note dispatcher remains exposed"
@@ -1449,7 +1449,7 @@ $mainContent971 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs971 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs971 = $kernelBootSmokeDocs971 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent971 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent971 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent971 'version = "9.7.0"' "kernel-lab stale v9.7.0 package version guard"
 Assert-Contains $mainContent971 'irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers' "help string includes v9.7.1 gate commands"
 Assert-Contains $mainContent971 'line_str == "irq-runtime-gate-note"' "irq-runtime-gate-note dispatcher"
@@ -1612,9 +1612,9 @@ $mainContent980 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs980 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs980 = $kernelBootSmokeDocs980 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent980 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent980 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent980 'version = "9.7.1"' "kernel-lab stale v9.7.1 package version guard"
-Assert-Contains $kernelCargoLockContent980 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent980 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent980 'version = "9.7.1"' "kernel-lab stale v9.7.1 lockfile version guard"
 Assert-Contains $mainContent980 'irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers' "help string includes v9.8.0 simulation commands"
 Assert-Contains $mainContent980 'line_str == "irq-runtime-sim-note"' "irq-runtime-sim-note dispatcher"
@@ -1774,9 +1774,9 @@ $mainContent981 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs981 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs981 = $kernelBootSmokeDocs981 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent981 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent981 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent981 'version = "9.8.0"' "kernel-lab stale v9.8.0 package version guard"
-Assert-Contains $kernelCargoLockContent981 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent981 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent981 'version = "9.8.0"' "kernel-lab stale v9.8.0 lockfile version guard"
 
 $simHelperStart981 = $irrContent981.IndexOf('pub fn irq_runtime_activation_simulation(')
@@ -1916,9 +1916,9 @@ $mainContent990 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs990 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs990 = $kernelBootSmokeDocs990 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent990 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent990 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent990 'version = "9.8.1"' "kernel-lab stale v9.8.1 package version guard"
-Assert-Contains $kernelCargoLockContent990 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent990 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent990 'version = "9.8.1"' "kernel-lab stale v9.8.1 lockfile version guard"
 Assert-Contains $mainContent990 'sti-plan sti-status sti-preflight sti-blockers' "help string includes v9.9.0 STI commands"
 Assert-Contains $mainContent990 'line_str == "sti-plan"' "sti-plan dispatcher"
@@ -2083,9 +2083,9 @@ $mainContent991 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs991 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs991 = $kernelBootSmokeDocs991 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent991 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent991 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent991 'version = "9.9.0"' "kernel-lab stale v9.9.0 package version guard"
-Assert-Contains $kernelCargoLockContent991 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent991 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent991 'version = "9.9.0"' "kernel-lab stale v9.9.0 lockfile version guard"
 Assert-Contains $mainContent991 'sti-plan sti-status sti-preflight sti-blockers' "help string includes v9.9.1 STI commands"
 Assert-Contains $mainContent991 'line_str == "sti-plan"' "v9.9.1 sti-plan dispatcher"
@@ -2246,9 +2246,9 @@ $mainContent1000 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs1000 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs1000 = $kernelBootSmokeDocs1000 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1000 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1000 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1000 'version = "9.9.1"' "kernel-lab stale v9.9.1 package version guard"
-Assert-Contains $kernelCargoLockContent1000 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1000 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1000 'version = "9.9.1"' "kernel-lab stale v9.9.1 lockfile version guard"
 Assert-Contains $mainContent1000 'irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers' "help string includes v10.0.0 activation smoke commands"
 Assert-Contains $mainContent1000 'line_str == "irq-runtime-activation-smoke"' "v10.0.0 activation smoke dispatcher"
@@ -2394,9 +2394,9 @@ $mainContent1001 = Get-Content $mainRs -Raw
 $kernelBootSmokeDocs1001 = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelBootSmokeDocs1001 = $kernelBootSmokeDocs1001 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1001 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1001 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1001 'version = "10.0.0"' "kernel-lab stale v10.0.0 package version guard"
-Assert-Contains $kernelCargoLockContent1001 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1001 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1001 'version = "10.0.0"' "kernel-lab stale v10.0.0 lockfile version guard"
 if ($HEAD -eq $v1000Tag -and ($cargoContent1001.Contains('version = "10.0.0"') -or $kernelCargoLockContent1001.Contains('version = "10.0.0"'))) {
     throw "HEAD is still v10.0.0 with stale v10.0.0 metadata, v10.0.1 work not completed"
@@ -2584,9 +2584,9 @@ $kernelBootSmokeDocs1010 = $kernelBootSmokeDocs1010 -replace "`r`n", "`n"
 $kernelIrqDocs1010 = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelIrqDocs1010 = $kernelIrqDocs1010 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1010 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1010 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1010 'version = "10.0.1"' "kernel-lab stale v10.0.1 package version guard"
-Assert-Contains $kernelCargoLockContent1010 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1010 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1010 'version = "10.0.1"' "kernel-lab stale v10.0.1 lockfile version guard"
 Assert-Contains $mainContent1010 'eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers' "help string includes v10.1.0 eoi dispatch smoke commands"
 Assert-Contains $mainContent1010 'line_str == "eoi-dispatch-smoke-note"' "v10.1.0 eoi dispatch smoke note dispatcher"
@@ -2718,9 +2718,9 @@ $kernelBootSmokeDocs1011 = $kernelBootSmokeDocs1011 -replace "`r`n", "`n"
 $kernelIrqDocs1011 = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelIrqDocs1011 = $kernelIrqDocs1011 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1011 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1011 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1011 'version = "10.1.0"' "kernel-lab stale v10.1.0 package version guard"
-Assert-Contains $kernelCargoLockContent1011 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1011 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1011 'version = "10.1.0"' "kernel-lab stale v10.1.0 lockfile version guard"
 if ($HEAD -eq $v1010Tag -and ($cargoContent1011.Contains('version = "10.1.0"') -or $kernelCargoLockContent1011.Contains('version = "10.1.0"'))) {
     throw "HEAD is still v10.1.0 with stale v10.1.0 metadata, v10.1.1 work not completed"
@@ -2882,9 +2882,9 @@ $kernelBootSmokeDocs1020 = $kernelBootSmokeDocs1020 -replace "`r`n", "`n"
 $kernelIrqDocs1020 = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelIrqDocs1020 = $kernelIrqDocs1020 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1020 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1020 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1020 'version = "10.1.1"' "kernel-lab stale v10.1.1 package version guard"
-Assert-Contains $kernelCargoLockContent1020 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1020 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1020 'version = "10.1.1"' "kernel-lab stale v10.1.1 lockfile version guard"
 if ($HEAD -eq $v1011Tag -and ($cargoContent1020.Contains('version = "10.1.1"') -or $kernelCargoLockContent1020.Contains('version = "10.1.1"'))) {
     throw "HEAD is still v10.1.1 with stale v10.1.1 metadata, v10.2.0 work not completed"
@@ -3041,9 +3041,9 @@ $kernelBootSmokeDocs1021 = $kernelBootSmokeDocs1021 -replace "`r`n", "`n"
 $kernelIrqDocs1021 = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelIrqDocs1021 = $kernelIrqDocs1021 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1021 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1021 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1021 'version = "10.2.0"' "kernel-lab stale v10.2.0 package version guard"
-Assert-Contains $kernelCargoLockContent1021 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1021 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1021 'version = "10.2.0"' "kernel-lab stale v10.2.0 lockfile version guard"
 if ($HEAD -eq $v1020Tag -and ($cargoContent1021.Contains('version = "10.2.0"') -or $kernelCargoLockContent1021.Contains('version = "10.2.0"'))) {
     throw "HEAD is still v10.2.0 with stale v10.2.0 metadata, v10.2.1 work not completed"
@@ -3182,9 +3182,9 @@ $kernelBootSmokeDocs1030 = $kernelBootSmokeDocs1030 -replace "`r`n", "`n"
 $kernelIrqDocs1030 = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelIrqDocs1030 = $kernelIrqDocs1030 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1030 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1030 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1030 'version = "10.2.1"' "kernel-lab stale v10.2.1 package version guard"
-Assert-Contains $kernelCargoLockContent1030 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1030 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1030 'version = "10.2.1"' "kernel-lab stale v10.2.1 lockfile version guard"
 if ($HEAD -eq $v1021Tag -and ($cargoContent1030.Contains('version = "10.2.1"') -or $kernelCargoLockContent1030.Contains('version = "10.2.1"'))) {
     throw "HEAD is still v10.2.1 with stale v10.2.1 metadata, v10.3.0 work not completed"
@@ -3341,9 +3341,9 @@ $kernelBootSmokeDocs1031 = $kernelBootSmokeDocs1031 -replace "`r`n", "`n"
 $kernelIrqDocs1031 = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelIrqDocs1031 = $kernelIrqDocs1031 -replace "`r`n", "`n"
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.3.0"' "kernel-lab stale v10.3.0 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.3.0"' "kernel-lab stale v10.3.0 lockfile version guard"
 if ($HEAD -eq $v1030Tag -and ($cargoContent1031.Contains('version = "10.3.0"') -or $kernelCargoLockContent1031.Contains('version = "10.3.0"'))) {
     throw "HEAD is still v10.3.0 with stale v10.3.0 metadata, v10.4.0 work not completed"
@@ -3508,9 +3508,9 @@ $v1031TagType = & git cat-file -t v10.3.1 2>$null
 if ($null -eq $v1031Tag) { throw "v10.3.1 tag not found (required baseline)" }
 if (($v1031TagType | Select-Object -First 1) -ne "tag") { throw "v10.3.1 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.3.1"' "kernel-lab stale v10.3.1 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.3.1"' "kernel-lab stale v10.3.1 lockfile version guard"
 Assert-Contains $mainContent1031 'irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers' "help string includes v10.4.0 final gate commands"
 Assert-Contains $mainContent1031 'line_str == "irq-runtime-final-gate-note"' "v10.4.0 final gate note dispatcher"
@@ -3772,9 +3772,9 @@ $v1041TagType = & git cat-file -t v10.4.1 2>$null
 if ($null -eq $v1041Tag) { throw "v10.4.1 tag not found (required baseline)" }
 if (($v1041TagType | Select-Object -First 1) -ne "tag") { throw "v10.4.1 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.4.1"' "kernel-lab stale v10.4.1 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.4.1"' "kernel-lab stale v10.4.1 lockfile version guard"
 Assert-Contains $mainContent1031 'irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers' "help string includes v10.5.0 decision commands"
 Assert-Contains $mainContent1031 'line_str == "irq-runtime-decision-note"' "v10.5.0 decision note dispatcher"
@@ -3911,13 +3911,13 @@ $v1050TagType = & git cat-file -t v10.5.0 2>$null
 if ($null -eq $v1050Tag) { throw "v10.5.0 tag not found (required baseline)" }
 if (($v1050TagType | Select-Object -First 1) -ne "tag") { throw "v10.5.0 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.5.0"' "kernel-lab stale v10.5.0 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.5.0"' "kernel-lab stale v10.5.0 lockfile version guard"
 Assert-Contains $mainContent1031 '.skip 262144           /* 256 KiB stack */' "v10.5.1 bootstrap stack remains 256 KiB"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "current irq docs title preserves later release"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "current qemu docs title preserves later release"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "current irq docs title preserves later release"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "current qemu docs title preserves later release"
 Assert-Contains $kernelIrqDocs1031 'v10.5.1` hardens that surface without changing the rendered command output or runtime state' "v10.5.1 irq docs unchanged output/runtime note"
 Assert-Contains $kernelBootSmokeDocs1031 'existing activation decision freeze layer' "v10.5.1 qemu docs decision layer remains referenced"
 
@@ -4028,9 +4028,9 @@ $v1051TagType = & git cat-file -t v10.5.1 2>$null
 if ($null -eq $v1051Tag) { throw "v10.5.1 tag not found (required baseline)" }
 if (($v1051TagType | Select-Object -First 1) -ne "tag") { throw "v10.5.1 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.5.1"' "kernel-lab stale v10.5.1 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.5.1"' "kernel-lab stale v10.5.1 lockfile version guard"
 Assert-Contains $mainContent1031 'irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers' "help string includes v10.6.0 mutation commands"
 Assert-Contains $mainContent1031 'line_str == "irq-runtime-mutation-note"' "v10.6.0 mutation note dispatcher"
@@ -4183,12 +4183,12 @@ $v1060TagType = & git cat-file -t v10.6.0 2>$null
 if ($null -eq $v1060Tag) { throw "v10.6.0 tag not found (required baseline)" }
 if (($v1060TagType | Select-Object -First 1) -ne "tag") { throw "v10.6.0 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.6.0"' "kernel-lab stale v10.6.0 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.6.0"' "kernel-lab stale v10.6.0 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.6.1 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.6.1 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.6.1 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.6.1 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 'v10.6.1` hardens the checklist without adding commands, changing output wording, or changing runtime behavior' "v10.6.1 irq docs hardening note"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release' "v10.6.1 qemu docs release note"
 
@@ -4308,12 +4308,12 @@ $v1061TagType = & git cat-file -t v10.6.1 2>$null
 if ($null -eq $v1061Tag) { throw "v10.6.1 tag not found (required baseline)" }
 if (($v1061TagType | Select-Object -First 1) -ne "tag") { throw "v10.6.1 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.0"
 Assert-NotContains $cargoContent1031 'version = "10.6.1"' "kernel-lab stale v10.6.1 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.6.1"' "kernel-lab stale v10.6.1 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.7.0 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.7.0 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.7.0 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.7.0 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 '## Controlled Mutation Smoke Sequencer Foundation' "v10.7.0 irq docs sequencer section"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release' "v10.7.0 qemu docs release note"
 
@@ -4477,12 +4477,12 @@ $v1070TagType = & git cat-file -t v10.7.0 2>$null
 if ($null -eq $v1070Tag) { throw "v10.7.0 tag not found (required baseline)" }
 if (($v1070TagType | Select-Object -First 1) -ne "tag") { throw "v10.7.0 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.7.1"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.7.1"
 Assert-NotContains $cargoContent1031 'version = "10.7.0"' "kernel-lab stale v10.7.0 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.7.1"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.7.1"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.7.0"' "kernel-lab stale v10.7.0 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.7.1 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.7.1 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.7.1 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.7.1 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 'v10.7.1` is not a mutation release' "v10.7.1 irq docs hardening not mutation release"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.7.1` is not a mutation release' "v10.7.1 qemu docs hardening not mutation release"
 
@@ -4603,12 +4603,12 @@ $v1071TagType = & git cat-file -t v10.7.1 2>$null
 if ($null -eq $v1071Tag) { throw "v10.7.1 tag not found (required baseline)" }
 if (($v1071TagType | Select-Object -First 1) -ne "tag") { throw "v10.7.1 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.8.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.8.0"
 Assert-NotContains $cargoContent1031 'version = "10.7.1"' "kernel-lab stale v10.7.1 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.8.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.8.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.7.1"' "kernel-lab stale v10.7.1 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.8.0 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.8.0 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.8.0 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.8.0 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 '## Controlled EOI Write Smoke Preflight' "v10.8.0 irq docs preflight section"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.8.0` is a Controlled EOI Write Smoke Preflight release' "v10.8.0 qemu docs release note"
 
@@ -4783,12 +4783,12 @@ $v1080TagType = & git cat-file -t v10.8.0 2>$null
 if ($null -eq $v1080Tag) { throw "v10.8.0 tag not found (required baseline)" }
 if (($v1080TagType | Select-Object -First 1) -ne "tag") { throw "v10.8.0 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.8.1"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.8.1"
 Assert-NotContains $cargoContent1031 'version = "10.8.0"' "kernel-lab stale v10.8.0 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.8.1"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.8.1"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.8.0"' "kernel-lab stale v10.8.0 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.8.1 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.8.1 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.8.1 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.8.1 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 'v10.8.1` is not a PIC EOI write release' "v10.8.1 irq docs hardening not write release"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.8.1` is not a PIC EOI write release' "v10.8.1 qemu docs hardening not write release"
 
@@ -4896,12 +4896,12 @@ $v1081TagType = & git cat-file -t v10.8.1 2>$null
 if ($null -eq $v1081Tag) { throw "v10.8.1 tag not found (required baseline)" }
 if (($v1081TagType | Select-Object -First 1) -ne "tag") { throw "v10.8.1 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.9.0"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.9.0"
 Assert-NotContains $cargoContent1031 'version = "10.8.1"' "kernel-lab stale v10.8.1 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.9.0"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.9.0"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.8.1"' "kernel-lab stale v10.8.1 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.9.0 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.9.0 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.9.0 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.9.0 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 '## First Controlled EOI Write Smoke Candidate' "v10.9.0 irq docs candidate section"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.9.0` is a First Controlled EOI Write Smoke Candidate release' "v10.9.0 qemu docs release note"
 Assert-Contains $kernelBootSmokeDocs1031 'eoi-write-smoke-candidate-fire` reports dry-run blocked' "v10.9.0 qemu docs fire remains dry-run"
@@ -4920,7 +4920,8 @@ $eoiWriteCandidateHelperStart1090 = $irrContent1031.IndexOf('pub fn eoi_write_sm
 if ($eoiWriteCandidateHelperStart1090 -lt 0) { throw "v10.9.0 eoi write candidate helper isolation failed" }
 $eoiWriteCandidateHelperBlock1090 = $irrContent1031.Substring($eoiWriteCandidateHelperStart1090)
 $eoiWriteCandidateSnapshotStart1090 = $mainContent1031.IndexOf('fn eoi_write_smoke_candidate_snapshot()')
-$eoiWriteCandidateSnapshotEnd1090 = $mainContent1031.IndexOf('fn print_eoi_write_smoke_preflight_note()')
+$eoiWritePermitSnapshotStart10100 = $mainContent1031.IndexOf('fn eoi_write_permit_model_snapshot()')
+$eoiWriteCandidateSnapshotEnd1090 = $eoiWritePermitSnapshotStart10100
 $eoiWriteCandidateNotePrintStart1090 = $mainContent1031.IndexOf('fn print_eoi_write_smoke_candidate_note()')
 $eoiWriteCandidateStatusPrintStart1090 = $mainContent1031.IndexOf('fn print_eoi_write_smoke_candidate_status()')
 $eoiWriteCandidateFirePrintStart1090 = $mainContent1031.IndexOf('fn print_eoi_write_smoke_candidate_fire()')
@@ -5088,12 +5089,12 @@ $v1090TagType = & git cat-file -t v10.9.0 2>$null
 if ($null -eq $v1090Tag) { throw "v10.9.0 tag not found (required baseline)" }
 if (($v1090TagType | Select-Object -First 1) -ne "tag") { throw "v10.9.0 must be an annotated tag baseline" }
 
-Assert-Contains $cargoContent1031 'version = "10.9.1"' "kernel-lab version 10.9.1"
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.9.1"
 Assert-NotContains $cargoContent1031 'version = "10.9.0"' "kernel-lab stale v10.9.0 package version guard"
-Assert-Contains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab lockfile version 10.9.1"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.9.1"
 Assert-NotContains $kernelCargoLockContent1031 'version = "10.9.0"' "kernel-lab stale v10.9.0 lockfile version guard"
-Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)" "v10.9.1 irq docs title"
-Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.9.1)" "v10.9.1 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.9.1 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.9.1 qemu docs title"
 Assert-Contains $kernelIrqDocs1031 'v10.9.1` is not an EOI write release' "v10.9.1 irq docs hardening note"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release' "v10.9.1 qemu docs release note"
 Assert-Contains $kernelBootSmokeDocs1031 'v10.9.1` is not an EOI write release' "v10.9.1 qemu docs no-write note"
@@ -5187,6 +5188,174 @@ Assert-Contains $mainContent1031 'let status = serial::inb(0x64);' "v10.9.1 keyb
 Assert-Contains $mainContent1031 'let scancode = serial::inb(0x60);' "v10.9.1 keyboard scancode polling remains PS/2 read"
 
 Write-Host "[OK] v10.9.1 First Controlled EOI Write Smoke Candidate Hardening verified"
+
+# v10.10.0: Controlled EOI Write Permit Model Foundation
+Write-Host "Verifying v10.10.0 Controlled EOI Write Permit Model Foundation contracts..."
+$v1091Tag = & git rev-list -n 1 v10.9.1 2>$null
+$v1091TagType = & git cat-file -t v10.9.1 2>$null
+if ($null -eq $v1091Tag) { throw "v10.9.1 tag not found (required baseline)" }
+if (($v1091TagType | Select-Object -First 1) -ne "tag") { throw "v10.9.1 must be an annotated tag baseline" }
+
+Assert-Contains $cargoContent1031 'version = "10.10.0"' "kernel-lab version 10.10.0"
+Assert-NotContains $cargoContent1031 'version = "10.9.1"' "kernel-lab stale v10.9.1 package version guard"
+Assert-Contains $kernelCargoLockContent1031 'version = "10.10.0"' "kernel-lab lockfile version 10.10.0"
+Assert-NotContains $kernelCargoLockContent1031 'version = "10.9.1"' "kernel-lab stale v10.9.1 lockfile version guard"
+Assert-Contains $kernelIrqDocs1031 "# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)" "v10.10.0 irq docs title"
+Assert-Contains $kernelBootSmokeDocs1031 "# DByteOS QEMU Boot Smoke (v10.10.0)" "v10.10.0 qemu docs title"
+Assert-Contains $kernelIrqDocs1031 '## Controlled EOI Write Permit Model Foundation' "v10.10.0 irq docs permit section"
+Assert-Contains $kernelBootSmokeDocs1031 'v10.10.0` is a Controlled EOI Write Permit Model Foundation release' "v10.10.0 qemu docs release note"
+Assert-Contains $kernelBootSmokeDocs1031 'eoi-write-permit-status` reports `permit granted: no`' "v10.10.0 qemu docs permit denied note"
+
+Assert-Contains $mainContent1031 'eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers' "help string includes v10.10.0 eoi write permit commands"
+Assert-Contains $mainContent1031 'line_str == "eoi-write-permit-note"' "v10.10.0 eoi write permit note dispatcher"
+Assert-Contains $mainContent1031 'line_str == "eoi-write-permit-status"' "v10.10.0 eoi write permit status dispatcher"
+Assert-Contains $mainContent1031 'line_str == "eoi-write-permit-check"' "v10.10.0 eoi write permit check dispatcher"
+Assert-Contains $mainContent1031 'line_str == "eoi-write-permit-blockers"' "v10.10.0 eoi write permit blockers dispatcher"
+Assert-Contains $irrContent1031 'pub struct EoiWritePermitModel' "v10.10.0 eoi write permit telemetry struct"
+Assert-Contains $irrContent1031 'pub fn eoi_write_permit_model(' "v10.10.0 eoi write permit helper"
+Assert-Contains $mainContent1031 'fn eoi_write_permit_model_snapshot() -> irq::EoiWritePermitModel' "v10.10.0 shared eoi write permit snapshot helper"
+
+$eoiWritePermitHelperStart10100 = $irrContent1031.IndexOf('pub fn eoi_write_permit_model(')
+if ($eoiWritePermitHelperStart10100 -lt 0) { throw "v10.10.0 eoi write permit helper isolation failed" }
+$eoiWritePermitHelperBlock10100 = $irrContent1031.Substring($eoiWritePermitHelperStart10100)
+$eoiWritePermitSnapshotStart10100 = $mainContent1031.IndexOf('fn eoi_write_permit_model_snapshot()')
+$eoiWritePermitSnapshotEnd10100 = $mainContent1031.IndexOf('fn print_eoi_write_smoke_preflight_note()')
+$eoiWritePermitNotePrintStart10100 = $mainContent1031.IndexOf('fn print_eoi_write_permit_note()')
+$eoiWritePermitStatusPrintStart10100 = $mainContent1031.IndexOf('fn print_eoi_write_permit_status()')
+$eoiWritePermitBlockersPrintStart10100 = $mainContent1031.IndexOf('fn print_eoi_write_permit_blockers()')
+$kernelMainStart10100 = $mainContent1031.IndexOf('pub extern "C" fn kernel_main()')
+if ($eoiWritePermitSnapshotStart10100 -lt 0 -or $eoiWritePermitSnapshotEnd10100 -lt $eoiWritePermitSnapshotStart10100 -or $eoiWritePermitNotePrintStart10100 -lt $eoiWritePermitSnapshotEnd10100 -or $eoiWritePermitStatusPrintStart10100 -lt $eoiWritePermitNotePrintStart10100 -or $eoiWritePermitBlockersPrintStart10100 -lt $eoiWritePermitStatusPrintStart10100 -or $kernelMainStart10100 -lt $eoiWritePermitBlockersPrintStart10100) {
+    throw "v10.10.0 eoi write permit helper/print isolation failed"
+}
+$eoiWritePermitSnapshotBlock10100 = $mainContent1031.Substring($eoiWritePermitSnapshotStart10100, $eoiWritePermitSnapshotEnd10100 - $eoiWritePermitSnapshotStart10100)
+$eoiWritePermitNotePrintBlock10100 = $mainContent1031.Substring($eoiWritePermitNotePrintStart10100, $eoiWritePermitStatusPrintStart10100 - $eoiWritePermitNotePrintStart10100)
+$eoiWritePermitStatusPrintBlock10100 = $mainContent1031.Substring($eoiWritePermitStatusPrintStart10100, $eoiWritePermitBlockersPrintStart10100 - $eoiWritePermitStatusPrintStart10100)
+$eoiWritePermitBlockersPrintBlock10100 = $mainContent1031.Substring($eoiWritePermitBlockersPrintStart10100, $kernelMainStart10100 - $eoiWritePermitBlockersPrintStart10100)
+$eoiWritePermitNoteStart10100 = $mainContent1031.IndexOf('} else if line_str == "eoi-write-permit-note" {')
+$eoiWritePermitStatusStart10100 = $mainContent1031.IndexOf('} else if line_str == "eoi-write-permit-status" {')
+$eoiWritePermitCheckStart10100 = $mainContent1031.IndexOf('} else if line_str == "eoi-write-permit-check" {')
+$eoiWritePermitBlockersStart10100 = $mainContent1031.IndexOf('} else if line_str == "eoi-write-permit-blockers" {')
+$eoiWritePermitEnd10100 = $mainContent1031.IndexOf('} else if line_str == "eoi-runtime-note" {', $eoiWritePermitBlockersStart10100)
+if ($eoiWritePermitNoteStart10100 -lt 0 -or $eoiWritePermitStatusStart10100 -lt $eoiWritePermitNoteStart10100 -or $eoiWritePermitCheckStart10100 -lt $eoiWritePermitStatusStart10100 -or $eoiWritePermitBlockersStart10100 -lt $eoiWritePermitCheckStart10100 -or $eoiWritePermitEnd10100 -lt $eoiWritePermitBlockersStart10100) {
+    throw "v10.10.0 eoi write permit command block isolation failed"
+}
+$eoiWritePermitNoteBlock10100 = $mainContent1031.Substring($eoiWritePermitNoteStart10100, $eoiWritePermitStatusStart10100 - $eoiWritePermitNoteStart10100)
+$eoiWritePermitStatusBlock10100 = $mainContent1031.Substring($eoiWritePermitStatusStart10100, $eoiWritePermitCheckStart10100 - $eoiWritePermitStatusStart10100)
+$eoiWritePermitCheckBlock10100 = $mainContent1031.Substring($eoiWritePermitCheckStart10100, $eoiWritePermitBlockersStart10100 - $eoiWritePermitCheckStart10100)
+$eoiWritePermitBlockersBlock10100 = $mainContent1031.Substring($eoiWritePermitBlockersStart10100, $eoiWritePermitEnd10100 - $eoiWritePermitBlockersStart10100)
+
+$eoiWritePermitNoteExact10100 = 'EOI write permit note\nscope: {}\npermit inputs: {}\npermit granted: {}\nfirst PIC_EOI write allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n'
+$eoiWritePermitStatusExact10100 = 'EOI write permit model\npermit granted: {}\nfirst PIC_EOI write allowed: {}\ntarget command port: {}\ntarget value: {}\ntarget irq line: {}\nhardware mutation: {}\nruntime irq active: {}\nfire command: {}\n'
+$eoiWritePermitBlockersExact10100 = 'EOI write permit blockers\n- {}\n- {}\n- {}\n- {}\n- {}\n- {}\n- {}\n- {}\npermit granted: {}\n'
+Assert-Contains $eoiWritePermitNotePrintBlock10100 $eoiWritePermitNoteExact10100 "v10.10.0 eoi-write-permit-note exact output"
+Assert-Contains $eoiWritePermitStatusPrintBlock10100 $eoiWritePermitStatusExact10100 "v10.10.0 eoi-write-permit-status exact output"
+Assert-Contains $eoiWritePermitStatusPrintBlock10100 $eoiWritePermitStatusExact10100 "v10.10.0 eoi-write-permit-check exact output"
+Assert-Contains $eoiWritePermitBlockersPrintBlock10100 $eoiWritePermitBlockersExact10100 "v10.10.0 eoi-write-permit-blockers exact output"
+Assert-Contains $eoiWritePermitNoteBlock10100 'print_eoi_write_permit_note();' "v10.10.0 eoi write permit note dispatcher calls print helper"
+Assert-Contains $eoiWritePermitStatusBlock10100 'print_eoi_write_permit_status();' "v10.10.0 eoi write permit status dispatcher calls status helper"
+Assert-Contains $eoiWritePermitCheckBlock10100 'print_eoi_write_permit_status();' "v10.10.0 eoi write permit check dispatcher calls status helper"
+Assert-Contains $eoiWritePermitBlockersBlock10100 'print_eoi_write_permit_blockers();' "v10.10.0 eoi write permit blockers dispatcher calls print helper"
+
+$eoiWritePermitReaders10100 = @(
+    'pic::ProgrammableInterruptController::pic_remap_state();',
+    'irq::irq_gate_bind_state();',
+    'pic::ProgrammableInterruptController::pic_mask_plan();',
+    'pic::ProgrammableInterruptController::pic_mask_status();',
+    'irq::eoi_runtime_check_all_preconditions(pic_state.executed);',
+    'irq::irq_runtime_matrix(',
+    'irq::irq_runtime_activation_dry_run(&matrix);',
+    'irq::irq_runtime_activation_token_status();',
+    'irq::irq_runtime_activation_gate(',
+    'irq::irq_runtime_activation_simulation(',
+    'irq::sti_controlled_activation_plan(',
+    'irq::irq_runtime_activation_smoke(',
+    'irq::eoi_dispatch_smoke(',
+    'irq::pic_unmask_smoke(',
+    'irq::idt_runtime_bind_smoke(',
+    'irq::irq_runtime_final_gate(',
+    'irq::irq_runtime_decision_freeze(',
+    'irq::irq_runtime_mutation_check(',
+    'irq::irq_runtime_mutation_sequence(',
+    'irq::eoi_write_smoke_preflight(',
+    'irq::eoi_write_smoke_candidate(',
+    'irq::eoi_write_permit_model('
+)
+Assert-ContainsInOrder $eoiWritePermitSnapshotBlock10100 $eoiWritePermitReaders10100 "v10.10.0 eoi write permit reader ordering"
+foreach ($eoiWritePermitReader10100 in $eoiWritePermitReaders10100) {
+    $readerCount10100 = [regex]::Matches($eoiWritePermitSnapshotBlock10100, [regex]::Escape($eoiWritePermitReader10100)).Count
+    if ($readerCount10100 -ne 1) {
+        throw "v10.10.0 eoi write permit reader count changed for '$eoiWritePermitReader10100': expected 1, got $readerCount10100"
+    }
+}
+
+foreach ($eoiWritePermitSurface10100 in @($eoiWritePermitSnapshotBlock10100, $eoiWritePermitNotePrintBlock10100, $eoiWritePermitStatusPrintBlock10100, $eoiWritePermitBlockersPrintBlock10100, $eoiWritePermitNoteBlock10100, $eoiWritePermitStatusBlock10100, $eoiWritePermitCheckBlock10100, $eoiWritePermitBlockersBlock10100, $eoiWritePermitHelperBlock10100)) {
+    foreach ($blockedEoiWritePermitCall10100 in @(
+        'write_pic_port(',
+        'outb(',
+        'asm!("sti")',
+        'asm!("sti",',
+        'global_asm!("sti")',
+        'set_handler(',
+        'irq_runtime_commit',
+        'irq_runtime_arm',
+        'pic_remap_controlled_smoke()',
+        'irq_gate_bind_smoke_mark_bound()',
+        'idt::IDT.entries[32]',
+        'idt::IDT.entries[33]',
+        'irq0_timer_gate_smoke_asm',
+        'irq1_keyboard_gate_smoke_asm',
+        'keyboard_irq',
+        'timer_irq'
+    )) {
+        Assert-NotContains $eoiWritePermitSurface10100 $blockedEoiWritePermitCall10100 "v10.10.0 eoi write permit surface is read-only: $blockedEoiWritePermitCall10100"
+    }
+}
+
+foreach ($eoiWritePermitDispatchBlock10100 in @($eoiWritePermitNoteBlock10100, $eoiWritePermitStatusBlock10100, $eoiWritePermitCheckBlock10100, $eoiWritePermitBlockersBlock10100)) {
+    foreach ($blockedEoiWritePermitDispatcherInline10100 in @('write!(', 'serial::print', 'vga::print', 'irq::', 'pic::', 'set_handler(', 'write_pic_port(', 'outb(')) {
+        Assert-NotContains $eoiWritePermitDispatchBlock10100 $blockedEoiWritePermitDispatcherInline10100 "v10.10.0 eoi write permit dispatcher remains helper-only: $blockedEoiWritePermitDispatcherInline10100"
+    }
+}
+
+$expectedQemuEoiWritePermitNote10100 = "EOI write permit note`n    scope: controlled first PIC_EOI write permit model`n    permit inputs: candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard`n    permit granted: no`n    first PIC_EOI write allowed: no`n    hardware mutation: no`n    runtime irq active: no"
+$expectedQemuEoiWritePermitStatus10100 = "EOI write permit model`n    permit granted: no`n    first PIC_EOI write allowed: no`n    target command port: none`n    target value: none`n    target irq line: none`n    hardware mutation: no`n    runtime irq active: no`n    fire command: dry-run blocked"
+$expectedQemuEoiWritePermitCheck10100 = "dbyte-kernel> eoi-write-permit-check`n    EOI write permit model`n    permit granted: no`n    first PIC_EOI write allowed: no`n    target command port: none`n    target value: none`n    target irq line: none`n    hardware mutation: no`n    runtime irq active: no`n    fire command: dry-run blocked"
+$expectedQemuEoiWritePermitBlockers10100 = "EOI write permit blockers`n    - activation decision frozen blocked`n    - final gate denied`n    - mutation checklist denied`n    - mutation sequencer denied`n    - EOI write candidate fire blocked`n    - STI disabled`n    - PIC unmask disabled`n    - live IRQ runtime disabled`n    permit granted: no"
+Assert-Contains $kernelBootSmokeDocs1031 $expectedQemuEoiWritePermitNote10100 "v10.10.0 qemu docs eoi write permit note exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs1031 $expectedQemuEoiWritePermitStatus10100 "v10.10.0 qemu docs eoi write permit status exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs1031 $expectedQemuEoiWritePermitCheck10100 "v10.10.0 qemu docs eoi write permit check exact rendered contract"
+Assert-Contains $kernelBootSmokeDocs1031 $expectedQemuEoiWritePermitBlockers10100 "v10.10.0 qemu docs eoi write permit blockers exact rendered contract"
+
+foreach ($activeEoiWrite10100 in @(
+    'write_pic_port(PIC_MASTER_CMD, PIC_EOI)',
+    'write_pic_port(PIC_SLAVE_CMD, PIC_EOI)',
+    'write_pic_port(PIC_MASTER_COMMAND, PIC_EOI)',
+    'write_pic_port(PIC_SLAVE_COMMAND, PIC_EOI)'
+)) {
+    Assert-NotContains $mainContent1031 $activeEoiWrite10100 "v10.10.0 no active EOI write in main: $activeEoiWrite10100"
+    Assert-NotContains $picContent1031 $activeEoiWrite10100 "v10.10.0 no active EOI write in pic source: $activeEoiWrite10100"
+    Assert-NotContains $irrContent1031 $activeEoiWrite10100 "v10.10.0 no active EOI write in irq source: $activeEoiWrite10100"
+}
+
+foreach ($forbiddenEoiWritePermitPositive10100 in @(
+    'permit granted: yes',
+    'first PIC_EOI write allowed: yes',
+    'hardware mutation: yes',
+    'runtime irq active: yes',
+    'sti: enabled',
+    'pic unmask: enabled',
+    'keyboard mode: irq'
+)) {
+    Assert-NotContains $mainContent1031 $forbiddenEoiWritePermitPositive10100 "v10.10.0 forbidden positive eoi write permit state in main: $forbiddenEoiWritePermitPositive10100"
+    Assert-NotContains $irrContent1031 $forbiddenEoiWritePermitPositive10100 "v10.10.0 forbidden positive eoi write permit state in irq source: $forbiddenEoiWritePermitPositive10100"
+    Assert-NotContains $kernelIrqDocs1031 $forbiddenEoiWritePermitPositive10100 "v10.10.0 forbidden positive eoi write permit state in irq docs: $forbiddenEoiWritePermitPositive10100"
+    Assert-NotContains $kernelBootSmokeDocs1031 $forbiddenEoiWritePermitPositive10100 "v10.10.0 forbidden positive eoi write permit state in qemu docs: $forbiddenEoiWritePermitPositive10100"
+}
+
+Assert-Contains $mainContent1031 'let status = serial::inb(0x64);' "v10.10.0 keyboard status polling remains PS/2 read"
+Assert-Contains $mainContent1031 'let scancode = serial::inb(0x60);' "v10.10.0 keyboard scancode polling remains PS/2 read"
+
+Write-Host "[OK] v10.10.0 Controlled EOI Write Permit Model Foundation verified"
 
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
@@ -9126,7 +9295,7 @@ $kernelBootSmokeDocs = $kernelBootSmokeDocs -replace "`r`n", "`n"
 Write-Host "Verifying DByteOS Kernel Lab (v9.0.2) exception status UX contracts..."
 Assert-Contains $kernelMainSource "mod page_fault;" "kernel page fault skeleton module is compiled"
 Assert-Contains $kernelMainSource "mod irq;" "kernel irq skeleton module is compiled"
-$expectedKernelHelp = "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers"
+$expectedKernelHelp = "commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers"
 Assert-Contains $kernelMainSource $expectedKernelHelp "kernel help lists exception and irq UX commands"
 Assert-Contains $kernelMainSource "irq::irq_gate_bind_smoke_status()" "kernel handlers reads irq gate bind status"
 Assert-Contains $kernelMainSource "skeleton planned: irq0 timer, irq1 keyboard" "kernel handlers unbound irq section"
@@ -9518,8 +9687,8 @@ $picRemapPreflightCalls = [regex]::Matches($kernelMainSource, 'pic::Programmable
 if ($picRemapArmCalls -ne 1 -or $picRemapSmokeCalls -ne 1 -or $picRemapStatusCalls -ne 1) {
     throw "Kernel PIC remap smoke guard failed: expected exactly one command-path arm/smoke/status call; found arm=$picRemapArmCalls smoke=$picRemapSmokeCalls status=$picRemapStatusCalls"
 }
-if ($picRemapStateCalls -ne 45 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
-    throw "Kernel PIC remap telemetry guard failed: expected state=45 (existing telemetry readers plus irq-runtime-gate-status/check/blockers, irq-runtime-sim-status/run/blockers, sti-status/preflight/blockers, irq-runtime-activation-smoke/status/blockers, eoi-dispatch-smoke commands, pic-unmask-smoke commands, idt-runtime-bind-smoke commands, irq-runtime-final-gate commands, and shared irq-runtime-decision/mutation/sequence/eoi-write-preflight/eoi-write-candidate snapshots), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
+if ($picRemapStateCalls -ne 46 -or $picRemapHistoryCalls -ne 1 -or $picRemapPreflightCalls -ne 1) {
+    throw "Kernel PIC remap telemetry guard failed: expected state=46 (existing telemetry readers plus irq-runtime-gate-status/check/blockers, irq-runtime-sim-status/run/blockers, sti-status/preflight/blockers, irq-runtime-activation-smoke/status/blockers, eoi-dispatch-smoke commands, pic-unmask-smoke commands, idt-runtime-bind-smoke commands, irq-runtime-final-gate commands, and shared irq-runtime-decision/mutation/sequence/eoi-write-preflight/eoi-write-candidate/eoi-write-permit snapshots), history=1, preflight=1; found state=$picRemapStateCalls history=$picRemapHistoryCalls preflight=$picRemapPreflightCalls"
 }
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_smoke_arm()" "kernel boot path does not arm pic remap smoke"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_controlled_smoke()" "kernel boot path does not run pic remap smoke"
@@ -9580,6 +9749,7 @@ $irqRuntimeMutationSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mu
 $irqRuntimeMutationSequenceSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mutation_sequence_snapshot()')
 $eoiWriteSmokePreflightSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_smoke_preflight_snapshot()')
 $eoiWriteSmokeCandidateSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_smoke_candidate_snapshot()')
+$eoiWritePermitSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_permit_model_snapshot()')
 if ($picRemapArmDispatch -lt 0 -or $picRemapSmokeDispatch -lt 0 -or $picRemapStatusDispatch -lt 0 -or $picRemapStateDispatch -lt 0 -or $picRemapHistoryDispatch -lt 0 -or $picRemapPreflightDispatch -lt 0) {
     throw "Kernel PIC remap smoke guard failed: pic-remap dispatch not found"
 }
@@ -9643,7 +9813,8 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearIrqRuntimeMutationSequenceSnapshotHelper = ($callIndex -gt $irqRuntimeMutationSequenceSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSequenceSnapshotHelper + 4096)
     $nearEoiWriteSmokePreflightSnapshotHelper = ($callIndex -gt $eoiWriteSmokePreflightSnapshotHelper -and $callIndex -lt $eoiWriteSmokePreflightSnapshotHelper + 4096)
     $nearEoiWriteSmokeCandidateSnapshotHelper = ($callIndex -gt $eoiWriteSmokeCandidateSnapshotHelper -and $callIndex -lt $eoiWriteSmokeCandidateSnapshotHelper + 4096)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper)) {
+    $nearEoiWritePermitSnapshotHelper = ($callIndex -gt $eoiWritePermitSnapshotHelper -and $callIndex -lt $eoiWritePermitSnapshotHelper + 4096)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper -or $nearEoiWritePermitSnapshotHelper)) {
         throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
@@ -9656,8 +9827,8 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_p
 $irqGateStateCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)').Count
 $irqGateHistoryCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_history\(\)').Count
 $irqGatePreflightCalls = [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_preflight\(\)').Count
-if ($irqGateStateCalls -ne 45 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
-    throw "Kernel IRQ gate bind telemetry guard failed: expected state=45 (existing telemetry readers plus irq-runtime-gate-status/check/blockers, irq-runtime-sim-status/run/blockers, sti-status/preflight/blockers, irq-runtime-activation-smoke/status/blockers, eoi-dispatch-smoke commands, pic-unmask-smoke commands, idt-runtime-bind-smoke commands, irq-runtime-final-gate commands, and shared irq-runtime-decision/mutation/sequence/eoi-write-preflight/eoi-write-candidate snapshots), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
+if ($irqGateStateCalls -ne 46 -or $irqGateHistoryCalls -ne 1 -or $irqGatePreflightCalls -ne 1) {
+    throw "Kernel IRQ gate bind telemetry guard failed: expected state=46 (existing telemetry readers plus irq-runtime-gate-status/check/blockers, irq-runtime-sim-status/run/blockers, sti-status/preflight/blockers, irq-runtime-activation-smoke/status/blockers, eoi-dispatch-smoke commands, pic-unmask-smoke commands, idt-runtime-bind-smoke commands, irq-runtime-final-gate commands, and shared irq-runtime-decision/mutation/sequence/eoi-write-preflight/eoi-write-candidate/eoi-write-permit snapshots), history=1, preflight=1; found state=$irqGateStateCalls history=$irqGateHistoryCalls preflight=$irqGatePreflightCalls"
 }
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot path does not read irq gate bind state telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
@@ -9722,6 +9893,7 @@ $irqRuntimeMutationSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mu
 $irqRuntimeMutationSequenceSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mutation_sequence_snapshot()')
 $eoiWriteSmokePreflightSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_smoke_preflight_snapshot()')
 $eoiWriteSmokeCandidateSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_smoke_candidate_snapshot()')
+$eoiWritePermitSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_permit_model_snapshot()')
 if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $irqRuntimeBlockersDispatch -lt 0 -or $eciRuntimeStatusDispatch -lt 0 -or $eciRuntimeBlockersDispatch -lt 0 -or $irqMaskBlockersDispatch -lt 0 -or $irqRuntimeMatrixDispatch -lt 0 -or $irqRuntimeReadinessMatrixDispatch -lt 0 -or $irqRuntimeActivationPlanDispatch -lt 0 -or $irqRuntimeGateStatusDispatch -lt 0 -or $irqRuntimeGateCheckDispatch -lt 0 -or $irqRuntimeGateBlockersDispatch -lt 0 -or $irqRuntimeSimStatusDispatch -lt 0 -or $irqRuntimeSimRunDispatch -lt 0 -or $irqRuntimeSimBlockersDispatch -lt 0 -or $stiStatusDispatch -lt 0 -or $stiPreflightDispatch -lt 0 -or $stiBlockersDispatch -lt 0 -or $irqRuntimeActivationSmokeDispatch -lt 0 -or $irqRuntimeActivationSmokeStatusDispatch -lt 0 -or $irqRuntimeActivationSmokeBlockersDispatch -lt 0 -or $eoiDispatchSmokeNoteDispatch -lt 0 -or $eoiDispatchSmokeStatusDispatch -lt 0 -or $eoiDispatchSmokePlanDispatch -lt 0 -or $eoiDispatchSmokeBlockersDispatch -lt 0 -or $picUnmaskSmokeNoteDispatch -lt 0 -or $picUnmaskSmokeStatusDispatch -lt 0 -or $picUnmaskSmokePlanDispatch -lt 0 -or $picUnmaskSmokeBlockersDispatch -lt 0 -or $idtRuntimeBindSmokeNoteDispatch -lt 0 -or $idtRuntimeBindSmokeStatusDispatch -lt 0 -or $idtRuntimeBindSmokePlanDispatch -lt 0 -or $idtRuntimeBindSmokeBlockersDispatch -lt 0 -or $irqRuntimeFinalGateNoteDispatch -lt 0 -or $irqRuntimeFinalGateStatusDispatch -lt 0 -or $irqRuntimeFinalGateCheckDispatch -lt 0 -or $irqRuntimeFinalGateBlockersDispatch -lt 0 -or $irqRuntimeDecisionNoteDispatch -lt 0 -or $irqRuntimeDecisionStatusDispatch -lt 0 -or $irqRuntimeDecisionFreezeDispatch -lt 0 -or $irqRuntimeDecisionBlockersDispatch -lt 0) {
     throw "Kernel IRQ runtime commands guard failed: irq-runtime-preflight/status/blockers/eoi-runtime-status/blockers/irq-mask-blockers/matrix/readiness dispatch not found"
 }
@@ -9777,7 +9949,8 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearIrqRuntimeMutationSequenceSnapshotHelper = ($callIndex -gt $irqRuntimeMutationSequenceSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSequenceSnapshotHelper + 4096)
     $nearEoiWriteSmokePreflightSnapshotHelper = ($callIndex -gt $eoiWriteSmokePreflightSnapshotHelper -and $callIndex -lt $eoiWriteSmokePreflightSnapshotHelper + 4096)
     $nearEoiWriteSmokeCandidateSnapshotHelper = ($callIndex -gt $eoiWriteSmokeCandidateSnapshotHelper -and $callIndex -lt $eoiWriteSmokeCandidateSnapshotHelper + 4096)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper)) {
+    $nearEoiWritePermitSnapshotHelper = ($callIndex -gt $eoiWritePermitSnapshotHelper -and $callIndex -lt $eoiWritePermitSnapshotHelper + 4096)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper -or $nearEoiWritePermitSnapshotHelper)) {
         throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }

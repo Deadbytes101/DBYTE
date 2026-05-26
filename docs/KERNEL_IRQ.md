@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)
 
-DByteOS Kernel Lab `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. It freezes the `v10.9.0` candidate surface before any first real PIC EOI write while keeping `fire` dry-run blocked. The checklist, decision, sequencer, preflight, and candidate outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, and permit outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.10.0` is not an EOI write release. It defines permit telemetry only: `permit granted: no`, `first PIC_EOI write allowed: no`, and no `PIC_EOI` write.
 
 `v10.9.1` is not an EOI write release. It hardens the existing candidate contract; `eoi-write-smoke-candidate-fire` is still dry-run blocked and does not write `PIC_EOI`.
 
@@ -449,6 +451,48 @@ EOI write smoke candidate blockers
 - STI disabled
 - keyboard mode polling
 first PIC_EOI write performed: no
+```
+
+## Controlled EOI Write Permit Model Foundation
+
+`v10.10.0` adds a read-only permit model before any first controlled PIC EOI write. The permit remains denied and does not arm, fire, or write a PIC command port.
+
+Commands:
+
+```text
+eoi-write-permit-note
+eoi-write-permit-status
+eoi-write-permit-check
+eoi-write-permit-blockers
+```
+
+Expected status/check baseline:
+
+```text
+EOI write permit model
+permit granted: no
+first PIC_EOI write allowed: no
+target command port: none
+target value: none
+target irq line: none
+hardware mutation: no
+runtime irq active: no
+fire command: dry-run blocked
+```
+
+Expected blockers:
+
+```text
+EOI write permit blockers
+- activation decision frozen blocked
+- final gate denied
+- mutation checklist denied
+- mutation sequencer denied
+- EOI write candidate fire blocked
+- STI disabled
+- PIC unmask disabled
+- live IRQ runtime disabled
+permit granted: no
 ```
 
 ## IRQ Gate Binding Plan
