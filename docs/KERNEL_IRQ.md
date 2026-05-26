@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.7.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.8.0)
 
-DByteOS Kernel Lab `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. It hardens the `v10.7.0` read-only sequencer above the `v10.6.x` hardware mutation checklist while keeping every hardware mutation blocked. The checklist and decision outputs remain unchanged. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.8.0` is a Controlled EOI Write Smoke Preflight release. It adds a read-only preflight before the first future PIC EOI write while keeping every hardware mutation blocked. The checklist, decision, sequencer, and preflight outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.8.0` is not a PIC EOI write release. It adds verification and command preflight around the first-write decision point without enabling EOI writes, PIC unmasking, STI, live IRQ0/IRQ1 binding, or keyboard IRQ mode.
 
 `v10.7.1` is not a mutation release. It adds verification guards around the sequencer surface, exact command output, read-only helper/dispatcher isolation, and stale `v10.7.0` metadata without enabling EOI writes, PIC unmasking, STI, live IRQ0/IRQ1 binding, or keyboard IRQ mode.
 
@@ -333,6 +335,52 @@ IRQ runtime mutation smoke sequence blockers
 - live IDT bind disabled
 - keyboard mode polling
 mutation sequence ready: no
+```
+
+## Controlled EOI Write Smoke Preflight
+
+`v10.8.0` adds a read-only preflight before any first PIC EOI write candidate. It reads the mutation sequencer, mutation readiness checklist, decision freeze, final gate, EOI dispatch smoke boundary, PIC unmask smoke boundary, IDT runtime bind smoke boundary, STI plan, and keyboard fallback. It does not write PIC command ports and does not select a target IRQ line.
+
+Commands:
+
+```text
+eoi-write-smoke-preflight-note
+eoi-write-smoke-preflight-status
+eoi-write-smoke-preflight-check
+eoi-write-smoke-preflight-blockers
+```
+
+Expected baseline output:
+
+```text
+EOI write smoke preflight
+eoi write smoke preflight: blocked
+first PIC_EOI write allowed: no
+hardware mutation: no
+runtime irq active: no
+target command port: none
+target irq line: none
+eoi dispatch: disabled
+sti: disabled
+pic unmask: disabled
+live idt bind: no
+keyboard mode: polling
+```
+
+Expected blockers:
+
+```text
+EOI write smoke preflight blockers
+- mutation sequence ready: no
+- hardware mutation checklist ready: no
+- activation decision frozen blocked
+- final activation disallowed
+- EOI dispatch disabled
+- PIC unmask disabled
+- IDT live bind disabled
+- STI disabled
+- keyboard mode polling
+first PIC_EOI write allowed: no
 ```
 
 ## IRQ Gate Binding Plan
