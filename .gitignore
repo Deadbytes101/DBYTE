@@ -1,4 +1,6 @@
 target/
+/tmp/
+/personal_tools/personaltools/
 
 release-v*/
 dbyte-v*.bundle
