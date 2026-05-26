@@ -283,6 +283,23 @@ pub const IRQ_RUNTIME_DECISION_BLOCKER_LIVE_IDT_BIND: &str = "live IDT bind disa
 pub const IRQ_RUNTIME_DECISION_BLOCKER_KEYBOARD_IRQ: &str = "keyboard IRQ path disabled";
 pub const IRQ_RUNTIME_DECISION_BLOCKER_RUNTIME_IRQ_ACTIVE: &str =
     "runtime IRQ active state disabled";
+pub const IRQ_RUNTIME_MUTATION_SCOPE: &str = "controlled hardware mutation readiness checklist";
+pub const IRQ_RUNTIME_MUTATION_INPUTS: &str =
+    "decision/final-gate/activation-smoke/sti/eoi/pic-unmask/idt-bind/token/gate/matrix/keyboard";
+pub const IRQ_RUNTIME_MUTATION_READY_NO: &str = "no";
+pub const IRQ_RUNTIME_MUTATION_DISABLED: &str = "disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_DECISION: &str = "activation decision frozen blocked";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_FINAL: &str = "final activation disallowed";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_RUNTIME_IRQ: &str =
+    "runtime IRQ active state disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_STI: &str = "STI mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_PIC_UNMASK: &str = "PIC unmask mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_EOI_DISPATCH: &str =
+    "EOI dispatch mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_IDT_LIVE_BIND: &str =
+    "IDT live bind mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_KEYBOARD_IRQ: &str =
+    "keyboard IRQ mutation disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -578,6 +595,30 @@ pub struct IrqRuntimeActivationDecision {
     pub activation_token: &'static str,
     pub activation_gate: &'static str,
     pub readiness_matrix: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeHardwareMutationChecklist {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub hardware_mutation_ready: &'static str,
+    pub activation_decision: &'static str,
+    pub final_activation_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti_mutation: &'static str,
+    pub pic_unmask_mutation: &'static str,
+    pub eoi_dispatch_mutation: &'static str,
+    pub idt_live_bind_mutation: &'static str,
+    pub keyboard_input_mutation: &'static str,
+    pub activation_smoke: &'static str,
+    pub sti_plan: &'static str,
+    pub eoi_dispatch_smoke: &'static str,
+    pub pic_unmask_smoke: &'static str,
+    pub idt_runtime_bind_smoke: &'static str,
+    pub activation_token: &'static str,
+    pub activation_gate: &'static str,
+    pub readiness_matrix: &'static str,
+    pub keyboard_mode: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -1453,5 +1494,39 @@ pub fn irq_runtime_decision_freeze(
         activation_token: final_gate.activation_token,
         activation_gate: final_gate.activation_gate,
         readiness_matrix: final_gate.readiness_matrix,
+    }
+}
+
+/// Summarizes future hardware mutation readiness without mutating runtime state.
+pub fn irq_runtime_mutation_check(
+    decision: IrqRuntimeActivationDecision,
+    final_gate: IrqRuntimeFinalGate,
+    activation_smoke: IrqRuntimeActivationSmoke,
+    sti_plan: StiControlledActivationPlan,
+    eoi_smoke: EoiDispatchSmoke,
+    pic_unmask_smoke: PicUnmaskSmoke,
+    idt_bind_smoke: IdtRuntimeBindSmoke,
+) -> IrqRuntimeHardwareMutationChecklist {
+    IrqRuntimeHardwareMutationChecklist {
+        scope: IRQ_RUNTIME_MUTATION_SCOPE,
+        inputs: IRQ_RUNTIME_MUTATION_INPUTS,
+        hardware_mutation_ready: IRQ_RUNTIME_MUTATION_READY_NO,
+        activation_decision: decision.activation_decision,
+        final_activation_allowed: final_gate.final_activation_allowed,
+        runtime_irq_active: decision.runtime_irq_active,
+        sti_mutation: IRQ_RUNTIME_MUTATION_DISABLED,
+        pic_unmask_mutation: IRQ_RUNTIME_MUTATION_DISABLED,
+        eoi_dispatch_mutation: IRQ_RUNTIME_MUTATION_DISABLED,
+        idt_live_bind_mutation: IRQ_RUNTIME_MUTATION_DISABLED,
+        keyboard_input_mutation: IRQ_RUNTIME_MUTATION_DISABLED,
+        activation_smoke: activation_smoke.activation_smoke,
+        sti_plan: sti_plan.result,
+        eoi_dispatch_smoke: eoi_smoke.eoi_dispatch_smoke,
+        pic_unmask_smoke: pic_unmask_smoke.pic_unmask_smoke,
+        idt_runtime_bind_smoke: idt_bind_smoke.idt_runtime_bind_smoke,
+        activation_token: decision.activation_token,
+        activation_gate: decision.activation_gate,
+        readiness_matrix: decision.readiness_matrix,
+        keyboard_mode: decision.keyboard_mode,
     }
 }
