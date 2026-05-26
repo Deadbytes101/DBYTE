@@ -272,6 +272,17 @@ pub const IRQ_RUNTIME_FINAL_GATE_ALLOWED_NO: &str = "no";
 pub const IRQ_RUNTIME_FINAL_GATE_LIVE_IDT_BIND_NO: &str = "no";
 pub const IRQ_RUNTIME_FINAL_GATE_RESULT_BLOCKED: &str = "release proof blocked";
 pub const IRQ_RUNTIME_FINAL_GATE_NEXT_NONE: &str = "none";
+pub const IRQ_RUNTIME_DECISION_SCOPE: &str = "controlled activation decision freeze";
+pub const IRQ_RUNTIME_DECISION_INPUTS: &str =
+    "final-gate/activation-smoke/simulation/sti/eoi/pic-unmask/idt-bind/token/gate/matrix/keyboard";
+pub const IRQ_RUNTIME_DECISION_FROZEN_BLOCKED: &str = "frozen blocked";
+pub const IRQ_RUNTIME_DECISION_BLOCKER_STI: &str = "STI instruction disabled";
+pub const IRQ_RUNTIME_DECISION_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const IRQ_RUNTIME_DECISION_BLOCKER_EOI_DISPATCH: &str = "EOI dispatch disabled";
+pub const IRQ_RUNTIME_DECISION_BLOCKER_LIVE_IDT_BIND: &str = "live IDT bind disabled";
+pub const IRQ_RUNTIME_DECISION_BLOCKER_KEYBOARD_IRQ: &str = "keyboard IRQ path disabled";
+pub const IRQ_RUNTIME_DECISION_BLOCKER_RUNTIME_IRQ_ACTIVE: &str =
+    "runtime IRQ active state disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -543,6 +554,30 @@ pub struct IrqRuntimeFinalGate {
     pub live_idt_bind: &'static str,
     pub result: &'static str,
     pub next: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqRuntimeActivationDecision {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub activation_decision: &'static str,
+    pub final_activation_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub hardware_mutation: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+    pub activation_smoke: &'static str,
+    pub simulation: &'static str,
+    pub sti_plan: &'static str,
+    pub eoi_dispatch_smoke: &'static str,
+    pub pic_unmask_smoke: &'static str,
+    pub idt_runtime_bind_smoke: &'static str,
+    pub activation_token: &'static str,
+    pub activation_gate: &'static str,
+    pub readiness_matrix: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -1384,5 +1419,39 @@ pub fn irq_runtime_final_gate(
         live_idt_bind: IRQ_RUNTIME_FINAL_GATE_LIVE_IDT_BIND_NO,
         result: IRQ_RUNTIME_FINAL_GATE_RESULT_BLOCKED,
         next: IRQ_RUNTIME_FINAL_GATE_NEXT_NONE,
+    }
+}
+
+/// Freezes the v10.5.0 activation decision without mutating runtime state.
+pub fn irq_runtime_decision_freeze(
+    final_gate: IrqRuntimeFinalGate,
+    activation_smoke: IrqRuntimeActivationSmoke,
+    simulation: IrqRuntimeActivationSimulation,
+    sti_plan: StiControlledActivationPlan,
+    eoi_smoke: EoiDispatchSmoke,
+    pic_unmask_smoke: PicUnmaskSmoke,
+    idt_bind_smoke: IdtRuntimeBindSmoke,
+) -> IrqRuntimeActivationDecision {
+    IrqRuntimeActivationDecision {
+        scope: IRQ_RUNTIME_DECISION_SCOPE,
+        inputs: IRQ_RUNTIME_DECISION_INPUTS,
+        activation_decision: IRQ_RUNTIME_DECISION_FROZEN_BLOCKED,
+        final_activation_allowed: final_gate.final_activation_allowed,
+        runtime_irq_active: final_gate.runtime_irq_active,
+        hardware_mutation: final_gate.hardware_mutation,
+        sti_instruction: final_gate.sti_instruction,
+        pic_unmask: final_gate.pic_unmask,
+        eoi_dispatch: final_gate.eoi_dispatch,
+        live_idt_bind: final_gate.live_idt_bind,
+        keyboard_mode: final_gate.keyboard_mode,
+        activation_smoke: activation_smoke.activation_smoke,
+        simulation: simulation.result,
+        sti_plan: sti_plan.result,
+        eoi_dispatch_smoke: eoi_smoke.eoi_dispatch_smoke,
+        pic_unmask_smoke: pic_unmask_smoke.pic_unmask_smoke,
+        idt_runtime_bind_smoke: idt_bind_smoke.idt_runtime_bind_smoke,
+        activation_token: final_gate.activation_token,
+        activation_gate: final_gate.activation_gate,
+        readiness_matrix: final_gate.readiness_matrix,
     }
 }
