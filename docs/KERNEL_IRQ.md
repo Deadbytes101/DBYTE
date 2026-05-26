@@ -1,6 +1,6 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.6.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.6.1)
 
-DByteOS Kernel Lab `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. It adds read-only hardware mutation checklist commands above the existing `v10.5.x` decision freeze layer. The checklist reports that hardware mutation is still not ready and keeps every mutation path disabled: STI, PIC unmask, EOI dispatch, IDT live bind, and keyboard IRQ switching. The previous `v10.5.1` decision freeze hardening output and runtime state remain unchanged. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. It keeps the `v10.6.0` read-only hardware mutation checklist commands and rendered output unchanged while tightening release-proof guards around exact output, helper-only dispatch, read-only telemetry, and the blocked mutation contract. The checklist reports that hardware mutation is still not ready and keeps every mutation path disabled: STI, PIC unmask, EOI dispatch, IDT live bind, and keyboard IRQ switching. The previous `v10.5.1` decision freeze hardening output and runtime state remain unchanged. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
@@ -246,6 +246,8 @@ activation decision: frozen blocked
 ## Controlled Hardware Mutation Readiness Checklist
 
 `v10.6.0` adds a read-only checklist above the frozen activation decision. It does not add live mutation smoke and does not change the decision output. Hardware mutation remains not ready, the activation decision remains `frozen blocked`, runtime IRQ remains inactive, and every mutation category remains disabled.
+
+`v10.6.1` hardens the checklist without adding commands, changing output wording, or changing runtime behavior. Verification now pins the exact `irq-runtime-mutation-*` command templates, the helper-only dispatcher blocks, the read-only helper/snapshot/print surfaces, the stale `10.6.0` metadata guard, the forbidden positive mutation states, and the `256 KiB` bootstrap stack stability proof.
 
 Commands:
 

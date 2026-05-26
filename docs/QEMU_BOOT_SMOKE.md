@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.6.0)
+# DByteOS QEMU Boot Smoke (v10.6.1)
 
-`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. It adds read-only mutation checklist commands above the existing activation decision freeze layer and keeps every hardware mutation path blocked. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, or execute `sti`.
+`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. It keeps the read-only mutation checklist commands and rendered output unchanged while tightening exact-output and no-mutation verification around the existing activation decision freeze layer. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, or execute `sti`.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
