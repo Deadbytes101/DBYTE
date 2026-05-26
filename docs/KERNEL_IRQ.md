@@ -1,6 +1,6 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.5.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.5.1)
 
-DByteOS Kernel Lab `v10.5.0` is a Controlled Activation Decision Freeze release. It adds read-only activation decision commands that summarize the final gate, activation smoke, simulation harness, STI plan, EOI dispatch smoke, PIC unmask smoke, IDT runtime bind smoke, activation token/gate/matrix, and keyboard fallback into a frozen blocked decision object. The previous `v10.4.1` final gate hardening output and runtime state remain unchanged. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.5.1` is a Controlled Activation Decision Freeze Hardening release. It does not add commands or change the rendered decision output from `v10.5.0`; it strengthens the release proof around the existing read-only activation decision commands that summarize the final gate, activation smoke, simulation harness, STI plan, EOI dispatch smoke, PIC unmask smoke, IDT runtime bind smoke, activation token/gate/matrix, and keyboard fallback into a frozen blocked decision object. The previous `v10.4.1` final gate hardening output and runtime state remain unchanged. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
@@ -204,7 +204,7 @@ runtime irq active: no
 
 ## Controlled Activation Decision Freeze
 
-`v10.5.0` adds a decision freeze layer above the final gate. The decision is a read-only contract surface only: activation remains `frozen blocked`, final activation remains disallowed, hardware mutation remains `no`, runtime IRQ remains inactive, `sti` remains disabled, PIC unmask remains disabled, EOI dispatch remains disabled, live IDT runtime binding remains `no`, and keyboard input remains polling-only.
+`v10.5.0` is a Controlled Activation Decision Freeze release. It adds a decision freeze layer above the final gate. `v10.5.1` hardens that surface without changing the rendered command output or runtime state. The decision is a read-only contract surface only: activation remains `frozen blocked`, final activation remains disallowed, hardware mutation remains `no`, runtime IRQ remains inactive, `sti` remains disabled, PIC unmask remains disabled, EOI dispatch remains disabled, live IDT runtime binding remains `no`, and keyboard input remains polling-only.
 
 Commands:
 

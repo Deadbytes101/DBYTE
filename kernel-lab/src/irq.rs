@@ -1422,7 +1422,7 @@ pub fn irq_runtime_final_gate(
     }
 }
 
-/// Freezes the v10.5.0 activation decision without mutating runtime state.
+/// Freezes the controlled activation decision without mutating runtime state.
 pub fn irq_runtime_decision_freeze(
     final_gate: IrqRuntimeFinalGate,
     activation_smoke: IrqRuntimeActivationSmoke,

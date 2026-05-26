@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.5.0)
+# DByteOS QEMU Boot Smoke (v10.5.1)
 
-`v10.5.0` is a Controlled Activation Decision Freeze release. It adds read-only activation decision commands that summarize the final gate, activation smoke, simulation harness, STI plan, EOI dispatch smoke, PIC unmask smoke, IDT runtime bind smoke, activation token/gate/matrix, and keyboard fallback into a frozen blocked decision object. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, or execute `sti`.
+`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.5.1` is a Controlled Activation Decision Freeze Hardening release that adds no commands and keeps the rendered decision output unchanged. It strengthens proof for the read-only activation decision commands that summarize the final gate, activation smoke, simulation harness, STI plan, EOI dispatch smoke, PIC unmask smoke, IDT runtime bind smoke, activation token/gate/matrix, and keyboard fallback into a frozen blocked decision object. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, or execute `sti`.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
