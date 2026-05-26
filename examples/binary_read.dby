@@ -1,0 +1,8 @@
+import std.buffer as buf
+import std.binary as bin
+
+let data = b"\x01\x00\x02\x00\x03\x00\x04\x00"
+let b = buf.from_bytes(data)
+
+print("u16_le at 0:", bin.u16_le(data, 0))
+print("u16_le at 2:", bin.u16_le(data, 2))
