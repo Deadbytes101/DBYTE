@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.8.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.9.0)
 
-DByteOS Kernel Lab `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. It preserves the read-only preflight before the first future PIC EOI write while tightening verification around the existing surface. The checklist, decision, sequencer, and preflight outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. It adds a read-only candidate surface before any first real PIC EOI write while keeping `fire` dry-run blocked. The checklist, decision, sequencer, preflight, and candidate outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.9.0` is not an EOI write activation release. It adds candidate commands for the first-write decision point, but `eoi-write-smoke-candidate-fire` is still dry-run blocked and does not write `PIC_EOI`.
 
 `v10.8.1` is not a PIC EOI write release. It hardens the existing `v10.8.0` first-write preflight contract without enabling EOI writes, PIC unmasking, STI, live IRQ0/IRQ1 binding, or keyboard IRQ mode.
 
@@ -383,6 +385,68 @@ EOI write smoke preflight blockers
 - STI disabled
 - keyboard mode polling
 first PIC_EOI write allowed: no
+```
+
+## First Controlled EOI Write Smoke Candidate
+
+`v10.9.0` adds a candidate surface for the first controlled PIC EOI write. The surface is still read-only: `arm` only reports blocked candidate status, and `fire` only reports dry-run blocked. It does not write PIC command ports, select a target IRQ line, unmask PIC lines, enable `sti`, bind live IDT handlers, or switch keyboard input away from polling.
+
+Commands:
+
+```text
+eoi-write-smoke-candidate-note
+eoi-write-smoke-candidate-status
+eoi-write-smoke-candidate-arm
+eoi-write-smoke-candidate-fire
+eoi-write-smoke-candidate-blockers
+```
+
+Expected baseline output:
+
+```text
+EOI write smoke candidate
+eoi write smoke candidate: blocked
+candidate armed: no
+first PIC_EOI write performed: no
+hardware mutation: no
+runtime irq active: no
+target command port: none
+target irq line: none
+eoi dispatch: disabled
+sti: disabled
+pic unmask: disabled
+live idt bind: no
+keyboard mode: polling
+```
+
+Expected fire output:
+
+```text
+EOI write smoke candidate fire
+fire result: dry-run blocked
+first PIC_EOI write performed: no
+target command port: none
+target irq line: none
+hardware mutation: no
+runtime irq active: no
+```
+
+Expected blockers:
+
+```text
+EOI write smoke candidate blockers
+- eoi write preflight blocked
+- first PIC_EOI write allowed: no
+- mutation sequence ready: no
+- hardware mutation checklist ready: no
+- activation decision frozen blocked
+- final activation disallowed
+- EOI dispatch disabled
+- PIC unmask disabled
+- IDT live bind disabled
+- STI disabled
+- keyboard mode polling
+first PIC_EOI write performed: no
 ```
 
 ## IRQ Gate Binding Plan

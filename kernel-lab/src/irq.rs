@@ -290,18 +290,13 @@ pub const IRQ_RUNTIME_MUTATION_READY_NO: &str = "no";
 pub const IRQ_RUNTIME_MUTATION_DISABLED: &str = "disabled";
 pub const IRQ_RUNTIME_MUTATION_BLOCKER_DECISION: &str = "activation decision frozen blocked";
 pub const IRQ_RUNTIME_MUTATION_BLOCKER_FINAL: &str = "final activation disallowed";
-pub const IRQ_RUNTIME_MUTATION_BLOCKER_RUNTIME_IRQ: &str =
-    "runtime IRQ active state disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_RUNTIME_IRQ: &str = "runtime IRQ active state disabled";
 pub const IRQ_RUNTIME_MUTATION_BLOCKER_STI: &str = "STI mutation disabled";
 pub const IRQ_RUNTIME_MUTATION_BLOCKER_PIC_UNMASK: &str = "PIC unmask mutation disabled";
-pub const IRQ_RUNTIME_MUTATION_BLOCKER_EOI_DISPATCH: &str =
-    "EOI dispatch mutation disabled";
-pub const IRQ_RUNTIME_MUTATION_BLOCKER_IDT_LIVE_BIND: &str =
-    "IDT live bind mutation disabled";
-pub const IRQ_RUNTIME_MUTATION_BLOCKER_KEYBOARD_IRQ: &str =
-    "keyboard IRQ mutation disabled";
-pub const IRQ_RUNTIME_MUTATION_SEQUENCE_SCOPE: &str =
-    "controlled mutation smoke sequencer";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_EOI_DISPATCH: &str = "EOI dispatch mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_IDT_LIVE_BIND: &str = "IDT live bind mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_BLOCKER_KEYBOARD_IRQ: &str = "keyboard IRQ mutation disabled";
+pub const IRQ_RUNTIME_MUTATION_SEQUENCE_SCOPE: &str = "controlled mutation smoke sequencer";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_INPUTS: &str =
     "mutation-checklist/decision/final-gate/activation-smoke/sti/eoi/pic-unmask/idt-bind/token/gate/matrix/keyboard";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_READY_NO: &str = "no";
@@ -310,44 +305,52 @@ pub const IRQ_RUNTIME_MUTATION_SEQUENCE_ALLOWED_NONE: &str = "none";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_DISABLED: &str = "disabled";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_DECISION: &str =
     "activation decision frozen blocked";
-pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_FINAL: &str =
-    "final activation disallowed";
+pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_FINAL: &str = "final activation disallowed";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_MUTATION: &str =
     "hardware mutation checklist not ready";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_RUNTIME_IRQ: &str =
     "runtime IRQ active state disabled";
 pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_STI: &str = "STI disabled";
-pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_PIC_UNMASK: &str =
-    "PIC unmask disabled";
-pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_EOI_DISPATCH: &str =
-    "EOI dispatch disabled";
-pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_LIVE_IDT_BIND: &str =
-    "live IDT bind disabled";
-pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_KEYBOARD: &str =
-    "keyboard mode polling";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_SCOPE: &str =
-    "controlled first PIC_EOI write preflight";
+pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_EOI_DISPATCH: &str = "EOI dispatch disabled";
+pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_LIVE_IDT_BIND: &str = "live IDT bind disabled";
+pub const IRQ_RUNTIME_MUTATION_SEQUENCE_BLOCKER_KEYBOARD: &str = "keyboard mode polling";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_SCOPE: &str = "controlled first PIC_EOI write preflight";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_INPUTS: &str =
     "mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKED: &str = "blocked";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_FIRST_WRITE_ALLOWED_NO: &str = "no";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_TARGET_NONE: &str = "none";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_SEQUENCE: &str =
-    "mutation sequence ready: no";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_SEQUENCE: &str = "mutation sequence ready: no";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_MUTATION: &str =
     "hardware mutation checklist ready: no";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_DECISION: &str =
-    "activation decision frozen blocked";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_FINAL: &str =
-    "final activation disallowed";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_DECISION: &str = "activation decision frozen blocked";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_FINAL: &str = "final activation disallowed";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_EOI: &str = "EOI dispatch disabled";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_PIC_UNMASK: &str =
-    "PIC unmask disabled";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_IDT: &str =
-    "IDT live bind disabled";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_IDT: &str = "IDT live bind disabled";
 pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_STI: &str = "STI disabled";
-pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_KEYBOARD: &str =
-    "keyboard mode polling";
+pub const EOI_WRITE_SMOKE_PREFLIGHT_BLOCKER_KEYBOARD: &str = "keyboard mode polling";
+pub const EOI_WRITE_SMOKE_CANDIDATE_SCOPE: &str = "first controlled PIC_EOI write smoke candidate";
+pub const EOI_WRITE_SMOKE_CANDIDATE_INPUTS: &str =
+    "eoi-write-preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKED: &str = "blocked";
+pub const EOI_WRITE_SMOKE_CANDIDATE_ARMED_NO: &str = "no";
+pub const EOI_WRITE_SMOKE_CANDIDATE_FIRE_DRY_RUN_BLOCKED: &str = "dry-run blocked";
+pub const EOI_WRITE_SMOKE_CANDIDATE_WRITE_PERFORMED_NO: &str = "no";
+pub const EOI_WRITE_SMOKE_CANDIDATE_TARGET_NONE: &str = "none";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_PREFLIGHT: &str = "eoi write preflight blocked";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_FIRST_ALLOWED: &str = "first PIC_EOI write allowed: no";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_SEQUENCE: &str = "mutation sequence ready: no";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_MUTATION: &str =
+    "hardware mutation checklist ready: no";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_DECISION: &str = "activation decision frozen blocked";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_FINAL: &str = "final activation disallowed";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_EOI: &str = "EOI dispatch disabled";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_IDT: &str = "IDT live bind disabled";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_STI: &str = "STI disabled";
+pub const EOI_WRITE_SMOKE_CANDIDATE_BLOCKER_KEYBOARD: &str = "keyboard mode polling";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -719,6 +722,31 @@ pub struct EoiWriteSmokePreflight {
     pub pic_unmask_smoke: &'static str,
     pub idt_runtime_bind_smoke: &'static str,
     pub sti_plan: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWriteSmokeCandidate {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub eoi_write_smoke_candidate: &'static str,
+    pub candidate_armed: &'static str,
+    pub fire_result: &'static str,
+    pub first_pic_eoi_write_performed: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub target_command_port: &'static str,
+    pub target_irq_line: &'static str,
+    pub eoi_dispatch: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+    pub eoi_write_preflight: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
+    pub mutation_sequence_ready: &'static str,
+    pub hardware_mutation_ready: &'static str,
+    pub activation_decision: &'static str,
+    pub final_activation_allowed: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -1702,5 +1730,38 @@ pub fn eoi_write_smoke_preflight(
         pic_unmask_smoke: pic_unmask_smoke.pic_unmask_smoke,
         idt_runtime_bind_smoke: idt_bind_smoke.idt_runtime_bind_smoke,
         sti_plan: sti_plan.result,
+    }
+}
+
+/// Models the first controlled PIC EOI write candidate without touching hardware.
+pub fn eoi_write_smoke_candidate(
+    preflight: EoiWriteSmokePreflight,
+    sequence: IrqRuntimeMutationSmokeSequence,
+    mutation: IrqRuntimeHardwareMutationChecklist,
+    decision: IrqRuntimeActivationDecision,
+    final_gate: IrqRuntimeFinalGate,
+) -> EoiWriteSmokeCandidate {
+    EoiWriteSmokeCandidate {
+        scope: EOI_WRITE_SMOKE_CANDIDATE_SCOPE,
+        inputs: EOI_WRITE_SMOKE_CANDIDATE_INPUTS,
+        eoi_write_smoke_candidate: EOI_WRITE_SMOKE_CANDIDATE_BLOCKED,
+        candidate_armed: EOI_WRITE_SMOKE_CANDIDATE_ARMED_NO,
+        fire_result: EOI_WRITE_SMOKE_CANDIDATE_FIRE_DRY_RUN_BLOCKED,
+        first_pic_eoi_write_performed: EOI_WRITE_SMOKE_CANDIDATE_WRITE_PERFORMED_NO,
+        hardware_mutation: final_gate.hardware_mutation,
+        runtime_irq_active: final_gate.runtime_irq_active,
+        target_command_port: EOI_WRITE_SMOKE_CANDIDATE_TARGET_NONE,
+        target_irq_line: EOI_WRITE_SMOKE_CANDIDATE_TARGET_NONE,
+        eoi_dispatch: final_gate.eoi_dispatch,
+        sti_instruction: final_gate.sti_instruction,
+        pic_unmask: final_gate.pic_unmask,
+        live_idt_bind: final_gate.live_idt_bind,
+        keyboard_mode: final_gate.keyboard_mode,
+        eoi_write_preflight: preflight.eoi_write_smoke_preflight,
+        first_pic_eoi_write_allowed: preflight.first_pic_eoi_write_allowed,
+        mutation_sequence_ready: sequence.mutation_sequence_ready,
+        hardware_mutation_ready: mutation.hardware_mutation_ready,
+        activation_decision: decision.activation_decision,
+        final_activation_allowed: final_gate.final_activation_allowed,
     }
 }
