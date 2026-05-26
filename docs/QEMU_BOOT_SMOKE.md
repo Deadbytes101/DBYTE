@@ -1,10 +1,12 @@
-# DByteOS QEMU Boot Smoke (v10.8.0)
+# DByteOS QEMU Boot Smoke (v10.8.1)
 
-`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. It adds a read-only preflight before the first future PIC EOI write while keeping every hardware mutation path blocked. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, or execute `sti`.
+`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. It keeps the preflight read-only before the first future PIC EOI write while tightening guards around the existing surface. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, or execute `sti`.
 
 `v10.7.1` is not a mutation release. It adds verification guards for exact sequencer command output, read-only helper and dispatcher isolation, stale `v10.7.0` metadata, and no live IRQ0/IRQ1 or keyboard IRQ mode.
 
 `v10.8.0` is not a PIC EOI write release. It adds command and verification preflight for the first-write decision point without writing `PIC_EOI`.
+
+`v10.8.1` is not a PIC EOI write release. It hardens the existing `v10.8.0` first-write preflight contract without writing `PIC_EOI`.
 
 The existing activation decision freeze layer remains in force underneath the mutation checklist, sequencer, and EOI write smoke preflight surfaces.
 
