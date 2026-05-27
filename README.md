@@ -7,12 +7,25 @@ syntax with predictable performance.
 Public alpha status: DByte is usable for experiments and small tools, but the
 language and standard library may still change before a stable X.X.X release.
 
-![DByte Logo](assets/logo/dbyte-logo.png)
-
 Performance claim:
 
 > DByte v1.9.2 outperforms Python 3.12.9 across DByte's measured benchmark
 > suite on a Windows release-build test machine.
+
+# 💿 DOWNLOAD DBYTEOS
+
+> [!CAUTION]
+> ### RUN IT IF YOU DARE
+> THIS IS A PRE-ALPHA TEST JUST A TEMP
+<p align="center">
+  <img src="assets/logo/dbyte-logo.png" width="180" alt="DBYTEOS Logo" />
+</p>
+<p align="center">
+  <a href="https://github.com/Deadbytes101/DByte/releases">
+    <img src="https://img.shields.io/badge/TRY%20ISO%20NOW-FFFFFF?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B&labelColor=003087" alt="TRY ISO NOW" />
+  </a>
+</p>
+**Warning:** This OS might format your soul. Install at your own risk, motherfucker.
 
 This is a benchmark-suite claim, not a claim that DByte is faster than Python in
 every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md).
