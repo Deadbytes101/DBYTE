@@ -1,0 +1,26 @@
+import std.fs as fs
+fn resolve(p: str) -> str:
+    if fs.exists("examples/sanctum") == 1:
+        return "examples/sanctum/" + p
+    return p
+
+print("--------------------------------------------------")
+print("  S A N C T U M   S Y S T E M   S T A T U S")
+print("--------------------------------------------------")
+let dirs: list[str] = ["workspace", "config", "notes", "scripts", "tools"]
+print("Environment Health:")
+for d in dirs:
+    let path: str = resolve(d)
+    if fs.exists(path) == 1:
+        print("  [OK] " + d)
+    else:
+        print("  [!!] " + d + " (MISSING)")
+print("")
+let config_path: str = resolve("config/sanctum.dby")
+if fs.exists(config_path) == 1:
+    print("Configuration: Loaded (" + config_path + ")")
+else:
+    print("Configuration: Missing")
+print("")
+print("System Workspace Mode: Active")
+print("--------------------------------------------------")
