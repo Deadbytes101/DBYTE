@@ -25,7 +25,8 @@ Performance claim:
     <img src="https://img.shields.io/badge/TRY%20ISO%20NOW-FFFFFF?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B&labelColor=003087" alt="TRY ISO NOW" />
   </a>
 </p>
-**Warning:** This OS might format your soul. Install at your own risk, motherfucker.
+
+> **Warning:** This OS might format your soul. Install at your own risk, motherfucker.
 
 This is a benchmark-suite claim, not a claim that DByte is faster than Python in
 every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md).
