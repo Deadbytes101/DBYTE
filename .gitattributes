@@ -3,7 +3,6 @@
 *.dbyterc linguist-detectable
 *.dbyte linguist-detectable
 assets/** linguist-vendored
-personaltools/** linguist-vendored
 *.png linguist-vendored
 *.jpg linguist-vendored
 *.svg linguist-vendored
