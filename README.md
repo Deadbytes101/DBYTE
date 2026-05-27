@@ -63,6 +63,7 @@ loads the DByteOS prompt from `system.prompt`.
 - [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
 - [Kernel Exception Subsystem Foundation](docs/KERNEL_EXCEPTIONS.md)
 - [Kernel IRQ Handler Skeleton Foundation](docs/KERNEL_IRQ.md)
+- [KERNEL IRQ HANDLER SHIT:CCCCCC](docs/KERNEL_LAB.md)
 
 3. **Initialize & Interact**:
 
