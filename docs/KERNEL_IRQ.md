@@ -1,6 +1,20 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.4.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.11.0)
 
-DByteOS Kernel Lab `v10.4.1` is a Controlled IRQ Runtime Readiness Final Gate Hardening release. It keeps the `v10.4.0` final gate command output and runtime state unchanged while tightening verification for exact output, read-only helper and command surfaces, stale version metadata, disabled `sti`, disabled PIC unmask, disabled EOI dispatch, disabled live IRQ0/IRQ1, disabled live IDT runtime binding, and polling-only keyboard fallback. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, and one-shot outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.11.0` is not an EOI write release. It defines the one-shot command path only: `one-shot armed: no`, `fire allowed: no`, `first PIC_EOI write performed: no`, and no `PIC_EOI` write.
+
+`v10.10.1` is not an EOI write release. It hardens permit telemetry only: `permit granted: no`, `first PIC_EOI write allowed: no`, and no `PIC_EOI` write.
+
+`v10.9.1` is not an EOI write release. It hardens the existing candidate contract; `eoi-write-smoke-candidate-fire` is still dry-run blocked and does not write `PIC_EOI`.
+
+`v10.9.0` is not an EOI write activation release. It adds candidate commands for the first-write decision point, but `eoi-write-smoke-candidate-fire` is still dry-run blocked and does not write `PIC_EOI`.
+
+`v10.8.1` is not a PIC EOI write release. It hardens the existing `v10.8.0` first-write preflight contract without enabling EOI writes, PIC unmasking, STI, live IRQ0/IRQ1 binding, or keyboard IRQ mode.
+
+`v10.8.0` is not a PIC EOI write release. It adds verification and command preflight around the first-write decision point without enabling EOI writes, PIC unmasking, STI, live IRQ0/IRQ1 binding, or keyboard IRQ mode.
+
+`v10.7.1` is not a mutation release. It adds verification guards around the sequencer surface, exact command output, read-only helper/dispatcher isolation, and stale `v10.7.0` metadata without enabling EOI writes, PIC unmasking, STI, live IRQ0/IRQ1 binding, or keyboard IRQ mode.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
@@ -96,7 +110,7 @@ The smoke plan models IRQ0 and IRQ1 as master-PIC EOI routes only. Slave-PIC cas
 
 `v10.1.1` hardens the controlled EOI dispatch smoke surface without adding runtime behavior. No output wording changes from v10.1.0 are introduced.
 
-Verification now pins the four `eoi-dispatch-smoke-*` command templates, the rendered QEMU snapshots, the helper and command blocks as read-only surfaces, and the absence of actual `PIC_EOI` writes through `write_pic_port(PIC_MASTER_CMD, PIC_EOI)` or `write_pic_port(PIC_SLAVE_CMD, PIC_EOI)`. The existing runtime invariants remain locked: no `sti`, no PIC IRQ unmask, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
+Verification now pins the four `eoi-dispatch-smoke-*` command templates, the rendered QEMU snapshots, the helper and command blocks as read-only surfaces, and the absence of actual master/slave command-port `PIC_EOI` writes. The existing runtime invariants remain locked: no `sti`, no PIC IRQ unmask, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
 
 ## Controlled PIC Mask Unmask Smoke Foundation
 
@@ -200,6 +214,341 @@ keyboard mode: polling
 final activation allowed: no
 hardware mutation: no
 runtime irq active: no
+```
+
+## Controlled Activation Decision Freeze
+
+`v10.5.0` is a Controlled Activation Decision Freeze release. It adds a decision freeze layer above the final gate. `v10.5.1` hardens that surface without changing the rendered command output or runtime state. The decision is a read-only contract surface only: activation remains `frozen blocked`, final activation remains disallowed, hardware mutation remains `no`, runtime IRQ remains inactive, `sti` remains disabled, PIC unmask remains disabled, EOI dispatch remains disabled, live IDT runtime binding remains `no`, and keyboard input remains polling-only.
+
+Commands:
+
+```text
+irq-runtime-decision-note
+irq-runtime-decision-status
+irq-runtime-decision-freeze
+irq-runtime-decision-blockers
+```
+
+Expected baseline output:
+
+```text
+IRQ runtime activation decision
+activation decision: frozen blocked
+final activation allowed: no
+runtime irq active: no
+hardware mutation: no
+sti: disabled
+pic unmask: disabled
+eoi dispatch: disabled
+live idt bind: no
+keyboard mode: polling
+```
+
+Expected blockers:
+
+```text
+IRQ runtime activation decision blockers
+- STI instruction disabled
+- PIC unmask disabled
+- EOI dispatch disabled
+- live IDT bind disabled
+- keyboard IRQ path disabled
+- runtime IRQ active state disabled
+activation decision: frozen blocked
+```
+
+## Controlled Hardware Mutation Readiness Checklist
+
+`v10.6.0` adds a read-only checklist above the frozen activation decision. It does not add live mutation smoke and does not change the decision output. Hardware mutation remains not ready, the activation decision remains `frozen blocked`, runtime IRQ remains inactive, and every mutation category remains disabled.
+
+`v10.6.1` hardens the checklist without adding commands, changing output wording, or changing runtime behavior. Verification now pins the exact `irq-runtime-mutation-*` command templates, the helper-only dispatcher blocks, the read-only helper/snapshot/print surfaces, the stale `10.6.0` metadata guard, the forbidden positive mutation states, and the `256 KiB` bootstrap stack stability proof.
+
+Commands:
+
+```text
+irq-runtime-mutation-note
+irq-runtime-mutation-status
+irq-runtime-mutation-check
+irq-runtime-mutation-blockers
+```
+
+Expected baseline output:
+
+```text
+IRQ runtime hardware mutation readiness
+hardware mutation ready: no
+activation decision: frozen blocked
+final activation allowed: no
+runtime irq active: no
+sti mutation: disabled
+pic unmask mutation: disabled
+eoi dispatch mutation: disabled
+idt live bind mutation: disabled
+keyboard irq mutation: disabled
+```
+
+Expected blockers:
+
+```text
+IRQ runtime hardware mutation blockers
+- activation decision frozen blocked
+- final activation disallowed
+- runtime IRQ active state disabled
+- STI mutation disabled
+- PIC unmask mutation disabled
+- EOI dispatch mutation disabled
+- IDT live bind mutation disabled
+- keyboard IRQ mutation disabled
+hardware mutation ready: no
+```
+
+## Controlled Mutation Smoke Sequencer Foundation
+
+`v10.7.0` adds a read-only mutation smoke sequencer above the hardware mutation checklist. It does not add live mutation smoke and does not change the checklist output. The sequence remains not ready, no next mutation step is selected, no mutation steps are allowed, hardware mutation remains `no`, runtime IRQ remains inactive, and keyboard input remains polling-only.
+
+Commands:
+
+```text
+irq-runtime-mutation-sequence-note
+irq-runtime-mutation-sequence-status
+irq-runtime-mutation-sequence-plan
+irq-runtime-mutation-sequence-blockers
+```
+
+Expected baseline output:
+
+```text
+IRQ runtime mutation smoke sequence
+mutation sequence ready: no
+hardware mutation: no
+runtime irq active: no
+next mutation step: none
+allowed mutation steps: none
+sti: disabled
+pic unmask: disabled
+eoi dispatch: disabled
+live idt bind: no
+keyboard mode: polling
+```
+
+Expected blockers:
+
+```text
+IRQ runtime mutation smoke sequence blockers
+- activation decision frozen blocked
+- final activation disallowed
+- hardware mutation checklist not ready
+- runtime IRQ active state disabled
+- STI disabled
+- PIC unmask disabled
+- EOI dispatch disabled
+- live IDT bind disabled
+- keyboard mode polling
+mutation sequence ready: no
+```
+
+## Controlled EOI Write Smoke Preflight
+
+`v10.8.0` adds a read-only preflight before any first PIC EOI write candidate. It reads the mutation sequencer, mutation readiness checklist, decision freeze, final gate, EOI dispatch smoke boundary, PIC unmask smoke boundary, IDT runtime bind smoke boundary, STI plan, and keyboard fallback. It does not write PIC command ports and does not select a target IRQ line.
+
+Commands:
+
+```text
+eoi-write-smoke-preflight-note
+eoi-write-smoke-preflight-status
+eoi-write-smoke-preflight-check
+eoi-write-smoke-preflight-blockers
+```
+
+Expected baseline output:
+
+```text
+EOI write smoke preflight
+eoi write smoke preflight: blocked
+first PIC_EOI write allowed: no
+hardware mutation: no
+runtime irq active: no
+target command port: none
+target irq line: none
+eoi dispatch: disabled
+sti: disabled
+pic unmask: disabled
+live idt bind: no
+keyboard mode: polling
+```
+
+Expected blockers:
+
+```text
+EOI write smoke preflight blockers
+- mutation sequence ready: no
+- hardware mutation checklist ready: no
+- activation decision frozen blocked
+- final activation disallowed
+- EOI dispatch disabled
+- PIC unmask disabled
+- IDT live bind disabled
+- STI disabled
+- keyboard mode polling
+first PIC_EOI write allowed: no
+```
+
+## First Controlled EOI Write Smoke Candidate
+
+`v10.9.0` adds a candidate surface for the first controlled PIC EOI write. The surface is still read-only: `arm` only reports blocked candidate status, and `fire` only reports dry-run blocked. It does not write PIC command ports, select a target IRQ line, unmask PIC lines, enable `sti`, bind live IDT handlers, or switch keyboard input away from polling.
+
+Commands:
+
+```text
+eoi-write-smoke-candidate-note
+eoi-write-smoke-candidate-status
+eoi-write-smoke-candidate-arm
+eoi-write-smoke-candidate-fire
+eoi-write-smoke-candidate-blockers
+```
+
+Expected baseline output:
+
+```text
+EOI write smoke candidate
+eoi write smoke candidate: blocked
+candidate armed: no
+first PIC_EOI write performed: no
+hardware mutation: no
+runtime irq active: no
+target command port: none
+target irq line: none
+eoi dispatch: disabled
+sti: disabled
+pic unmask: disabled
+live idt bind: no
+keyboard mode: polling
+```
+
+Expected fire output:
+
+```text
+EOI write smoke candidate fire
+fire result: dry-run blocked
+first PIC_EOI write performed: no
+target command port: none
+target irq line: none
+hardware mutation: no
+runtime irq active: no
+```
+
+Expected blockers:
+
+```text
+EOI write smoke candidate blockers
+- eoi write preflight blocked
+- first PIC_EOI write allowed: no
+- mutation sequence ready: no
+- hardware mutation checklist ready: no
+- activation decision frozen blocked
+- final activation disallowed
+- EOI dispatch disabled
+- PIC unmask disabled
+- IDT live bind disabled
+- STI disabled
+- keyboard mode polling
+first PIC_EOI write performed: no
+```
+
+## Controlled EOI Write Permit Model Foundation
+
+`v10.10.0` adds a read-only permit model before any first controlled PIC EOI write. The permit remains denied and does not arm, fire, or write a PIC command port.
+
+## Controlled EOI Write Permit Model Hardening
+
+`v10.10.1` hardens the `v10.10.0` permit model contract without changing command output or enabling any hardware path. The permit helper and command dispatchers remain read-only: no `PIC_EOI` command is written, `sti` remains disabled, PIC IRQ lines remain masked, live IRQ runtime remains disabled, and keyboard input remains polling-only.
+
+Commands:
+
+```text
+eoi-write-permit-note
+eoi-write-permit-status
+eoi-write-permit-check
+eoi-write-permit-blockers
+```
+
+Expected status/check baseline:
+
+```text
+EOI write permit model
+permit granted: no
+first PIC_EOI write allowed: no
+target command port: none
+target value: none
+target irq line: none
+hardware mutation: no
+runtime irq active: no
+fire command: dry-run blocked
+```
+
+Expected blockers:
+
+```text
+EOI write permit blockers
+- activation decision frozen blocked
+- final gate denied
+- mutation checklist denied
+- mutation sequencer denied
+- EOI write candidate fire blocked
+- STI disabled
+- PIC unmask disabled
+- live IRQ runtime disabled
+permit granted: no
+```
+
+## Controlled EOI Write One-Shot Command Path Foundation
+
+`v10.11.0` adds the future one-shot command path for a first controlled PIC EOI write. The path is read-only in this release: `eoi-write-oneshot-arm` does not set a persistent latch, `eoi-write-oneshot-fire` is blocked by the permit model, and no PIC command port is written.
+
+Commands:
+
+```text
+eoi-write-oneshot-note
+eoi-write-oneshot-status
+eoi-write-oneshot-arm
+eoi-write-oneshot-fire
+eoi-write-oneshot-blockers
+```
+
+Expected status/arm baseline:
+
+```text
+EOI write one-shot command path
+one-shot armed: no
+fire allowed: no
+first PIC_EOI write performed: no
+target command port: none
+target value: none
+hardware mutation: no
+runtime irq active: no
+```
+
+Expected fire:
+
+```text
+EOI write one-shot fire
+error: EOI one-shot fire blocked by permit model
+first PIC_EOI write performed: no
+hardware mutation: no
+```
+
+Expected blockers:
+
+```text
+EOI write one-shot blockers
+- permit granted: no
+- first PIC_EOI write allowed: no
+- hardware mutation: no
+- runtime irq active: no
+- STI disabled
+- PIC unmask disabled
+- live IRQ runtime disabled
+first PIC_EOI write performed: no
 ```
 
 ## IRQ Gate Binding Plan
