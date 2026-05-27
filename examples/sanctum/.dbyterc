@@ -1,0 +1,17 @@
+# DByte Sanctum Configuration
+# ---------------------------
+# System Commands
+@shell alias init = run sanctum_init.dby
+@shell alias status = run sanctum_status.dby
+@shell alias clean = run scripts/clean_workspace.dby
+@shell alias boot = run boot.dby
+# Personal Tools
+@shell alias inspect = run tools/inspect_demo.dby
+@shell alias patch-demo = run tools/patch_demo.dby
+@shell alias u32-demo = run tools/u32_demo.dby
+# Environment Variables
+# Custom prompt not yet supported in this version
+# Auto-imports
+import std.buffer as sbuf
+import std.fs as sfs
+import std.encoding as senc
