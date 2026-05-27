@@ -1,8 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.1)
 
-DByteOS Kernel Lab `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, and permit outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, and permit outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
 
-`v10.10.0` is not an EOI write release. It defines permit telemetry only: `permit granted: no`, `first PIC_EOI write allowed: no`, and no `PIC_EOI` write.
+`v10.10.1` is not an EOI write release. It hardens permit telemetry only: `permit granted: no`, `first PIC_EOI write allowed: no`, and no `PIC_EOI` write.
 
 `v10.9.1` is not an EOI write release. It hardens the existing candidate contract; `eoi-write-smoke-candidate-fire` is still dry-run blocked and does not write `PIC_EOI`.
 
@@ -108,7 +108,7 @@ The smoke plan models IRQ0 and IRQ1 as master-PIC EOI routes only. Slave-PIC cas
 
 `v10.1.1` hardens the controlled EOI dispatch smoke surface without adding runtime behavior. No output wording changes from v10.1.0 are introduced.
 
-Verification now pins the four `eoi-dispatch-smoke-*` command templates, the rendered QEMU snapshots, the helper and command blocks as read-only surfaces, and the absence of actual `PIC_EOI` writes through `write_pic_port(PIC_MASTER_CMD, PIC_EOI)` or `write_pic_port(PIC_SLAVE_CMD, PIC_EOI)`. The existing runtime invariants remain locked: no `sti`, no PIC IRQ unmask, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
+Verification now pins the four `eoi-dispatch-smoke-*` command templates, the rendered QEMU snapshots, the helper and command blocks as read-only surfaces, and the absence of actual master/slave command-port `PIC_EOI` writes. The existing runtime invariants remain locked: no `sti`, no PIC IRQ unmask, no live IRQ0/IRQ1 handlers, no keyboard IRQ path, no runtime IRQ active state, and keyboard input remains polling-only.
 
 ## Controlled PIC Mask Unmask Smoke Foundation
 
@@ -456,6 +456,10 @@ first PIC_EOI write performed: no
 ## Controlled EOI Write Permit Model Foundation
 
 `v10.10.0` adds a read-only permit model before any first controlled PIC EOI write. The permit remains denied and does not arm, fire, or write a PIC command port.
+
+## Controlled EOI Write Permit Model Hardening
+
+`v10.10.1` hardens the `v10.10.0` permit model contract without changing command output or enabling any hardware path. The permit helper and command dispatchers remain read-only: no `PIC_EOI` command is written, `sti` remains disabled, PIC IRQ lines remain masked, live IRQ runtime remains disabled, and keyboard input remains polling-only.
 
 Commands:
 
