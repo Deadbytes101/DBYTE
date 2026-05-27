@@ -9,11 +9,6 @@ language and standard library may still change before a stable x.x.x release.
 
 ![DByte Logo](assets/logo/dbyte-logo.png)
 
-Website: https://dbytelang.site
-
-DByte — a fast personal low-level scripting language for binary tools, shell
-workflows, and system experiments.
-
 Performance claim:
 
 > DByte v1.9.2 outperforms Python 3.12.9 across DByte's measured benchmark
