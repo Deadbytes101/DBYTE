@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.11.0)
+# DByteOS QEMU Boot Smoke (v10.11.1)
 
-`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model while keeping fire blocked. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, execute `sti`, or write `PIC_EOI`.
+`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the read-only one-shot command path while keeping fire blocked. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, execute `sti`, or write `PIC_EOI`.
 
 `v10.7.1` is not a mutation release. It adds verification guards for exact sequencer command output, read-only helper and dispatcher isolation, stale `v10.7.0` metadata, and no live IRQ0/IRQ1 or keyboard IRQ mode.
 
@@ -15,6 +15,8 @@
 `v10.10.1` is not an EOI write release. It hardens the existing permit model only. `eoi-write-permit-status` reports `permit granted: no` and `first PIC_EOI write allowed: no`.
 
 `v10.11.0` is not an EOI write release. `eoi-write-oneshot-arm` reports `one-shot armed: no`, and `eoi-write-oneshot-fire` reports `error: EOI one-shot fire blocked by permit model`.
+
+`v10.11.1` is not a latch or EOI write release. It hardens the existing one-shot command path only; `eoi-write-oneshot-arm` still reports `one-shot armed: no`, and `eoi-write-oneshot-fire` still reports `error: EOI one-shot fire blocked by permit model`.
 
 The existing activation decision freeze layer remains in force underneath the mutation checklist, sequencer, and EOI write smoke preflight surfaces.
 
