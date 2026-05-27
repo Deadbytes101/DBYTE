@@ -362,11 +362,25 @@ pub const EOI_WRITE_PERMIT_BLOCKER_DECISION: &str = "activation decision frozen 
 pub const EOI_WRITE_PERMIT_BLOCKER_FINAL_GATE: &str = "final gate denied";
 pub const EOI_WRITE_PERMIT_BLOCKER_MUTATION: &str = "mutation checklist denied";
 pub const EOI_WRITE_PERMIT_BLOCKER_SEQUENCE: &str = "mutation sequencer denied";
-pub const EOI_WRITE_PERMIT_BLOCKER_CANDIDATE_FIRE: &str =
-    "EOI write candidate fire blocked";
+pub const EOI_WRITE_PERMIT_BLOCKER_CANDIDATE_FIRE: &str = "EOI write candidate fire blocked";
 pub const EOI_WRITE_PERMIT_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_PERMIT_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
 pub const EOI_WRITE_PERMIT_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
+pub const EOI_WRITE_ONESHOT_SCOPE: &str = "controlled first PIC_EOI write one-shot command path";
+pub const EOI_WRITE_ONESHOT_INPUTS: &str = "permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard";
+pub const EOI_WRITE_ONESHOT_ARMED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_FIRE_ALLOWED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_WRITE_PERFORMED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_TARGET_NONE: &str = "none";
+pub const EOI_WRITE_ONESHOT_FIRE_BLOCKED_BY_PERMIT: &str =
+    "error: EOI one-shot fire blocked by permit model";
+pub const EOI_WRITE_ONESHOT_BLOCKER_PERMIT: &str = "permit granted: no";
+pub const EOI_WRITE_ONESHOT_BLOCKER_FIRST_ALLOWED: &str = "first PIC_EOI write allowed: no";
+pub const EOI_WRITE_ONESHOT_BLOCKER_HARDWARE: &str = "hardware mutation: no";
+pub const EOI_WRITE_ONESHOT_BLOCKER_RUNTIME: &str = "runtime irq active: no";
+pub const EOI_WRITE_ONESHOT_BLOCKER_STI: &str = "STI disabled";
+pub const EOI_WRITE_ONESHOT_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_ONESHOT_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -782,6 +796,26 @@ pub struct EoiWritePermitModel {
     pub hardware_mutation_ready: &'static str,
     pub mutation_sequence_ready: &'static str,
     pub candidate_fire_result: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWriteOneShotCommandPath {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub one_shot_armed: &'static str,
+    pub fire_allowed: &'static str,
+    pub first_pic_eoi_write_performed: &'static str,
+    pub target_command_port: &'static str,
+    pub target_value: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub fire_result: &'static str,
+    pub permit_granted: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
     pub sti_instruction: &'static str,
     pub pic_unmask: &'static str,
     pub live_idt_bind: &'static str,
@@ -1834,5 +1868,27 @@ pub fn eoi_write_permit_model(
         pic_unmask: final_gate.pic_unmask,
         live_idt_bind: final_gate.live_idt_bind,
         keyboard_mode: preflight.keyboard_mode,
+    }
+}
+
+/// Models the future one-shot command path for a first PIC EOI write without firing it.
+pub fn eoi_write_oneshot_command_path(permit: EoiWritePermitModel) -> EoiWriteOneShotCommandPath {
+    EoiWriteOneShotCommandPath {
+        scope: EOI_WRITE_ONESHOT_SCOPE,
+        inputs: EOI_WRITE_ONESHOT_INPUTS,
+        one_shot_armed: EOI_WRITE_ONESHOT_ARMED_NO,
+        fire_allowed: EOI_WRITE_ONESHOT_FIRE_ALLOWED_NO,
+        first_pic_eoi_write_performed: EOI_WRITE_ONESHOT_WRITE_PERFORMED_NO,
+        target_command_port: EOI_WRITE_ONESHOT_TARGET_NONE,
+        target_value: EOI_WRITE_ONESHOT_TARGET_NONE,
+        hardware_mutation: permit.hardware_mutation,
+        runtime_irq_active: permit.runtime_irq_active,
+        fire_result: EOI_WRITE_ONESHOT_FIRE_BLOCKED_BY_PERMIT,
+        permit_granted: permit.permit_granted,
+        first_pic_eoi_write_allowed: permit.first_pic_eoi_write_allowed,
+        sti_instruction: permit.sti_instruction,
+        pic_unmask: permit.pic_unmask,
+        live_idt_bind: permit.live_idt_bind,
+        keyboard_mode: permit.keyboard_mode,
     }
 }

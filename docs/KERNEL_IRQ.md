@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.10.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.11.0)
 
-DByteOS Kernel Lab `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, and permit outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, and one-shot outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.11.0` is not an EOI write release. It defines the one-shot command path only: `one-shot armed: no`, `fire allowed: no`, `first PIC_EOI write performed: no`, and no `PIC_EOI` write.
 
 `v10.10.1` is not an EOI write release. It hardens permit telemetry only: `permit granted: no`, `first PIC_EOI write allowed: no`, and no `PIC_EOI` write.
 
@@ -497,6 +499,56 @@ EOI write permit blockers
 - PIC unmask disabled
 - live IRQ runtime disabled
 permit granted: no
+```
+
+## Controlled EOI Write One-Shot Command Path Foundation
+
+`v10.11.0` adds the future one-shot command path for a first controlled PIC EOI write. The path is read-only in this release: `eoi-write-oneshot-arm` does not set a persistent latch, `eoi-write-oneshot-fire` is blocked by the permit model, and no PIC command port is written.
+
+Commands:
+
+```text
+eoi-write-oneshot-note
+eoi-write-oneshot-status
+eoi-write-oneshot-arm
+eoi-write-oneshot-fire
+eoi-write-oneshot-blockers
+```
+
+Expected status/arm baseline:
+
+```text
+EOI write one-shot command path
+one-shot armed: no
+fire allowed: no
+first PIC_EOI write performed: no
+target command port: none
+target value: none
+hardware mutation: no
+runtime irq active: no
+```
+
+Expected fire:
+
+```text
+EOI write one-shot fire
+error: EOI one-shot fire blocked by permit model
+first PIC_EOI write performed: no
+hardware mutation: no
+```
+
+Expected blockers:
+
+```text
+EOI write one-shot blockers
+- permit granted: no
+- first PIC_EOI write allowed: no
+- hardware mutation: no
+- runtime irq active: no
+- STI disabled
+- PIC unmask disabled
+- live IRQ runtime disabled
+first PIC_EOI write performed: no
 ```
 
 ## IRQ Gate Binding Plan
