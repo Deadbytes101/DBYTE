@@ -1,0 +1,6 @@
+fn work(n: int) -> int:
+    return n * 2
+let i = 0
+while i < 1000000:
+    work(i)
+    i = i + 1
