@@ -1,7 +1,7 @@
 # DBYTE FILES
-*.dby linguist-detectable
-*.dbyterc linguist-detectable
-*.dbyte linguist-detectable
+*.dby linguist-language=Text linguist-detectable
+*.dbyterc linguist-language=Text linguist-detectable
+*.dbyte linguist-language=Text linguist-detectable
 assets/** linguist-vendored
 *.png linguist-vendored
 *.jpg linguist-vendored
