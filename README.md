@@ -5,7 +5,7 @@ byte search, typed integer workloads, and automation scripts that need simple
 syntax with predictable performance.
 
 Public alpha status: DByte is usable for experiments and small tools, but the
-language and standard library may still change before a stable x.x.x release.
+language and standard library may still change before a stable X.X.X release.
 
 ![DByte Logo](assets/logo/dbyte-logo.png)
 
@@ -28,11 +28,7 @@ every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMAR
 - File, hash, encoding, math, env, binary, and buffer standard modules.
 - Built-in test runner: `dbyte test`.
 - Interactive REPL and DByte-native shell for personal scripting sessions.
-
-## DByteOS Personal Workspace Beta Foundation (v9.0.2)
-
-DByteOS is a host-runnable personal computing environment built on the DByte runtime.
-
+  
 1. **Launch the DByteOS Shell**:
 
 ```powershell
