@@ -1,0 +1,22 @@
+import "../etc/services.dby" as registry
+import "../sys/profile.dby" as profile
+import "../sys/logger.dby" as logger
+import std.fs as fs
+pub fn run():
+print("Init: starting userland services...")
+logger.write_service_event("Init sequence triggered.")
+let services = registry.enabled_services
+let count = 0
+for s in services:
+# Simulated service startup
+print("  [INIT]", s)
+logger.write_service_event("Starting service: " + s)
+count = count + 1
+print("Init:", count, "services initialized.")
+# Session setup
+let session_dir = profile.resolve_path("tmp")
+if fs.exists(session_dir) == 1:
+let init_marker = session_dir + "/.dbyteos_init_ok"
+fs.write_text(init_marker, "init ok\n")
+print("  [OK] Session initialized.")
+logger.write_service_event("Session markers created.")
