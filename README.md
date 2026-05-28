@@ -26,7 +26,7 @@ Performance claim:
   </a>
 </p>
 
-> **Warning:** This OS might format your soul. Install at your own risk, motherfucker.
+ **Warning:** This OS might format your soul. Install at your own risk, motherfucker.
 
 This is a benchmark-suite claim, not a claim that DByte is faster than Python in
 every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md).
