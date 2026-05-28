@@ -1,0 +1,7 @@
+fn add(a: int, b: int) -> int:
+    return a + b
+let total: int = 0
+let i: int = 0
+while i < 1000000:
+    total = add(total, 1)
+    i = i + 1
