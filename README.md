@@ -1,16 +1,14 @@
 # DByte
- 
-DByte is a fast low-level scripting language for binary parsing, buffer patching,
-byte search, typed integer workloads, and automation scripts that need simple
-syntax with predictable performance.
 
-Public alpha status: DByte is usable for experiments and small tools, but the
-language and standard library may still change before a stable X.X.X release.
+**DByte** is a fast low-level scripting language for binary parsing, buffer patching, byte search, typed integer work, and automation scripts that need simple syntax with predictable performance.
 
-Performance claim:
+Built for byte-level jobs.
+Not for hype. Not for framework circus. Just open data, hit the buffer, patch what needs patching, and get out.
 
-> DByte v1.9.2 outperforms Python 3.12.9 across DByte's measured benchmark
-> suite on a Windows release-build test machine.
+> **Public alpha**
+>
+> DByte works for experiments and small tools right now.
+> The language and standard library are still moving, so expect breaking changes before a stable `X.X.X` release.
 
 # 💿 DOWNLOAD DBYTEOS
 
