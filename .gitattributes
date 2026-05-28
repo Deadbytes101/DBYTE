@@ -2,11 +2,22 @@
 *.dby linguist-language=DByte linguist-detectable
 *.dbyterc linguist-language=DByte linguist-detectable
 *.dbyte linguist-language=DByte linguist-detectable
+*.py linguist-vendored
+*.pyw linguist-vendored
+*.ipynb linguist-vendored
 assets/** linguist-vendored
 *.png linguist-vendored
 *.jpg linguist-vendored
+*.jpeg linguist-vendored
 *.svg linguist-vendored
+*.ico linguist-vendored
 *.exe linguist-vendored
 *.iso linguist-vendored
 *.bundle linguist-vendored
 *.zip linguist-vendored
+*.7z linguist-vendored
+*.rar linguist-vendored
+tools/** linguist-vendored
+scripts/** linguist-vendored
+build/** linguist-vendored
+dist/** linguist-vendored
