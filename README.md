@@ -1,5 +1,5 @@
 # DByte
-
+ 
 DByte is a fast low-level scripting language for binary parsing, buffer patching,
 byte search, typed integer workloads, and automation scripts that need simple
 syntax with predictable performance.
