@@ -1,0 +1,7 @@
+# DByteOS Read-Only Preferences
+pub let system_mode: str = "beta-userland"
+pub let system_prompt: str = "dbyte-shell>"
+pub let user_name: str = "deadbyte"
+pub let user_home: str = "home/deadbyte"
+pub let ui_theme: str = "default"
+pub let security_mode: str = "simulated"
