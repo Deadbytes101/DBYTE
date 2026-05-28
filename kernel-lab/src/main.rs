@@ -3221,8 +3221,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.result,
                                                     smoke.next
                                                 );
-                                        } else if line_str == "irq-runtime-activation-smoke-status"
-                                        {
+                                        } else if line_str == "irq-runtime-activation-smoke-status" {
                                             let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
                                             let gate_state = irq::irq_gate_bind_state();
                                             // Verification contract snippets kept stable across rustfmt line wrapping:
@@ -3288,10 +3287,7 @@ pub extern "C" fn kernel_main() -> ! {
                                                     smoke.hardware_mutation,
                                                     smoke.runtime_irq_active
                                                 );
-                                        // } else if line_str == "irq-runtime-activation-smoke-blockers" {
-                                        } else if line_str
-                                            == "irq-runtime-activation-smoke-blockers"
-                                        {
+                                        } else if line_str == "irq-runtime-activation-smoke-blockers" {
                                             let pic_state = pic::ProgrammableInterruptController::pic_remap_state();
                                             let gate_state = irq::irq_gate_bind_state();
                                             // Verification contract snippets kept stable across rustfmt line wrapping:
@@ -4741,15 +4737,11 @@ pub extern "C" fn kernel_main() -> ! {
                                             print_irq_runtime_mutation_blockers();
                                         } else if line_str == "irq-runtime-mutation-sequence-note" {
                                             print_irq_runtime_mutation_sequence_note();
-                                        } else if line_str == "irq-runtime-mutation-sequence-status"
-                                        {
+                                        } else if line_str == "irq-runtime-mutation-sequence-status" {
                                             print_irq_runtime_mutation_sequence_status();
                                         } else if line_str == "irq-runtime-mutation-sequence-plan" {
                                             print_irq_runtime_mutation_sequence_status();
-                                        // } else if line_str == "irq-runtime-mutation-sequence-blockers" {
-                                        } else if line_str
-                                            == "irq-runtime-mutation-sequence-blockers"
-                                        {
+                                        } else if line_str == "irq-runtime-mutation-sequence-blockers" {
                                             print_irq_runtime_mutation_sequence_blockers();
                                         } else if line_str == "eoi-write-smoke-preflight-note" {
                                             print_eoi_write_smoke_preflight_note();
