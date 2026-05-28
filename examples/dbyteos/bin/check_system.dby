@@ -1,0 +1,84 @@
+import std.fs as fs
+import "../etc/system.dby" as system
+import "../sys/config.dby" as config
+import "../sys/profile.dby" as osprofile
+print("DByteOS readiness check")
+let all_ready: int = 1
+# 1. version
+if system.os_version != "":
+print("version: ok")
+else:
+print("version: missing")
+all_ready = 0
+# 2. profile
+let prof_ok: int = 1
+if osprofile.get_user() == "":
+prof_ok = 0
+if osprofile.get_home() == "":
+prof_ok = 0
+if osprofile.get_prompt() == "":
+prof_ok = 0
+if prof_ok == 1:
+print("profile: ok")
+else:
+print("profile: unhealthy")
+all_ready = 0
+# 3. config
+let cfg_ok: int = 1
+if config.get("security.mode") != "simulated":
+cfg_ok = 0
+if cfg_ok == 1:
+print("config: ok")
+else:
+print("config: unhealthy")
+all_ready = 0
+# 4. manual
+let man_ok: int = 1
+if fs.exists(osprofile.resolve_path("etc/manual/doctor.txt")) == 0:
+man_ok = 0
+if fs.exists(osprofile.resolve_path("etc/manual/diagnose.txt")) == 0:
+man_ok = 0
+if fs.exists(osprofile.resolve_path("etc/manual/check-system.txt")) == 0:
+man_ok = 0
+if man_ok == 1:
+print("manual: ok")
+else:
+print("manual: unhealthy")
+all_ready = 0
+# 5. security
+let sec_ok: int = 1
+if config.get("security.mode") == "simulated":
+sec_ok = 1
+else:
+sec_ok = 0
+if sec_ok == 1:
+print("security: ok")
+else:
+print("security: unhealthy")
+all_ready = 0
+# 6. preferences
+let prefs_ok: int = 1
+if fs.exists(osprofile.resolve_path("home/deadbyte/preferences.dby")) == 0:
+prefs_ok = 0
+if prefs_ok == 1:
+print("preferences: ok")
+else:
+print("preferences: unhealthy")
+all_ready = 0
+# 7. workspace
+let ws_ok: int = 1
+if fs.exists(osprofile.resolve_path("tmp")) == 0:
+ws_ok = 0
+if fs.exists(osprofile.resolve_path("home/deadbyte")) == 0:
+ws_ok = 0
+if ws_ok == 1:
+print("workspace: ok")
+else:
+print("workspace: unhealthy")
+all_ready = 0
+# 8. package
+print("package: ok")
+if all_ready == 1:
+print("ready: yes")
+else:
+print("ready: no")
