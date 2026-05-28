@@ -1,0 +1,9 @@
+fn choose(n: int) -> int:
+if n < 0:
+return 0
+return n + 1
+let total: int = 0
+let i: int = 0
+while i < 1000000:
+total = choose(total)
+i = i + 1
