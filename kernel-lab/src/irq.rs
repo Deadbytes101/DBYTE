@@ -7,6 +7,8 @@
 //! symbols are compiled so verification can guard the intended IRQ0/IRQ1
 //! contract before runtime IRQ activation exists.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 /// Planned CPU vector for IRQ0 after the future PIC remap.
 pub const IRQ0_VECTOR: u8 = 32;
 
@@ -381,6 +383,31 @@ pub const EOI_WRITE_ONESHOT_BLOCKER_RUNTIME: &str = "runtime irq active: no";
 pub const EOI_WRITE_ONESHOT_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_ONESHOT_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
 pub const EOI_WRITE_ONESHOT_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
+pub const EOI_WRITE_ONESHOT_LATCH_SCOPE: &str =
+    "controlled first PIC_EOI write one-shot software latch";
+pub const EOI_WRITE_ONESHOT_LATCH_INPUTS: &str =
+    "software-latch/permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate";
+pub const EOI_WRITE_ONESHOT_LATCH_TELEMETRY_ONLY: &str = "software telemetry only";
+pub const EOI_WRITE_ONESHOT_LATCH_ARMED_YES: &str = "yes";
+pub const EOI_WRITE_ONESHOT_LATCH_ARMED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_LATCH_FIRE_ALLOWED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_LATCH_WRITE_PERFORMED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_LATCH_TARGET_NONE: &str = "none";
+pub const EOI_WRITE_ONESHOT_LATCH_FIRE_BLOCKED_BY_PERMIT: &str =
+    "error: EOI one-shot latch fire blocked by permit model";
+pub const EOI_WRITE_ONESHOT_LATCH_FIRE_CLEARED_NO: &str = "no";
+pub const EOI_WRITE_ONESHOT_LATCH_CLEAR_RESULT: &str = "software latch cleared";
+pub const EOI_WRITE_ONESHOT_LATCH_ARM_RESULT: &str = "software latch armed";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_SOFTWARE_ONLY: &str =
+    "latch scope: software telemetry only";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_PERMIT: &str = "permit granted: no";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_FIRST_ALLOWED: &str =
+    "first PIC_EOI write allowed: no";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_HARDWARE: &str = "hardware mutation: no";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_RUNTIME: &str = "runtime irq active: no";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_STI: &str = "STI disabled";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -388,6 +415,8 @@ static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
 static mut IRQ_RUNTIME_ARMED: bool = false;
 static mut IRQ_RUNTIME_COMMITTED: bool = false;
 static mut IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT: bool = false;
+
+static EOI_WRITE_ONESHOT_LATCH_ARMED: AtomicBool = AtomicBool::new(false);
 
 /// Documentation-only representation of a future IRQ handler.
 pub struct IrqHandlerSkeleton {
@@ -814,6 +843,28 @@ pub struct EoiWriteOneShotCommandPath {
     pub hardware_mutation: &'static str,
     pub runtime_irq_active: &'static str,
     pub fire_result: &'static str,
+    pub permit_granted: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWriteOneShotLatch {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub latch: &'static str,
+    pub one_shot_armed: &'static str,
+    pub fire_allowed: &'static str,
+    pub first_pic_eoi_write_performed: &'static str,
+    pub target_command_port: &'static str,
+    pub target_value: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub fire_result: &'static str,
+    pub fire_cleared_latch: &'static str,
     pub permit_granted: &'static str,
     pub first_pic_eoi_write_allowed: &'static str,
     pub sti_instruction: &'static str,
@@ -1891,4 +1942,58 @@ pub fn eoi_write_oneshot_command_path(permit: EoiWritePermitModel) -> EoiWriteOn
         live_idt_bind: permit.live_idt_bind,
         keyboard_mode: permit.keyboard_mode,
     }
+}
+
+fn eoi_write_oneshot_latch_from_state(
+    permit: EoiWritePermitModel,
+    armed: bool,
+) -> EoiWriteOneShotLatch {
+    EoiWriteOneShotLatch {
+        scope: EOI_WRITE_ONESHOT_LATCH_SCOPE,
+        inputs: EOI_WRITE_ONESHOT_LATCH_INPUTS,
+        latch: EOI_WRITE_ONESHOT_LATCH_TELEMETRY_ONLY,
+        one_shot_armed: if armed {
+            EOI_WRITE_ONESHOT_LATCH_ARMED_YES
+        } else {
+            EOI_WRITE_ONESHOT_LATCH_ARMED_NO
+        },
+        fire_allowed: EOI_WRITE_ONESHOT_LATCH_FIRE_ALLOWED_NO,
+        first_pic_eoi_write_performed: EOI_WRITE_ONESHOT_LATCH_WRITE_PERFORMED_NO,
+        target_command_port: EOI_WRITE_ONESHOT_LATCH_TARGET_NONE,
+        target_value: EOI_WRITE_ONESHOT_LATCH_TARGET_NONE,
+        hardware_mutation: permit.hardware_mutation,
+        runtime_irq_active: permit.runtime_irq_active,
+        fire_result: EOI_WRITE_ONESHOT_LATCH_FIRE_BLOCKED_BY_PERMIT,
+        fire_cleared_latch: EOI_WRITE_ONESHOT_LATCH_FIRE_CLEARED_NO,
+        permit_granted: permit.permit_granted,
+        first_pic_eoi_write_allowed: permit.first_pic_eoi_write_allowed,
+        sti_instruction: permit.sti_instruction,
+        pic_unmask: permit.pic_unmask,
+        live_idt_bind: permit.live_idt_bind,
+        keyboard_mode: permit.keyboard_mode,
+    }
+}
+
+/// Reads the software-only one-shot latch without touching hardware.
+pub fn eoi_write_oneshot_latch_status(permit: EoiWritePermitModel) -> EoiWriteOneShotLatch {
+    let armed = EOI_WRITE_ONESHOT_LATCH_ARMED.load(Ordering::SeqCst);
+    eoi_write_oneshot_latch_from_state(permit, armed)
+}
+
+/// Arms the software-only one-shot latch without enabling EOI writes.
+pub fn eoi_write_oneshot_latch_arm(permit: EoiWritePermitModel) -> EoiWriteOneShotLatch {
+    EOI_WRITE_ONESHOT_LATCH_ARMED.store(true, Ordering::SeqCst);
+    eoi_write_oneshot_latch_from_state(permit, true)
+}
+
+/// Clears the software-only one-shot latch without touching hardware.
+pub fn eoi_write_oneshot_latch_clear(permit: EoiWritePermitModel) -> EoiWriteOneShotLatch {
+    EOI_WRITE_ONESHOT_LATCH_ARMED.store(false, Ordering::SeqCst);
+    eoi_write_oneshot_latch_from_state(permit, false)
+}
+
+/// Reads the latch and reports permit-blocked fire without clearing the latch.
+pub fn eoi_write_oneshot_latch_fire(permit: EoiWritePermitModel) -> EoiWriteOneShotLatch {
+    let armed = EOI_WRITE_ONESHOT_LATCH_ARMED.load(Ordering::SeqCst);
+    eoi_write_oneshot_latch_from_state(permit, armed)
 }
