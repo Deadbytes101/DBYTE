@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.14.0)
+# DByteOS QEMU Boot Smoke (v10.14.1)
 
-`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. `v10.14.0` is a Controlled EOI Write Permit Transition Model Foundation release. It adds a software-only transition state while keeping permit granted denied, bridge readiness denied, and all no-write invariants locked. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, execute `sti`, or write `PIC_EOI`.
+`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. `v10.14.0` is a Controlled EOI Write Permit Transition Model Foundation release. `v10.14.1` is a Controlled EOI Write Permit Transition Model Hardening release. It adds no commands and preserves the `v10.14.0` transition outputs while locking the state sequence, read-only surfaces, transition isolation, and no-write invariants. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, switch keyboard input to IRQ mode, execute `sti`, or write `PIC_EOI`.
 
 `v10.7.1` is not a mutation release. It adds verification guards for exact sequencer command output, read-only helper and dispatcher isolation, stale `v10.7.0` metadata, and no live IRQ0/IRQ1 or keyboard IRQ mode.
 
@@ -27,6 +27,22 @@
 `v10.13.1` is hardening-only. It keeps the same QEMU bridge snapshots while verifying that bridge code reads permit and latch telemetry, derives readiness, reports blockers, and never mutates the latch or writes hardware.
 
 `v10.14.0` adds `eoi-write-permit-transition-note`, `eoi-write-permit-transition-status`, `eoi-write-permit-transition-arm`, `eoi-write-permit-transition-clear`, `eoi-write-permit-transition-check`, and `eoi-write-permit-transition-blockers`. The transition reports `permit transition armed: yes/no` while `permit granted: no`, `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no` remain unchanged.
+
+`v10.14.1` is hardening-only. It keeps the same QEMU transition snapshots while verifying the denied/unarmed sequence, single `arm`/`clear` store paths, read-only status/check/blockers paths, no latch or permit mutation, no positive permit state, and no hardware write path.
+
+Hardened transition sequence:
+
+```txt
+initial: permit transition armed: no
+initial: permit granted: no
+check: transition check remains denied
+arm: permit transition armed: yes
+check: permit granted: no
+check: bridge ready: no
+status: permit transition armed: yes
+clear: permit transition armed: no
+status: permit transition armed: no
+```
 
 The existing activation decision freeze layer remains in force underneath the mutation checklist, sequencer, and EOI write smoke preflight surfaces.
 
