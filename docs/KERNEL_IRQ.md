@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.12.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.12.1)
 
-DByteOS Kernel Lab `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. It adds a software-only one-shot latch layer while keeping fire blocked by the permit model and performing no PIC EOI hardware write. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the existing read-only one-shot command path without setting a latch, enabling fire, or touching hardware. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, one-shot, and latch-fire outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. It adds no commands and preserves the `v10.12.0` software-only latch behavior while tightening verifier guards around latch state transitions, exact output, stale metadata, and forbidden hardware paths. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. It adds a software-only one-shot latch layer while keeping fire blocked by the permit model and performing no PIC EOI hardware write. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the existing read-only one-shot command path without setting a latch, enabling fire, or touching hardware. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, one-shot, and latch-fire outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.12.1` is hardening-only. The allowed mutation remains limited to `EOI_WRITE_ONESHOT_LATCH_ARMED: AtomicBool`; arm is the only path that stores `true`, clear is the only path that stores `false`, and fire only reads the latch. The hardened sequence is: initial unarmed, unarmed fire blocked before any hardware write, arm to armed, armed fire blocked by the permit model, status remains armed, clear to unarmed, status remains unarmed.
 
 `v10.12.0` permits software latch telemetry only. `eoi-write-oneshot-latch-arm` sets `one-shot armed: yes`, `eoi-write-oneshot-latch-clear` returns it to `no`, and blocked `eoi-write-oneshot-latch-fire` does not clear the latch. `first PIC_EOI write performed: no`, `hardware mutation: no`, and `runtime irq active: no` remain mandatory.
 
@@ -582,6 +584,35 @@ Latch semantics:
 - Blocked fire does not clear the latch.
 - Clear is the only command that returns the latch to `no`.
 - `first PIC_EOI write performed: no`, `hardware mutation: no`, and `runtime irq active: no` remain invariant.
+
+## Controlled EOI Write One-Shot Latch Hardening
+
+`v10.12.1` is a hardening-only release for the `v10.12.0` latch namespace. It adds no commands, preserves existing latch output, and extends guards so the software latch cannot be confused with hardware readiness.
+
+Hardened latch state sequence:
+
+```txt
+initial one-shot armed: no
+unarmed fire: blocked by latch state before hardware write
+arm: one-shot armed: yes
+armed fire: blocked by permit model
+status after blocked fire: one-shot armed: yes
+clear: one-shot armed: no
+status after clear: one-shot armed: no
+```
+
+Hardening invariants:
+
+```txt
+AtomicBool owner: EOI_WRITE_ONESHOT_LATCH_ARMED
+arm store path: only eoi_write_oneshot_latch_arm stores true
+clear store path: only eoi_write_oneshot_latch_clear stores false
+fire store path: none
+first PIC_EOI write performed: no
+hardware mutation: no
+runtime irq active: no
+keyboard mode: polling
+```
 
 ## IRQ Gate Binding Plan
 
