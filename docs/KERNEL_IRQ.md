@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.13.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.14.0)
 
-DByteOS Kernel Lab `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. It adds no commands and preserves the `v10.13.0` read-only bridge behavior while tightening verifier guards around exact output, read ordering, bridge isolation, stale metadata, and forbidden hardware paths. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. It adds a read-only bridge between the denied permit model and the software-only one-shot latch while keeping bridge readiness denied and performing no PIC EOI hardware write. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. It adds no commands and preserves the `v10.12.0` software-only latch behavior while tightening verifier guards around latch state transitions, exact output, stale metadata, and forbidden hardware paths. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. It adds a software-only one-shot latch layer while keeping fire blocked by the permit model and performing no PIC EOI hardware write. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the existing read-only one-shot command path without setting a latch, enabling fire, or touching hardware. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, one-shot, latch-fire, and bridge outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.14.0` is a Controlled EOI Write Permit Transition Model Foundation release. It adds a software-only transition state above the denied permit model while keeping the real permit denied, bridge readiness denied, and all hardware mutation blocked. `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. It adds no commands and preserves the `v10.13.0` read-only bridge behavior while tightening verifier guards around exact output, read ordering, bridge isolation, stale metadata, and forbidden hardware paths. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. It adds a read-only bridge between the denied permit model and the software-only one-shot latch while keeping bridge readiness denied and performing no PIC EOI hardware write. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. It adds no commands and preserves the `v10.12.0` software-only latch behavior while tightening verifier guards around latch state transitions, exact output, stale metadata, and forbidden hardware paths. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. It adds a software-only one-shot latch layer while keeping fire blocked by the permit model and performing no PIC EOI hardware write. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the existing read-only one-shot command path without setting a latch, enabling fire, or touching hardware. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, one-shot, latch-fire, bridge, and transition outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.14.0` permits software transition telemetry only. `eoi-write-permit-transition-arm` sets `permit transition armed: yes`, `eoi-write-permit-transition-clear` returns it to `no`, and `eoi-write-permit-transition-check` remains denied without granting a permit. `permit granted: no`, `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no` remain mandatory.
 
 `v10.13.1` is hardening-only. The bridge still reads permit telemetry, reads latch telemetry, derives readiness as denied, and reports blockers without setting or clearing the latch. `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no` remain mandatory.
 
@@ -662,6 +664,44 @@ bridge ready: no
 ## Controlled EOI Write One-Shot Permit Bridge Hardening
 
 `v10.13.1` preserves the `v10.13.0` command output and bridge behavior. The hardening layer verifies that the bridge reads the permit model before the latch status, calls the bridge derivation helper afterward, and never calls latch arm, latch clear, latch store, PIC EOI write, `sti`, PIC unmask, live IDT bind, or keyboard IRQ mode paths.
+
+## Controlled EOI Write Permit Transition Model Foundation
+
+`v10.14.0` adds a software-only transition state above the denied permit model. The transition can be armed and cleared in software, but it never turns `permit granted` to `yes` and never makes the bridge ready.
+
+Commands:
+
+```txt
+eoi-write-permit-transition-note
+eoi-write-permit-transition-status
+eoi-write-permit-transition-arm
+eoi-write-permit-transition-clear
+eoi-write-permit-transition-check
+eoi-write-permit-transition-blockers
+```
+
+Transition sequence:
+
+```txt
+initial: permit transition armed: no
+arm: permit transition armed: yes
+check: permit granted: no
+check: bridge ready: no
+check: first PIC_EOI write allowed: no
+clear: permit transition armed: no
+```
+
+Hardening invariants:
+
+```txt
+transition state: software-only permit transition
+permit granted: no
+bridge ready: no
+first PIC_EOI write allowed: no
+hardware mutation: no
+runtime irq active: no
+keyboard mode: polling
+```
 
 ## IRQ Gate Binding Plan
 

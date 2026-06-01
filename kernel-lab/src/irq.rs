@@ -418,6 +418,31 @@ pub const EOI_WRITE_BRIDGE_TARGET_NONE: &str = "none";
 pub const EOI_WRITE_BRIDGE_BLOCKER_LATCH_NOT_ARMED: &str = "latch not armed";
 pub const EOI_WRITE_BRIDGE_BLOCKER_LATCH_GATED: &str = "latch armed but write still gated";
 pub const EOI_WRITE_BRIDGE_BLOCKER_PERMIT_DENIED: &str = "permit denied";
+pub const EOI_WRITE_PERMIT_TRANSITION_SCOPE: &str =
+    "controlled first PIC_EOI write permit transition model";
+pub const EOI_WRITE_PERMIT_TRANSITION_INPUTS: &str =
+    "transition-state/permit-model/software-latch/bridge/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate";
+pub const EOI_WRITE_PERMIT_TRANSITION_SOFTWARE_ONLY: &str =
+    "software-only permit transition";
+pub const EOI_WRITE_PERMIT_TRANSITION_ARMED_YES: &str = "yes";
+pub const EOI_WRITE_PERMIT_TRANSITION_ARMED_NO: &str = "no";
+pub const EOI_WRITE_PERMIT_TRANSITION_ARM_RESULT: &str = "software transition armed";
+pub const EOI_WRITE_PERMIT_TRANSITION_CLEAR_RESULT: &str =
+    "software transition cleared";
+pub const EOI_WRITE_PERMIT_TRANSITION_CHECK_RESULT: &str =
+    "transition check remains denied";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_TRANSITION: &str =
+    "transition state is software-only";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PERMIT: &str = "permit granted: no";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_BRIDGE: &str = "bridge ready: no";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_FIRST_ALLOWED: &str =
+    "first PIC_EOI write allowed: no";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_HARDWARE: &str = "hardware mutation: no";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_RUNTIME: &str = "runtime irq active: no";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_STI: &str = "STI disabled";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_LIVE_IRQ: &str =
+    "live IRQ runtime disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -427,6 +452,7 @@ static mut IRQ_RUNTIME_COMMITTED: bool = false;
 static mut IRQ_RUNTIME_ACTIVATION_TOKEN_PRESENT: bool = false;
 
 static EOI_WRITE_ONESHOT_LATCH_ARMED: AtomicBool = AtomicBool::new(false);
+static EOI_WRITE_PERMIT_TRANSITION_ARMED: AtomicBool = AtomicBool::new(false);
 
 /// Documentation-only representation of a future IRQ handler.
 pub struct IrqHandlerSkeleton {
@@ -899,6 +925,34 @@ pub struct EoiWriteBridge {
     pub runtime_irq_active: &'static str,
     pub blocker_latch: &'static str,
     pub blocker_permit: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWritePermitTransition {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub transition: &'static str,
+    pub permit_transition_armed: &'static str,
+    pub permit_granted: &'static str,
+    pub bridge_ready: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
+    pub target_command_port: &'static str,
+    pub target_value: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub blocker_transition: &'static str,
+    pub blocker_permit: &'static str,
+    pub blocker_bridge: &'static str,
+    pub blocker_first_allowed: &'static str,
+    pub blocker_hardware: &'static str,
+    pub blocker_runtime: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_pic_unmask: &'static str,
+    pub blocker_live_irq: &'static str,
     pub sti_instruction: &'static str,
     pub pic_unmask: &'static str,
     pub live_idt_bind: &'static str,
@@ -2059,4 +2113,66 @@ pub fn eoi_write_bridge(
         live_idt_bind: permit.live_idt_bind,
         keyboard_mode: permit.keyboard_mode,
     }
+}
+
+fn eoi_write_permit_transition_from_state(
+    bridge: EoiWriteBridge,
+    armed: bool,
+) -> EoiWritePermitTransition {
+    EoiWritePermitTransition {
+        scope: EOI_WRITE_PERMIT_TRANSITION_SCOPE,
+        inputs: EOI_WRITE_PERMIT_TRANSITION_INPUTS,
+        transition: EOI_WRITE_PERMIT_TRANSITION_SOFTWARE_ONLY,
+        permit_transition_armed: if armed {
+            EOI_WRITE_PERMIT_TRANSITION_ARMED_YES
+        } else {
+            EOI_WRITE_PERMIT_TRANSITION_ARMED_NO
+        },
+        permit_granted: EOI_WRITE_PERMIT_GRANTED_NO,
+        bridge_ready: EOI_WRITE_BRIDGE_READY_NO,
+        first_pic_eoi_write_allowed: EOI_WRITE_PERMIT_FIRST_WRITE_ALLOWED_NO,
+        target_command_port: EOI_WRITE_PERMIT_TARGET_NONE,
+        target_value: EOI_WRITE_PERMIT_TARGET_NONE,
+        hardware_mutation: bridge.hardware_mutation,
+        runtime_irq_active: bridge.runtime_irq_active,
+        blocker_transition: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_TRANSITION,
+        blocker_permit: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PERMIT,
+        blocker_bridge: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_BRIDGE,
+        blocker_first_allowed: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_FIRST_ALLOWED,
+        blocker_hardware: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_HARDWARE,
+        blocker_runtime: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_RUNTIME,
+        blocker_sti: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_STI,
+        blocker_pic_unmask: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PIC_UNMASK,
+        blocker_live_irq: EOI_WRITE_PERMIT_TRANSITION_BLOCKER_LIVE_IRQ,
+        sti_instruction: bridge.sti_instruction,
+        pic_unmask: bridge.pic_unmask,
+        live_idt_bind: bridge.live_idt_bind,
+        keyboard_mode: bridge.keyboard_mode,
+    }
+}
+
+/// Reads the software-only permit transition state without touching hardware.
+pub fn eoi_write_permit_transition_status(
+    bridge: EoiWriteBridge,
+) -> EoiWritePermitTransition {
+    let armed = EOI_WRITE_PERMIT_TRANSITION_ARMED.load(Ordering::SeqCst);
+    eoi_write_permit_transition_from_state(bridge, armed)
+}
+
+/// Arms the software-only permit transition state without granting a permit.
+pub fn eoi_write_permit_transition_arm(bridge: EoiWriteBridge) -> EoiWritePermitTransition {
+    EOI_WRITE_PERMIT_TRANSITION_ARMED.store(true, Ordering::SeqCst);
+    eoi_write_permit_transition_from_state(bridge, true)
+}
+
+/// Clears the software-only permit transition state without touching hardware.
+pub fn eoi_write_permit_transition_clear(bridge: EoiWriteBridge) -> EoiWritePermitTransition {
+    EOI_WRITE_PERMIT_TRANSITION_ARMED.store(false, Ordering::SeqCst);
+    eoi_write_permit_transition_from_state(bridge, false)
+}
+
+/// Checks the software transition state while keeping the permit denied.
+pub fn eoi_write_permit_transition_check(bridge: EoiWriteBridge) -> EoiWritePermitTransition {
+    let armed = EOI_WRITE_PERMIT_TRANSITION_ARMED.load(Ordering::SeqCst);
+    eoi_write_permit_transition_from_state(bridge, armed)
 }
