@@ -443,6 +443,20 @@ pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_LIVE_IRQ: &str =
     "live IRQ runtime disabled";
+pub const EOI_WRITE_EVAL_SCOPE: &str =
+    "controlled first PIC_EOI write permit evaluation";
+pub const EOI_WRITE_EVAL_INPUTS: &str =
+    "permit-model/software-latch/bridge/transition/final-gate/mutation-checklist/preflight/candidate";
+pub const EOI_WRITE_EVAL_READ_ONLY: &str = "read-only permit evaluation";
+pub const EOI_WRITE_EVAL_READY_NO: &str = "no";
+pub const EOI_WRITE_EVAL_BLOCKER_PERMIT: &str = "permit model remains denied";
+pub const EOI_WRITE_EVAL_BLOCKER_BRIDGE: &str = "bridge remains denied";
+pub const EOI_WRITE_EVAL_BLOCKER_TRANSITION: &str =
+    "transition state is telemetry-only";
+pub const EOI_WRITE_EVAL_BLOCKER_FIRST_WRITE: &str =
+    "first PIC_EOI write path is not enabled";
+pub const EOI_WRITE_EVAL_BLOCKER_HARDWARE: &str = "hardware mutation remains disabled";
+pub const EOI_WRITE_EVAL_BLOCKER_RUNTIME: &str = "runtime IRQ remains inactive";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -953,6 +967,31 @@ pub struct EoiWritePermitTransition {
     pub blocker_sti: &'static str,
     pub blocker_pic_unmask: &'static str,
     pub blocker_live_irq: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWritePermitEvaluation {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub evaluation: &'static str,
+    pub evaluation_ready: &'static str,
+    pub one_shot_armed: &'static str,
+    pub permit_transition_armed: &'static str,
+    pub permit_granted: &'static str,
+    pub bridge_ready: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub blocker_permit: &'static str,
+    pub blocker_bridge: &'static str,
+    pub blocker_transition: &'static str,
+    pub blocker_first_write: &'static str,
+    pub blocker_hardware: &'static str,
+    pub blocker_runtime: &'static str,
     pub sti_instruction: &'static str,
     pub pic_unmask: &'static str,
     pub live_idt_bind: &'static str,
@@ -2175,4 +2214,36 @@ pub fn eoi_write_permit_transition_clear(bridge: EoiWriteBridge) -> EoiWritePerm
 pub fn eoi_write_permit_transition_check(bridge: EoiWriteBridge) -> EoiWritePermitTransition {
     let armed = EOI_WRITE_PERMIT_TRANSITION_ARMED.load(Ordering::SeqCst);
     eoi_write_permit_transition_from_state(bridge, armed)
+}
+
+/// Evaluates the software EOI write state chain without mutating any layer.
+pub fn eoi_write_permit_evaluation(
+    permit: EoiWritePermitModel,
+    latch: EoiWriteOneShotLatch,
+    bridge: EoiWriteBridge,
+    transition: EoiWritePermitTransition,
+) -> EoiWritePermitEvaluation {
+    EoiWritePermitEvaluation {
+        scope: EOI_WRITE_EVAL_SCOPE,
+        inputs: EOI_WRITE_EVAL_INPUTS,
+        evaluation: EOI_WRITE_EVAL_READ_ONLY,
+        evaluation_ready: EOI_WRITE_EVAL_READY_NO,
+        one_shot_armed: latch.one_shot_armed,
+        permit_transition_armed: transition.permit_transition_armed,
+        permit_granted: EOI_WRITE_PERMIT_GRANTED_NO,
+        bridge_ready: EOI_WRITE_BRIDGE_READY_NO,
+        first_pic_eoi_write_allowed: EOI_WRITE_PERMIT_FIRST_WRITE_ALLOWED_NO,
+        hardware_mutation: permit.hardware_mutation,
+        runtime_irq_active: permit.runtime_irq_active,
+        blocker_permit: EOI_WRITE_EVAL_BLOCKER_PERMIT,
+        blocker_bridge: EOI_WRITE_EVAL_BLOCKER_BRIDGE,
+        blocker_transition: EOI_WRITE_EVAL_BLOCKER_TRANSITION,
+        blocker_first_write: EOI_WRITE_EVAL_BLOCKER_FIRST_WRITE,
+        blocker_hardware: EOI_WRITE_EVAL_BLOCKER_HARDWARE,
+        blocker_runtime: EOI_WRITE_EVAL_BLOCKER_RUNTIME,
+        sti_instruction: bridge.sti_instruction,
+        pic_unmask: bridge.pic_unmask,
+        live_idt_bind: bridge.live_idt_bind,
+        keyboard_mode: bridge.keyboard_mode,
+    }
 }
