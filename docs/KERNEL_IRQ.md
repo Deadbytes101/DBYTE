@@ -1,6 +1,8 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.12.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.13.0)
 
-DByteOS Kernel Lab `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. It adds no commands and preserves the `v10.12.0` software-only latch behavior while tightening verifier guards around latch state transitions, exact output, stale metadata, and forbidden hardware paths. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. It adds a software-only one-shot latch layer while keeping fire blocked by the permit model and performing no PIC EOI hardware write. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the existing read-only one-shot command path without setting a latch, enabling fire, or touching hardware. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, one-shot, and latch-fire outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+DByteOS Kernel Lab `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. It adds a read-only bridge between the denied permit model and the software-only one-shot latch while keeping bridge readiness denied and performing no PIC EOI hardware write. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. It adds no commands and preserves the `v10.12.0` software-only latch behavior while tightening verifier guards around latch state transitions, exact output, stale metadata, and forbidden hardware paths. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. It adds a software-only one-shot latch layer while keeping fire blocked by the permit model and performing no PIC EOI hardware write. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. It hardens the existing read-only one-shot command path without setting a latch, enabling fire, or touching hardware. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, one-shot, latch-fire, and bridge outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+
+`v10.13.0` bridges latch and permit telemetry only. `eoi-write-bridge-status` and `eoi-write-bridge-check` report `bridge ready: no`, `permit granted: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no`. The bridge never sets or clears the latch.
 
 `v10.12.1` is hardening-only. The allowed mutation remains limited to `EOI_WRITE_ONESHOT_LATCH_ARMED: AtomicBool`; arm is the only path that stores `true`, clear is the only path that stores `false`, and fire only reads the latch. The hardened sequence is: initial unarmed, unarmed fire blocked before any hardware write, arm to armed, armed fire blocked by the permit model, status remains armed, clear to unarmed, status remains unarmed.
 
@@ -612,6 +614,47 @@ first PIC_EOI write performed: no
 hardware mutation: no
 runtime irq active: no
 keyboard mode: polling
+```
+
+## Controlled EOI Write One-Shot Permit Bridge Foundation
+
+`v10.13.0` adds a read-only bridge between the `v10.10.0` permit model and the `v10.12.0` software latch. It derives readiness from those two telemetry surfaces only; it does not arm, clear, fire, write a PIC command port, unmask PIC lines, enable `sti`, bind live IDT handlers, or switch keyboard input away from polling.
+
+Commands:
+
+```txt
+eoi-write-bridge-note
+eoi-write-bridge-status
+eoi-write-bridge-check
+eoi-write-bridge-blockers
+```
+
+Bridge baseline:
+
+```txt
+bridge: read-only telemetry bridge
+permit granted: no
+one-shot armed: yes/no
+bridge ready: no
+first PIC_EOI write allowed: no
+target command port: none
+target value: none
+hardware mutation: no
+runtime irq active: no
+```
+
+Bridge blockers:
+
+```txt
+- latch not armed
+- permit denied
+- first PIC_EOI write allowed: no
+- hardware mutation: no
+- runtime irq active: no
+- STI disabled
+- PIC unmask disabled
+- live IRQ runtime disabled
+bridge ready: no
 ```
 
 ## IRQ Gate Binding Plan

@@ -962,6 +962,12 @@ fn eoi_write_oneshot_latch_fire_snapshot() -> irq::EoiWriteOneShotLatch {
     irq::eoi_write_oneshot_latch_fire(permit)
 }
 
+fn eoi_write_bridge_snapshot() -> irq::EoiWriteBridge {
+    let permit = eoi_write_permit_model_snapshot();
+    let latch = irq::eoi_write_oneshot_latch_status(permit);
+    irq::eoi_write_bridge(permit, latch)
+}
+
 fn print_eoi_write_smoke_preflight_note() {
     use core::fmt::Write;
 
@@ -1516,6 +1522,120 @@ fn print_eoi_write_oneshot_latch_blockers() {
     );
 }
 
+fn print_eoi_write_bridge_note() {
+    use core::fmt::Write;
+
+    let bridge = eoi_write_bridge_snapshot();
+    let mut vga_writer = vga::VgaWriter;
+    let mut serial_writer = serial::SerialWriter;
+    let _ = write!(vga_writer, "EOI write bridge note\nscope: {}\ninputs: {}\nbridge: {}\npermit granted: {}\none-shot armed: {}\nbridge ready: {}\nfirst PIC_EOI write allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+        bridge.scope,
+        bridge.inputs,
+        bridge.bridge,
+        bridge.permit_granted,
+        bridge.one_shot_armed,
+        bridge.bridge_ready,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active
+    );
+    let _ = write!(serial_writer, "EOI write bridge note\nscope: {}\ninputs: {}\nbridge: {}\npermit granted: {}\none-shot armed: {}\nbridge ready: {}\nfirst PIC_EOI write allowed: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+        bridge.scope,
+        bridge.inputs,
+        bridge.bridge,
+        bridge.permit_granted,
+        bridge.one_shot_armed,
+        bridge.bridge_ready,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active
+    );
+}
+
+fn print_eoi_write_bridge_status() {
+    use core::fmt::Write;
+
+    let bridge = eoi_write_bridge_snapshot();
+    let mut vga_writer = vga::VgaWriter;
+    let mut serial_writer = serial::SerialWriter;
+    let _ = write!(vga_writer, "EOI write bridge status\nlatch: {}\none-shot armed: {}\npermit granted: {}\nbridge ready: {}\nfirst PIC_EOI write allowed: {}\ntarget command port: {}\ntarget value: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+        bridge.latch,
+        bridge.one_shot_armed,
+        bridge.permit_granted,
+        bridge.bridge_ready,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.target_command_port,
+        bridge.target_value,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active
+    );
+    let _ = write!(serial_writer, "EOI write bridge status\nlatch: {}\none-shot armed: {}\npermit granted: {}\nbridge ready: {}\nfirst PIC_EOI write allowed: {}\ntarget command port: {}\ntarget value: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+        bridge.latch,
+        bridge.one_shot_armed,
+        bridge.permit_granted,
+        bridge.bridge_ready,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.target_command_port,
+        bridge.target_value,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active
+    );
+}
+
+fn print_eoi_write_bridge_check() {
+    use core::fmt::Write;
+
+    let bridge = eoi_write_bridge_snapshot();
+    let mut vga_writer = vga::VgaWriter;
+    let mut serial_writer = serial::SerialWriter;
+    let _ = write!(vga_writer, "EOI write bridge check\nlatch: {}\none-shot armed: {}\npermit granted: {}\nbridge ready: {}\nfirst PIC_EOI write allowed: {}\ntarget command port: {}\ntarget value: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+        bridge.latch,
+        bridge.one_shot_armed,
+        bridge.permit_granted,
+        bridge.bridge_ready,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.target_command_port,
+        bridge.target_value,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active
+    );
+    let _ = write!(serial_writer, "EOI write bridge check\nlatch: {}\none-shot armed: {}\npermit granted: {}\nbridge ready: {}\nfirst PIC_EOI write allowed: {}\ntarget command port: {}\ntarget value: {}\nhardware mutation: {}\nruntime irq active: {}\n",
+        bridge.latch,
+        bridge.one_shot_armed,
+        bridge.permit_granted,
+        bridge.bridge_ready,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.target_command_port,
+        bridge.target_value,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active
+    );
+}
+
+fn print_eoi_write_bridge_blockers() {
+    use core::fmt::Write;
+
+    let bridge = eoi_write_bridge_snapshot();
+    let mut vga_writer = vga::VgaWriter;
+    let mut serial_writer = serial::SerialWriter;
+    let _ = write!(vga_writer, "EOI write bridge blockers\n- {}\n- {}\n- first PIC_EOI write allowed: {}\n- hardware mutation: {}\n- runtime irq active: {}\n- STI disabled\n- PIC unmask disabled\n- live IRQ runtime disabled\nbridge ready: {}\n",
+        bridge.blocker_latch,
+        bridge.blocker_permit,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active,
+        bridge.bridge_ready
+    );
+    let _ = write!(serial_writer, "EOI write bridge blockers\n- {}\n- {}\n- first PIC_EOI write allowed: {}\n- hardware mutation: {}\n- runtime irq active: {}\n- STI disabled\n- PIC unmask disabled\n- live IRQ runtime disabled\nbridge ready: {}\n",
+        bridge.blocker_latch,
+        bridge.blocker_permit,
+        bridge.first_pic_eoi_write_allowed,
+        bridge.hardware_mutation,
+        bridge.runtime_irq_active,
+        bridge.bridge_ready
+    );
+}
+
 #[no_mangle]
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
@@ -1628,8 +1748,8 @@ pub extern "C" fn kernel_main() -> ! {
                                         core::str::from_utf8(&LINE_BUFFER[..LINE_LEN])
                                     {
                                         if line_str == "help" {
-                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers eoi-write-oneshot-note eoi-write-oneshot-status eoi-write-oneshot-arm eoi-write-oneshot-fire eoi-write-oneshot-blockers eoi-write-oneshot-latch-note eoi-write-oneshot-latch-status eoi-write-oneshot-latch-arm eoi-write-oneshot-latch-clear eoi-write-oneshot-latch-fire eoi-write-oneshot-latch-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
-                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers eoi-write-oneshot-note eoi-write-oneshot-status eoi-write-oneshot-arm eoi-write-oneshot-fire eoi-write-oneshot-blockers eoi-write-oneshot-latch-note eoi-write-oneshot-latch-status eoi-write-oneshot-latch-arm eoi-write-oneshot-latch-clear eoi-write-oneshot-latch-fire eoi-write-oneshot-latch-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            vga::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers eoi-write-oneshot-note eoi-write-oneshot-status eoi-write-oneshot-arm eoi-write-oneshot-fire eoi-write-oneshot-blockers eoi-write-oneshot-latch-note eoi-write-oneshot-latch-status eoi-write-oneshot-latch-arm eoi-write-oneshot-latch-clear eoi-write-oneshot-latch-fire eoi-write-oneshot-latch-blockers eoi-write-bridge-note eoi-write-bridge-status eoi-write-bridge-check eoi-write-bridge-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
+                                            serial::print("commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers eoi-write-oneshot-note eoi-write-oneshot-status eoi-write-oneshot-arm eoi-write-oneshot-fire eoi-write-oneshot-blockers eoi-write-oneshot-latch-note eoi-write-oneshot-latch-status eoi-write-oneshot-latch-arm eoi-write-oneshot-latch-clear eoi-write-oneshot-latch-fire eoi-write-oneshot-latch-blockers eoi-write-bridge-note eoi-write-bridge-status eoi-write-bridge-check eoi-write-bridge-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers\n");
                                         } else if line_str == "about" {
                                             vga::print("DByteOS Kernel Lab\n");
                                             serial::print("DByteOS Kernel Lab\n");
@@ -4975,6 +5095,14 @@ pub extern "C" fn kernel_main() -> ! {
                                             print_eoi_write_oneshot_latch_fire();
                                         } else if line_str == "eoi-write-oneshot-latch-blockers" {
                                             print_eoi_write_oneshot_latch_blockers();
+                                        } else if line_str == "eoi-write-bridge-note" {
+                                            print_eoi_write_bridge_note();
+                                        } else if line_str == "eoi-write-bridge-status" {
+                                            print_eoi_write_bridge_status();
+                                        } else if line_str == "eoi-write-bridge-check" {
+                                            print_eoi_write_bridge_check();
+                                        } else if line_str == "eoi-write-bridge-blockers" {
+                                            print_eoi_write_bridge_blockers();
                                         } else if line_str == "eoi-runtime-note" {
                                             let mut vga_writer = vga::VgaWriter;
                                             let mut serial_writer = serial::SerialWriter;

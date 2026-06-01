@@ -408,6 +408,16 @@ pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_RUNTIME: &str = "runtime irq active: n
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
+pub const EOI_WRITE_BRIDGE_SCOPE: &str =
+    "controlled first PIC_EOI write one-shot permit bridge";
+pub const EOI_WRITE_BRIDGE_INPUTS: &str =
+    "software-latch/permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate";
+pub const EOI_WRITE_BRIDGE_READ_ONLY: &str = "read-only telemetry bridge";
+pub const EOI_WRITE_BRIDGE_READY_NO: &str = "no";
+pub const EOI_WRITE_BRIDGE_TARGET_NONE: &str = "none";
+pub const EOI_WRITE_BRIDGE_BLOCKER_LATCH_NOT_ARMED: &str = "latch not armed";
+pub const EOI_WRITE_BRIDGE_BLOCKER_LATCH_GATED: &str = "latch armed but write still gated";
+pub const EOI_WRITE_BRIDGE_BLOCKER_PERMIT_DENIED: &str = "permit denied";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -867,6 +877,28 @@ pub struct EoiWriteOneShotLatch {
     pub fire_cleared_latch: &'static str,
     pub permit_granted: &'static str,
     pub first_pic_eoi_write_allowed: &'static str,
+    pub sti_instruction: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_idt_bind: &'static str,
+    pub keyboard_mode: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiWriteBridge {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub bridge: &'static str,
+    pub latch: &'static str,
+    pub one_shot_armed: &'static str,
+    pub permit_granted: &'static str,
+    pub bridge_ready: &'static str,
+    pub first_pic_eoi_write_allowed: &'static str,
+    pub target_command_port: &'static str,
+    pub target_value: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub blocker_latch: &'static str,
+    pub blocker_permit: &'static str,
     pub sti_instruction: &'static str,
     pub pic_unmask: &'static str,
     pub live_idt_bind: &'static str,
@@ -1996,4 +2028,35 @@ pub fn eoi_write_oneshot_latch_clear(permit: EoiWritePermitModel) -> EoiWriteOne
 pub fn eoi_write_oneshot_latch_fire(permit: EoiWritePermitModel) -> EoiWriteOneShotLatch {
     let armed = EOI_WRITE_ONESHOT_LATCH_ARMED.load(Ordering::SeqCst);
     eoi_write_oneshot_latch_from_state(permit, armed)
+}
+
+/// Bridges the denied permit model and software latch as read-only telemetry.
+pub fn eoi_write_bridge(
+    permit: EoiWritePermitModel,
+    latch: EoiWriteOneShotLatch,
+) -> EoiWriteBridge {
+    EoiWriteBridge {
+        scope: EOI_WRITE_BRIDGE_SCOPE,
+        inputs: EOI_WRITE_BRIDGE_INPUTS,
+        bridge: EOI_WRITE_BRIDGE_READ_ONLY,
+        latch: latch.latch,
+        one_shot_armed: latch.one_shot_armed,
+        permit_granted: permit.permit_granted,
+        bridge_ready: EOI_WRITE_BRIDGE_READY_NO,
+        first_pic_eoi_write_allowed: EOI_WRITE_PERMIT_FIRST_WRITE_ALLOWED_NO,
+        target_command_port: EOI_WRITE_BRIDGE_TARGET_NONE,
+        target_value: EOI_WRITE_BRIDGE_TARGET_NONE,
+        hardware_mutation: permit.hardware_mutation,
+        runtime_irq_active: permit.runtime_irq_active,
+        blocker_latch: if latch.one_shot_armed == EOI_WRITE_ONESHOT_LATCH_ARMED_YES {
+            EOI_WRITE_BRIDGE_BLOCKER_LATCH_GATED
+        } else {
+            EOI_WRITE_BRIDGE_BLOCKER_LATCH_NOT_ARMED
+        },
+        blocker_permit: EOI_WRITE_BRIDGE_BLOCKER_PERMIT_DENIED,
+        sti_instruction: permit.sti_instruction,
+        pic_unmask: permit.pic_unmask,
+        live_idt_bind: permit.live_idt_bind,
+        keyboard_mode: permit.keyboard_mode,
+    }
 }
