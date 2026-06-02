@@ -1,7 +1,7 @@
 # DBYTE FILES
-*.dby linguist-language=DByte linguist-detectable
-*.dbyterc linguist-language=DByte linguist-detectable
-*.dbyte linguist-language=DByte linguist-detectable
+*.dby linguist-language=DByte linguist-detectable linguist-programming
+*.dbyterc linguist-language=DByte linguist-detectable linguist-data
+*.dbyte linguist-language=DByte linguist-detectable linguist-programming
 *.py linguist-vendored
 *.pyw linguist-vendored
 *.ipynb linguist-vendored
