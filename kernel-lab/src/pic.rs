@@ -18,13 +18,19 @@
 //! intentionally not called from boot, does not enable STI, does not bind IRQ
 //! gates, masks all PIC lines after remap, and does not dispatch EOI.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 /// I/O Port address for the Master PIC Command/Status register.
 pub const PIC_MASTER_CMD: u16 = 0x20;
+/// Alias used by the first controlled PIC_EOI hardware smoke allowlist.
+pub const PIC_MASTER_COMMAND: u16 = PIC_MASTER_CMD;
 /// I/O Port address for the Master PIC Data/Mask register.
 pub const PIC_MASTER_DATA: u16 = 0x21;
 
 /// I/O Port address for the Slave PIC Command/Status register.
 pub const PIC_SLAVE_CMD: u16 = 0xA0;
+/// Alias used by strict guards to prove slave command EOI remains forbidden.
+pub const PIC_SLAVE_COMMAND: u16 = PIC_SLAVE_CMD;
 /// I/O Port address for the Slave PIC Data/Mask register.
 pub const PIC_SLAVE_DATA: u16 = 0xA1;
 
@@ -88,8 +94,38 @@ pub const PIC_REMAP_GUARD_COMMAND_ARMED_REQUIRED: &str = "command armed required
 pub const PIC_REMAP_IRQ_RUNTIME_DISABLED: &str = "disabled";
 pub const PIC_REMAP_RESULT_TELEMETRY_ONLY: &str = "telemetry only";
 
+pub const EOI_WRITE_HW_SMOKE_SCOPE: &str = "first controlled PIC_EOI hardware smoke";
+pub const EOI_WRITE_HW_SMOKE_MODE: &str = "manual one-shot command path only";
+pub const EOI_WRITE_HW_SMOKE_ARMED_YES: &str = "yes";
+pub const EOI_WRITE_HW_SMOKE_ARMED_NO: &str = "no";
+pub const EOI_WRITE_HW_SMOKE_CONSUMED_YES: &str = "yes";
+pub const EOI_WRITE_HW_SMOKE_CONSUMED_NO: &str = "no";
+pub const EOI_WRITE_HW_SMOKE_PERFORMED_YES: &str = "yes";
+pub const EOI_WRITE_HW_SMOKE_PERFORMED_NO: &str = "no";
+pub const EOI_WRITE_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+pub const EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_YES: &str = "yes";
+pub const EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_NO: &str = "no";
+pub const EOI_WRITE_HW_SMOKE_FIRE_RESULT_READY: &str = "ready: arm required before fire";
+pub const EOI_WRITE_HW_SMOKE_FIRE_RESULT_ARMED: &str = "armed: ready for one PIC_EOI write";
+pub const EOI_WRITE_HW_SMOKE_FIRE_RESULT_CLEARED: &str = "cleared: arm required before fire";
+pub const EOI_WRITE_HW_SMOKE_FIRE_RESULT_BLOCKED: &str = "blocked: hardware smoke is not armed";
+pub const EOI_WRITE_HW_SMOKE_FIRE_RESULT_PERFORMED: &str =
+    "performed: one PIC_EOI write to master command port";
+pub const EOI_WRITE_HW_SMOKE_TARGET_COMMAND_PORT: &str = "PIC_MASTER_COMMAND";
+pub const EOI_WRITE_HW_SMOKE_TARGET_VALUE: &str = "PIC_EOI";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_MASTER_ONLY: &str = "slave PIC command write forbidden";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_ONE_SHOT: &str = "one write requires a fresh arm";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_STI: &str = "STI disabled";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_UNMASK: &str = "PIC unmask disabled";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
+pub const EOI_WRITE_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime irq active: no";
+
 static mut PIC_REMAP_SMOKE_ARMED: bool = false;
 static mut PIC_REMAP_SMOKE_EXECUTED: bool = false;
+static EOI_WRITE_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
+static EOI_WRITE_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
+static EOI_WRITE_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
 
 /// Documentation-only representation of the future PIC remap sequence.
 pub struct PicRemapPlan {
@@ -135,6 +171,28 @@ pub struct PicRemapSmokeResult {
     pub eoi_dispatch: &'static str,
     pub result: &'static str,
     pub next: Option<&'static str>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct EoiWriteHwSmokeStatus {
+    pub scope: &'static str,
+    pub mode: &'static str,
+    pub armed: &'static str,
+    pub consumed: &'static str,
+    pub target_command_port: &'static str,
+    pub target_value: &'static str,
+    pub pic_eoi_writes_this_command: u8,
+    pub first_pic_eoi_write_performed: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub fire_result: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_master_only: &'static str,
+    pub blocker_one_shot: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_unmask: &'static str,
+    pub blocker_live_irq: &'static str,
+    pub blocker_runtime: &'static str,
 }
 
 /// Read-only state telemetry for the controlled PIC remap smoke path.
@@ -452,6 +510,106 @@ impl ProgrammableInterruptController {
             result: PIC_REMAP_RESULT_REMAP_MASKED,
             next: None,
         }
+    }
+
+    fn eoi_write_hw_smoke_from_state(
+        writes_this_command: u8,
+        hardware_mutation: &'static str,
+        fire_result: &'static str,
+    ) -> EoiWriteHwSmokeStatus {
+        let armed = EOI_WRITE_HW_SMOKE_ARMED.load(Ordering::SeqCst);
+        let consumed = EOI_WRITE_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+        let performed = EOI_WRITE_HW_SMOKE_PERFORMED.load(Ordering::SeqCst);
+        EoiWriteHwSmokeStatus {
+            scope: EOI_WRITE_HW_SMOKE_SCOPE,
+            mode: EOI_WRITE_HW_SMOKE_MODE,
+            armed: if armed {
+                EOI_WRITE_HW_SMOKE_ARMED_YES
+            } else {
+                EOI_WRITE_HW_SMOKE_ARMED_NO
+            },
+            consumed: if consumed {
+                EOI_WRITE_HW_SMOKE_CONSUMED_YES
+            } else {
+                EOI_WRITE_HW_SMOKE_CONSUMED_NO
+            },
+            target_command_port: EOI_WRITE_HW_SMOKE_TARGET_COMMAND_PORT,
+            target_value: EOI_WRITE_HW_SMOKE_TARGET_VALUE,
+            pic_eoi_writes_this_command: writes_this_command,
+            first_pic_eoi_write_performed: if performed {
+                EOI_WRITE_HW_SMOKE_PERFORMED_YES
+            } else {
+                EOI_WRITE_HW_SMOKE_PERFORMED_NO
+            },
+            hardware_mutation,
+            runtime_irq_active: EOI_WRITE_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO,
+            fire_result,
+            blocker_manual_only: EOI_WRITE_HW_SMOKE_BLOCKER_MANUAL_ONLY,
+            blocker_master_only: EOI_WRITE_HW_SMOKE_BLOCKER_MASTER_ONLY,
+            blocker_one_shot: EOI_WRITE_HW_SMOKE_BLOCKER_ONE_SHOT,
+            blocker_sti: EOI_WRITE_HW_SMOKE_BLOCKER_STI,
+            blocker_unmask: EOI_WRITE_HW_SMOKE_BLOCKER_UNMASK,
+            blocker_live_irq: EOI_WRITE_HW_SMOKE_BLOCKER_LIVE_IRQ,
+            blocker_runtime: EOI_WRITE_HW_SMOKE_BLOCKER_RUNTIME,
+        }
+    }
+
+    /// Reads the first controlled PIC_EOI hardware smoke state without touching hardware.
+    pub fn eoi_write_hw_smoke_status() -> EoiWriteHwSmokeStatus {
+        Self::eoi_write_hw_smoke_from_state(
+            0,
+            EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_NO,
+            EOI_WRITE_HW_SMOKE_FIRE_RESULT_READY,
+        )
+    }
+
+    /// Arms the manual one-shot PIC_EOI hardware smoke latch without touching hardware.
+    pub fn eoi_write_hw_smoke_arm() -> EoiWriteHwSmokeStatus {
+        EOI_WRITE_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+        EOI_WRITE_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
+        EOI_WRITE_HW_SMOKE_ARMED.store(true, Ordering::SeqCst);
+        Self::eoi_write_hw_smoke_from_state(
+            0,
+            EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_NO,
+            EOI_WRITE_HW_SMOKE_FIRE_RESULT_ARMED,
+        )
+    }
+
+    /// Clears the manual one-shot PIC_EOI hardware smoke latch without touching hardware.
+    pub fn eoi_write_hw_smoke_clear() -> EoiWriteHwSmokeStatus {
+        EOI_WRITE_HW_SMOKE_ARMED.store(false, Ordering::SeqCst);
+        EOI_WRITE_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+        EOI_WRITE_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
+        Self::eoi_write_hw_smoke_from_state(
+            0,
+            EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_NO,
+            EOI_WRITE_HW_SMOKE_FIRE_RESULT_CLEARED,
+        )
+    }
+
+    /// Fires exactly one manual PIC_EOI write to the master command port when armed.
+    pub fn eoi_write_hw_smoke_fire() -> EoiWriteHwSmokeStatus {
+        if EOI_WRITE_HW_SMOKE_ARMED
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Self::eoi_write_hw_smoke_from_state(
+                0,
+                EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_NO,
+                EOI_WRITE_HW_SMOKE_FIRE_RESULT_BLOCKED,
+            );
+        }
+
+        unsafe {
+            write_pic_port(PIC_MASTER_COMMAND, PIC_EOI);
+        }
+        EOI_WRITE_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
+        EOI_WRITE_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
+        Self::eoi_write_hw_smoke_from_state(
+            1,
+            EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_YES,
+            EOI_WRITE_HW_SMOKE_FIRE_RESULT_PERFORMED,
+        )
     }
 
     /// Returns the planned master EOI target configuration without touching hardware.
