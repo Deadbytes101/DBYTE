@@ -519,6 +519,28 @@ pub const IRQ_HANDLER_EOI_STUB_BLOCKER_MANUAL_ONLY: &str =
     "PIC_EOI write remains manual-only";
 pub const IRQ_HANDLER_EOI_STUB_BLOCKER_RUNTIME: &str =
     "runtime IRQ dispatch remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_SCOPE: &str =
+    "controlled IRQ handler bind candidate";
+pub const IRQ_HANDLER_BIND_CANDIDATE_INPUTS: &str = "handler-eoi-stub";
+pub const IRQ_HANDLER_BIND_CANDIDATE_EXISTS_YES: &str = "yes";
+pub const IRQ_HANDLER_BIND_CANDIDATE_READY_NO: &str = "no";
+pub const IRQ_HANDLER_BIND_CANDIDATE_LIVE_IDT_BIND_NO: &str = "no";
+pub const IRQ_HANDLER_BIND_CANDIDATE_IRQ_REACHABLE_NO: &str = "no";
+pub const IRQ_HANDLER_BIND_CANDIDATE_HANDLER_ALLOWED_NO: &str = "no";
+pub const IRQ_HANDLER_BIND_CANDIDATE_RUNTIME_ACTIVE_NO: &str = "no";
+pub const IRQ_HANDLER_BIND_CANDIDATE_STI_DISABLED: &str = "disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_KEYBOARD_POLLING: &str = "polling";
+pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IDT_BIND: &str =
+    "live IDT bind remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IRQ_REGISTRATION: &str =
+    "IRQ0/IRQ1 handler registration remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_STUB_INVOCATION: &str =
+    "stub invocation remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
+    "handler-triggered EOI remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1117,6 +1139,27 @@ pub struct IrqHandlerEoiStub {
     pub blocker_invocation: &'static str,
     pub blocker_handler_eoi: &'static str,
     pub blocker_manual_only: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqHandlerBindCandidate {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub stub_exists: &'static str,
+    pub bind_candidate_exists: &'static str,
+    pub bind_candidate_ready: &'static str,
+    pub live_idt_bind_performed: &'static str,
+    pub irq_handler_reachable: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_idt_bind: &'static str,
+    pub blocker_irq_registration: &'static str,
+    pub blocker_stub_invocation: &'static str,
+    pub blocker_handler_eoi: &'static str,
     pub blocker_runtime: &'static str,
 }
 
@@ -2440,5 +2483,28 @@ pub fn irq_handler_eoi_stub(candidate: IrqHandlerEoiCandidate) -> IrqHandlerEoiS
         blocker_handler_eoi: IRQ_HANDLER_EOI_STUB_BLOCKER_HANDLER_EOI,
         blocker_manual_only: IRQ_HANDLER_EOI_STUB_BLOCKER_MANUAL_ONLY,
         blocker_runtime: IRQ_HANDLER_EOI_STUB_BLOCKER_RUNTIME,
+    }
+}
+
+/// Derives a read-only bind candidate above the unbound handler EOI stub.
+pub fn irq_handler_bind_candidate(stub: IrqHandlerEoiStub) -> IrqHandlerBindCandidate {
+    IrqHandlerBindCandidate {
+        scope: IRQ_HANDLER_BIND_CANDIDATE_SCOPE,
+        inputs: IRQ_HANDLER_BIND_CANDIDATE_INPUTS,
+        stub_exists: stub.stub_exists,
+        bind_candidate_exists: IRQ_HANDLER_BIND_CANDIDATE_EXISTS_YES,
+        bind_candidate_ready: IRQ_HANDLER_BIND_CANDIDATE_READY_NO,
+        live_idt_bind_performed: IRQ_HANDLER_BIND_CANDIDATE_LIVE_IDT_BIND_NO,
+        irq_handler_reachable: IRQ_HANDLER_BIND_CANDIDATE_IRQ_REACHABLE_NO,
+        handler_triggered_eoi_allowed: stub.handler_triggered_eoi_allowed,
+        runtime_irq_active: IRQ_HANDLER_BIND_CANDIDATE_RUNTIME_ACTIVE_NO,
+        sti: IRQ_HANDLER_BIND_CANDIDATE_STI_DISABLED,
+        pic_unmask: IRQ_HANDLER_BIND_CANDIDATE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IRQ_HANDLER_BIND_CANDIDATE_KEYBOARD_POLLING,
+        blocker_idt_bind: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IDT_BIND,
+        blocker_irq_registration: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IRQ_REGISTRATION,
+        blocker_stub_invocation: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_STUB_INVOCATION,
+        blocker_handler_eoi: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_HANDLER_EOI,
+        blocker_runtime: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_RUNTIME,
     }
 }
