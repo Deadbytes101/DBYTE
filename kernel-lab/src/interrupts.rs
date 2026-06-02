@@ -75,6 +75,9 @@ core::arch::global_asm!(
     "    iretd",
     ".global irq1_keyboard_gate_smoke_asm",
     "irq1_keyboard_gate_smoke_asm:",
+    "    iretd",
+    ".global idt_bind_hw_smoke_test_asm",
+    "idt_bind_hw_smoke_test_asm:",
     "    iretd"
 );
 
@@ -93,6 +96,8 @@ extern "C" {
     pub fn irq0_timer_gate_smoke_asm();
     /// Dormant IRQ1 gate smoke wrapper. It performs no EOI and returns with iretd.
     pub fn irq1_keyboard_gate_smoke_asm();
+    /// Inert dedicated IDT bind smoke wrapper. It is bindable but never invoked.
+    pub fn idt_bind_hw_smoke_test_asm();
 }
 
 /// Global exception telemetry count tracking.

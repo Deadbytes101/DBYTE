@@ -5,6 +5,189 @@
 //! Under freestanding constraints, this skeleton defines Gate Descriptors
 //! (IDT entries) and the base pointer representation to be loaded via LIDT.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use crate::interrupts;
+
+pub const IDT_BIND_HW_SMOKE_VECTOR: usize = 0x81;
+const IDT_BIND_HW_SMOKE_VECTOR_LABEL: &str = "0x81";
+const IDT_BIND_HW_SMOKE_TARGET_HANDLER: &str = "inert test stub";
+const IDT_BIND_HW_SMOKE_SCOPE: &str = "controlled IDT bind one-shot hardware smoke";
+const IDT_BIND_HW_SMOKE_MODE: &str = "manual shell command only";
+const IDT_BIND_HW_SMOKE_MUTATION_ALLOWED: &str = "one IDT descriptor bind only";
+const IDT_BIND_HW_SMOKE_LIVE_IRQ_BIND_NO: &str = "no";
+const IDT_BIND_HW_SMOKE_IRQ0_BIND_NO: &str = "no";
+const IDT_BIND_HW_SMOKE_IRQ1_BIND_NO: &str = "no";
+const IDT_BIND_HW_SMOKE_INTERRUPT_INVOCATION_NO: &str = "no";
+const IDT_BIND_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+const IDT_BIND_HW_SMOKE_STI_DISABLED: &str = "disabled";
+const IDT_BIND_HW_SMOKE_PIC_UNMASK_DISABLED: &str = "disabled";
+const IDT_BIND_HW_SMOKE_KEYBOARD_POLLING: &str = "polling";
+const IDT_BIND_HW_SMOKE_YES: &str = "yes";
+const IDT_BIND_HW_SMOKE_NO: &str = "no";
+const IDT_BIND_HW_SMOKE_BINDS_ZERO: &str = "0";
+const IDT_BIND_HW_SMOKE_BINDS_ONE: &str = "1";
+const IDT_BIND_HW_SMOKE_RESULT_IDLE: &str = "status: IDT bind hardware smoke idle";
+const IDT_BIND_HW_SMOKE_RESULT_ARMED: &str = "armed: IDT bind hardware smoke armed";
+const IDT_BIND_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IDT bind hardware smoke unarmed";
+const IDT_BIND_HW_SMOKE_RESULT_BLOCKED: &str = "blocked: hardware smoke is not armed";
+const IDT_BIND_HW_SMOKE_RESULT_PERFORMED: &str =
+    "performed: one IDT descriptor bind to vector 0x81";
+const IDT_BIND_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
+const IDT_BIND_HW_SMOKE_BLOCKER_TEST_VECTOR: &str = "dedicated non-IRQ test vector only";
+const IDT_BIND_HW_SMOKE_BLOCKER_INERT_STUB: &str = "inert test stub only";
+const IDT_BIND_HW_SMOKE_BLOCKER_NO_INVOCATION: &str = "interrupt invocation remains disabled";
+const IDT_BIND_HW_SMOKE_BLOCKER_NO_LIVE_IRQ: &str =
+    "live IRQ0/IRQ1 binding remains disabled";
+const IDT_BIND_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
+
+static IDT_BIND_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
+static IDT_BIND_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
+static IDT_BIND_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Copy, Clone, Debug)]
+pub struct IdtBindHwSmokeStatus {
+    pub scope: &'static str,
+    pub mode: &'static str,
+    pub armed: &'static str,
+    pub consumed: &'static str,
+    pub target_vector: &'static str,
+    pub target_handler: &'static str,
+    pub live_irq_bind: &'static str,
+    pub irq0_bind: &'static str,
+    pub irq1_bind: &'static str,
+    pub interrupt_invocation: &'static str,
+    pub hardware_mutation_allowed: &'static str,
+    pub idt_descriptor_binds_this_command: &'static str,
+    pub first_idt_bind_performed: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub fire_result: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_test_vector: &'static str,
+    pub blocker_inert_stub: &'static str,
+    pub blocker_no_invocation: &'static str,
+    pub blocker_no_live_irq: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        IDT_BIND_HW_SMOKE_YES
+    } else {
+        IDT_BIND_HW_SMOKE_NO
+    }
+}
+
+fn idt_bind_hw_smoke_from_state(
+    armed: bool,
+    consumed: bool,
+    idt_descriptor_binds_this_command: &'static str,
+    hardware_mutation: &'static str,
+    fire_result: &'static str,
+) -> IdtBindHwSmokeStatus {
+    IdtBindHwSmokeStatus {
+        scope: IDT_BIND_HW_SMOKE_SCOPE,
+        mode: IDT_BIND_HW_SMOKE_MODE,
+        armed: yes_no(armed),
+        consumed: yes_no(consumed),
+        target_vector: IDT_BIND_HW_SMOKE_VECTOR_LABEL,
+        target_handler: IDT_BIND_HW_SMOKE_TARGET_HANDLER,
+        live_irq_bind: IDT_BIND_HW_SMOKE_LIVE_IRQ_BIND_NO,
+        irq0_bind: IDT_BIND_HW_SMOKE_IRQ0_BIND_NO,
+        irq1_bind: IDT_BIND_HW_SMOKE_IRQ1_BIND_NO,
+        interrupt_invocation: IDT_BIND_HW_SMOKE_INTERRUPT_INVOCATION_NO,
+        hardware_mutation_allowed: IDT_BIND_HW_SMOKE_MUTATION_ALLOWED,
+        idt_descriptor_binds_this_command,
+        first_idt_bind_performed: yes_no(IDT_BIND_HW_SMOKE_PERFORMED.load(Ordering::SeqCst)),
+        hardware_mutation,
+        runtime_irq_active: IDT_BIND_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO,
+        sti: IDT_BIND_HW_SMOKE_STI_DISABLED,
+        pic_unmask: IDT_BIND_HW_SMOKE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IDT_BIND_HW_SMOKE_KEYBOARD_POLLING,
+        fire_result,
+        blocker_manual_only: IDT_BIND_HW_SMOKE_BLOCKER_MANUAL_ONLY,
+        blocker_test_vector: IDT_BIND_HW_SMOKE_BLOCKER_TEST_VECTOR,
+        blocker_inert_stub: IDT_BIND_HW_SMOKE_BLOCKER_INERT_STUB,
+        blocker_no_invocation: IDT_BIND_HW_SMOKE_BLOCKER_NO_INVOCATION,
+        blocker_no_live_irq: IDT_BIND_HW_SMOKE_BLOCKER_NO_LIVE_IRQ,
+        blocker_runtime: IDT_BIND_HW_SMOKE_BLOCKER_RUNTIME,
+    }
+}
+
+pub fn idt_bind_hw_smoke_status() -> IdtBindHwSmokeStatus {
+    let armed = IDT_BIND_HW_SMOKE_ARMED.load(Ordering::SeqCst);
+    let consumed = IDT_BIND_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+    idt_bind_hw_smoke_from_state(
+        armed,
+        consumed,
+        IDT_BIND_HW_SMOKE_BINDS_ZERO,
+        IDT_BIND_HW_SMOKE_NO,
+        IDT_BIND_HW_SMOKE_RESULT_IDLE,
+    )
+}
+
+pub fn idt_bind_hw_smoke_arm() -> IdtBindHwSmokeStatus {
+    IDT_BIND_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IDT_BIND_HW_SMOKE_ARMED.store(true, Ordering::SeqCst);
+    idt_bind_hw_smoke_from_state(
+        true,
+        false,
+        IDT_BIND_HW_SMOKE_BINDS_ZERO,
+        IDT_BIND_HW_SMOKE_NO,
+        IDT_BIND_HW_SMOKE_RESULT_ARMED,
+    )
+}
+
+pub fn idt_bind_hw_smoke_clear() -> IdtBindHwSmokeStatus {
+    IDT_BIND_HW_SMOKE_ARMED.store(false, Ordering::SeqCst);
+    IDT_BIND_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    idt_bind_hw_smoke_from_state(
+        false,
+        false,
+        IDT_BIND_HW_SMOKE_BINDS_ZERO,
+        IDT_BIND_HW_SMOKE_NO,
+        IDT_BIND_HW_SMOKE_RESULT_CLEARED,
+    )
+}
+
+pub fn idt_bind_hw_smoke_fire() -> IdtBindHwSmokeStatus {
+    match IDT_BIND_HW_SMOKE_ARMED.compare_exchange(
+        true,
+        false,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(_) => {
+            unsafe {
+                IDT.entries[0x81].set_handler(interrupts::idt_bind_hw_smoke_test_asm as *const ());
+            }
+            IDT_BIND_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
+            IDT_BIND_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
+            idt_bind_hw_smoke_from_state(
+                false,
+                true,
+                IDT_BIND_HW_SMOKE_BINDS_ONE,
+                IDT_BIND_HW_SMOKE_YES,
+                IDT_BIND_HW_SMOKE_RESULT_PERFORMED,
+            )
+        }
+        Err(_) => {
+            let consumed = IDT_BIND_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+            idt_bind_hw_smoke_from_state(
+                false,
+                consumed,
+                IDT_BIND_HW_SMOKE_BINDS_ZERO,
+                IDT_BIND_HW_SMOKE_NO,
+                IDT_BIND_HW_SMOKE_RESULT_BLOCKED,
+            )
+        }
+    }
+}
+
 /// A standard packed 8-byte x86 Gate Descriptor representing an IDT entry.
 ///
 /// Layout constraints (8 bytes, packed):
