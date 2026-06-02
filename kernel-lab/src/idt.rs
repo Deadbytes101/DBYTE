@@ -44,6 +44,7 @@ const IDT_BIND_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains di
 static IDT_BIND_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
+static IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 
 #[derive(Copy, Clone, Debug)]
 pub struct IdtBindHwSmokeStatus {
@@ -60,6 +61,7 @@ pub struct IdtBindHwSmokeStatus {
     pub hardware_mutation_allowed: &'static str,
     pub idt_descriptor_binds_this_command: &'static str,
     pub first_idt_bind_performed: &'static str,
+    pub manual_idt_bind_smoke_proven_this_boot: &'static str,
     pub hardware_mutation: &'static str,
     pub runtime_irq_active: &'static str,
     pub sti: &'static str,
@@ -103,6 +105,9 @@ fn idt_bind_hw_smoke_from_state(
         hardware_mutation_allowed: IDT_BIND_HW_SMOKE_MUTATION_ALLOWED,
         idt_descriptor_binds_this_command,
         first_idt_bind_performed: yes_no(IDT_BIND_HW_SMOKE_PERFORMED.load(Ordering::SeqCst)),
+        manual_idt_bind_smoke_proven_this_boot: yes_no(
+            IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst),
+        ),
         hardware_mutation,
         runtime_irq_active: IDT_BIND_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO,
         sti: IDT_BIND_HW_SMOKE_STI_DISABLED,
@@ -132,6 +137,7 @@ pub fn idt_bind_hw_smoke_status() -> IdtBindHwSmokeStatus {
 
 pub fn idt_bind_hw_smoke_arm() -> IdtBindHwSmokeStatus {
     IDT_BIND_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IDT_BIND_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
     IDT_BIND_HW_SMOKE_ARMED.store(true, Ordering::SeqCst);
     idt_bind_hw_smoke_from_state(
         true,
@@ -145,6 +151,7 @@ pub fn idt_bind_hw_smoke_arm() -> IdtBindHwSmokeStatus {
 pub fn idt_bind_hw_smoke_clear() -> IdtBindHwSmokeStatus {
     IDT_BIND_HW_SMOKE_ARMED.store(false, Ordering::SeqCst);
     IDT_BIND_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IDT_BIND_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
     idt_bind_hw_smoke_from_state(
         false,
         false,
@@ -167,6 +174,7 @@ pub fn idt_bind_hw_smoke_fire() -> IdtBindHwSmokeStatus {
             }
             IDT_BIND_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
             IDT_BIND_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
+            IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT.store(true, Ordering::SeqCst);
             idt_bind_hw_smoke_from_state(
                 false,
                 true,

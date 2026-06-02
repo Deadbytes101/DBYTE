@@ -541,6 +541,27 @@ pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
     "handler-triggered EOI remains disabled";
 pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_RUNTIME: &str =
     "runtime IRQ dispatch remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_SCOPE: &str =
+    "controlled IDT bind runtime bridge readiness";
+pub const IDT_BIND_RUNTIME_BRIDGE_INPUTS: &str = "idt-bind-hw-smoke/handler-bind-candidate";
+pub const IDT_BIND_RUNTIME_BRIDGE_READY_NO: &str = "no";
+pub const IDT_BIND_RUNTIME_BRIDGE_LIVE_BIND_ALLOWED_NO: &str = "no";
+pub const IDT_BIND_RUNTIME_BRIDGE_IRQ_REACHABLE_NO: &str = "no";
+pub const IDT_BIND_RUNTIME_BRIDGE_INTERRUPT_ALLOWED_NO: &str = "no";
+pub const IDT_BIND_RUNTIME_BRIDGE_RUNTIME_ACTIVE_NO: &str = "no";
+pub const IDT_BIND_RUNTIME_BRIDGE_STI_DISABLED: &str = "disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_KEYBOARD_POLLING: &str = "polling";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_PROOF: &str =
+    "manual IDT bind proof is required before runtime bridge consideration";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_LIVE_BIND: &str =
+    "live IRQ bind remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_IRQ_REACHABLE: &str =
+    "IRQ handler reachability remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_INTERRUPT: &str =
+    "interrupt invocation remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1160,6 +1181,26 @@ pub struct IrqHandlerBindCandidate {
     pub blocker_irq_registration: &'static str,
     pub blocker_stub_invocation: &'static str,
     pub blocker_handler_eoi: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IdtBindRuntimeBridgeReadiness {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub manual_idt_bind_smoke_proven_this_boot: &'static str,
+    pub runtime_idt_bridge_ready: &'static str,
+    pub live_irq_bind_allowed: &'static str,
+    pub irq_handler_reachable: &'static str,
+    pub interrupt_invocation_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_proof: &'static str,
+    pub blocker_live_bind: &'static str,
+    pub blocker_irq_reachable: &'static str,
+    pub blocker_interrupt: &'static str,
     pub blocker_runtime: &'static str,
 }
 
@@ -2506,5 +2547,30 @@ pub fn irq_handler_bind_candidate(stub: IrqHandlerEoiStub) -> IrqHandlerBindCand
         blocker_stub_invocation: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_STUB_INVOCATION,
         blocker_handler_eoi: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_HANDLER_EOI,
         blocker_runtime: IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_RUNTIME,
+    }
+}
+
+/// Reports whether the manual IDT bind smoke can bridge toward live IRQ binding.
+pub fn idt_bind_runtime_bridge_readiness(
+    manual_idt_bind_smoke_proven_this_boot: &'static str,
+    _bind_candidate: IrqHandlerBindCandidate,
+) -> IdtBindRuntimeBridgeReadiness {
+    IdtBindRuntimeBridgeReadiness {
+        scope: IDT_BIND_RUNTIME_BRIDGE_SCOPE,
+        inputs: IDT_BIND_RUNTIME_BRIDGE_INPUTS,
+        manual_idt_bind_smoke_proven_this_boot,
+        runtime_idt_bridge_ready: IDT_BIND_RUNTIME_BRIDGE_READY_NO,
+        live_irq_bind_allowed: IDT_BIND_RUNTIME_BRIDGE_LIVE_BIND_ALLOWED_NO,
+        irq_handler_reachable: IDT_BIND_RUNTIME_BRIDGE_IRQ_REACHABLE_NO,
+        interrupt_invocation_allowed: IDT_BIND_RUNTIME_BRIDGE_INTERRUPT_ALLOWED_NO,
+        runtime_irq_active: IDT_BIND_RUNTIME_BRIDGE_RUNTIME_ACTIVE_NO,
+        sti: IDT_BIND_RUNTIME_BRIDGE_STI_DISABLED,
+        pic_unmask: IDT_BIND_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IDT_BIND_RUNTIME_BRIDGE_KEYBOARD_POLLING,
+        blocker_proof: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_PROOF,
+        blocker_live_bind: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_LIVE_BIND,
+        blocker_irq_reachable: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_IRQ_REACHABLE,
+        blocker_interrupt: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_INTERRUPT,
+        blocker_runtime: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_RUNTIME,
     }
 }
