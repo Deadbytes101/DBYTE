@@ -497,6 +497,28 @@ pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_MANUAL_ONLY: &str =
     "PIC_EOI write remains manual-only";
 pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_RUNTIME: &str =
     "runtime IRQ dispatch remains disabled";
+pub const IRQ_HANDLER_EOI_STUB_SCOPE: &str = "controlled IRQ handler EOI stub";
+pub const IRQ_HANDLER_EOI_STUB_INPUTS: &str = "handler-eoi-candidate";
+pub const IRQ_HANDLER_EOI_STUB_EXISTS_YES: &str = "yes";
+pub const IRQ_HANDLER_EOI_STUB_LIVE_BIND_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_STUB_INVOCATION_ALLOWED_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_STUB_PERFORMS_WRITE_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_STUB_HANDLER_ALLOWED_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_STUB_PIC_EOI_CALLSITES: &str = "1 manual-only";
+pub const IRQ_HANDLER_EOI_STUB_RUNTIME_ACTIVE_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_STUB_STI_DISABLED: &str = "disabled";
+pub const IRQ_HANDLER_EOI_STUB_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const IRQ_HANDLER_EOI_STUB_KEYBOARD_POLLING: &str = "polling";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_UNBOUND: &str =
+    "stub remains unbound from live IRQ path";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_INVOCATION: &str =
+    "stub invocation remains disabled";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_HANDLER_EOI: &str =
+    "handler-triggered EOI remains disabled";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_MANUAL_ONLY: &str =
+    "PIC_EOI write remains manual-only";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1073,6 +1095,27 @@ pub struct IrqHandlerEoiCandidate {
     pub blocker_bridge: &'static str,
     pub blocker_handler_eoi: &'static str,
     pub blocker_live_handlers: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqHandlerEoiStub {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub stub_exists: &'static str,
+    pub stub_bound_to_live_irq_path: &'static str,
+    pub stub_invocation_allowed: &'static str,
+    pub stub_performs_pic_eoi_write: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub pic_eoi_callsites: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_unbound: &'static str,
+    pub blocker_invocation: &'static str,
+    pub blocker_handler_eoi: &'static str,
     pub blocker_manual_only: &'static str,
     pub blocker_runtime: &'static str,
 }
@@ -2374,5 +2417,28 @@ pub fn irq_handler_eoi_candidate(
         blocker_live_handlers: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_LIVE_HANDLERS,
         blocker_manual_only: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_MANUAL_ONLY,
         blocker_runtime: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_RUNTIME,
+    }
+}
+
+/// Derives a read-only placeholder for a future handler-side EOI stub.
+pub fn irq_handler_eoi_stub(candidate: IrqHandlerEoiCandidate) -> IrqHandlerEoiStub {
+    IrqHandlerEoiStub {
+        scope: IRQ_HANDLER_EOI_STUB_SCOPE,
+        inputs: IRQ_HANDLER_EOI_STUB_INPUTS,
+        stub_exists: IRQ_HANDLER_EOI_STUB_EXISTS_YES,
+        stub_bound_to_live_irq_path: IRQ_HANDLER_EOI_STUB_LIVE_BIND_NO,
+        stub_invocation_allowed: IRQ_HANDLER_EOI_STUB_INVOCATION_ALLOWED_NO,
+        stub_performs_pic_eoi_write: IRQ_HANDLER_EOI_STUB_PERFORMS_WRITE_NO,
+        handler_triggered_eoi_allowed: candidate.handler_triggered_eoi_allowed,
+        pic_eoi_callsites: candidate.pic_eoi_callsites,
+        runtime_irq_active: IRQ_HANDLER_EOI_STUB_RUNTIME_ACTIVE_NO,
+        sti: IRQ_HANDLER_EOI_STUB_STI_DISABLED,
+        pic_unmask: IRQ_HANDLER_EOI_STUB_PIC_UNMASK_DISABLED,
+        keyboard_mode: IRQ_HANDLER_EOI_STUB_KEYBOARD_POLLING,
+        blocker_unbound: IRQ_HANDLER_EOI_STUB_BLOCKER_UNBOUND,
+        blocker_invocation: IRQ_HANDLER_EOI_STUB_BLOCKER_INVOCATION,
+        blocker_handler_eoi: IRQ_HANDLER_EOI_STUB_BLOCKER_HANDLER_EOI,
+        blocker_manual_only: IRQ_HANDLER_EOI_STUB_BLOCKER_MANUAL_ONLY,
+        blocker_runtime: IRQ_HANDLER_EOI_STUB_BLOCKER_RUNTIME,
     }
 }
