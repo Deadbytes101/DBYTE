@@ -1,6 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.17.0)
+# DByteOS QEMU Boot Smoke (v10.17.1)
 
-`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. `v10.14.0` is a Controlled EOI Write Permit Transition Model Foundation release. `v10.14.1` is a Controlled EOI Write Permit Transition Model Hardening release. `v10.15.0` is a Controlled EOI Write Permit Evaluation Foundation release. `v10.15.1` is a Controlled EOI Write Permit Evaluation Hardening release. `v10.17.0` is a Controlled PIC_EOI Runtime Bridge Readiness Foundation release. It adds a read-only bridge from the manual PIC_EOI smoke proof toward future handler readiness while keeping handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, live IRQ handlers unbound, and keyboard polling unchanged. `v10.16.1` is a First Controlled PIC_EOI Write Smoke Hardening release. It preserves the `v10.16.0` manual one-shot hardware smoke outputs while tightening verifier guards around the exact sequence, single allowlisted callsite, forbidden runtime activation paths, and keyboard polling. `v10.16.0` is a First Controlled PIC_EOI Write Smoke Foundation release. It adds a manual one-shot shell command path that may perform exactly one `write_pic_port(PIC_MASTER_COMMAND, PIC_EOI)` after explicit arming while keeping slave EOI writes, IRQ runtime activation, `sti`, PIC unmask, live IDT binding, and keyboard IRQ mode disabled.
+`v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. `v10.14.0` is a Controlled EOI Write Permit Transition Model Foundation release. `v10.14.1` is a Controlled EOI Write Permit Transition Model Hardening release. `v10.15.0` is a Controlled EOI Write Permit Evaluation Foundation release. `v10.15.1` is a Controlled EOI Write Permit Evaluation Hardening release. `v10.17.1` is a Controlled PIC_EOI Runtime Bridge Session Proof Repair release. It splits sticky session proof from transient hardware-smoke performed telemetry while keeping the single manual PIC_EOI callsite unchanged. `v10.17.0` is a Controlled PIC_EOI Runtime Bridge Readiness Foundation release. It adds a read-only bridge from the manual PIC_EOI smoke proof toward future handler readiness while keeping handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, live IRQ handlers unbound, and keyboard polling unchanged. `v10.16.1` is a First Controlled PIC_EOI Write Smoke Hardening release. It preserves the `v10.16.0` manual one-shot hardware smoke outputs while tightening verifier guards around the exact sequence, single allowlisted callsite, forbidden runtime activation paths, and keyboard polling. `v10.16.0` is a First Controlled PIC_EOI Write Smoke Foundation release. It adds a manual one-shot shell command path that may perform exactly one `write_pic_port(PIC_MASTER_COMMAND, PIC_EOI)` after explicit arming while keeping slave EOI writes, IRQ runtime activation, `sti`, PIC unmask, live IDT binding, and keyboard IRQ mode disabled.
 
 `v10.7.1` is not a mutation release. It adds verification guards for exact sequencer command output, read-only helper and dispatcher isolation, stale `v10.7.0` metadata, and no live IRQ0/IRQ1 or keyboard IRQ mode.
 
@@ -39,6 +39,8 @@
 `v10.16.1` is hardening-only. It keeps the same hw-smoke command surface and rendered outputs while verifying the unarmed-fire, arm, successful-fire, repeated-fire, and clear sequence, the single manual `PIC_EOI` write callsite, no runtime IRQ activation, no `sti`, no PIC unmask, no live IRQ0/IRQ1 bind, and unchanged keyboard polling.
 
 `v10.17.0` adds `eoi-runtime-bridge-note`, `eoi-runtime-bridge-status`, `eoi-runtime-bridge-check`, and `eoi-runtime-bridge-blockers`. The bridge is read-only: it reports session-local manual PIC_EOI smoke proof while keeping runtime bridge readiness denied and handler-triggered EOI disabled.
+
+`v10.17.1` repairs the bridge proof source. The bridge now reads sticky boot-session proof set only by a successful manual `eoi-write-hw-smoke-fire`, not the transient `first PIC_EOI write performed` field that `eoi-write-hw-smoke-clear` resets.
 
 Hardened transition sequence:
 
@@ -1838,6 +1840,45 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     runtime bridge ready: no
     handler-triggered EOI allowed: no
     runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-arm
+    EOI write hardware smoke arm
+    armed: ready for one PIC_EOI write
+    armed: yes
+    consumed: no
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-fire
+    EOI write hardware smoke fire
+    performed: one PIC_EOI write to master command port
+    armed: no
+    consumed: yes
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 1
+    first PIC_EOI write performed: yes
+    hardware mutation: yes
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-clear
+    EOI write hardware smoke clear
+    cleared: arm required before fire
+    armed: no
+    consumed: no
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-runtime-bridge-status
+    Controlled PIC_EOI runtime bridge readiness
+    manual PIC_EOI smoke proven: yes
+    runtime bridge ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    live irq handlers: no
+    keyboard mode: polling
     dbyte-kernel> irq-runtime-status
     IRQ runtime readiness status
     pic remap: not ready

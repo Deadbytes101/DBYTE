@@ -1031,7 +1031,7 @@ fn eoi_runtime_bridge_readiness_snapshot() -> irq::EoiRuntimeBridgeReadiness {
     let gate_state = irq::irq_gate_bind_state();
     let runtime_dispatch_ready = irq::eoi_runtime_check_all_preconditions(pic_state.executed);
     irq::eoi_runtime_bridge_readiness(
-        manual_smoke.first_pic_eoi_write_performed,
+        manual_smoke.manual_pic_eoi_smoke_proven_this_boot,
         evaluation,
         runtime_dispatch_ready,
         gate_state,

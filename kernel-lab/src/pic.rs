@@ -126,6 +126,7 @@ static mut PIC_REMAP_SMOKE_EXECUTED: bool = false;
 static EOI_WRITE_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
 static EOI_WRITE_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
 static EOI_WRITE_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
+static EOI_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 
 /// Documentation-only representation of the future PIC remap sequence.
 pub struct PicRemapPlan {
@@ -183,6 +184,7 @@ pub struct EoiWriteHwSmokeStatus {
     pub target_value: &'static str,
     pub pic_eoi_writes_this_command: u8,
     pub first_pic_eoi_write_performed: &'static str,
+    pub manual_pic_eoi_smoke_proven_this_boot: &'static str,
     pub hardware_mutation: &'static str,
     pub runtime_irq_active: &'static str,
     pub fire_result: &'static str,
@@ -520,6 +522,7 @@ impl ProgrammableInterruptController {
         let armed = EOI_WRITE_HW_SMOKE_ARMED.load(Ordering::SeqCst);
         let consumed = EOI_WRITE_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
         let performed = EOI_WRITE_HW_SMOKE_PERFORMED.load(Ordering::SeqCst);
+        let proven_this_boot = EOI_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
         EoiWriteHwSmokeStatus {
             scope: EOI_WRITE_HW_SMOKE_SCOPE,
             mode: EOI_WRITE_HW_SMOKE_MODE,
@@ -537,6 +540,11 @@ impl ProgrammableInterruptController {
             target_value: EOI_WRITE_HW_SMOKE_TARGET_VALUE,
             pic_eoi_writes_this_command: writes_this_command,
             first_pic_eoi_write_performed: if performed {
+                EOI_WRITE_HW_SMOKE_PERFORMED_YES
+            } else {
+                EOI_WRITE_HW_SMOKE_PERFORMED_NO
+            },
+            manual_pic_eoi_smoke_proven_this_boot: if proven_this_boot {
                 EOI_WRITE_HW_SMOKE_PERFORMED_YES
             } else {
                 EOI_WRITE_HW_SMOKE_PERFORMED_NO
@@ -605,6 +613,7 @@ impl ProgrammableInterruptController {
         }
         EOI_WRITE_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
         EOI_WRITE_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
+        EOI_HW_SMOKE_PROVEN_THIS_BOOT.store(true, Ordering::SeqCst);
         Self::eoi_write_hw_smoke_from_state(
             1,
             EOI_WRITE_HW_SMOKE_HARDWARE_MUTATION_YES,
