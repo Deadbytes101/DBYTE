@@ -457,6 +457,25 @@ pub const EOI_WRITE_EVAL_BLOCKER_FIRST_WRITE: &str =
     "first PIC_EOI write path is not enabled";
 pub const EOI_WRITE_EVAL_BLOCKER_HARDWARE: &str = "hardware mutation remains disabled";
 pub const EOI_WRITE_EVAL_BLOCKER_RUNTIME: &str = "runtime IRQ remains inactive";
+pub const EOI_RUNTIME_BRIDGE_SCOPE: &str =
+    "controlled PIC_EOI runtime bridge readiness";
+pub const EOI_RUNTIME_BRIDGE_INPUTS: &str =
+    "manual-hw-smoke/permit-evaluator/runtime-gate/keyboard";
+pub const EOI_RUNTIME_BRIDGE_READY_NO: &str = "no";
+pub const EOI_RUNTIME_BRIDGE_HANDLER_ALLOWED_NO: &str = "no";
+pub const EOI_RUNTIME_BRIDGE_RUNTIME_ACTIVE_NO: &str = "no";
+pub const EOI_RUNTIME_BRIDGE_STI_DISABLED: &str = "disabled";
+pub const EOI_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const EOI_RUNTIME_BRIDGE_LIVE_IRQ_HANDLERS_NO: &str = "no";
+pub const EOI_RUNTIME_BRIDGE_KEYBOARD_POLLING: &str = "polling";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_DISPATCH: &str =
+    "runtime IRQ dispatch remains disabled";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_STI: &str = "STI remains disabled";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_PIC_LINES: &str = "PIC lines remain masked";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_LIVE_HANDLERS: &str =
+    "live IRQ0/IRQ1 handlers remain unbound";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_HANDLER_EOI: &str =
+    "handler-triggered EOI path is not enabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -996,6 +1015,25 @@ pub struct EoiWritePermitEvaluation {
     pub pic_unmask: &'static str,
     pub live_idt_bind: &'static str,
     pub keyboard_mode: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct EoiRuntimeBridgeReadiness {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub manual_pic_eoi_smoke_proven: &'static str,
+    pub runtime_bridge_ready: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub live_irq_handlers: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_dispatch: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_pic_lines: &'static str,
+    pub blocker_live_handlers: &'static str,
+    pub blocker_handler_eoi: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -2245,5 +2283,31 @@ pub fn eoi_write_permit_evaluation(
         pic_unmask: bridge.pic_unmask,
         live_idt_bind: bridge.live_idt_bind,
         keyboard_mode: bridge.keyboard_mode,
+    }
+}
+
+/// Reports whether the manual PIC_EOI smoke can bridge toward runtime handlers.
+pub fn eoi_runtime_bridge_readiness(
+    manual_pic_eoi_smoke_proven: &'static str,
+    _evaluation: EoiWritePermitEvaluation,
+    _runtime_dispatch_ready: bool,
+    _gate_state: IrqGateBindStateTelemetry,
+) -> EoiRuntimeBridgeReadiness {
+    EoiRuntimeBridgeReadiness {
+        scope: EOI_RUNTIME_BRIDGE_SCOPE,
+        inputs: EOI_RUNTIME_BRIDGE_INPUTS,
+        manual_pic_eoi_smoke_proven,
+        runtime_bridge_ready: EOI_RUNTIME_BRIDGE_READY_NO,
+        handler_triggered_eoi_allowed: EOI_RUNTIME_BRIDGE_HANDLER_ALLOWED_NO,
+        runtime_irq_active: EOI_RUNTIME_BRIDGE_RUNTIME_ACTIVE_NO,
+        sti: EOI_RUNTIME_BRIDGE_STI_DISABLED,
+        pic_unmask: EOI_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED,
+        live_irq_handlers: EOI_RUNTIME_BRIDGE_LIVE_IRQ_HANDLERS_NO,
+        keyboard_mode: EOI_RUNTIME_BRIDGE_KEYBOARD_POLLING,
+        blocker_dispatch: EOI_RUNTIME_BRIDGE_BLOCKER_DISPATCH,
+        blocker_sti: EOI_RUNTIME_BRIDGE_BLOCKER_STI,
+        blocker_pic_lines: EOI_RUNTIME_BRIDGE_BLOCKER_PIC_LINES,
+        blocker_live_handlers: EOI_RUNTIME_BRIDGE_BLOCKER_LIVE_HANDLERS,
+        blocker_handler_eoi: EOI_RUNTIME_BRIDGE_BLOCKER_HANDLER_EOI,
     }
 }
