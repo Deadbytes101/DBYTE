@@ -476,6 +476,27 @@ pub const EOI_RUNTIME_BRIDGE_BLOCKER_LIVE_HANDLERS: &str =
     "live IRQ0/IRQ1 handlers remain unbound";
 pub const EOI_RUNTIME_BRIDGE_BLOCKER_HANDLER_EOI: &str =
     "handler-triggered EOI path is not enabled";
+pub const IRQ_HANDLER_EOI_CANDIDATE_SCOPE: &str =
+    "controlled IRQ handler EOI path candidate";
+pub const IRQ_HANDLER_EOI_CANDIDATE_INPUTS: &str = "runtime-bridge-readiness";
+pub const IRQ_HANDLER_EOI_CANDIDATE_READY_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_CANDIDATE_HANDLER_ALLOWED_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_CANDIDATE_LIVE_BIND_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_CANDIDATE_PIC_EOI_CALLSITES: &str = "1 manual-only";
+pub const IRQ_HANDLER_EOI_CANDIDATE_RUNTIME_ACTIVE_NO: &str = "no";
+pub const IRQ_HANDLER_EOI_CANDIDATE_STI_DISABLED: &str = "disabled";
+pub const IRQ_HANDLER_EOI_CANDIDATE_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const IRQ_HANDLER_EOI_CANDIDATE_KEYBOARD_POLLING: &str = "polling";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_BRIDGE: &str =
+    "runtime bridge readiness remains denied";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
+    "handler-triggered EOI remains disabled";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_LIVE_HANDLERS: &str =
+    "live IRQ0/IRQ1 handlers remain unbound";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_MANUAL_ONLY: &str =
+    "PIC_EOI write remains manual-only";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1034,6 +1055,26 @@ pub struct EoiRuntimeBridgeReadiness {
     pub blocker_pic_lines: &'static str,
     pub blocker_live_handlers: &'static str,
     pub blocker_handler_eoi: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqHandlerEoiCandidate {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub runtime_bridge_ready: &'static str,
+    pub handler_eoi_candidate_ready: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub live_handler_bind: &'static str,
+    pub pic_eoi_callsites: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_bridge: &'static str,
+    pub blocker_handler_eoi: &'static str,
+    pub blocker_live_handlers: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_runtime: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -2309,5 +2350,29 @@ pub fn eoi_runtime_bridge_readiness(
         blocker_pic_lines: EOI_RUNTIME_BRIDGE_BLOCKER_PIC_LINES,
         blocker_live_handlers: EOI_RUNTIME_BRIDGE_BLOCKER_LIVE_HANDLERS,
         blocker_handler_eoi: EOI_RUNTIME_BRIDGE_BLOCKER_HANDLER_EOI,
+    }
+}
+
+/// Derives a read-only candidate for a future handler-side PIC_EOI path.
+pub fn irq_handler_eoi_candidate(
+    bridge: EoiRuntimeBridgeReadiness,
+) -> IrqHandlerEoiCandidate {
+    IrqHandlerEoiCandidate {
+        scope: IRQ_HANDLER_EOI_CANDIDATE_SCOPE,
+        inputs: IRQ_HANDLER_EOI_CANDIDATE_INPUTS,
+        runtime_bridge_ready: bridge.runtime_bridge_ready,
+        handler_eoi_candidate_ready: IRQ_HANDLER_EOI_CANDIDATE_READY_NO,
+        handler_triggered_eoi_allowed: IRQ_HANDLER_EOI_CANDIDATE_HANDLER_ALLOWED_NO,
+        live_handler_bind: IRQ_HANDLER_EOI_CANDIDATE_LIVE_BIND_NO,
+        pic_eoi_callsites: IRQ_HANDLER_EOI_CANDIDATE_PIC_EOI_CALLSITES,
+        runtime_irq_active: IRQ_HANDLER_EOI_CANDIDATE_RUNTIME_ACTIVE_NO,
+        sti: IRQ_HANDLER_EOI_CANDIDATE_STI_DISABLED,
+        pic_unmask: IRQ_HANDLER_EOI_CANDIDATE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IRQ_HANDLER_EOI_CANDIDATE_KEYBOARD_POLLING,
+        blocker_bridge: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_BRIDGE,
+        blocker_handler_eoi: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_HANDLER_EOI,
+        blocker_live_handlers: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_LIVE_HANDLERS,
+        blocker_manual_only: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_MANUAL_ONLY,
+        blocker_runtime: IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_RUNTIME,
     }
 }
