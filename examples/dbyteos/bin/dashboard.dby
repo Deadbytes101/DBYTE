@@ -1,0 +1,816 @@
+import "../sys/profile.dby" as profile
+import "../etc/system.dby" as system
+import std.env as env
+import std.fs as fs
+let args: list[str] = env.args()
+let projects_rel: str = "home/deadbyte/projects"
+let projects_path: str = profile.resolve_user_data_path(projects_rel)
+let index_rel: str = projects_rel + "/index.txt"
+let index_path: str = profile.resolve_user_data_path(index_rel)
+fn strip_cr(s_cr: str) -> str:
+let out_cr: str = ""
+for c_cr in s_cr:
+if c_cr != "\r":
+out_cr = out_cr + c_cr
+return out_cr
+fn valid_search_text(text_val: str) -> int:
+if text_val == "":
+return 0
+for c_val in text_val:
+if c_val == ".":
+return 0
+if c_val == "/":
+return 0
+if c_val == "\\":
+return 0
+if c_val == ":":
+return 0
+if c_val == "*":
+return 0
+if c_val == "?":
+return 0
+return 1
+fn to_lowercase(s_low: str) -> str:
+let out_low: str = ""
+for c_low in s_low:
+let lower_char: str = c_low
+if c_low == "A":
+lower_char = "a"
+if c_low == "B":
+lower_char = "b"
+if c_low == "C":
+lower_char = "c"
+if c_low == "D":
+lower_char = "d"
+if c_low == "E":
+lower_char = "e"
+if c_low == "F":
+lower_char = "f"
+if c_low == "G":
+lower_char = "g"
+if c_low == "H":
+lower_char = "h"
+if c_low == "I":
+lower_char = "i"
+if c_low == "J":
+lower_char = "j"
+if c_low == "K":
+lower_char = "k"
+if c_low == "L":
+lower_char = "l"
+if c_low == "M":
+lower_char = "m"
+if c_low == "N":
+lower_char = "n"
+if c_low == "O":
+lower_char = "o"
+if c_low == "P":
+lower_char = "p"
+if c_low == "Q":
+lower_char = "q"
+if c_low == "R":
+lower_char = "r"
+if c_low == "S":
+lower_char = "s"
+if c_low == "T":
+lower_char = "t"
+if c_low == "U":
+lower_char = "u"
+if c_low == "V":
+lower_char = "v"
+if c_low == "W":
+lower_char = "w"
+if c_low == "X":
+lower_char = "x"
+if c_low == "Y":
+lower_char = "y"
+if c_low == "Z":
+lower_char = "z"
+out_low = out_low + lower_char
+return out_low
+fn string_contains(haystack: str, needle: str) -> int:
+if needle == "":
+return 1
+let h_len: int = len(haystack)
+let n_len: int = len(needle)
+if n_len > h_len:
+return 0
+let i: int = 0
+let max_idx: int = h_len - n_len
+while i <= max_idx:
+let matched: int = 1
+let j: int = 0
+while j < n_len:
+if matched == 1:
+let h_c: str = ""
+let n_c: str = ""
+let idx_h: int = 0
+let found_h: int = 0
+for c in haystack:
+if found_h == 0:
+if idx_h == i + j:
+h_c = c
+found_h = 1
+idx_h = idx_h + 1
+let idx_n: int = 0
+let found_n: int = 0
+for c in needle:
+if found_n == 0:
+if idx_n == j:
+n_c = c
+found_n = 1
+idx_n = idx_n + 1
+if h_c != n_c:
+matched = 0
+j = j + 1
+if matched == 1:
+return 1
+i = i + 1
+return 0
+fn int_to_str(n: int) -> str:
+if n == 0:
+return "0"
+let out: str = ""
+let value: int = n
+while value > 0:
+let digit: int = value - ((value / 10) * 10)
+if digit == 0:
+out = "0" + out
+if digit == 1:
+out = "1" + out
+if digit == 2:
+out = "2" + out
+if digit == 3:
+out = "3" + out
+if digit == 4:
+out = "4" + out
+if digit == 5:
+out = "5" + out
+if digit == 6:
+out = "6" + out
+if digit == 7:
+out = "7" + out
+if digit == 8:
+out = "8" + out
+if digit == 9:
+out = "9" + out
+value = value / 10
+return out
+fn has_bad_char(name: str) -> int:
+for c in name:
+if c == ".":
+return 1
+if c == "/":
+return 1
+if c == "\\":
+return 1
+if c == ":":
+return 1
+if c == " ":
+return 1
+if c == "\t":
+return 1
+return 0
+fn valid_name(name: str) -> int:
+if name == "":
+return 0
+if name == ".":
+return 0
+if name == "..":
+return 0
+if has_bad_char(name) == 1:
+return 0
+return 1
+fn line_status(line: str) -> str:
+let status: str = ""
+for c in line:
+if c == "|":
+return status
+status = status + c
+return status
+fn count_tasks(p_name: str, get_done: int) -> int:
+let path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + p_name + "/tasks.txt")
+if fs.exists(path) == 0:
+return 0
+let content: str = fs.read_text(path)
+let t_line: str = ""
+let open_count: int = 0
+let done_count: int = 0
+for c in content:
+if c == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+if line_status(clean_t) == "1":
+done_count = done_count + 1
+else:
+open_count = open_count + 1
+t_line = ""
+else:
+t_line = t_line + c
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+if line_status(clean_t) == "1":
+done_count = done_count + 1
+else:
+open_count = open_count + 1
+if get_done == 1:
+return done_count
+return open_count
+fn show_usage():
+print("usage: dashboard <command> [args...]")
+print("")
+print("commands:")
+print("  projects         - print summary status of all projects")
+print("  tasks            - print consolidated overview of all tasks")
+print("  search <query>   - search dashboard entities (projects, tasks)")
+print("  timeline         - print timeline metadata summary")
+print("  health           - print workspace diagnostic health status")
+print("  snapshot         - print consolidated dashboard snapshot")
+print("  help             - show this command help")
+
+fn dashboard_home():
+print("--- DByteOS Workspace Dashboard ---")
+print("system: healthy")
+
+let open_total: int = 0
+let done_total: int = 0
+let p_count: int = 0
+
+if fs.exists(index_path) == 1:
+let content: str = fs.read_text(index_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+p_count = p_count + 1
+open_total = open_total + count_tasks(clean_p, 0)
+done_total = done_total + count_tasks(clean_p, 1)
+line = ""
+else:
+line = line + c
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+p_count = p_count + 1
+open_total = open_total + count_tasks(clean_p, 0)
+done_total = done_total + count_tasks(clean_p, 1)
+
+print("projects: " + int_to_str(p_count))
+print("tasks: " + int_to_str(open_total) + " open / " + int_to_str(done_total) + " done")
+
+let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+if fs.exists(index_cache_path) == 1:
+print("search index: healthy")
+else:
+print("search index: missing")
+
+print("timeline: ready")
+
+let pref_path: str = profile.resolve_user_data_path("home/deadbyte/preferences.dby")
+if fs.exists(pref_path) == 1:
+print("preferences: healthy")
+else:
+print("preferences: unhealthy")
+
+fn dashboard_projects():
+print("--- DByteOS Dashboard: Projects ---")
+let printed: int = 0
+if fs.exists(index_path) == 1:
+let content: str = fs.read_text(index_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+let open_c: int = count_tasks(clean_p, 0)
+let done_c: int = count_tasks(clean_p, 1)
+print("* " + clean_p + ": " + int_to_str(open_c) + " open, " + int_to_str(done_c) + " done (total: " + int_to_str(open_c + done_c) + ")")
+printed = 1
+line = ""
+else:
+line = line + c
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+let open_c: int = count_tasks(clean_p, 0)
+let done_c: int = count_tasks(clean_p, 1)
+print("* " + clean_p + ": " + int_to_str(open_c) + " open, " + int_to_str(done_c) + " done (total: " + int_to_str(open_c + done_c) + ")")
+printed = 1
+if printed == 0:
+print("  (none)")
+
+fn dashboard_tasks():
+print("--- DByteOS Dashboard: Tasks ---")
+let has_any: int = 0
+if fs.exists(index_path) == 1:
+let content: str = fs.read_text(index_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+let t_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/tasks.txt")
+if fs.exists(t_path) == 1:
+let t_content: str = fs.read_text(t_path)
+let t_line: str = ""
+let t_no: int = 1
+for tc in t_content:
+if tc == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [" + status_str + "] " + clean_p + " #" + int_to_str(t_no) + ": " + text)
+has_any = 1
+t_line = ""
+t_no = t_no + 1
+else:
+t_line = t_line + tc
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [" + status_str + "] " + clean_p + " #" + int_to_str(t_no) + ": " + text)
+has_any = 1
+line = ""
+else:
+line = line + c
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+let t_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/tasks.txt")
+if fs.exists(t_path) == 1:
+let t_content: str = fs.read_text(t_path)
+let t_line: str = ""
+let t_no: int = 1
+for tc in t_content:
+if tc == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [" + status_str + "] " + clean_p + " #" + int_to_str(t_no) + ": " + text)
+has_any = 1
+t_line = ""
+t_no = t_no + 1
+else:
+t_line = t_line + tc
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [" + status_str + "] " + clean_p + " #" + int_to_str(t_no) + ": " + text)
+has_any = 1
+if has_any == 0:
+print("  (none)")
+
+fn dashboard_search(query: str):
+if valid_search_text(query) == 0:
+print("error: search: invalid query")
+else:
+let q_lower: str = to_lowercase(query)
+print("--- DByteOS Dashboard Search: " + query + " ---")
+let has_match: int = 0
+
+if fs.exists(index_path) == 1:
+let content: str = fs.read_text(index_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+let p_lower: str = to_lowercase(clean_p)
+if string_contains(p_lower, q_lower) == 1:
+print("* [project] " + clean_p + " (registered)")
+has_match = 1
+
+# Search tasks for this project
+let t_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/tasks.txt")
+if fs.exists(t_path) == 1:
+let t_content: str = fs.read_text(t_path)
+let t_line: str = ""
+let t_no: int = 1
+for tc in t_content:
+if tc == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let t_lower: str = to_lowercase(text)
+if string_contains(t_lower, q_lower) == 1:
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [task] " + clean_p + " #" + int_to_str(t_no) + ": [" + status_str + "] " + text)
+has_match = 1
+t_line = ""
+t_no = t_no + 1
+else:
+t_line = t_line + tc
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let t_lower: str = to_lowercase(text)
+if string_contains(t_lower, q_lower) == 1:
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [task] " + clean_p + " #" + int_to_str(t_no) + ": [" + status_str + "] " + text)
+has_match = 1
+line = ""
+else:
+line = line + c
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+let p_lower: str = to_lowercase(clean_p)
+if string_contains(p_lower, q_lower) == 1:
+print("* [project] " + clean_p + " (registered)")
+has_match = 1
+
+# Search tasks for this project
+let t_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/tasks.txt")
+if fs.exists(t_path) == 1:
+let t_content: str = fs.read_text(t_path)
+let t_line: str = ""
+let t_no: int = 1
+for tc in t_content:
+if tc == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let t_lower: str = to_lowercase(text)
+if string_contains(t_lower, q_lower) == 1:
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [task] " + clean_p + " #" + int_to_str(t_no) + ": [" + status_str + "] " + text)
+has_match = 1
+t_line = ""
+t_no = t_no + 1
+else:
+t_line = t_line + tc
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let text: str = ""
+let sep: int = 0
+for t_char in clean_t:
+if sep == 0:
+if t_char == "|":
+sep = 1
+else:
+status = status + t_char
+else:
+text = text + t_char
+let t_lower: str = to_lowercase(text)
+if string_contains(t_lower, q_lower) == 1:
+let status_str: str = "open"
+if status == "1":
+status_str = "done"
+print("* [task] " + clean_p + " #" + int_to_str(t_no) + ": [" + status_str + "] " + text)
+has_match = 1
+if has_match == 0:
+print("  (no matches found)")
+
+fn dashboard_timeline():
+print("--- DByteOS Dashboard: Timeline ---")
+let is_cached: int = 0
+let mode_str: str = "fallback"
+let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+if fs.exists(index_cache_path) == 1:
+is_cached = 1
+mode_str = "cached"
+print("Timeline Mode: " + mode_str)
+
+let p_count: int = 0
+let n_global: int = 0
+let n_proj: int = 0
+let j_count: int = 0
+let t_open: int = 0
+let t_done: int = 0
+
+if fs.exists(index_path) == 1:
+let content: str = fs.read_text(index_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+p_count = p_count + 1
+
+let n_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/notes.txt")
+if fs.exists(n_path) == 1:
+let n_content: str = fs.read_text(n_path)
+let n_line: str = ""
+for nc in n_content:
+if nc == "\n":
+if n_line != "":
+n_proj = n_proj + 1
+n_line = ""
+else:
+n_line = n_line + nc
+if n_line != "":
+n_proj = n_proj + 1
+
+let t_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/tasks.txt")
+if fs.exists(t_path) == 1:
+let t_content: str = fs.read_text(t_path)
+let t_line: str = ""
+for tc in t_content:
+if tc == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let stop_parse: int = 0
+for tc_c in clean_t:
+if stop_parse == 0:
+if tc_c == "|":
+stop_parse = 1
+else:
+status = status + tc_c
+if status == "1":
+t_done = t_done + 1
+else:
+t_open = t_open + 1
+t_line = ""
+else:
+t_line = t_line + tc
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let stop_parse: int = 0
+for tc_c in clean_t:
+if stop_parse == 0:
+if tc_c == "|":
+stop_parse = 1
+else:
+status = status + tc_c
+if status == "1":
+t_done = t_done + 1
+else:
+t_open = t_open + 1
+line = ""
+else:
+line = line + c
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+p_count = p_count + 1
+
+let n_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/notes.txt")
+if fs.exists(n_path) == 1:
+let n_content: str = fs.read_text(n_path)
+let n_line: str = ""
+for nc in n_content:
+if nc == "\n":
+if n_line != "":
+n_proj = n_proj + 1
+n_line = ""
+else:
+n_line = n_line + nc
+if n_line != "":
+n_proj = n_proj + 1
+
+let t_path: str = profile.resolve_user_data_path("home/deadbyte/projects/" + clean_p + "/tasks.txt")
+if fs.exists(t_path) == 1:
+let t_content: str = fs.read_text(t_path)
+let t_line: str = ""
+for tc in t_content:
+if tc == "\n":
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let stop_parse: int = 0
+for tc_c in clean_t:
+if stop_parse == 0:
+if tc_c == "|":
+stop_parse = 1
+else:
+status = status + tc_c
+if status == "1":
+t_done = t_done + 1
+else:
+t_open = t_open + 1
+t_line = ""
+else:
+t_line = t_line + tc
+if t_line != "":
+let clean_t: str = strip_cr(t_line)
+let status: str = ""
+let stop_parse: int = 0
+for tc_c in clean_t:
+if stop_parse == 0:
+if tc_c == "|":
+stop_parse = 1
+else:
+status = status + tc_c
+if status == "1":
+t_done = t_done + 1
+else:
+t_open = t_open + 1
+
+let notes_path: str = profile.resolve_user_data_path("home/deadbyte/notes.txt")
+if fs.exists(notes_path) == 1:
+let content: str = fs.read_text(notes_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+n_global = n_global + 1
+line = ""
+else:
+line = line + c
+if line != "":
+n_global = n_global + 1
+
+let journal_path: str = profile.resolve_user_data_path("home/deadbyte/journal.txt")
+if fs.exists(journal_path) == 1:
+let content: str = fs.read_text(journal_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+j_count = j_count + 1
+line = ""
+else:
+line = line + c
+if line != "":
+j_count = j_count + 1
+
+print("Total Projects: " + int_to_str(p_count))
+print("Total Notes:    " + int_to_str(n_global + n_proj))
+print("Total Journal:  " + int_to_str(j_count))
+print("Total Tasks:    " + int_to_str(t_open + t_done))
+
+fn dashboard_health():
+print("--- DByteOS Dashboard: Health ---")
+print("system: healthy")
+
+let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+if fs.exists(index_cache_path) == 1:
+print("search index: healthy")
+else:
+print("search index: missing")
+
+let pref_path: str = profile.resolve_user_data_path("home/deadbyte/preferences.dby")
+if fs.exists(pref_path) == 1:
+print("preferences: healthy")
+else:
+print("preferences: unhealthy")
+
+if fs.exists(index_path) == 1:
+print("projects index: healthy")
+else:
+print("projects index: missing")
+
+fn dashboard_snapshot():
+print("--- DByteOS Dashboard: Snapshot ---")
+print("User: " + profile.get_user())
+print("OS Version: " + system.os_version)
+
+let p_count: int = 0
+let open_total: int = 0
+let done_total: int = 0
+if fs.exists(index_path) == 1:
+let content: str = fs.read_text(index_path)
+let line: str = ""
+for c in content:
+if c == "\n":
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+p_count = p_count + 1
+open_total = open_total + count_tasks(clean_p, 0)
+done_total = done_total + count_tasks(clean_p, 1)
+line = ""
+else:
+line = line + c
+if line != "":
+let clean_p: str = strip_cr(line)
+if valid_name(clean_p) == 1:
+p_count = p_count + 1
+open_total = open_total + count_tasks(clean_p, 0)
+done_total = done_total + count_tasks(clean_p, 1)
+
+print("Projects: " + int_to_str(p_count))
+print("Tasks: " + int_to_str(open_total) + " open / " + int_to_str(done_total) + " done")
+print("Services: active")
+
+if projects_path == "":
+print("error: dashboard: internal path resolution failed")
+else:
+if len(args) < 1:
+dashboard_home()
+else:
+let cmd: str = args[0]
+if cmd == "projects":
+dashboard_projects()
+else:
+if cmd == "tasks":
+dashboard_tasks()
+else:
+if cmd == "search":
+if len(args) < 2:
+print("usage: dashboard search <query>")
+else:
+let query: str = profile.join_args_from(args, 1)
+dashboard_search(query)
+else:
+if cmd == "timeline":
+dashboard_timeline()
+else:
+if cmd == "health":
+dashboard_health()
+else:
+if cmd == "snapshot":
+dashboard_snapshot()
+else:
+if cmd == "help":
+show_usage()
+else:
+print("error: unknown dashboard command: " + cmd)
+show_usage()
