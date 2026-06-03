@@ -562,6 +562,28 @@ pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_INTERRUPT: &str =
     "interrupt invocation remains disabled";
 pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str =
     "runtime IRQ dispatch remains disabled";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_SCOPE: &str =
+    "controlled IDT invocation runtime bridge readiness";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_INPUTS: &str =
+    "idt-bind-hw-smoke/idt-invoke-hw-smoke/bind-runtime-bridge/handler-bind-candidate/stub";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_READY_NO: &str = "no";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_LIVE_DELIVERY_ALLOWED_NO: &str = "no";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_HARDWARE_REACHABLE_NO: &str = "no";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_HANDLER_EOI_ALLOWED_NO: &str = "no";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_RUNTIME_ACTIVE_NO: &str = "no";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_STI_DISABLED: &str = "disabled";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_KEYBOARD_POLLING: &str = "polling";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_BIND_PROOF: &str =
+    "manual IDT bind proof remains required";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_INVOKE_PROOF: &str =
+    "manual IDT invocation proof remains required";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_DELIVERY: &str =
+    "live IRQ delivery remains disabled";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_HARDWARE_REACHABLE: &str =
+    "IRQ handler hardware reachability remains disabled";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1201,6 +1223,27 @@ pub struct IdtBindRuntimeBridgeReadiness {
     pub blocker_live_bind: &'static str,
     pub blocker_irq_reachable: &'static str,
     pub blocker_interrupt: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IdtInvokeRuntimeBridgeReadiness {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub manual_idt_bind_smoke_proven_this_boot: &'static str,
+    pub manual_idt_invocation_smoke_proven_this_boot: &'static str,
+    pub runtime_invocation_bridge_ready: &'static str,
+    pub live_irq_delivery_allowed: &'static str,
+    pub irq_handler_reachable_from_hardware: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_bind_proof: &'static str,
+    pub blocker_invoke_proof: &'static str,
+    pub blocker_delivery: &'static str,
+    pub blocker_hardware_reachable: &'static str,
     pub blocker_runtime: &'static str,
 }
 
@@ -2572,5 +2615,34 @@ pub fn idt_bind_runtime_bridge_readiness(
         blocker_irq_reachable: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_IRQ_REACHABLE,
         blocker_interrupt: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_INTERRUPT,
         blocker_runtime: IDT_BIND_RUNTIME_BRIDGE_BLOCKER_RUNTIME,
+    }
+}
+
+/// Reports whether proven manual IDT invocation can bridge toward IRQ delivery.
+pub fn idt_invoke_runtime_bridge_readiness(
+    manual_idt_bind_smoke_proven_this_boot: &'static str,
+    manual_idt_invocation_smoke_proven_this_boot: &'static str,
+    _bind_bridge: IdtBindRuntimeBridgeReadiness,
+    _bind_candidate: IrqHandlerBindCandidate,
+    _stub: IrqHandlerEoiStub,
+) -> IdtInvokeRuntimeBridgeReadiness {
+    IdtInvokeRuntimeBridgeReadiness {
+        scope: IDT_INVOKE_RUNTIME_BRIDGE_SCOPE,
+        inputs: IDT_INVOKE_RUNTIME_BRIDGE_INPUTS,
+        manual_idt_bind_smoke_proven_this_boot,
+        manual_idt_invocation_smoke_proven_this_boot,
+        runtime_invocation_bridge_ready: IDT_INVOKE_RUNTIME_BRIDGE_READY_NO,
+        live_irq_delivery_allowed: IDT_INVOKE_RUNTIME_BRIDGE_LIVE_DELIVERY_ALLOWED_NO,
+        irq_handler_reachable_from_hardware: IDT_INVOKE_RUNTIME_BRIDGE_HARDWARE_REACHABLE_NO,
+        handler_triggered_eoi_allowed: IDT_INVOKE_RUNTIME_BRIDGE_HANDLER_EOI_ALLOWED_NO,
+        runtime_irq_active: IDT_INVOKE_RUNTIME_BRIDGE_RUNTIME_ACTIVE_NO,
+        sti: IDT_INVOKE_RUNTIME_BRIDGE_STI_DISABLED,
+        pic_unmask: IDT_INVOKE_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IDT_INVOKE_RUNTIME_BRIDGE_KEYBOARD_POLLING,
+        blocker_bind_proof: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_BIND_PROOF,
+        blocker_invoke_proof: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_INVOKE_PROOF,
+        blocker_delivery: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_DELIVERY,
+        blocker_hardware_reachable: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_HARDWARE_REACHABLE,
+        blocker_runtime: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_RUNTIME,
     }
 }
