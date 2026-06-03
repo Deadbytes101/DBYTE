@@ -1,0 +1,37 @@
+import std.env as env
+import std.fs as fs
+import "../sys/session.dby" as sess
+let args: list[str] = env.args()
+if len(args) < 1:
+print("usage: man <command>")
+print("example: man whoami")
+else:
+let target: str = args[0]
+# Path traversal protection
+let has_traversal: int = 0
+let prev: str = ""
+for c in target:
+if c == "/":
+has_traversal = 1
+if c == "\\":
+has_traversal = 1
+if c == ".":
+if prev == ".":
+has_traversal = 1
+prev = c
+if has_traversal == 1:
+print("Error: invalid manual topic name '" + target + "'")
+else:
+let path_a: str = sess.resolve_os_file("etc/manual/" + target + ".txt")
+let path_b: str = sess.resolve_os_file("examples/dbyteos/etc/manual/" + target + ".txt")
+let target_path: str = ""
+if fs.exists(path_a) == 1:
+target_path = path_a
+else:
+if fs.exists(path_b) == 1:
+target_path = path_b
+if len(target_path) == 0:
+print("No manual entry for " + target)
+else:
+let content: str = fs.read_text(target_path)
+print(content)
