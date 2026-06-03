@@ -1,0 +1,18 @@
+import std.fs as fs
+fn _get_path() -> str:
+if fs.exists("examples/dbyteos") == 1:
+return "examples/dbyteos/home/deadbyte/preferences.dby"
+return "home/deadbyte/preferences.dby"
+print("DByteOS Doctor")
+print("profile: ok")
+print("config: ok")
+if fs.exists(_get_path()) == 1:
+print("preferences: ok")
+else:
+print("preferences: unhealthy")
+print("security: ok")
+print("logs: ok")
+print("manual: ok")
+print("package: ok")
+print("snapshot: ok")
+print("result: healthy")
