@@ -584,6 +584,32 @@ pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_HARDWARE_REACHABLE: &str =
     "IRQ handler hardware reachability remains disabled";
 pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str =
     "runtime IRQ dispatch remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_SCOPE: &str =
+    "controlled hardware IRQ delivery candidate";
+pub const IRQ_DELIVERY_CANDIDATE_INPUTS: &str =
+    "pic-eoi-proof/idt-bind-proof/idt-invoke-proof/invocation-bridge/handler-bind-candidate/stub";
+pub const IRQ_DELIVERY_CANDIDATE_EXISTS_YES: &str = "yes";
+pub const IRQ_DELIVERY_CANDIDATE_READY_NO: &str = "no";
+pub const IRQ_DELIVERY_CANDIDATE_IRQ0_ALLOWED_NO: &str = "no";
+pub const IRQ_DELIVERY_CANDIDATE_IRQ1_ALLOWED_NO: &str = "no";
+pub const IRQ_DELIVERY_CANDIDATE_LIVE_HANDLER_BIND_NO: &str = "no";
+pub const IRQ_DELIVERY_CANDIDATE_HANDLER_EOI_ALLOWED_NO: &str = "no";
+pub const IRQ_DELIVERY_CANDIDATE_RUNTIME_ACTIVE_NO: &str = "no";
+pub const IRQ_DELIVERY_CANDIDATE_STI_DISABLED: &str = "disabled";
+pub const IRQ_DELIVERY_CANDIDATE_PIC_UNMASK_DISABLED: &str = "disabled";
+pub const IRQ_DELIVERY_CANDIDATE_KEYBOARD_POLLING: &str = "polling";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_READINESS: &str =
+    "hardware IRQ delivery readiness remains denied";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_IRQ0: &str = "IRQ0 delivery remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_IRQ1: &str = "IRQ1 delivery remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_LIVE_BIND: &str =
+    "live IRQ handler bind remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
+    "handler-triggered EOI remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_STI: &str = "STI remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_PIC_UNMASK: &str = "PIC unmask remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1244,6 +1270,34 @@ pub struct IdtInvokeRuntimeBridgeReadiness {
     pub blocker_invoke_proof: &'static str,
     pub blocker_delivery: &'static str,
     pub blocker_hardware_reachable: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct IrqDeliveryCandidate {
+    pub scope: &'static str,
+    pub inputs: &'static str,
+    pub manual_pic_eoi_smoke_proven_this_boot: &'static str,
+    pub manual_idt_bind_smoke_proven_this_boot: &'static str,
+    pub manual_idt_invocation_smoke_proven_this_boot: &'static str,
+    pub runtime_invocation_bridge_ready: &'static str,
+    pub hardware_irq_delivery_candidate_exists: &'static str,
+    pub candidate_ready: &'static str,
+    pub irq0_delivery_allowed: &'static str,
+    pub irq1_delivery_allowed: &'static str,
+    pub live_irq_handler_bind: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub blocker_readiness: &'static str,
+    pub blocker_irq0: &'static str,
+    pub blocker_irq1: &'static str,
+    pub blocker_live_bind: &'static str,
+    pub blocker_handler_eoi: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_pic_unmask: &'static str,
     pub blocker_runtime: &'static str,
 }
 
@@ -2644,5 +2698,42 @@ pub fn idt_invoke_runtime_bridge_readiness(
         blocker_delivery: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_DELIVERY,
         blocker_hardware_reachable: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_HARDWARE_REACHABLE,
         blocker_runtime: IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_RUNTIME,
+    }
+}
+
+/// Reports whether the proven manual chain can advance to hardware IRQ delivery.
+pub fn irq_delivery_candidate(
+    manual_pic_eoi_smoke_proven_this_boot: &'static str,
+    manual_idt_bind_smoke_proven_this_boot: &'static str,
+    manual_idt_invocation_smoke_proven_this_boot: &'static str,
+    invocation_bridge: IdtInvokeRuntimeBridgeReadiness,
+    bind_candidate: IrqHandlerBindCandidate,
+    stub: IrqHandlerEoiStub,
+) -> IrqDeliveryCandidate {
+    IrqDeliveryCandidate {
+        scope: IRQ_DELIVERY_CANDIDATE_SCOPE,
+        inputs: IRQ_DELIVERY_CANDIDATE_INPUTS,
+        manual_pic_eoi_smoke_proven_this_boot,
+        manual_idt_bind_smoke_proven_this_boot,
+        manual_idt_invocation_smoke_proven_this_boot,
+        runtime_invocation_bridge_ready: invocation_bridge.runtime_invocation_bridge_ready,
+        hardware_irq_delivery_candidate_exists: IRQ_DELIVERY_CANDIDATE_EXISTS_YES,
+        candidate_ready: IRQ_DELIVERY_CANDIDATE_READY_NO,
+        irq0_delivery_allowed: IRQ_DELIVERY_CANDIDATE_IRQ0_ALLOWED_NO,
+        irq1_delivery_allowed: IRQ_DELIVERY_CANDIDATE_IRQ1_ALLOWED_NO,
+        live_irq_handler_bind: IRQ_DELIVERY_CANDIDATE_LIVE_HANDLER_BIND_NO,
+        handler_triggered_eoi_allowed: stub.handler_triggered_eoi_allowed,
+        sti: IRQ_DELIVERY_CANDIDATE_STI_DISABLED,
+        pic_unmask: IRQ_DELIVERY_CANDIDATE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IRQ_DELIVERY_CANDIDATE_KEYBOARD_POLLING,
+        runtime_irq_active: bind_candidate.runtime_irq_active,
+        blocker_readiness: IRQ_DELIVERY_CANDIDATE_BLOCKER_READINESS,
+        blocker_irq0: IRQ_DELIVERY_CANDIDATE_BLOCKER_IRQ0,
+        blocker_irq1: IRQ_DELIVERY_CANDIDATE_BLOCKER_IRQ1,
+        blocker_live_bind: IRQ_DELIVERY_CANDIDATE_BLOCKER_LIVE_BIND,
+        blocker_handler_eoi: IRQ_DELIVERY_CANDIDATE_BLOCKER_HANDLER_EOI,
+        blocker_sti: IRQ_DELIVERY_CANDIDATE_BLOCKER_STI,
+        blocker_pic_unmask: IRQ_DELIVERY_CANDIDATE_BLOCKER_PIC_UNMASK,
+        blocker_runtime: IRQ_DELIVERY_CANDIDATE_BLOCKER_RUNTIME,
     }
 }
