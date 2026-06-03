@@ -1,0 +1,43 @@
+import "../sys/profile.dby" as osprofile
+import "../etc/system.dby" as system
+import std.env as env
+let args: list[str] = env.args()
+fn show_usage():
+print("usage: profile [show|whoami|home|theme|prompt]")
+print("")
+print("commands:")
+print("  show    - print deterministic profile summary")
+print("  whoami  - print profile user")
+print("  home    - print resolved home path")
+print("  theme   - print active theme")
+print("  prompt  - print shell prompt")
+fn show_profile():
+print("--- DByteOS Profile ---")
+print("user:", osprofile.get_user())
+print("home:", osprofile.get_home())
+print("shell:", osprofile.get_shell())
+print("mode:", osprofile.get_mode())
+print("theme:", osprofile.get_theme())
+print("prompt:", osprofile.get_prompt())
+print("os_version:", system.os_version)
+if len(args) < 1:
+show_profile()
+else:
+let cmd: str = args[0]
+if cmd == "show":
+show_profile()
+else:
+if cmd == "whoami":
+print(osprofile.get_user())
+else:
+if cmd == "home":
+print(osprofile.get_home())
+else:
+if cmd == "theme":
+print(osprofile.get_theme())
+else:
+if cmd == "prompt":
+print(osprofile.get_prompt())
+else:
+print("error: unknown profile command: " + cmd)
+show_usage()
