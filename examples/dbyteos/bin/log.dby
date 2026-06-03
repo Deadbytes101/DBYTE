@@ -1,0 +1,31 @@
+import "../sys/logger.dby" as logger
+import std.env as env
+let args = env.args()
+fn show_help():
+print("usage: log <command>")
+print("")
+print("commands:")
+print("  boot         - show boot session log")
+print("  services     - show services session log")
+print("  clear-demo   - clear all session logs")
+if len(args) < 1:
+show_help()
+else:
+let cmd = args[0]
+if cmd == "boot":
+print("--- Boot Log ---")
+print(logger.read_log("tmp/boot.log"))
+else:
+if cmd == "services":
+print("--- Services Log ---")
+print(logger.read_log("tmp/services.log"))
+else:
+if cmd == "clear-demo":
+logger.clear_session_logs()
+print("Session logs reset.")
+else:
+if cmd == "help":
+show_help()
+else:
+print("error: unknown log command: " + cmd)
+show_help()
