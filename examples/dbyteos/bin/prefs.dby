@@ -1,0 +1,73 @@
+import std.env as env
+import "../sys/preferences.dby" as prefs
+fn show_help():
+print("usage: prefs <command> [args...]")
+print("")
+print("commands:")
+print("  show                   - display all user preferences")
+print("  get <key>              - display value for a specific key")
+print("  set <key> <value>      - update value for a safe key")
+print("  status                 - check preference subsystem health")
+print("  doctor                 - check configuration schema validity")
+print("  allowed                - list safe mutable keys and allowed values")
+print("  backup-demo            - copy preferences to a backup file")
+print("  restore-demo           - restore preferences from a backup file")
+print("  reset-demo             - restore preferences to deterministic defaults")
+let args: list[str] = env.args()
+if len(args) < 1:
+show_help()
+else:
+let cmd: str = args[0]
+if cmd == "show":
+prefs.show()
+else:
+if cmd == "get":
+if len(args) < 2:
+print("usage: prefs get <key>")
+else:
+let key: str = args[1]
+let val: str = prefs.get(key)
+if val == "":
+print("error: unknown or restricted preference key: " + key)
+else:
+print(val)
+else:
+if cmd == "set":
+if len(args) < 3:
+print("usage: prefs set <key> <value>")
+else:
+let key: str = args[1]
+let value: str = args[2]
+if prefs.is_safe_key(key) == 0:
+print("error: permission denied. key '" + key + "' is not a safe mutable preference.")
+else:
+if prefs.is_valid_value(key, value) == 0:
+print("error: invalid value '" + value + "' for preference '" + key + "'.")
+else:
+let ok: int = prefs.set(key, value)
+if ok == 1:
+print("preference '" + key + "' updated successfully.")
+else:
+print("error: failed to update preference '" + key + "'.")
+else:
+if cmd == "reset-demo":
+prefs.reset_demo()
+print("preferences reset to default seed state.")
+else:
+if cmd == "status":
+prefs.status()
+else:
+if cmd == "doctor":
+prefs.doctor()
+else:
+if cmd == "allowed":
+prefs.allowed()
+else:
+if cmd == "backup-demo":
+prefs.backup_demo()
+else:
+if cmd == "restore-demo":
+prefs.restore_demo()
+else:
+print("error: unknown command: " + cmd)
+show_help()
