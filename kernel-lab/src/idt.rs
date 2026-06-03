@@ -7,7 +7,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::interrupts;
+use crate::{interrupts, pic};
 
 pub const IDT_BIND_HW_SMOKE_VECTOR: usize = 0x81;
 const IDT_BIND_HW_SMOKE_VECTOR_LABEL: &str = "0x81";
@@ -45,6 +45,41 @@ static IDT_BIND_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
+
+pub const IRQ0_BIND_HW_SMOKE_VECTOR: usize = pic::ICW2_MASTER_OFFSET as usize;
+const IRQ0_BIND_HW_SMOKE_VECTOR_LABEL: &str = "0x20";
+const IRQ0_BIND_HW_SMOKE_TARGET_HANDLER: &str = "inert IRQ0 timer stub";
+const IRQ0_BIND_HW_SMOKE_SCOPE: &str = "controlled IRQ0 timer bind one-shot hardware smoke";
+const IRQ0_BIND_HW_SMOKE_MODE: &str = "manual shell command only";
+const IRQ0_BIND_HW_SMOKE_MUTATION_ALLOWED: &str = "one IRQ0 IDT descriptor bind only";
+const IRQ0_BIND_HW_SMOKE_HARDWARE_DELIVERY_NO: &str = "no";
+const IRQ0_BIND_HW_SMOKE_HANDLER_EOI_NO: &str = "no";
+const IRQ0_BIND_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+const IRQ0_BIND_HW_SMOKE_STI_DISABLED: &str = "disabled";
+const IRQ0_BIND_HW_SMOKE_PIC_IRQ0_UNMASK_DISABLED: &str = "disabled";
+const IRQ0_BIND_HW_SMOKE_KEYBOARD_POLLING: &str = "polling";
+const IRQ0_BIND_HW_SMOKE_BINDS_ZERO: &str = "0";
+const IRQ0_BIND_HW_SMOKE_BINDS_ONE: &str = "1";
+const IRQ0_BIND_HW_SMOKE_RESULT_IDLE: &str = "status: IRQ0 timer bind smoke idle";
+const IRQ0_BIND_HW_SMOKE_RESULT_ARMED: &str = "armed: IRQ0 timer bind smoke armed";
+const IRQ0_BIND_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IRQ0 timer bind smoke unarmed";
+const IRQ0_BIND_HW_SMOKE_RESULT_BLOCKED: &str = "blocked: IRQ0 bind smoke is not armed";
+const IRQ0_BIND_HW_SMOKE_RESULT_PERFORMED: &str =
+    "performed: one IRQ0 IDT descriptor bind";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_IRQ0_ONLY: &str = "IRQ0 timer vector bind only";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_UNMASK: &str = "PIC IRQ0 unmask remains disabled";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_STI: &str = "STI remains disabled";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_DELIVERY: &str =
+    "timer interrupt delivery remains disabled";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_EOI: &str = "handler-triggered EOI remains disabled";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
+
+static IRQ0_BIND_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_BIND_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_BIND_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_BIND_HW_SMOKE_HANDLER_REACHED: AtomicBool = AtomicBool::new(false);
+static IRQ0_BIND_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 
 const IDT_INVOKE_HW_SMOKE_SCOPE: &str = "controlled IDT vector invocation one-shot hardware smoke";
 const IDT_INVOKE_HW_SMOKE_TARGET_HANDLER: &str = "inert test stub";
@@ -133,11 +168,155 @@ pub struct IdtInvokeHwSmokeStatus {
     pub blocker_runtime: &'static str,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Irq0BindHwSmokeStatus {
+    pub scope: &'static str,
+    pub mode: &'static str,
+    pub armed: &'static str,
+    pub consumed: &'static str,
+    pub irq0_bind_smoke_vector: &'static str,
+    pub target_handler: &'static str,
+    pub hardware_mutation_allowed: &'static str,
+    pub irq0_descriptor_binds_this_command: &'static str,
+    pub irq0_descriptor_bound: &'static str,
+    pub irq0_bind_proven_this_boot: &'static str,
+    pub irq0_handler_reached: &'static str,
+    pub irq0_hardware_delivery_allowed: &'static str,
+    pub pic_irq0_unmask: &'static str,
+    pub sti: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub keyboard_mode: &'static str,
+    pub hardware_mutation: &'static str,
+    pub fire_result: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_irq0_only: &'static str,
+    pub blocker_no_unmask: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_no_delivery: &'static str,
+    pub blocker_no_eoi: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
 fn yes_no(value: bool) -> &'static str {
     if value {
         IDT_BIND_HW_SMOKE_YES
     } else {
         IDT_BIND_HW_SMOKE_NO
+    }
+}
+
+fn irq0_bind_hw_smoke_from_state(
+    armed: bool,
+    consumed: bool,
+    irq0_descriptor_binds_this_command: &'static str,
+    hardware_mutation: &'static str,
+    fire_result: &'static str,
+) -> Irq0BindHwSmokeStatus {
+    let proven = IRQ0_BIND_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+    Irq0BindHwSmokeStatus {
+        scope: IRQ0_BIND_HW_SMOKE_SCOPE,
+        mode: IRQ0_BIND_HW_SMOKE_MODE,
+        armed: yes_no(armed),
+        consumed: yes_no(consumed),
+        irq0_bind_smoke_vector: IRQ0_BIND_HW_SMOKE_VECTOR_LABEL,
+        target_handler: IRQ0_BIND_HW_SMOKE_TARGET_HANDLER,
+        hardware_mutation_allowed: IRQ0_BIND_HW_SMOKE_MUTATION_ALLOWED,
+        irq0_descriptor_binds_this_command,
+        irq0_descriptor_bound: yes_no(proven),
+        irq0_bind_proven_this_boot: yes_no(proven),
+        irq0_handler_reached: yes_no(IRQ0_BIND_HW_SMOKE_HANDLER_REACHED.load(Ordering::SeqCst)),
+        irq0_hardware_delivery_allowed: IRQ0_BIND_HW_SMOKE_HARDWARE_DELIVERY_NO,
+        pic_irq0_unmask: IRQ0_BIND_HW_SMOKE_PIC_IRQ0_UNMASK_DISABLED,
+        sti: IRQ0_BIND_HW_SMOKE_STI_DISABLED,
+        handler_triggered_eoi_allowed: IRQ0_BIND_HW_SMOKE_HANDLER_EOI_NO,
+        runtime_irq_active: IRQ0_BIND_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO,
+        keyboard_mode: IRQ0_BIND_HW_SMOKE_KEYBOARD_POLLING,
+        hardware_mutation,
+        fire_result,
+        blocker_manual_only: IRQ0_BIND_HW_SMOKE_BLOCKER_MANUAL_ONLY,
+        blocker_irq0_only: IRQ0_BIND_HW_SMOKE_BLOCKER_IRQ0_ONLY,
+        blocker_no_unmask: IRQ0_BIND_HW_SMOKE_BLOCKER_NO_UNMASK,
+        blocker_sti: IRQ0_BIND_HW_SMOKE_BLOCKER_STI,
+        blocker_no_delivery: IRQ0_BIND_HW_SMOKE_BLOCKER_NO_DELIVERY,
+        blocker_no_eoi: IRQ0_BIND_HW_SMOKE_BLOCKER_NO_EOI,
+        blocker_runtime: IRQ0_BIND_HW_SMOKE_BLOCKER_RUNTIME,
+    }
+}
+
+pub fn irq0_bind_hw_smoke_status() -> Irq0BindHwSmokeStatus {
+    let armed = IRQ0_BIND_HW_SMOKE_ARMED.load(Ordering::SeqCst);
+    let consumed = IRQ0_BIND_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+    irq0_bind_hw_smoke_from_state(
+        armed,
+        consumed,
+        IRQ0_BIND_HW_SMOKE_BINDS_ZERO,
+        IDT_BIND_HW_SMOKE_NO,
+        IRQ0_BIND_HW_SMOKE_RESULT_IDLE,
+    )
+}
+
+pub fn irq0_bind_hw_smoke_arm() -> Irq0BindHwSmokeStatus {
+    IRQ0_BIND_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IRQ0_BIND_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
+    IRQ0_BIND_HW_SMOKE_HANDLER_REACHED.store(false, Ordering::SeqCst);
+    IRQ0_BIND_HW_SMOKE_ARMED.store(true, Ordering::SeqCst);
+    irq0_bind_hw_smoke_from_state(
+        true,
+        false,
+        IRQ0_BIND_HW_SMOKE_BINDS_ZERO,
+        IDT_BIND_HW_SMOKE_NO,
+        IRQ0_BIND_HW_SMOKE_RESULT_ARMED,
+    )
+}
+
+pub fn irq0_bind_hw_smoke_clear() -> Irq0BindHwSmokeStatus {
+    IRQ0_BIND_HW_SMOKE_ARMED.store(false, Ordering::SeqCst);
+    IRQ0_BIND_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IRQ0_BIND_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
+    IRQ0_BIND_HW_SMOKE_HANDLER_REACHED.store(false, Ordering::SeqCst);
+    irq0_bind_hw_smoke_from_state(
+        false,
+        false,
+        IRQ0_BIND_HW_SMOKE_BINDS_ZERO,
+        IDT_BIND_HW_SMOKE_NO,
+        IRQ0_BIND_HW_SMOKE_RESULT_CLEARED,
+    )
+}
+
+pub fn irq0_bind_hw_smoke_fire() -> Irq0BindHwSmokeStatus {
+    match IRQ0_BIND_HW_SMOKE_ARMED.compare_exchange(
+        true,
+        false,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(_) => {
+            unsafe {
+                IDT.entries[pic::ICW2_MASTER_OFFSET as usize]
+                    .set_handler(interrupts::irq0_timer_gate_smoke_asm as *const ());
+            }
+            IRQ0_BIND_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
+            IRQ0_BIND_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
+            IRQ0_BIND_HW_SMOKE_PROVEN_THIS_BOOT.store(true, Ordering::SeqCst);
+            irq0_bind_hw_smoke_from_state(
+                false,
+                true,
+                IRQ0_BIND_HW_SMOKE_BINDS_ONE,
+                IDT_BIND_HW_SMOKE_YES,
+                IRQ0_BIND_HW_SMOKE_RESULT_PERFORMED,
+            )
+        }
+        Err(_) => {
+            let consumed = IRQ0_BIND_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+            irq0_bind_hw_smoke_from_state(
+                false,
+                consumed,
+                IRQ0_BIND_HW_SMOKE_BINDS_ZERO,
+                IDT_BIND_HW_SMOKE_NO,
+                IRQ0_BIND_HW_SMOKE_RESULT_BLOCKED,
+            )
+        }
     }
 }
 
