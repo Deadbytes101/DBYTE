@@ -1,0 +1,61 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+import std.env as env
+let args: list[str] = env.args()
+let rel: str = "home/deadbyte/journal.txt"
+let journal_path: str = profile.resolve_user_data_path(rel)
+fn show_help():
+print("usage: journal <command> [args...]")
+print("")
+print("commands:")
+print("  read              - read all journal entries")
+print("  add <text...>     - add a new entry")
+print("  append <text...>  - append text to last entry (simulated as add for now)")
+print("  clear-demo        - reset journal to seed state")
+print("  help              - show this help")
+if journal_path == "":
+print("error: journal: internal path resolution failed")
+else:
+if len(args) < 1:
+show_help()
+else:
+let cmd: str = args[0]
+if cmd == "read":
+if fs.exists(journal_path) == 1:
+print("--- User Journal ---")
+print(fs.read_text(journal_path))
+else:
+print("error: journal file not found: " + rel)
+else:
+let is_write: int = 0
+if cmd == "add":
+is_write = 1
+if cmd == "append":
+is_write = 1
+if is_write == 1:
+if len(args) < 2:
+print("usage: journal " + cmd + " <text...>")
+else:
+let text: str = profile.join_args_from(args, 1)
+if text == "":
+if cmd == "append":
+print("error: cannot append empty journal entry.")
+else:
+print("error: cannot add empty journal entry.")
+else:
+let content: str = ""
+if fs.exists(journal_path) == 1:
+content = fs.read_text(journal_path)
+let entry: str = "[JOURNAL] " + text + "\n"
+fs.write_text(journal_path, content + entry)
+print("journal: entry recorded.")
+else:
+if cmd == "clear-demo":
+fs.write_text(journal_path, "[JOURNAL] dbyteos journal seed\n")
+print("journal: reset to seed state.")
+else:
+if cmd == "help":
+show_help()
+else:
+print("error: unknown journal command: " + cmd)
+show_help()
