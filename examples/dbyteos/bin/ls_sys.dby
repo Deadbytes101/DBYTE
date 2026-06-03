@@ -1,0 +1,10 @@
+import "../sys/profile.dby" as profile
+import std.fs as fs
+print("DByteOS sys layout:")
+let dirs: list[str] = ["bin", "etc", "home", "sys", "tmp"]
+for d in dirs:
+let path: str = profile.resolve_path(d)
+if fs.exists(path) == 1:
+print("  /" + d)
+else:
+print("  /" + d + " [MISSING]")
