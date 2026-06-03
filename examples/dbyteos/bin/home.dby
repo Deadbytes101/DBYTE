@@ -1,0 +1,2 @@
+import "../sys/profile.dby" as profile
+print("home/" + profile.get_user())
