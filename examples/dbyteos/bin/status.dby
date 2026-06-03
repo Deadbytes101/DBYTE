@@ -1,0 +1,28 @@
+import "../sys/profile.dby" as profile
+import "../etc/system.dby" as system
+import std.fs as fs
+print("--- DByteOS System Status ---")
+print("Summary:")
+print("  OS:      DByte ", system.os_version)
+print("  Host:    ", system.hostname)
+print("  User:    ", profile.get_user())
+print("  Home:    ", profile.get_home())
+print("")
+print("Profile:")
+print("  Mode:    ", profile.get_mode())
+print("  Theme:   ", profile.get_theme())
+print("  Prompt:  ", profile.get_prompt())
+print("")
+let dirs: list[str] = ["bin", "etc", "sys", "home", "tmp"]
+print("Filesystem Integrity:")
+for d in dirs:
+let path: str = profile.resolve_path(d)
+if fs.exists(path) == 1:
+print("  " + d + ": [PRESENT]")
+else:
+print("  " + d + ": [MISSING]")
+print("")
+print("Memory:  Simulated")
+print("Uptime:  Simulated")
+print("Next:    help | man <topic> | which <command>")
+print("-----------------------------")
