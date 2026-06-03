@@ -1,0 +1,14 @@
+import "../etc/system.dby" as system
+import "../sys/profile.dby" as profile
+print("DByteOS Alpha Userland")
+print("version: DByte " + system.os_version)
+print("codename: " + system.os_codename)
+print("host: " + system.hostname)
+print("kernel: " + system.kernel_mode)
+print("user: " + profile.get_user())
+print("home: " + profile.get_home())
+print("shell: " + profile.get_shell())
+print("mode: " + profile.get_mode())
+print("theme: " + profile.get_theme())
+print("prompt: " + profile.get_prompt())
+print("guide: run help, status, or man <topic>")
