@@ -46,6 +46,38 @@ static IDT_BIND_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
 static IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 
+const IDT_INVOKE_HW_SMOKE_SCOPE: &str = "controlled IDT vector invocation one-shot hardware smoke";
+const IDT_INVOKE_HW_SMOKE_TARGET_HANDLER: &str = "inert test stub";
+const IDT_INVOKE_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+const IDT_INVOKE_HW_SMOKE_STI_DISABLED: &str = "disabled";
+const IDT_INVOKE_HW_SMOKE_PIC_UNMASK_DISABLED: &str = "disabled";
+const IDT_INVOKE_HW_SMOKE_KEYBOARD_POLLING: &str = "polling";
+const IDT_INVOKE_HW_SMOKE_YES: &str = "yes";
+const IDT_INVOKE_HW_SMOKE_NO: &str = "no";
+const IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO: &str = "0";
+const IDT_INVOKE_HW_SMOKE_INVOCATIONS_ONE: &str = "1";
+const IDT_INVOKE_HW_SMOKE_RESULT_IDLE: &str = "status: IDT vector invocation smoke idle";
+const IDT_INVOKE_HW_SMOKE_RESULT_ARMED: &str = "armed: IDT vector invocation smoke armed";
+const IDT_INVOKE_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IDT vector invocation smoke unarmed";
+const IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_BIND: &str =
+    "blocked: manual IDT bind proof is required";
+const IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_UNARMED: &str =
+    "blocked: invocation smoke is not armed";
+const IDT_INVOKE_HW_SMOKE_RESULT_PERFORMED: &str = "performed: one int 0x81 invocation";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_BIND_PROOF: &str =
+    "manual IDT bind proof is required";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_VECTOR: &str = "dedicated vector 0x81 only";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_NO_IRQ: &str = "IRQ0/IRQ1 binding remains disabled";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_RUNTIME: &str =
+    "runtime IRQ dispatch remains disabled";
+
+static IDT_INVOKE_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
+static IDT_INVOKE_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
+static IDT_INVOKE_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
+static IDT_INVOKE_HW_SMOKE_STUB_REACHED: AtomicBool = AtomicBool::new(false);
+static IDT_INVOKE_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
+
 #[derive(Copy, Clone, Debug)]
 pub struct IdtBindHwSmokeStatus {
     pub scope: &'static str,
@@ -73,6 +105,31 @@ pub struct IdtBindHwSmokeStatus {
     pub blocker_inert_stub: &'static str,
     pub blocker_no_invocation: &'static str,
     pub blocker_no_live_irq: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct IdtInvokeHwSmokeStatus {
+    pub scope: &'static str,
+    pub bind_proven_this_boot: &'static str,
+    pub armed: &'static str,
+    pub consumed: &'static str,
+    pub target_vector: &'static str,
+    pub target_handler: &'static str,
+    pub interrupt_invocations_this_command: &'static str,
+    pub inert_stub_reached: &'static str,
+    pub first_idt_invocation_performed: &'static str,
+    pub manual_idt_invocation_smoke_proven_this_boot: &'static str,
+    pub hardware_mutation: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub sti: &'static str,
+    pub pic_unmask: &'static str,
+    pub keyboard_mode: &'static str,
+    pub fire_result: &'static str,
+    pub blocker_bind_proof: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_vector: &'static str,
+    pub blocker_no_irq: &'static str,
     pub blocker_runtime: &'static str,
 }
 
@@ -191,6 +248,154 @@ pub fn idt_bind_hw_smoke_fire() -> IdtBindHwSmokeStatus {
                 IDT_BIND_HW_SMOKE_BINDS_ZERO,
                 IDT_BIND_HW_SMOKE_NO,
                 IDT_BIND_HW_SMOKE_RESULT_BLOCKED,
+            )
+        }
+    }
+}
+
+fn idt_invoke_hw_smoke_from_state(
+    bind_proven: bool,
+    armed: bool,
+    consumed: bool,
+    interrupt_invocations_this_command: &'static str,
+    hardware_mutation: &'static str,
+    fire_result: &'static str,
+) -> IdtInvokeHwSmokeStatus {
+    IdtInvokeHwSmokeStatus {
+        scope: IDT_INVOKE_HW_SMOKE_SCOPE,
+        bind_proven_this_boot: yes_no(bind_proven),
+        armed: yes_no(armed),
+        consumed: yes_no(consumed),
+        target_vector: IDT_BIND_HW_SMOKE_VECTOR_LABEL,
+        target_handler: IDT_INVOKE_HW_SMOKE_TARGET_HANDLER,
+        interrupt_invocations_this_command,
+        inert_stub_reached: yes_no(IDT_INVOKE_HW_SMOKE_STUB_REACHED.load(Ordering::SeqCst)),
+        first_idt_invocation_performed: yes_no(
+            IDT_INVOKE_HW_SMOKE_PERFORMED.load(Ordering::SeqCst),
+        ),
+        manual_idt_invocation_smoke_proven_this_boot: yes_no(
+            IDT_INVOKE_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst),
+        ),
+        hardware_mutation,
+        runtime_irq_active: IDT_INVOKE_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO,
+        sti: IDT_INVOKE_HW_SMOKE_STI_DISABLED,
+        pic_unmask: IDT_INVOKE_HW_SMOKE_PIC_UNMASK_DISABLED,
+        keyboard_mode: IDT_INVOKE_HW_SMOKE_KEYBOARD_POLLING,
+        fire_result,
+        blocker_bind_proof: IDT_INVOKE_HW_SMOKE_BLOCKER_BIND_PROOF,
+        blocker_manual_only: IDT_INVOKE_HW_SMOKE_BLOCKER_MANUAL_ONLY,
+        blocker_vector: IDT_INVOKE_HW_SMOKE_BLOCKER_VECTOR,
+        blocker_no_irq: IDT_INVOKE_HW_SMOKE_BLOCKER_NO_IRQ,
+        blocker_runtime: IDT_INVOKE_HW_SMOKE_BLOCKER_RUNTIME,
+    }
+}
+
+pub fn idt_invoke_hw_smoke_record_stub_reached() {
+    IDT_INVOKE_HW_SMOKE_STUB_REACHED.store(true, Ordering::SeqCst);
+}
+
+pub fn idt_invoke_hw_smoke_status() -> IdtInvokeHwSmokeStatus {
+    let bind_proven = IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+    let armed = IDT_INVOKE_HW_SMOKE_ARMED.load(Ordering::SeqCst);
+    let consumed = IDT_INVOKE_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+    idt_invoke_hw_smoke_from_state(
+        bind_proven,
+        armed,
+        consumed,
+        IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO,
+        IDT_INVOKE_HW_SMOKE_NO,
+        IDT_INVOKE_HW_SMOKE_RESULT_IDLE,
+    )
+}
+
+pub fn idt_invoke_hw_smoke_arm() -> IdtInvokeHwSmokeStatus {
+    let bind_proven = IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+    if !bind_proven {
+        return idt_invoke_hw_smoke_from_state(
+            false,
+            false,
+            IDT_INVOKE_HW_SMOKE_CONSUMED.load(Ordering::SeqCst),
+            IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO,
+            IDT_INVOKE_HW_SMOKE_NO,
+            IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_BIND,
+        );
+    }
+
+    IDT_INVOKE_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_STUB_REACHED.store(false, Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_ARMED.store(true, Ordering::SeqCst);
+    idt_invoke_hw_smoke_from_state(
+        true,
+        true,
+        false,
+        IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO,
+        IDT_INVOKE_HW_SMOKE_NO,
+        IDT_INVOKE_HW_SMOKE_RESULT_ARMED,
+    )
+}
+
+pub fn idt_invoke_hw_smoke_clear() -> IdtInvokeHwSmokeStatus {
+    let bind_proven = IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_ARMED.store(false, Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_PERFORMED.store(false, Ordering::SeqCst);
+    IDT_INVOKE_HW_SMOKE_STUB_REACHED.store(false, Ordering::SeqCst);
+    idt_invoke_hw_smoke_from_state(
+        bind_proven,
+        false,
+        false,
+        IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO,
+        IDT_INVOKE_HW_SMOKE_NO,
+        IDT_INVOKE_HW_SMOKE_RESULT_CLEARED,
+    )
+}
+
+pub fn idt_invoke_hw_smoke_fire() -> IdtInvokeHwSmokeStatus {
+    let bind_proven = IDT_BIND_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+    if !bind_proven {
+        return idt_invoke_hw_smoke_from_state(
+            false,
+            false,
+            IDT_INVOKE_HW_SMOKE_CONSUMED.load(Ordering::SeqCst),
+            IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO,
+            IDT_INVOKE_HW_SMOKE_NO,
+            IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_BIND,
+        );
+    }
+
+    match IDT_INVOKE_HW_SMOKE_ARMED.compare_exchange(
+        true,
+        false,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    ) {
+        Ok(_) => {
+            IDT_INVOKE_HW_SMOKE_STUB_REACHED.store(false, Ordering::SeqCst);
+            unsafe {
+                core::arch::asm!("int 0x81");
+            }
+            IDT_INVOKE_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
+            IDT_INVOKE_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
+            IDT_INVOKE_HW_SMOKE_PROVEN_THIS_BOOT.store(true, Ordering::SeqCst);
+            idt_invoke_hw_smoke_from_state(
+                true,
+                false,
+                true,
+                IDT_INVOKE_HW_SMOKE_INVOCATIONS_ONE,
+                IDT_INVOKE_HW_SMOKE_YES,
+                IDT_INVOKE_HW_SMOKE_RESULT_PERFORMED,
+            )
+        }
+        Err(_) => {
+            let consumed = IDT_INVOKE_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+            idt_invoke_hw_smoke_from_state(
+                true,
+                false,
+                consumed,
+                IDT_INVOKE_HW_SMOKE_INVOCATIONS_ZERO,
+                IDT_INVOKE_HW_SMOKE_NO,
+                IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_UNARMED,
             )
         }
     }
