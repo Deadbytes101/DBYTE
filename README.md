@@ -26,7 +26,7 @@
   </a>
  
   <a href="https://github.com/Deadbytes101/DByte/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Deadbytes101/DByte?color=green" alt="MIT LICENSE" />
+    <img src="https://img.shields.io/github/license/Deadbytes101/DByte??color=green" alt="MIT LICENSE" />
   </a>
 </p>
 
