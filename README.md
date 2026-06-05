@@ -1,185 +1,83 @@
-# DByte
-
-**DByte** is a fast low-level scripting language for binary parsing, buffer patching, byte search, typed integer work, and automation scripts that need simple syntax with predictable performance.
-
-Built for byte-level jobs.
-Not for hype. Not for framework circus. Just open data, hit the buffer, patch what needs patching, and get out.
-
-> **Public alpha**
->
-> DByte works for experiments and small tools right now.
-> The language and standard library are still moving, so expect breaking changes before a stable `X.X.X` release.
-
-# 💿 DOWNLOAD DBYTEOS
-
-> [!CAUTION]
-> ### RUN IT IF YOU DARE
-> THIS IS A PRE-ALPHA TEST JUST A TEMP
 <p align="center">
   <img src="assets/logo/dbyte-logo.png" width="180" alt="DBYTEOS Logo" />
 </p>
+
+<h1 align="center">THE DBYTE PROGRAMMING LANGUAGE</h1>
+
 <p align="center">
-  <a href="https://github.com/Deadbytes101/DByte/releases/tag/ISO">
-    <img src="https://img.shields.io/badge/TRY%20ISO%20NOW-FFFFFF?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B&labelColor=003087" alt="TRY ISO NOW" />
+  <b>[ <a href="https://dbytelang.site">Official Site</a> ]</b> 
+  <b>[ <a href="https://dbytelang.site/about">About</a> ]</b> 
+  <b>[ <a href="#features">Features</a> ]</b> 
+  <b>[ <a href="/benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">BENCHMARKS</a> ]</b> 
+  <b>[ <a href="https://dbytelang.site/docs/">DOCUMENTATION</a> ]</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Deadbytes101/DByte/releases/ISO">
+    <img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B" alt="TRY THE FUCKING ISO" />
+  </a>
+ 
+  <a href="https://discord.gg/hWuwUbrujb">
+    <img src="https://img.shields.io/discord/1505230512820588746?label=DISCORD&logo=discord&logoColor=white&color=5865F2" alt="Discord" />
+  </a>
+ 
+  <a href="https://github.com/Deadbytes101/DByte/stargazers">
+    <img src="https://img.shields.io/github/stars/Deadbytes101/DByte?style=flat&color=yellow" alt="⭐ STARS" />
+  </a>
+ 
+  <a href="https://github.com/Deadbytes101/DByte/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/Deadbytes101/DByte?color=green" alt="MIT LICENSE" />
   </a>
 </p>
 
- **Warning:** This OS might format your soul. Install at your own risk, motherfucker.
+**DByte** is a fast low-level scripting language for binary parsing, buffer patching, byte search, typed integer work, and automation scripts that need simple syntax with predictable performance.
 
-This is a benchmark-suite claim, not a claim that DByte is faster than Python in
-every program or environment. See [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md).
+Built for byte-level jobs.  
+Not for hype. Not for framework circus. Just open the data, hit the buffer, patch what needs patching, and get the fuck out.
+
+> **Public Alpha** — Expect breaking changes before stable release.
+
+> [!CAUTION]
+> **Warning:** This OS might format your soul. Install at your own risk, motherfucker.
+
+## Features
+- Low-level scripting focused on **binary parsing**, buffer patching, byte search, and typed integer work
+- Statically checked, Python-like syntax with a bytecode VM
+- `bytes` and mutable `buffer` data types with powerful stdlib
+- DByteOS userland experiments (host-runnable, not a full OS)
+- Handmade, minimal, direct — no framework bloat
 
 ## Highlights
+- Project workflow with `Dbyte.toml`
+- Binary stdlib for endian-aware operations
+- Buffer stdlib (`load`, `save`, `find`, `replace`, `slice`, etc.)
+- Built-in test runner: `dbyte test`
+- Interactive REPL + real DByte-native shell
+- Personal tools for hexdump, patching, binary inspection
 
-- Python-like syntax with static type checks.
-- Project workflow with `Dbyte.toml`.
-- Bytecode VM with disassembly and trace tooling.
-- `bytes` and mutable `buffer` data types.
-- Binary stdlib for endian-aware reads and writes.
-- Buffer stdlib for load, save, find, replace, slice, get, and set.
-- File, hash, encoding, math, env, binary, and buffer standard modules.
-- Built-in test runner: `dbyte test`.
-- Interactive REPL and DByte-native shell for personal scripting sessions.
-  
-1. **Launch the DByteOS Shell**:
+## Getting Started
+1. **Try the ISO** (VM recommended): [Download Latest ISO](https://github.com/Deadbytes101/DByte/releases/ISO)
+2. **Read the docs**: [https://dbytelang.site/docs/](https://dbytelang.site/docs/)
+3. **Clone & explore**: [github.com/Deadbytes101/DByte](https://github.com/Deadbytes101/DByte)
 
+### Quick Start
+```powershell
+dbyte --version
+dbyte repl
+dbyte shell
+dbyte run examples/hello.dby
+dbyte test
+```
+
+### Launch DByteOS Shell
 ```powershell
 dbyte shell --rc examples/dbyteos/.dbyterc
 ```
 
-This configures the session environment, activates autopath resolving, and
-loads the DByteOS prompt from `system.prompt`.
-
-2. **Explore the System**:
-
-- [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
-- [DByteOS Alpha Positioning](docs/DBYTEOS_ALPHA.md)
-- [Command Reference](docs/DBYTEOS_COMMANDS.md)
-- [Onboarding Guide](docs/DBYTEOS_ONBOARDING.md)
-- [Profile Guide](docs/DBYTEOS_PROFILE.md)
-- [Config Guide](docs/DBYTEOS_CONFIG.md)
-- [Snapshot Guide](docs/DBYTEOS_SNAPSHOT.md)
-- [Projects Guide](docs/DBYTEOS_PROJECTS.md)
-- [Tasks Guide](docs/DBYTEOS_TASKS.md)
-- [Security Policy](docs/DBYTEOS_SECURITY.md)
-- [Boot Lifecycle](docs/DBYTEOS_BOOT.md)
-- [Package Smoke Guide](docs/DBYTEOS_PACKAGE.md)
-- [Kernel Exception Subsystem Foundation](docs/KERNEL_EXCEPTIONS.md)
-- [Kernel IRQ Handler Skeleton Foundation](docs/KERNEL_IRQ.md)
-- [KERNEL IRQ HANDLER SHIT:CCCCCC](docs/KERNEL_LAB.md)
-
-3. **Initialize & Interact**:
-
-```bash
-dbyte-shell> welcome
-dbyte-shell> check-system
-dbyte-shell> doctor
-dbyte-shell> profile show
-dbyte-shell> config show
-dbyte-shell> prefs set system.prompt dbyteos>
-dbyte-shell> snapshot
-dbyteos> project reset-demo
-dbyteos> task reset-demo
-dbyteos> task list demo
-dbyteos> task add demo write tests
-dbyteos> task done demo 1
-dbyteos> task status demo
-dbyteos> task summary demo
-dbyteos> task open demo
-dbyteos> task doctor demo
-dbyteos> task snapshot demo
-dbyteos> task clear-done demo
-dbyteos> project status demo
-dbyteos> project snapshot demo
-dbyteos> prefs reset-demo
-dbyte-shell> getting-started
-dbyte-shell> commands
-dbyte-shell> man-index
-dbyte-shell> boot
-dbyte-shell> help
-dbyte-shell> status
-dbyte-shell> which read
-dbyte-shell> notes list
-dbyte-shell> journal read
-```
-
-4. **Smoke-test a zip release**:
-
-```powershell
-.\dbyte.exe --version
-.\dbyte.exe shell --rc examples/dbyteos/.dbyterc
-```
-
-Expected first commands inside the package shell:
-
-```txt
-boot
-welcome
-check-system
-doctor
-prefs set system.prompt dbyteos>
-snapshot
-project reset-demo
-task reset-demo
-task list demo
-task add demo write tests
-task done demo 1
-task status demo
-task summary demo
-task open demo
-task doctor demo
-task snapshot demo
-task clear-done demo
-project status demo
-project snapshot demo
-prefs reset-demo
-profile show
-config show
-getting-started
-commands
-man-index
-boot
-help
-status
-sysinfo
-which read
-man index
-man perm
-quit
-```
-
-## Quick Start
-
-```powershell
-dbyte --version
-dbyte run --vm examples\hello.dby
-dbyte test --engine vm
-```
-
-Start an interactive session:
-
-```powershell
-dbyte repl
-dbyte shell
-```
-
-Create a project:
-
-```powershell
-dbyte new scanner
-cd scanner
-dbyte run --vm
-dbyte test
-```
-
 ## Example: Binary Patch
-
 ```dbyte
 import std.buffer as buf
-import std.encoding as enc
 import std.fs as fs
-
-fs.write_bytes("sample.bin", b"\x00\xDE\xAD\xBE\xEF\x00")
 
 let b: buffer = buf.load("sample.bin")
 let pos: int = buf.find(b, b"\xDE\xAD\xBE\xEF")
@@ -187,169 +85,19 @@ let pos: int = buf.find(b, b"\xDE\xAD\xBE\xEF")
 if pos >= 0:
     buf.replace(b, pos, b"\x90\x90\x90\x90")
     buf.save("sample.patched.bin", b)
-
-let patched: bytes = fs.read_bytes("sample.patched.bin")
-print(enc.hex_encode(patched))
 ```
-
-Run it:
-
-```powershell
-dbyte run --vm examples\binary_patcher.dby
-```
-
-## Common Commands
-
-```powershell
-dbyte run <file>
-dbyte run --vm <file>
-dbyte check <file>
-dbyte test
-dbyte test --engine vm
-dbyte disasm <file>
-dbyte tokens <file>
-dbyte ast <file>
-dbyte bench --compare-python
-dbyte repl [--no-rc]
-dbyte shell [--no-rc]
-dbyte new <name>
-```
-
-## Interactive Runtime
-
-`dbyte repl` keeps variables, functions, imports, and module state alive across
-inputs. Use `.help`, `.reset`, and `.quit` / `.exit` for REPL control.
-
-`dbyte shell` is a DByte-native command shell, not an OS passthrough shell.
-Built-ins include `pwd`, `cd`, `ls`, `run`, `check`, `test`, `version`, and
-`repl`. Shell help is generated from the built-in command registry, and
-`which`, `alias`, `unalias`, and `aliases` are available for personal command
-shortcuts. Execute DByte code explicitly with `:`, for example:
-
-```txt
-: let x: int = 40
-: print(x + 2)
-```
-
-Shell aliases are command-level shortcuts, not DByte language syntax:
-
-```txt
-alias hello = run examples/hello.dby
-hello
-which hello
-unalias hello
-```
-
-Both interactive commands load `.dbyterc` from the current directory unless
-`--no-rc` is passed. Non-interactive commands such as `run`, `check`, `test`,
-`bench`, and `new` do not load `.dbyterc`.
-
-For `dbyte shell`, `.dbyterc` may include shell-only directives that are stripped
-before DByte code is parsed:
-
-```txt
-@shell alias hello = run hello.dby
-
-let boot: int = 41
-```
-
-See `personal_tools/` for a small personal command environment example.
 
 ## Personal Tools
+`personal_tools/` — hexdump, bininfo, find-bytes, patch-bytes, u32-table
 
-`personal_tools/` contains self-contained DByte scripts for common binary
-inspection and patching workflows. They use the existing file, buffer, binary,
-and encoding standard modules and write only deterministic scratch files:
+Run with shortcuts inside the shell: `hexdump`, `patch-bytes`, etc.
 
-```powershell
-dbyte run personal_tools\hexdump.dby
-dbyte run personal_tools\bininfo.dby
-dbyte run personal_tools\find_bytes.dby
-dbyte run personal_tools\patch_bytes.dby
-dbyte run personal_tools\read_u32_table.dby
-```
+## Repository & Contact
+- **Repository**: [Deadbytes101/DByte](https://github.com/Deadbytes101/DByte)
+- **Creator**: [About DEADBYTE](https://dbytelang.site/about)
+- **Discord**: [Join Community](https://discord.gg/hWuwUbrujb)
 
-They also accept script arguments for real files:
+---
+**License**: MIT. See [LICENSE](LICENSE).
 
-```powershell
-dbyte run personal_tools\hexdump.dby firmware.bin
-dbyte run personal_tools\hexdump.dby firmware.bin 16 64
-dbyte run personal_tools\bininfo.dby firmware.bin
-dbyte run personal_tools\find_bytes.dby firmware.bin DEADBEEF
-dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE
-dbyte run personal_tools\patch_bytes.dby --all firmware.bin DEADBEEF CAFEBABE
-dbyte run personal_tools\patch_bytes.dby --offset 128 firmware.bin CAFEBABE
-dbyte run personal_tools\patch_bytes.dby firmware.bin DEADBEEF CAFEBABE --out firmware.patched
-dbyte run personal_tools\read_u32_table.dby firmware.bin
-dbyte run personal_tools\read_u32_table.dby firmware.bin 0 8
-```
-
-### Personal Tools Command Reference
-
-| Tool                       | Usage                                           | Description                                               |
-| -------------------------- | ----------------------------------------------- | --------------------------------------------------------- |
-| `hexdump.dby`              | `hexdump.dby <file> [offset length]`            | Hex dump file bytes, 8 bytes per row                      |
-| `bininfo.dby`              | `bininfo.dby <file>`                            | File size, first 8 bytes hex, checksum                    |
-| `find_bytes.dby`           | `find_bytes.dby <file> <hex_pattern>`           | Find byte pattern, print offset (dec + hex)               |
-| `patch_bytes.dby`          | `patch_bytes.dby <file> <find> <replace>`       | Patch first match, output to `<file>.patched`             |
-| `patch_bytes.dby --all`    | `patch_bytes.dby --all <file> <find> <replace>` | Patch all matches                                         |
-| `patch_bytes.dby --offset` | `patch_bytes.dby --offset <N> <file> <replace>` | Patch at explicit byte offset                             |
-| `patch_bytes.dby --out`    | append `--out <outfile>` to any mode            | Write output to explicit path instead of `<file>.patched` |
-| `read_u32_table.dby`       | `read_u32_table.dby <file> [offset count]`      | Dump little-endian u32 table                              |
-
-All tools support `--help` / `-h`.
-
-From `dbyte shell`, the repo `.dbyterc` exposes shortcuts:
-
-```txt
-hexdump
-bininfo
-find-bytes
-patch-bytes
-u32-table
-```
-
-Script arguments are available to DByte code through `std.env.args()`. The list
-contains only arguments after the script path.
-
-## Embedding DByte
-
-Rust host applications can embed the tree runtime through `dbyte_embed`:
-
-```rust
-use dbyte_embed::DByteRuntime;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut rt = DByteRuntime::new();
-
-    rt.run_source("host", "let x: int = 40")?;
-    let out = rt.run_source_capture("host", "print(x + 2)")?;
-
-    assert_eq!(out.stdout.trim(), "42");
-    Ok(())
-}
-```
-
-The embed API uses persistent tree-interpreter state and does not auto-load
-`.dbyterc`; host applications opt into startup scripts with `load_rc()`.
-
-## Documentation
-
-- [INSTALL.md](INSTALL.md)
-- [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md)
-- [DByteOS Alpha](docs/DBYTEOS_ALPHA.md)
-- [DByteOS Personal Workspace Beta Foundation](docs/DBYTEOS_PERSONAL_ALPHA.md)
-- [DByteOS Commands](docs/DBYTEOS_COMMANDS.md)
-- [DByteOS Profile](docs/DBYTEOS_PROFILE.md)
-- [DByteOS Config](docs/DBYTEOS_CONFIG.md)
-- [DByteOS Security](docs/DBYTEOS_SECURITY.md)
-- [DByteOS Boot](docs/DBYTEOS_BOOT.md)
-- [benchmarks/BENCHMARKS.md](benchmarks/BENCHMARKS.md)
-
-## Release Checklist
-
-See [INSTALL.md](INSTALL.md) for install verification and release smoke tests.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+**This is alpha software. Run in VM if you value your data.**
