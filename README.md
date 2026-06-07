@@ -92,6 +92,27 @@ buf.save("sample.patched.bin", b)
 
 Run with shortcuts inside the shell: `hexdump`, `patch-bytes`, etc.
 
+## Embedding DByte
+
+Rust host applications can embed the tree runtime through `dbyte_embed`:
+
+```rust
+use dbyte_embed::DByteRuntime;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut rt = DByteRuntime::new();
+
+    rt.run_source("host", "let x: int = 40")?;
+    let out = rt.run_source_capture("host", "print(x + 2)")?;
+
+    assert_eq!(out.stdout.trim(), "42");
+    Ok(())
+}
+```
+
+The embed API uses persistent tree-interpreter state and does not auto-load
+`.dbyterc`; host applications opt into startup scripts with `load_rc()`.
+
 ## Repository & Contact
 - **Repository**: [Deadbytes101/DByte](https://github.com/Deadbytes101/DByte)
 - **Creator**: [About DEADBYTE](https://dbytelang.site/about)
