@@ -127,6 +127,42 @@ static EOI_WRITE_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
 static EOI_WRITE_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
 static EOI_WRITE_HW_SMOKE_PERFORMED: AtomicBool = AtomicBool::new(false);
 static EOI_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
+static IRQ0_UNMASK_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_UNMASK_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED: AtomicBool = AtomicBool::new(false);
+static PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
+
+const PIC_IRQ0_MASK_BIT: u8 = 0x01;
+const IRQ0_UNMASK_HW_SMOKE_SCOPE: &str = "controlled PIC IRQ0 unmask one-shot hardware smoke";
+const IRQ0_UNMASK_HW_SMOKE_MODE: &str = "manual transactional command only";
+const IRQ0_UNMASK_HW_SMOKE_YES: &str = "yes";
+const IRQ0_UNMASK_HW_SMOKE_NO: &str = "no";
+const IRQ0_UNMASK_HW_SMOKE_STI_DISABLED: &str = "disabled";
+const IRQ0_UNMASK_HW_SMOKE_DELIVERY_NO: &str = "no";
+const IRQ0_UNMASK_HW_SMOKE_HANDLER_REACHED_NO: &str = "no";
+const IRQ0_UNMASK_HW_SMOKE_HANDLER_EOI_NO: &str = "no";
+const IRQ0_UNMASK_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+const IRQ0_UNMASK_HW_SMOKE_KEYBOARD_POLLING: &str = "polling";
+const IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_YES: &str = "yes";
+const IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_NO: &str = "no";
+const IRQ0_UNMASK_HW_SMOKE_RESULT_IDLE: &str = "status: IRQ0 unmask smoke idle";
+const IRQ0_UNMASK_HW_SMOKE_RESULT_ARMED: &str = "armed: IRQ0 unmask smoke armed";
+const IRQ0_UNMASK_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IRQ0 unmask smoke unarmed";
+const IRQ0_UNMASK_HW_SMOKE_RESULT_BLOCKED: &str = "blocked: IRQ0 unmask smoke is not armed";
+const IRQ0_UNMASK_HW_SMOKE_RESULT_PERFORMED: &str =
+    "performed: temporary IRQ0 unmask restored";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_TRANSACTIONAL: &str =
+    "IRQ0 unmask is transactional and restored before return";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_IRQ1: &str = "IRQ1 remains masked";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_SLAVE: &str = "slave PIC mask remains untouched";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_STI: &str = "STI remains disabled";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_DELIVERY: &str =
+    "hardware IRQ delivery remains disabled";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_EOI: &str = "handler-triggered EOI remains disabled";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 
 /// Documentation-only representation of the future PIC remap sequence.
 pub struct PicRemapPlan {
@@ -194,6 +230,35 @@ pub struct EoiWriteHwSmokeStatus {
     pub blocker_sti: &'static str,
     pub blocker_unmask: &'static str,
     pub blocker_live_irq: &'static str,
+    pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Irq0UnmaskHwSmokeStatus {
+    pub scope: &'static str,
+    pub mode: &'static str,
+    pub armed: &'static str,
+    pub consumed: &'static str,
+    pub irq0_temporary_unmask_performed: &'static str,
+    pub irq0_restore_performed: &'static str,
+    pub irq0_currently_unmasked: &'static str,
+    pub pic_master_mask_restored: &'static str,
+    pub irq0_unmask_proven_this_boot: &'static str,
+    pub hardware_mutation: &'static str,
+    pub fire_result: &'static str,
+    pub sti: &'static str,
+    pub hardware_irq_delivery_allowed: &'static str,
+    pub irq0_handler_reached: &'static str,
+    pub handler_triggered_eoi_allowed: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_manual_only: &'static str,
+    pub blocker_transactional: &'static str,
+    pub blocker_irq1: &'static str,
+    pub blocker_slave: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_delivery: &'static str,
+    pub blocker_eoi: &'static str,
     pub blocker_runtime: &'static str,
 }
 
@@ -514,6 +579,141 @@ impl ProgrammableInterruptController {
         }
     }
 
+    fn irq0_unmask_hw_smoke_yes_no(value: bool) -> &'static str {
+        if value {
+            IRQ0_UNMASK_HW_SMOKE_YES
+        } else {
+            IRQ0_UNMASK_HW_SMOKE_NO
+        }
+    }
+
+    fn irq0_unmask_hw_smoke_from_state(
+        hardware_mutation: &'static str,
+        fire_result: &'static str,
+    ) -> Irq0UnmaskHwSmokeStatus {
+        let armed = IRQ0_UNMASK_HW_SMOKE_ARMED.load(Ordering::SeqCst);
+        let consumed = IRQ0_UNMASK_HW_SMOKE_CONSUMED.load(Ordering::SeqCst);
+        let temporary_unmask =
+            IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED.load(Ordering::SeqCst);
+        let restore_performed = IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED.load(Ordering::SeqCst);
+        let master_mask_restored =
+            IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.load(Ordering::SeqCst);
+        let proven_this_boot =
+            PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+
+        Irq0UnmaskHwSmokeStatus {
+            scope: IRQ0_UNMASK_HW_SMOKE_SCOPE,
+            mode: IRQ0_UNMASK_HW_SMOKE_MODE,
+            armed: Self::irq0_unmask_hw_smoke_yes_no(armed),
+            consumed: Self::irq0_unmask_hw_smoke_yes_no(consumed),
+            irq0_temporary_unmask_performed: Self::irq0_unmask_hw_smoke_yes_no(
+                temporary_unmask,
+            ),
+            irq0_restore_performed: Self::irq0_unmask_hw_smoke_yes_no(restore_performed),
+            irq0_currently_unmasked: IRQ0_UNMASK_HW_SMOKE_NO,
+            pic_master_mask_restored: Self::irq0_unmask_hw_smoke_yes_no(
+                master_mask_restored,
+            ),
+            irq0_unmask_proven_this_boot: Self::irq0_unmask_hw_smoke_yes_no(
+                proven_this_boot,
+            ),
+            hardware_mutation,
+            fire_result,
+            sti: IRQ0_UNMASK_HW_SMOKE_STI_DISABLED,
+            hardware_irq_delivery_allowed: IRQ0_UNMASK_HW_SMOKE_DELIVERY_NO,
+            irq0_handler_reached: IRQ0_UNMASK_HW_SMOKE_HANDLER_REACHED_NO,
+            handler_triggered_eoi_allowed: IRQ0_UNMASK_HW_SMOKE_HANDLER_EOI_NO,
+            runtime_irq_active: IRQ0_UNMASK_HW_SMOKE_RUNTIME_IRQ_ACTIVE_NO,
+            keyboard_mode: IRQ0_UNMASK_HW_SMOKE_KEYBOARD_POLLING,
+            blocker_manual_only: IRQ0_UNMASK_HW_SMOKE_BLOCKER_MANUAL_ONLY,
+            blocker_transactional: IRQ0_UNMASK_HW_SMOKE_BLOCKER_TRANSACTIONAL,
+            blocker_irq1: IRQ0_UNMASK_HW_SMOKE_BLOCKER_IRQ1,
+            blocker_slave: IRQ0_UNMASK_HW_SMOKE_BLOCKER_SLAVE,
+            blocker_sti: IRQ0_UNMASK_HW_SMOKE_BLOCKER_STI,
+            blocker_delivery: IRQ0_UNMASK_HW_SMOKE_BLOCKER_DELIVERY,
+            blocker_eoi: IRQ0_UNMASK_HW_SMOKE_BLOCKER_EOI,
+            blocker_runtime: IRQ0_UNMASK_HW_SMOKE_BLOCKER_RUNTIME,
+        }
+    }
+
+    /// Reads the transactional IRQ0 unmask smoke state without touching PIC hardware.
+    pub fn irq0_unmask_hw_smoke_status() -> Irq0UnmaskHwSmokeStatus {
+        Self::irq0_unmask_hw_smoke_from_state(
+            IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_NO,
+            IRQ0_UNMASK_HW_SMOKE_RESULT_IDLE,
+        )
+    }
+
+    /// Arms the transactional IRQ0 unmask smoke latch without touching PIC hardware.
+    pub fn irq0_unmask_hw_smoke_arm() -> Irq0UnmaskHwSmokeStatus {
+        IRQ0_UNMASK_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_ARMED.store(true, Ordering::SeqCst);
+        Self::irq0_unmask_hw_smoke_from_state(
+            IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_NO,
+            IRQ0_UNMASK_HW_SMOKE_RESULT_ARMED,
+        )
+    }
+
+    /// Clears only transient IRQ0 unmask smoke state without touching PIC hardware.
+    pub fn irq0_unmask_hw_smoke_clear() -> Irq0UnmaskHwSmokeStatus {
+        IRQ0_UNMASK_HW_SMOKE_ARMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_CONSUMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED.store(false, Ordering::SeqCst);
+        IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.store(false, Ordering::SeqCst);
+        Self::irq0_unmask_hw_smoke_from_state(
+            IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_NO,
+            IRQ0_UNMASK_HW_SMOKE_RESULT_CLEARED,
+        )
+    }
+
+    /// Temporarily clears the IRQ0 PIC mask bit and immediately restores the original mask.
+    pub fn irq0_unmask_hw_smoke_fire() -> Irq0UnmaskHwSmokeStatus {
+        if IRQ0_UNMASK_HW_SMOKE_ARMED
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Self::irq0_unmask_hw_smoke_from_state(
+                IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_NO,
+                IRQ0_UNMASK_HW_SMOKE_RESULT_BLOCKED,
+            );
+        }
+
+        unsafe {
+            let original_master_mask = read_pic_port(PIC_MASTER_DATA);
+            let temporary_irq0_unmasked_mask = original_master_mask & !PIC_IRQ0_MASK_BIT;
+            write_pic_port(PIC_MASTER_DATA, temporary_irq0_unmasked_mask);
+            let temporary_master_mask_readback = read_pic_port(PIC_MASTER_DATA);
+            write_pic_port(PIC_MASTER_DATA, original_master_mask);
+            let restored_master_mask_readback = read_pic_port(PIC_MASTER_DATA);
+
+            IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED.store(
+                (temporary_master_mask_readback & PIC_IRQ0_MASK_BIT) == 0,
+                Ordering::SeqCst,
+            );
+            IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED.store(true, Ordering::SeqCst);
+            IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.store(
+                restored_master_mask_readback == original_master_mask,
+                Ordering::SeqCst,
+            );
+        }
+
+        IRQ0_UNMASK_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
+        if IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED.load(Ordering::SeqCst)
+            && IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.load(Ordering::SeqCst)
+        {
+            PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT.store(true, Ordering::SeqCst);
+        }
+
+        Self::irq0_unmask_hw_smoke_from_state(
+            IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_YES,
+            IRQ0_UNMASK_HW_SMOKE_RESULT_PERFORMED,
+        )
+    }
+
     fn eoi_write_hw_smoke_from_state(
         writes_this_command: u8,
         hardware_mutation: &'static str,
@@ -686,6 +886,18 @@ unsafe fn write_pic_port(port: u16, value: u8) {
         in("al") value,
         options(nomem, nostack, preserves_flags)
     );
+}
+
+/// Reads one byte from a PIC command/data port for the controlled smoke path.
+unsafe fn read_pic_port(port: u16) -> u8 {
+    let value: u8;
+    core::arch::asm!(
+        "in al, dx",
+        in("dx") port,
+        out("al") value,
+        options(nomem, nostack, preserves_flags)
+    );
+    value
 }
 
 /// EOI target identifier representing which PIC chip requires acknowledgment.
