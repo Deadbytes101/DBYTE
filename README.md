@@ -89,8 +89,8 @@ let b: buffer = buf.load("sample.bin")
 let pos: int = buf.find(b, b"\xDE\xAD\xBE\xEF")
 
 if pos >= 0:
-    buf.replace(b, pos, b"\x90\x90\x90\x90")
-    buf.save("sample.patched.bin", b)
+buf.replace(b, pos, b"\x90\x90\x90\x90")
+buf.save("sample.patched.bin", b)
 ```
 
 ## Personal Tools
@@ -107,13 +107,13 @@ Rust host applications can embed the tree runtime through `dbyte_embed`:
 use dbyte_embed::DByteRuntime;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut rt = DByteRuntime::new();
+let mut rt = DByteRuntime::new();
 
-    rt.run_source("host", "let x: int = 40")?;
-    let out = rt.run_source_capture("host", "print(x + 2)")?;
+rt.run_source("host", "let x: int = 40")?;
+let out = rt.run_source_capture("host", "print(x + 2)")?;
 
-    assert_eq!(out.stdout.trim(), "42");
-    Ok(())
+assert_eq!(out.stdout.trim(), "42");
+Ok(())
 }
 ```
 
