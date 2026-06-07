@@ -1,33 +1,33 @@
 <p align="center">
-  <img src="assets/logo/dbyte-logo.png" width="180" alt="DBYTEOS Logo" />
+<img src="assets/logo/dbyte-logo.png" width="180" alt="DBYTEOS Logo" />
 </p>
 
 <h1 align="center">THE DBYTE PROGRAMMING LANGUAGE</h1>
 
 <p align="center">
-  <b>[ <a href="https://dbytelang.site">Official Site</a> ]</b> 
-  <b>[ <a href="https://dbytelang.site/about">About</a> ]</b> 
-  <b>[ <a href="#features">Features</a> ]</b> 
-  <b>[ <a href="/benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">BENCHMARKS</a> ]</b> 
-  <b>[ <a href="https://dbytelang.site/docs/">DOCUMENTATION</a> ]</b>
+<b>[ <a href="https://dbytelang.site">Official Site</a> ]</b> 
+<b>[ <a href="https://dbytelang.site/about">About</a> ]</b> 
+<b>[ <a href="#features">Features</a> ]</b> 
+<b>[ <a href="/benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">BENCHMARKS</a> ]</b> 
+<b>[ <a href="https://dbytelang.site/docs/">DOCUMENTATION</a> ]</b>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Deadbytes101/DByte/releases/ISO">
-    <img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B" alt="TRY THE FUCKING ISO" />
-  </a>
- 
-  <a href="https://discord.gg/hWuwUbrujb">
-    <img src="https://img.shields.io/discord/1505230512820588746?label=DISCORD&logo=discord&logoColor=white&color=5865F2" alt="Discord" />
-  </a>
- 
-  <a href="https://github.com/Deadbytes101/DByte/stargazers">
-    <img src="https://img.shields.io/github/stars/Deadbytes101/DByte?style=flat&color=yellow" alt="⭐ STARS" />
-  </a>
- 
-  <a href="https://github.com/Deadbytes101/DByte/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/Deadbytes101/DByte??color=green" alt="MIT LICENSE" />
-  </a>
+<a href="https://github.com/Deadbytes101/DByte/releases/ISO">
+<img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B" alt="TRY THE FUCKING ISO" />
+</a>
+
+<a href="https://discord.gg/hWuwUbrujb">
+<img src="https://img.shields.io/discord/1505230512820588746?label=DISCORD&logo=discord&logoColor=white&color=5865F2" alt="Discord" />
+</a>
+
+<a href="https://github.com/Deadbytes101/DByte/stargazers">
+<img src="https://img.shields.io/github/stars/Deadbytes101/DByte?style=flat&color=yellow" alt="⭐ STARS" />
+</a>
+
+<a href="https://github.com/Deadbytes101/DByte/blob/main/LICENSE">
+<img src="https://img.shields.io/github/license/Deadbytes101/DByte??color=green" alt="MIT LICENSE" />
+</a>
 </p>
 
 **DByte** is a fast low-level scripting language for binary parsing, buffer patching, byte search, typed integer work, and automation scripts that need simple syntax with predictable performance.
@@ -83,8 +83,8 @@ let b: buffer = buf.load("sample.bin")
 let pos: int = buf.find(b, b"\xDE\xAD\xBE\xEF")
 
 if pos >= 0:
-    buf.replace(b, pos, b"\x90\x90\x90\x90")
-    buf.save("sample.patched.bin", b)
+buf.replace(b, pos, b"\x90\x90\x90\x90")
+buf.save("sample.patched.bin", b)
 ```
 
 ## Personal Tools
