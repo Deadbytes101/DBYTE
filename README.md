@@ -8,7 +8,7 @@
 <b>[ <a href="https://dbytelang.site">Official Site</a> ]</b> 
 <b>[ <a href="https://dbytelang.site/about">About</a> ]</b> 
 <b>[ <a href="#features">Features</a> ]</b> 
-<b>[ <a href="benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">BENCHMARKS</a> ]</b> 
+<b>[ <a href="benchmarks/BENCHMARKS.md#public-alpha-baseline-v192--v200">BENCHMARKS</a> ]</b> 
 <b>[ <a href="https://dbytelang.site/docs/">DOCUMENTATION</a> ]</b>
 </p>
 
