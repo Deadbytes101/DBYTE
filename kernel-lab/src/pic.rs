@@ -134,21 +134,34 @@ static IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED: AtomicBool = AtomicBool::new(fals
 static IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED: AtomicBool = AtomicBool::new(false);
 static PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 static IRQ0_TIMER_HANDLER_STUB_COUNTER: AtomicU32 = AtomicU32::new(0);
+static IRQ0_TIMER_HANDLER_MASK_TARGET: AtomicU32 = AtomicU32::new(1);
 static IRQ0_WINDOW_ARMED: AtomicBool = AtomicBool::new(false);
 static IRQ0_WINDOW_STATE: AtomicU8 = AtomicU8::new(IRQ0_WINDOW_STATE_IDLE);
 static IRQ0_WINDOW_DELIVERIES: AtomicU32 = AtomicU32::new(0);
 static IRQ0_WINDOW_ORIGINAL_MASK_RESTORED: AtomicBool = AtomicBool::new(true);
+static IRQ0_TICKS_ARMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_TICKS_STATE: AtomicU8 = AtomicU8::new(IRQ0_TICKS_STATE_IDLE);
+static IRQ0_TICKS_OBSERVED: AtomicU32 = AtomicU32::new(0);
+static IRQ0_TICKS_ORIGINAL_MASK_RESTORED: AtomicBool = AtomicBool::new(true);
 
 const PIC_IRQ0_MASK_BIT: u8 = 0x01;
+pub const IRQ0_TICK_TARGET: u32 = 8;
 const IRQ0_WINDOW_STATE_IDLE: u8 = 0;
 const IRQ0_WINDOW_STATE_ARMED: u8 = 1;
 const IRQ0_WINDOW_STATE_FINISHED: u8 = 2;
 const IRQ0_WINDOW_STATE_FAULT: u8 = 3;
 const IRQ0_WINDOW_WAIT_ITERATIONS: u32 = 10_000_000;
+const IRQ0_TICKS_STATE_IDLE: u8 = 0;
+const IRQ0_TICKS_STATE_ARMED: u8 = 1;
+const IRQ0_TICKS_STATE_FINISHED: u8 = 2;
+const IRQ0_TICKS_STATE_TIMEOUT: u8 = 3;
+const IRQ0_TICKS_STATE_FAULT: u8 = 4;
+const IRQ0_TICKS_WAIT_ITERATIONS: u32 = 20_000_000;
 const IRQ0_WINDOW_STATE_IDLE_LABEL: &str = "idle";
 const IRQ0_WINDOW_STATE_ARMED_LABEL: &str = "armed";
 const IRQ0_WINDOW_STATE_FINISHED_LABEL: &str = "finished";
 const IRQ0_WINDOW_STATE_FAULT_LABEL: &str = "fault";
+const IRQ0_TICKS_STATE_TIMEOUT_LABEL: &str = "timeout";
 const IRQ0_WINDOW_YES: &str = "yes";
 const IRQ0_WINDOW_NO: &str = "no";
 const IRQ0_WINDOW_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
@@ -167,6 +180,19 @@ const IRQ0_WINDOW_VGA_PREPARED: &str = "PREPARED / MASKED";
 const IRQ0_WINDOW_VGA_FIRED_ONCE: &str = "FIRED ONCE / MASKED";
 const IRQ0_WINDOW_VGA_NO_DELIVERY: &str = "NO DELIVERY / MASKED";
 const IRQ0_WINDOW_VGA_MULTI_FIRE: &str = "FAULT MULTI-FIRE";
+const IRQ0_TICKS_RESULT_IDLE: &str = "status: IRQ0 tick counter window idle";
+const IRQ0_TICKS_RESULT_ARMED: &str = "armed: IRQ0 tick counter window ready";
+const IRQ0_TICKS_RESULT_CLEARED: &str = "cleared: IRQ0 tick counter window idle";
+const IRQ0_TICKS_RESULT_BLOCKED: &str = "blocked: IRQ0 tick counter window is not armed";
+const IRQ0_TICKS_RESULT_BLOCKED_PRECONDITIONS: &str = "blocked: preconditions missing";
+const IRQ0_TICKS_RESULT_FINISHED: &str = "finished: eight IRQ0 ticks observed";
+const IRQ0_TICKS_RESULT_TIMEOUT: &str = "timeout: fewer than eight IRQ0 ticks observed";
+const IRQ0_TICKS_RESULT_OVERFLOW: &str = "fault: IRQ0 tick counter overflow";
+const IRQ0_TICKS_RESULT_RESTORE_FAULT: &str = "fault: original PIC mask restore failed";
+const IRQ0_TICKS_VGA_PREPARED: &str = "PREPARED / MASKED";
+const IRQ0_TICKS_VGA_FINISHED: &str = "TICKS 0008 / MASKED";
+const IRQ0_TICKS_VGA_TIMEOUT: &str = "TIMEOUT / MASKED";
+const IRQ0_TICKS_VGA_OVERFLOW: &str = "FAULT OVERFLOW";
 const IRQ0_UNMASK_HW_SMOKE_SCOPE: &str = "controlled PIC IRQ0 unmask one-shot hardware smoke";
 const IRQ0_UNMASK_HW_SMOKE_MODE: &str = "manual transactional command only";
 const IRQ0_UNMASK_HW_SMOKE_YES: &str = "yes";
@@ -297,6 +323,27 @@ pub struct Irq0WindowStatus {
     pub state: &'static str,
     pub armed: &'static str,
     pub irq0_deliveries: u32,
+    pub irq0_currently_masked: &'static str,
+    pub sti_currently_enabled: &'static str,
+    pub original_pic_mask_restored: &'static str,
+    pub if_disabled_before_return: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub pic_remap_proof: &'static str,
+    pub manual_pic_eoi_proof: &'static str,
+    pub irq0_descriptor_bind_proof: &'static str,
+    pub transactional_irq0_unmask_proof: &'static str,
+    pub unmet_preconditions: &'static str,
+    pub hardware_mutation: &'static str,
+    pub result: &'static str,
+    pub vga_irq0_status: &'static str,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Irq0TicksStatus {
+    pub state: &'static str,
+    pub armed: &'static str,
+    pub target_ticks: u32,
+    pub observed_ticks: u32,
     pub irq0_currently_masked: &'static str,
     pub sti_currently_enabled: &'static str,
     pub original_pic_mask_restored: &'static str,
@@ -773,6 +820,16 @@ impl ProgrammableInterruptController {
         }
     }
 
+    fn irq0_ticks_state_label(state: u8) -> &'static str {
+        match state {
+            IRQ0_TICKS_STATE_ARMED => IRQ0_WINDOW_STATE_ARMED_LABEL,
+            IRQ0_TICKS_STATE_FINISHED => IRQ0_WINDOW_STATE_FINISHED_LABEL,
+            IRQ0_TICKS_STATE_TIMEOUT => IRQ0_TICKS_STATE_TIMEOUT_LABEL,
+            IRQ0_TICKS_STATE_FAULT => IRQ0_WINDOW_STATE_FAULT_LABEL,
+            _ => IRQ0_WINDOW_STATE_IDLE_LABEL,
+        }
+    }
+
     fn irq0_window_preconditions_met(
         pic_remap_ready: bool,
         manual_pic_eoi_proof: bool,
@@ -849,6 +906,54 @@ impl ProgrammableInterruptController {
         }
     }
 
+    fn irq0_ticks_status_from_state(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+        hardware_mutation: &'static str,
+        result: &'static str,
+    ) -> Irq0TicksStatus {
+        let state = IRQ0_TICKS_STATE.load(Ordering::SeqCst);
+        let observed_ticks = IRQ0_TICKS_OBSERVED.load(Ordering::SeqCst);
+        let original_mask_restored = IRQ0_TICKS_ORIGINAL_MASK_RESTORED.load(Ordering::SeqCst);
+        let vga_irq0_status = match state {
+            IRQ0_TICKS_STATE_FINISHED if observed_ticks == IRQ0_TICK_TARGET => {
+                IRQ0_TICKS_VGA_FINISHED
+            }
+            IRQ0_TICKS_STATE_TIMEOUT => IRQ0_TICKS_VGA_TIMEOUT,
+            IRQ0_TICKS_STATE_FAULT => IRQ0_TICKS_VGA_OVERFLOW,
+            _ => IRQ0_TICKS_VGA_PREPARED,
+        };
+
+        Irq0TicksStatus {
+            state: Self::irq0_ticks_state_label(state),
+            armed: Self::irq0_window_yes_no(IRQ0_TICKS_ARMED.load(Ordering::SeqCst)),
+            target_ticks: IRQ0_TICK_TARGET,
+            observed_ticks,
+            irq0_currently_masked: IRQ0_WINDOW_YES,
+            sti_currently_enabled: IRQ0_WINDOW_NO,
+            original_pic_mask_restored: Self::irq0_window_yes_no(original_mask_restored),
+            if_disabled_before_return: IRQ0_WINDOW_YES,
+            runtime_irq_active: IRQ0_WINDOW_RUNTIME_IRQ_ACTIVE_NO,
+            pic_remap_proof: Self::irq0_window_yes_no(pic_remap_ready),
+            manual_pic_eoi_proof: Self::irq0_window_yes_no(manual_pic_eoi_proof),
+            irq0_descriptor_bind_proof: Self::irq0_window_yes_no(irq0_descriptor_bind_proof),
+            transactional_irq0_unmask_proof: Self::irq0_window_yes_no(
+                transactional_irq0_unmask_proof,
+            ),
+            unmet_preconditions: Self::irq0_window_unmet_preconditions(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+            ),
+            hardware_mutation,
+            result,
+            vga_irq0_status,
+        }
+    }
+
     pub fn irq0_window_status(
         pic_remap_ready: bool,
         manual_pic_eoi_proof: bool,
@@ -887,6 +992,7 @@ impl ProgrammableInterruptController {
             );
         }
 
+        IRQ0_TIMER_HANDLER_MASK_TARGET.store(1, Ordering::SeqCst);
         IRQ0_TIMER_HANDLER_STUB_COUNTER.store(0, Ordering::SeqCst);
         IRQ0_WINDOW_DELIVERIES.store(0, Ordering::SeqCst);
         IRQ0_WINDOW_ORIGINAL_MASK_RESTORED.store(true, Ordering::SeqCst);
@@ -973,6 +1079,142 @@ impl ProgrammableInterruptController {
         IRQ0_WINDOW_STATE.store(state, Ordering::SeqCst);
 
         Self::irq0_window_status_from_state(
+            true,
+            true,
+            true,
+            true,
+            IRQ0_WINDOW_HARDWARE_MUTATION_YES,
+            result,
+        )
+    }
+
+    pub fn irq0_ticks_status(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0TicksStatus {
+        Self::irq0_ticks_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+            IRQ0_TICKS_RESULT_IDLE,
+        )
+    }
+
+    pub fn irq0_ticks_arm(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0TicksStatus {
+        if !Self::irq0_window_preconditions_met(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+        ) {
+            return Self::irq0_ticks_status_from_state(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+                IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+                IRQ0_TICKS_RESULT_BLOCKED_PRECONDITIONS,
+            );
+        }
+
+        IRQ0_TIMER_HANDLER_MASK_TARGET.store(IRQ0_TICK_TARGET, Ordering::SeqCst);
+        IRQ0_TIMER_HANDLER_STUB_COUNTER.store(0, Ordering::SeqCst);
+        IRQ0_TICKS_OBSERVED.store(0, Ordering::SeqCst);
+        IRQ0_TICKS_ORIGINAL_MASK_RESTORED.store(true, Ordering::SeqCst);
+        IRQ0_TICKS_STATE.store(IRQ0_TICKS_STATE_ARMED, Ordering::SeqCst);
+        IRQ0_TICKS_ARMED.store(true, Ordering::SeqCst);
+
+        Self::irq0_ticks_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+            IRQ0_TICKS_RESULT_ARMED,
+        )
+    }
+
+    pub fn irq0_ticks_clear() -> Irq0TicksStatus {
+        IRQ0_TICKS_ARMED.store(false, Ordering::SeqCst);
+        IRQ0_TIMER_HANDLER_MASK_TARGET.store(1, Ordering::SeqCst);
+        IRQ0_TIMER_HANDLER_STUB_COUNTER.store(0, Ordering::SeqCst);
+        IRQ0_TICKS_OBSERVED.store(0, Ordering::SeqCst);
+        IRQ0_TICKS_ORIGINAL_MASK_RESTORED.store(true, Ordering::SeqCst);
+        IRQ0_TICKS_STATE.store(IRQ0_TICKS_STATE_IDLE, Ordering::SeqCst);
+
+        Self::irq0_ticks_status_from_state(
+            false,
+            false,
+            false,
+            false,
+            IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+            IRQ0_TICKS_RESULT_CLEARED,
+        )
+    }
+
+    pub fn irq0_ticks_fire() -> Irq0TicksStatus {
+        if IRQ0_TICKS_ARMED
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Self::irq0_ticks_status_from_state(
+                true,
+                true,
+                true,
+                true,
+                IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+                IRQ0_TICKS_RESULT_BLOCKED,
+            );
+        }
+
+        IRQ0_TICKS_ORIGINAL_MASK_RESTORED.store(false, Ordering::SeqCst);
+
+        let restored;
+        unsafe {
+            let original_master_mask = read_pic_port(PIC_MASTER_DATA);
+            let temporary_irq0_unmasked_mask = original_master_mask & !PIC_IRQ0_MASK_BIT;
+            write_pic_port(PIC_MASTER_DATA, temporary_irq0_unmasked_mask);
+
+            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+            for _ in 0..IRQ0_TICKS_WAIT_ITERATIONS {
+                core::arch::asm!("pause", options(nomem, nostack, preserves_flags));
+                if IRQ0_TIMER_HANDLER_STUB_COUNTER.load(Ordering::SeqCst) >= IRQ0_TICK_TARGET {
+                    break;
+                }
+            }
+            core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+
+            write_pic_port(PIC_MASTER_DATA, original_master_mask);
+            let restored_master_mask_readback = read_pic_port(PIC_MASTER_DATA);
+            restored = restored_master_mask_readback == original_master_mask;
+        }
+
+        IRQ0_TICKS_ORIGINAL_MASK_RESTORED.store(restored, Ordering::SeqCst);
+        let observed_ticks = IRQ0_TIMER_HANDLER_STUB_COUNTER.load(Ordering::SeqCst);
+        IRQ0_TICKS_OBSERVED.store(observed_ticks, Ordering::SeqCst);
+        IRQ0_TIMER_HANDLER_MASK_TARGET.store(1, Ordering::SeqCst);
+
+        let (state, result) = if !restored {
+            (IRQ0_TICKS_STATE_FAULT, IRQ0_TICKS_RESULT_RESTORE_FAULT)
+        } else if observed_ticks > IRQ0_TICK_TARGET {
+            (IRQ0_TICKS_STATE_FAULT, IRQ0_TICKS_RESULT_OVERFLOW)
+        } else if observed_ticks == IRQ0_TICK_TARGET {
+            (IRQ0_TICKS_STATE_FINISHED, IRQ0_TICKS_RESULT_FINISHED)
+        } else {
+            (IRQ0_TICKS_STATE_TIMEOUT, IRQ0_TICKS_RESULT_TIMEOUT)
+        };
+        IRQ0_TICKS_STATE.store(state, Ordering::SeqCst);
+
+        Self::irq0_ticks_status_from_state(
             true,
             true,
             true,
@@ -1148,9 +1390,11 @@ impl ProgrammableInterruptController {
 
 #[no_mangle]
 pub extern "C" fn irq0_timer_gate_smoke_rust() {
-    IRQ0_TIMER_HANDLER_STUB_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let observed = IRQ0_TIMER_HANDLER_STUB_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
     unsafe {
-        mask_master_pic_irq0();
+        if observed >= IRQ0_TIMER_HANDLER_MASK_TARGET.load(Ordering::SeqCst) {
+            mask_master_pic_irq0();
+        }
         write_master_pic_eoi();
     }
 }
