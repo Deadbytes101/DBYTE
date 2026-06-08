@@ -1285,6 +1285,23 @@ pub struct Irq0ActivationPreflight {
     pub blocker_bounded_sti: &'static str,
 }
 
+#[derive(Copy, Clone)]
+pub struct Irq0TimerHandlerStub {
+    pub stub_exists: &'static str,
+    pub stub_reachable_from_hardware: &'static str,
+    pub counter_increment_path: &'static str,
+    pub irq0_self_mask_path: &'static str,
+    pub master_pic_eoi_path: &'static str,
+    pub sti: &'static str,
+    pub irq0_currently_masked: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub keyboard_mode: &'static str,
+    pub blocker_sti: &'static str,
+    pub blocker_irq0_masked: &'static str,
+    pub blocker_delivery: &'static str,
+    pub blocker_activation_window: &'static str,
+}
+
 /// Documentation-only preflight result for future IRQ runtime activation.
 #[derive(Copy, Clone)]
 pub struct IrqRuntimePreflight {
@@ -2735,5 +2752,23 @@ pub fn irq0_activation_preflight(
         blocker_transactional_unmask: "transactional IRQ0 unmask proof required",
         blocker_manual_eoi: "manual PIC_EOI proof required",
         blocker_bounded_sti: "bounded STI recovery path missing",
+    }
+}
+
+pub fn irq0_timer_handler_stub() -> Irq0TimerHandlerStub {
+    Irq0TimerHandlerStub {
+        stub_exists: "yes",
+        stub_reachable_from_hardware: "no",
+        counter_increment_path: "prepared",
+        irq0_self_mask_path: "prepared",
+        master_pic_eoi_path: "prepared",
+        sti: "disabled",
+        irq0_currently_masked: "yes",
+        runtime_irq_active: "no",
+        keyboard_mode: "polling",
+        blocker_sti: "STI remains disabled",
+        blocker_irq0_masked: "IRQ0 remains masked outside transactional smoke",
+        blocker_delivery: "hardware IRQ delivery remains disabled",
+        blocker_activation_window: "activation window missing",
     }
 }

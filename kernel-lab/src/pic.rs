@@ -18,7 +18,7 @@
 //! intentionally not called from boot, does not enable STI, does not bind IRQ
 //! gates, masks all PIC lines after remap, and does not dispatch EOI.
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// I/O Port address for the Master PIC Command/Status register.
 pub const PIC_MASTER_CMD: u16 = 0x20;
@@ -133,6 +133,7 @@ static IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED: AtomicBool = AtomicBool:
 static IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED: AtomicBool = AtomicBool::new(false);
 static IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED: AtomicBool = AtomicBool::new(false);
 static PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
+static IRQ0_TIMER_HANDLER_STUB_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 const PIC_IRQ0_MASK_BIT: u8 = 0x01;
 const IRQ0_UNMASK_HW_SMOKE_SCOPE: &str = "controlled PIC IRQ0 unmask one-shot hardware smoke";
@@ -151,16 +152,14 @@ const IRQ0_UNMASK_HW_SMOKE_RESULT_IDLE: &str = "status: IRQ0 unmask smoke idle";
 const IRQ0_UNMASK_HW_SMOKE_RESULT_ARMED: &str = "armed: IRQ0 unmask smoke armed";
 const IRQ0_UNMASK_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IRQ0 unmask smoke unarmed";
 const IRQ0_UNMASK_HW_SMOKE_RESULT_BLOCKED: &str = "blocked: IRQ0 unmask smoke is not armed";
-const IRQ0_UNMASK_HW_SMOKE_RESULT_PERFORMED: &str =
-    "performed: temporary IRQ0 unmask restored";
+const IRQ0_UNMASK_HW_SMOKE_RESULT_PERFORMED: &str = "performed: temporary IRQ0 unmask restored";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_TRANSACTIONAL: &str =
     "IRQ0 unmask is transactional and restored before return";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_IRQ1: &str = "IRQ1 remains masked";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_SLAVE: &str = "slave PIC mask remains untouched";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_STI: &str = "STI remains disabled";
-const IRQ0_UNMASK_HW_SMOKE_BLOCKER_DELIVERY: &str =
-    "hardware IRQ delivery remains disabled";
+const IRQ0_UNMASK_HW_SMOKE_BLOCKER_DELIVERY: &str = "hardware IRQ delivery remains disabled";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_EOI: &str = "handler-triggered EOI remains disabled";
 const IRQ0_UNMASK_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 
@@ -596,27 +595,19 @@ impl ProgrammableInterruptController {
         let temporary_unmask =
             IRQ0_UNMASK_HW_SMOKE_TEMPORARY_UNMASK_PERFORMED.load(Ordering::SeqCst);
         let restore_performed = IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED.load(Ordering::SeqCst);
-        let master_mask_restored =
-            IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.load(Ordering::SeqCst);
-        let proven_this_boot =
-            PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
+        let master_mask_restored = IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED.load(Ordering::SeqCst);
+        let proven_this_boot = PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT.load(Ordering::SeqCst);
 
         Irq0UnmaskHwSmokeStatus {
             scope: IRQ0_UNMASK_HW_SMOKE_SCOPE,
             mode: IRQ0_UNMASK_HW_SMOKE_MODE,
             armed: Self::irq0_unmask_hw_smoke_yes_no(armed),
             consumed: Self::irq0_unmask_hw_smoke_yes_no(consumed),
-            irq0_temporary_unmask_performed: Self::irq0_unmask_hw_smoke_yes_no(
-                temporary_unmask,
-            ),
+            irq0_temporary_unmask_performed: Self::irq0_unmask_hw_smoke_yes_no(temporary_unmask),
             irq0_restore_performed: Self::irq0_unmask_hw_smoke_yes_no(restore_performed),
             irq0_currently_unmasked: IRQ0_UNMASK_HW_SMOKE_NO,
-            pic_master_mask_restored: Self::irq0_unmask_hw_smoke_yes_no(
-                master_mask_restored,
-            ),
-            irq0_unmask_proven_this_boot: Self::irq0_unmask_hw_smoke_yes_no(
-                proven_this_boot,
-            ),
+            pic_master_mask_restored: Self::irq0_unmask_hw_smoke_yes_no(master_mask_restored),
+            irq0_unmask_proven_this_boot: Self::irq0_unmask_hw_smoke_yes_no(proven_this_boot),
             hardware_mutation,
             fire_result,
             sti: IRQ0_UNMASK_HW_SMOKE_STI_DISABLED,
@@ -809,7 +800,7 @@ impl ProgrammableInterruptController {
         }
 
         unsafe {
-            write_pic_port(PIC_MASTER_COMMAND, PIC_EOI);
+            write_master_pic_eoi();
         }
         EOI_WRITE_HW_SMOKE_CONSUMED.store(true, Ordering::SeqCst);
         EOI_WRITE_HW_SMOKE_PERFORMED.store(true, Ordering::SeqCst);
@@ -876,6 +867,27 @@ impl ProgrammableInterruptController {
             dispatch_enabled: false,
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn irq0_timer_gate_smoke_rust() {
+    IRQ0_TIMER_HANDLER_STUB_COUNTER.fetch_add(1, Ordering::SeqCst);
+    unsafe {
+        mask_master_pic_irq0();
+        write_master_pic_eoi();
+    }
+}
+
+/// Masks IRQ0 on the master PIC data port for the prepared IRQ0 timer stub.
+unsafe fn mask_master_pic_irq0() {
+    let current_master_mask = read_pic_port(PIC_MASTER_DATA);
+    let masked_master_mask = current_master_mask | PIC_IRQ0_MASK_BIT;
+    write_pic_port(PIC_MASTER_DATA, masked_master_mask);
+}
+
+/// Sends EOI to the master PIC command port through one physical write callsite.
+unsafe fn write_master_pic_eoi() {
+    write_pic_port(PIC_MASTER_COMMAND, PIC_EOI);
 }
 
 /// Writes one byte to a PIC command/data port for the controlled smoke path.
