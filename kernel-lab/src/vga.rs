@@ -1,6 +1,10 @@
 const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
+const VGA_CRTC_INDEX: u16 = 0x3D4;
+const VGA_CRTC_DATA: u16 = 0x3D5;
+const VGA_CURSOR_LOW: u8 = 0x0F;
+const VGA_CURSOR_HIGH: u8 = 0x0E;
 
 static mut CURSOR: usize = 0;
 
@@ -69,6 +73,11 @@ pub fn set_cursor(row: usize, col: usize) {
             col
         };
         CURSOR = bounded_row * BUFFER_WIDTH + bounded_col;
+        let cursor = CURSOR as u16;
+        crate::serial::outb(VGA_CRTC_INDEX, VGA_CURSOR_LOW);
+        crate::serial::outb(VGA_CRTC_DATA, (cursor & 0x00ff) as u8);
+        crate::serial::outb(VGA_CRTC_INDEX, VGA_CURSOR_HIGH);
+        crate::serial::outb(VGA_CRTC_DATA, (cursor >> 8) as u8);
     }
 }
 

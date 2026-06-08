@@ -1,10 +1,10 @@
 const VGA_BUFFER: *mut u8 = 0xB8000 as *mut u8;
-const BUFFER_WIDTH: usize = 80;
-const BUFFER_HEIGHT: usize = 25;
-const WINDOW_ROW: usize = 2;
-const WINDOW_COL: usize = 2;
-const WINDOW_WIDTH: usize = 64;
-const WINDOW_HEIGHT: usize = 9;
+const SCREEN_COLS: usize = 80;
+const SCREEN_ROWS: usize = 25;
+const PANEL_WIDTH: usize = 64;
+const PANEL_HEIGHT: usize = 9;
+const PANEL_X: usize = (SCREEN_COLS - PANEL_WIDTH) / 2;
+const PANEL_Y: usize = (SCREEN_ROWS - PANEL_HEIGHT) / 2;
 const WINDOW_ATTR: u8 = 0x0f;
 const TITLE_ATTR: u8 = 0x0a;
 const VALUE_ATTR: u8 = 0x0b;
@@ -22,45 +22,40 @@ const CP437_BOTTOM_RIGHT: u8 = 0xD9;
 pub fn draw_first_window() {
     clear_screen();
     draw_border();
-    draw_text(
-        WINDOW_ROW + 1,
-        WINDOW_COL + 2,
-        b"DBYTE.OS KERNEL LAB",
-        TITLE_ATTR,
-    );
+    draw_text(PANEL_Y + 1, PANEL_X + 2, b"DBYTE.OS KERNEL LAB", TITLE_ATTR);
     draw_status_line(3, "STATUS", "ONLINE");
     draw_status_line(4, "MODE", "VGA TEXT");
-    draw_status_line(5, "IRQ0", "PREPARED  MASKED");
+    draw_status_line(5, "IRQ0", "PREPARED / MASKED");
     draw_status_line(6, "INPUT", "PS/2 POLLING");
     draw_prompt();
 }
 
 pub fn draw_status_line(row: usize, label: &str, value: &str) {
-    let y = WINDOW_ROW + row;
-    draw_text(y, WINDOW_COL + 2, label.as_bytes(), WINDOW_ATTR);
-    draw_text(y, WINDOW_COL + 10, value.as_bytes(), VALUE_ATTR);
+    let y = PANEL_Y + row;
+    draw_text(y, PANEL_X + 2, label.as_bytes(), WINDOW_ATTR);
+    draw_text(y, PANEL_X + 10, value.as_bytes(), VALUE_ATTR);
 }
 
 pub fn draw_prompt() {
-    let row = WINDOW_ROW + 7;
-    let col = WINDOW_COL + 2;
+    let row = PANEL_Y + 7;
+    let col = PANEL_X + 2;
     draw_text(row, col, b"dbyte-kernel> ", TITLE_ATTR);
     crate::vga::set_cursor(row, col + 14);
 }
 
 fn clear_screen() {
-    for row in 0..BUFFER_HEIGHT {
-        for col in 0..BUFFER_WIDTH {
+    for row in 0..SCREEN_ROWS {
+        for col in 0..SCREEN_COLS {
             write_cell(row, col, b' ', WINDOW_ATTR);
         }
     }
 }
 
 fn draw_border() {
-    let top = WINDOW_ROW;
-    let bottom = WINDOW_ROW + WINDOW_HEIGHT - 1;
-    let left = WINDOW_COL;
-    let right = WINDOW_COL + WINDOW_WIDTH - 1;
+    let top = PANEL_Y;
+    let bottom = PANEL_Y + PANEL_HEIGHT - 1;
+    let left = PANEL_X;
+    let right = PANEL_X + PANEL_WIDTH - 1;
 
     write_cell(top, left, CP437_TOP_LEFT, BORDER_ATTR);
     write_cell(top, right, CP437_TOP_RIGHT, BORDER_ATTR);
@@ -77,7 +72,7 @@ fn draw_border() {
         write_cell(row, right, CP437_VERTICAL, BORDER_ATTR);
     }
 
-    let separator = WINDOW_ROW + 2;
+    let separator = PANEL_Y + 2;
     write_cell(separator, left, CP437_LEFT_TEE, BORDER_ATTR);
     write_cell(separator, right, CP437_RIGHT_TEE, BORDER_ATTR);
     for col in (left + 1)..right {
@@ -86,7 +81,7 @@ fn draw_border() {
 }
 
 fn draw_text(row: usize, col: usize, text: &[u8], attr: u8) {
-    let max_col = WINDOW_COL + WINDOW_WIDTH - 1;
+    let max_col = PANEL_X + PANEL_WIDTH - 1;
     let mut current_col = col;
     for &byte in text {
         if current_col >= max_col {
@@ -98,11 +93,11 @@ fn draw_text(row: usize, col: usize, text: &[u8], attr: u8) {
 }
 
 fn write_cell(row: usize, col: usize, byte: u8, attr: u8) {
-    if row >= BUFFER_HEIGHT || col >= BUFFER_WIDTH {
+    if row >= SCREEN_ROWS || col >= SCREEN_COLS {
         return;
     }
     unsafe {
-        let offset = (row * BUFFER_WIDTH + col) * 2;
+        let offset = (row * SCREEN_COLS + col) * 2;
         *VGA_BUFFER.add(offset) = byte;
         *VGA_BUFFER.add(offset + 1) = attr;
     }
