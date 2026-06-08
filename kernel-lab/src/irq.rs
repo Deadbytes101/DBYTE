@@ -401,15 +401,13 @@ pub const EOI_WRITE_ONESHOT_LATCH_ARM_RESULT: &str = "software latch armed";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_SOFTWARE_ONLY: &str =
     "latch scope: software telemetry only";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_PERMIT: &str = "permit granted: no";
-pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_FIRST_ALLOWED: &str =
-    "first PIC_EOI write allowed: no";
+pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_FIRST_ALLOWED: &str = "first PIC_EOI write allowed: no";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_HARDWARE: &str = "hardware mutation: no";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_RUNTIME: &str = "runtime irq active: no";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
 pub const EOI_WRITE_ONESHOT_LATCH_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
-pub const EOI_WRITE_BRIDGE_SCOPE: &str =
-    "controlled first PIC_EOI write one-shot permit bridge";
+pub const EOI_WRITE_BRIDGE_SCOPE: &str = "controlled first PIC_EOI write one-shot permit bridge";
 pub const EOI_WRITE_BRIDGE_INPUTS: &str =
     "software-latch/permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate";
 pub const EOI_WRITE_BRIDGE_READ_ONLY: &str = "read-only telemetry bridge";
@@ -422,15 +420,12 @@ pub const EOI_WRITE_PERMIT_TRANSITION_SCOPE: &str =
     "controlled first PIC_EOI write permit transition model";
 pub const EOI_WRITE_PERMIT_TRANSITION_INPUTS: &str =
     "transition-state/permit-model/software-latch/bridge/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate";
-pub const EOI_WRITE_PERMIT_TRANSITION_SOFTWARE_ONLY: &str =
-    "software-only permit transition";
+pub const EOI_WRITE_PERMIT_TRANSITION_SOFTWARE_ONLY: &str = "software-only permit transition";
 pub const EOI_WRITE_PERMIT_TRANSITION_ARMED_YES: &str = "yes";
 pub const EOI_WRITE_PERMIT_TRANSITION_ARMED_NO: &str = "no";
 pub const EOI_WRITE_PERMIT_TRANSITION_ARM_RESULT: &str = "software transition armed";
-pub const EOI_WRITE_PERMIT_TRANSITION_CLEAR_RESULT: &str =
-    "software transition cleared";
-pub const EOI_WRITE_PERMIT_TRANSITION_CHECK_RESULT: &str =
-    "transition check remains denied";
+pub const EOI_WRITE_PERMIT_TRANSITION_CLEAR_RESULT: &str = "software transition cleared";
+pub const EOI_WRITE_PERMIT_TRANSITION_CHECK_RESULT: &str = "transition check remains denied";
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_TRANSITION: &str =
     "transition state is software-only";
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PERMIT: &str = "permit granted: no";
@@ -441,24 +436,19 @@ pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_HARDWARE: &str = "hardware mutatio
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_RUNTIME: &str = "runtime irq active: no";
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_STI: &str = "STI disabled";
 pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_PIC_UNMASK: &str = "PIC unmask disabled";
-pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_LIVE_IRQ: &str =
-    "live IRQ runtime disabled";
-pub const EOI_WRITE_EVAL_SCOPE: &str =
-    "controlled first PIC_EOI write permit evaluation";
+pub const EOI_WRITE_PERMIT_TRANSITION_BLOCKER_LIVE_IRQ: &str = "live IRQ runtime disabled";
+pub const EOI_WRITE_EVAL_SCOPE: &str = "controlled first PIC_EOI write permit evaluation";
 pub const EOI_WRITE_EVAL_INPUTS: &str =
     "permit-model/software-latch/bridge/transition/final-gate/mutation-checklist/preflight/candidate";
 pub const EOI_WRITE_EVAL_READ_ONLY: &str = "read-only permit evaluation";
 pub const EOI_WRITE_EVAL_READY_NO: &str = "no";
 pub const EOI_WRITE_EVAL_BLOCKER_PERMIT: &str = "permit model remains denied";
 pub const EOI_WRITE_EVAL_BLOCKER_BRIDGE: &str = "bridge remains denied";
-pub const EOI_WRITE_EVAL_BLOCKER_TRANSITION: &str =
-    "transition state is telemetry-only";
-pub const EOI_WRITE_EVAL_BLOCKER_FIRST_WRITE: &str =
-    "first PIC_EOI write path is not enabled";
+pub const EOI_WRITE_EVAL_BLOCKER_TRANSITION: &str = "transition state is telemetry-only";
+pub const EOI_WRITE_EVAL_BLOCKER_FIRST_WRITE: &str = "first PIC_EOI write path is not enabled";
 pub const EOI_WRITE_EVAL_BLOCKER_HARDWARE: &str = "hardware mutation remains disabled";
 pub const EOI_WRITE_EVAL_BLOCKER_RUNTIME: &str = "runtime IRQ remains inactive";
-pub const EOI_RUNTIME_BRIDGE_SCOPE: &str =
-    "controlled PIC_EOI runtime bridge readiness";
+pub const EOI_RUNTIME_BRIDGE_SCOPE: &str = "controlled PIC_EOI runtime bridge readiness";
 pub const EOI_RUNTIME_BRIDGE_INPUTS: &str =
     "manual-hw-smoke/permit-evaluator/runtime-gate/keyboard";
 pub const EOI_RUNTIME_BRIDGE_READY_NO: &str = "no";
@@ -468,16 +458,13 @@ pub const EOI_RUNTIME_BRIDGE_STI_DISABLED: &str = "disabled";
 pub const EOI_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED: &str = "disabled";
 pub const EOI_RUNTIME_BRIDGE_LIVE_IRQ_HANDLERS_NO: &str = "no";
 pub const EOI_RUNTIME_BRIDGE_KEYBOARD_POLLING: &str = "polling";
-pub const EOI_RUNTIME_BRIDGE_BLOCKER_DISPATCH: &str =
-    "runtime IRQ dispatch remains disabled";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_DISPATCH: &str = "runtime IRQ dispatch remains disabled";
 pub const EOI_RUNTIME_BRIDGE_BLOCKER_STI: &str = "STI remains disabled";
 pub const EOI_RUNTIME_BRIDGE_BLOCKER_PIC_LINES: &str = "PIC lines remain masked";
-pub const EOI_RUNTIME_BRIDGE_BLOCKER_LIVE_HANDLERS: &str =
-    "live IRQ0/IRQ1 handlers remain unbound";
+pub const EOI_RUNTIME_BRIDGE_BLOCKER_LIVE_HANDLERS: &str = "live IRQ0/IRQ1 handlers remain unbound";
 pub const EOI_RUNTIME_BRIDGE_BLOCKER_HANDLER_EOI: &str =
     "handler-triggered EOI path is not enabled";
-pub const IRQ_HANDLER_EOI_CANDIDATE_SCOPE: &str =
-    "controlled IRQ handler EOI path candidate";
+pub const IRQ_HANDLER_EOI_CANDIDATE_SCOPE: &str = "controlled IRQ handler EOI path candidate";
 pub const IRQ_HANDLER_EOI_CANDIDATE_INPUTS: &str = "runtime-bridge-readiness";
 pub const IRQ_HANDLER_EOI_CANDIDATE_READY_NO: &str = "no";
 pub const IRQ_HANDLER_EOI_CANDIDATE_HANDLER_ALLOWED_NO: &str = "no";
@@ -493,10 +480,8 @@ pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
     "handler-triggered EOI remains disabled";
 pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_LIVE_HANDLERS: &str =
     "live IRQ0/IRQ1 handlers remain unbound";
-pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_MANUAL_ONLY: &str =
-    "PIC_EOI write remains manual-only";
-pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_RUNTIME: &str =
-    "runtime IRQ dispatch remains disabled";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_MANUAL_ONLY: &str = "PIC_EOI write remains manual-only";
+pub const IRQ_HANDLER_EOI_CANDIDATE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 pub const IRQ_HANDLER_EOI_STUB_SCOPE: &str = "controlled IRQ handler EOI stub";
 pub const IRQ_HANDLER_EOI_STUB_INPUTS: &str = "handler-eoi-candidate";
 pub const IRQ_HANDLER_EOI_STUB_EXISTS_YES: &str = "yes";
@@ -509,18 +494,12 @@ pub const IRQ_HANDLER_EOI_STUB_RUNTIME_ACTIVE_NO: &str = "no";
 pub const IRQ_HANDLER_EOI_STUB_STI_DISABLED: &str = "disabled";
 pub const IRQ_HANDLER_EOI_STUB_PIC_UNMASK_DISABLED: &str = "disabled";
 pub const IRQ_HANDLER_EOI_STUB_KEYBOARD_POLLING: &str = "polling";
-pub const IRQ_HANDLER_EOI_STUB_BLOCKER_UNBOUND: &str =
-    "stub remains unbound from live IRQ path";
-pub const IRQ_HANDLER_EOI_STUB_BLOCKER_INVOCATION: &str =
-    "stub invocation remains disabled";
-pub const IRQ_HANDLER_EOI_STUB_BLOCKER_HANDLER_EOI: &str =
-    "handler-triggered EOI remains disabled";
-pub const IRQ_HANDLER_EOI_STUB_BLOCKER_MANUAL_ONLY: &str =
-    "PIC_EOI write remains manual-only";
-pub const IRQ_HANDLER_EOI_STUB_BLOCKER_RUNTIME: &str =
-    "runtime IRQ dispatch remains disabled";
-pub const IRQ_HANDLER_BIND_CANDIDATE_SCOPE: &str =
-    "controlled IRQ handler bind candidate";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_UNBOUND: &str = "stub remains unbound from live IRQ path";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_INVOCATION: &str = "stub invocation remains disabled";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_HANDLER_EOI: &str = "handler-triggered EOI remains disabled";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_MANUAL_ONLY: &str = "PIC_EOI write remains manual-only";
+pub const IRQ_HANDLER_EOI_STUB_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_SCOPE: &str = "controlled IRQ handler bind candidate";
 pub const IRQ_HANDLER_BIND_CANDIDATE_INPUTS: &str = "handler-eoi-stub";
 pub const IRQ_HANDLER_BIND_CANDIDATE_EXISTS_YES: &str = "yes";
 pub const IRQ_HANDLER_BIND_CANDIDATE_READY_NO: &str = "no";
@@ -531,8 +510,7 @@ pub const IRQ_HANDLER_BIND_CANDIDATE_RUNTIME_ACTIVE_NO: &str = "no";
 pub const IRQ_HANDLER_BIND_CANDIDATE_STI_DISABLED: &str = "disabled";
 pub const IRQ_HANDLER_BIND_CANDIDATE_PIC_UNMASK_DISABLED: &str = "disabled";
 pub const IRQ_HANDLER_BIND_CANDIDATE_KEYBOARD_POLLING: &str = "polling";
-pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IDT_BIND: &str =
-    "live IDT bind remains disabled";
+pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IDT_BIND: &str = "live IDT bind remains disabled";
 pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_IRQ_REGISTRATION: &str =
     "IRQ0/IRQ1 handler registration remains disabled";
 pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_STUB_INVOCATION: &str =
@@ -541,8 +519,7 @@ pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
     "handler-triggered EOI remains disabled";
 pub const IRQ_HANDLER_BIND_CANDIDATE_BLOCKER_RUNTIME: &str =
     "runtime IRQ dispatch remains disabled";
-pub const IDT_BIND_RUNTIME_BRIDGE_SCOPE: &str =
-    "controlled IDT bind runtime bridge readiness";
+pub const IDT_BIND_RUNTIME_BRIDGE_SCOPE: &str = "controlled IDT bind runtime bridge readiness";
 pub const IDT_BIND_RUNTIME_BRIDGE_INPUTS: &str = "idt-bind-hw-smoke/handler-bind-candidate";
 pub const IDT_BIND_RUNTIME_BRIDGE_READY_NO: &str = "no";
 pub const IDT_BIND_RUNTIME_BRIDGE_LIVE_BIND_ALLOWED_NO: &str = "no";
@@ -554,14 +531,11 @@ pub const IDT_BIND_RUNTIME_BRIDGE_PIC_UNMASK_DISABLED: &str = "disabled";
 pub const IDT_BIND_RUNTIME_BRIDGE_KEYBOARD_POLLING: &str = "polling";
 pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_PROOF: &str =
     "manual IDT bind proof is required before runtime bridge consideration";
-pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_LIVE_BIND: &str =
-    "live IRQ bind remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_LIVE_BIND: &str = "live IRQ bind remains disabled";
 pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_IRQ_REACHABLE: &str =
     "IRQ handler reachability remains disabled";
-pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_INTERRUPT: &str =
-    "interrupt invocation remains disabled";
-pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str =
-    "runtime IRQ dispatch remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_INTERRUPT: &str = "interrupt invocation remains disabled";
+pub const IDT_BIND_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 pub const IDT_INVOKE_RUNTIME_BRIDGE_SCOPE: &str =
     "controlled IDT invocation runtime bridge readiness";
 pub const IDT_INVOKE_RUNTIME_BRIDGE_INPUTS: &str =
@@ -578,14 +552,11 @@ pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_BIND_PROOF: &str =
     "manual IDT bind proof remains required";
 pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_INVOKE_PROOF: &str =
     "manual IDT invocation proof remains required";
-pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_DELIVERY: &str =
-    "live IRQ delivery remains disabled";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_DELIVERY: &str = "live IRQ delivery remains disabled";
 pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_HARDWARE_REACHABLE: &str =
     "IRQ handler hardware reachability remains disabled";
-pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str =
-    "runtime IRQ dispatch remains disabled";
-pub const IRQ_DELIVERY_CANDIDATE_SCOPE: &str =
-    "controlled hardware IRQ delivery candidate";
+pub const IDT_INVOKE_RUNTIME_BRIDGE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_SCOPE: &str = "controlled hardware IRQ delivery candidate";
 pub const IRQ_DELIVERY_CANDIDATE_INPUTS: &str =
     "pic-eoi-proof/idt-bind-proof/idt-invoke-proof/invocation-bridge/handler-bind-candidate/stub";
 pub const IRQ_DELIVERY_CANDIDATE_EXISTS_YES: &str = "yes";
@@ -602,14 +573,12 @@ pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_READINESS: &str =
     "hardware IRQ delivery readiness remains denied";
 pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_IRQ0: &str = "IRQ0 delivery remains disabled";
 pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_IRQ1: &str = "IRQ1 delivery remains disabled";
-pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_LIVE_BIND: &str =
-    "live IRQ handler bind remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_LIVE_BIND: &str = "live IRQ handler bind remains disabled";
 pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_HANDLER_EOI: &str =
     "handler-triggered EOI remains disabled";
 pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_STI: &str = "STI remains disabled";
 pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_PIC_UNMASK: &str = "PIC unmask remains disabled";
-pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_RUNTIME: &str =
-    "runtime IRQ dispatch remains disabled";
+pub const IRQ_DELIVERY_CANDIDATE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 
 static mut IRQ_GATE_BIND_SMOKE_ARMED: bool = false;
 static mut IRQ_GATE_BIND_SMOKE_EXECUTED: bool = false;
@@ -1299,6 +1268,21 @@ pub struct IrqDeliveryCandidate {
     pub blocker_sti: &'static str,
     pub blocker_pic_unmask: &'static str,
     pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone)]
+pub struct Irq0ActivationPreflight {
+    pub descriptor_bind_proof: &'static str,
+    pub transactional_unmask_proof: &'static str,
+    pub manual_eoi_proof: &'static str,
+    pub sti: &'static str,
+    pub irq0_currently_masked: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub activation_allowed: &'static str,
+    pub blocker_descriptor_bind: &'static str,
+    pub blocker_transactional_unmask: &'static str,
+    pub blocker_manual_eoi: &'static str,
+    pub blocker_bounded_sti: &'static str,
 }
 
 /// Documentation-only preflight result for future IRQ runtime activation.
@@ -2494,9 +2478,7 @@ fn eoi_write_permit_transition_from_state(
 }
 
 /// Reads the software-only permit transition state without touching hardware.
-pub fn eoi_write_permit_transition_status(
-    bridge: EoiWriteBridge,
-) -> EoiWritePermitTransition {
+pub fn eoi_write_permit_transition_status(bridge: EoiWriteBridge) -> EoiWritePermitTransition {
     let armed = EOI_WRITE_PERMIT_TRANSITION_ARMED.load(Ordering::SeqCst);
     eoi_write_permit_transition_from_state(bridge, armed)
 }
@@ -2578,9 +2560,7 @@ pub fn eoi_runtime_bridge_readiness(
 }
 
 /// Derives a read-only candidate for a future handler-side PIC_EOI path.
-pub fn irq_handler_eoi_candidate(
-    bridge: EoiRuntimeBridgeReadiness,
-) -> IrqHandlerEoiCandidate {
+pub fn irq_handler_eoi_candidate(bridge: EoiRuntimeBridgeReadiness) -> IrqHandlerEoiCandidate {
     IrqHandlerEoiCandidate {
         scope: IRQ_HANDLER_EOI_CANDIDATE_SCOPE,
         inputs: IRQ_HANDLER_EOI_CANDIDATE_INPUTS,
@@ -2735,5 +2715,25 @@ pub fn irq_delivery_candidate(
         blocker_sti: IRQ_DELIVERY_CANDIDATE_BLOCKER_STI,
         blocker_pic_unmask: IRQ_DELIVERY_CANDIDATE_BLOCKER_PIC_UNMASK,
         blocker_runtime: IRQ_DELIVERY_CANDIDATE_BLOCKER_RUNTIME,
+    }
+}
+
+pub fn irq0_activation_preflight(
+    descriptor_bind_proof: &'static str,
+    transactional_unmask_proof: &'static str,
+    manual_eoi_proof: &'static str,
+) -> Irq0ActivationPreflight {
+    Irq0ActivationPreflight {
+        descriptor_bind_proof,
+        transactional_unmask_proof,
+        manual_eoi_proof,
+        sti: "disabled",
+        irq0_currently_masked: "yes",
+        runtime_irq_active: "no",
+        activation_allowed: "no",
+        blocker_descriptor_bind: "descriptor bind proof required",
+        blocker_transactional_unmask: "transactional IRQ0 unmask proof required",
+        blocker_manual_eoi: "manual PIC_EOI proof required",
+        blocker_bounded_sti: "bounded STI recovery path missing",
     }
 }
