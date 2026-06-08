@@ -32,8 +32,14 @@ pub fn draw_first_window() {
 
 pub fn draw_status_line(row: usize, label: &str, value: &str) {
     let y = PANEL_Y + row;
+    clear_panel_row(y);
     draw_text(y, PANEL_X + 2, label.as_bytes(), WINDOW_ATTR);
     draw_text(y, PANEL_X + 10, value.as_bytes(), VALUE_ATTR);
+}
+
+pub fn draw_irq0_status(value: &str) {
+    draw_status_line(5, "IRQ0", value);
+    draw_prompt();
 }
 
 pub fn draw_prompt() {
@@ -89,6 +95,14 @@ fn draw_text(row: usize, col: usize, text: &[u8], attr: u8) {
         }
         write_cell(row, current_col, byte, attr);
         current_col += 1;
+    }
+}
+
+fn clear_panel_row(row: usize) {
+    let left = PANEL_X + 1;
+    let right = PANEL_X + PANEL_WIDTH - 1;
+    for col in left..right {
+        write_cell(row, col, b' ', WINDOW_ATTR);
     }
 }
 

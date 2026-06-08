@@ -18,7 +18,7 @@
 //! intentionally not called from boot, does not enable STI, does not bind IRQ
 //! gates, masks all PIC lines after remap, and does not dispatch EOI.
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 /// I/O Port address for the Master PIC Command/Status register.
 pub const PIC_MASTER_CMD: u16 = 0x20;
@@ -134,8 +134,39 @@ static IRQ0_UNMASK_HW_SMOKE_RESTORE_PERFORMED: AtomicBool = AtomicBool::new(fals
 static IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED: AtomicBool = AtomicBool::new(false);
 static PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 static IRQ0_TIMER_HANDLER_STUB_COUNTER: AtomicU32 = AtomicU32::new(0);
+static IRQ0_WINDOW_ARMED: AtomicBool = AtomicBool::new(false);
+static IRQ0_WINDOW_STATE: AtomicU8 = AtomicU8::new(IRQ0_WINDOW_STATE_IDLE);
+static IRQ0_WINDOW_DELIVERIES: AtomicU32 = AtomicU32::new(0);
+static IRQ0_WINDOW_ORIGINAL_MASK_RESTORED: AtomicBool = AtomicBool::new(true);
 
 const PIC_IRQ0_MASK_BIT: u8 = 0x01;
+const IRQ0_WINDOW_STATE_IDLE: u8 = 0;
+const IRQ0_WINDOW_STATE_ARMED: u8 = 1;
+const IRQ0_WINDOW_STATE_FINISHED: u8 = 2;
+const IRQ0_WINDOW_STATE_FAULT: u8 = 3;
+const IRQ0_WINDOW_WAIT_ITERATIONS: u32 = 10_000_000;
+const IRQ0_WINDOW_STATE_IDLE_LABEL: &str = "idle";
+const IRQ0_WINDOW_STATE_ARMED_LABEL: &str = "armed";
+const IRQ0_WINDOW_STATE_FINISHED_LABEL: &str = "finished";
+const IRQ0_WINDOW_STATE_FAULT_LABEL: &str = "fault";
+const IRQ0_WINDOW_YES: &str = "yes";
+const IRQ0_WINDOW_NO: &str = "no";
+const IRQ0_WINDOW_RUNTIME_IRQ_ACTIVE_NO: &str = "no";
+const IRQ0_WINDOW_HARDWARE_MUTATION_YES: &str = "yes";
+const IRQ0_WINDOW_HARDWARE_MUTATION_NO: &str = "no";
+const IRQ0_WINDOW_RESULT_IDLE: &str = "status: IRQ0 delivery window idle";
+const IRQ0_WINDOW_RESULT_ARMED: &str = "armed: IRQ0 delivery window ready";
+const IRQ0_WINDOW_RESULT_CLEARED: &str = "cleared: IRQ0 delivery window idle";
+const IRQ0_WINDOW_RESULT_BLOCKED: &str = "blocked: IRQ0 delivery window is not armed";
+const IRQ0_WINDOW_RESULT_BLOCKED_PRECONDITIONS: &str = "blocked: preconditions missing";
+const IRQ0_WINDOW_RESULT_FIRED_ONCE: &str = "finished: one IRQ0 delivery observed";
+const IRQ0_WINDOW_RESULT_NO_DELIVERY: &str = "finished: no IRQ0 delivery observed";
+const IRQ0_WINDOW_RESULT_MULTI_FIRE: &str = "fault: multiple IRQ0 deliveries observed";
+const IRQ0_WINDOW_RESULT_RESTORE_FAULT: &str = "fault: original PIC mask restore failed";
+const IRQ0_WINDOW_VGA_PREPARED: &str = "PREPARED / MASKED";
+const IRQ0_WINDOW_VGA_FIRED_ONCE: &str = "FIRED ONCE / MASKED";
+const IRQ0_WINDOW_VGA_NO_DELIVERY: &str = "NO DELIVERY / MASKED";
+const IRQ0_WINDOW_VGA_MULTI_FIRE: &str = "FAULT MULTI-FIRE";
 const IRQ0_UNMASK_HW_SMOKE_SCOPE: &str = "controlled PIC IRQ0 unmask one-shot hardware smoke";
 const IRQ0_UNMASK_HW_SMOKE_MODE: &str = "manual transactional command only";
 const IRQ0_UNMASK_HW_SMOKE_YES: &str = "yes";
@@ -259,6 +290,26 @@ pub struct Irq0UnmaskHwSmokeStatus {
     pub blocker_delivery: &'static str,
     pub blocker_eoi: &'static str,
     pub blocker_runtime: &'static str,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Irq0WindowStatus {
+    pub state: &'static str,
+    pub armed: &'static str,
+    pub irq0_deliveries: u32,
+    pub irq0_currently_masked: &'static str,
+    pub sti_currently_enabled: &'static str,
+    pub original_pic_mask_restored: &'static str,
+    pub if_disabled_before_return: &'static str,
+    pub runtime_irq_active: &'static str,
+    pub pic_remap_proof: &'static str,
+    pub manual_pic_eoi_proof: &'static str,
+    pub irq0_descriptor_bind_proof: &'static str,
+    pub transactional_irq0_unmask_proof: &'static str,
+    pub unmet_preconditions: &'static str,
+    pub hardware_mutation: &'static str,
+    pub result: &'static str,
+    pub vga_irq0_status: &'static str,
 }
 
 /// Read-only state telemetry for the controlled PIC remap smoke path.
@@ -702,6 +753,232 @@ impl ProgrammableInterruptController {
         Self::irq0_unmask_hw_smoke_from_state(
             IRQ0_UNMASK_HW_SMOKE_HARDWARE_MUTATION_YES,
             IRQ0_UNMASK_HW_SMOKE_RESULT_PERFORMED,
+        )
+    }
+
+    fn irq0_window_yes_no(value: bool) -> &'static str {
+        if value {
+            IRQ0_WINDOW_YES
+        } else {
+            IRQ0_WINDOW_NO
+        }
+    }
+
+    fn irq0_window_state_label(state: u8) -> &'static str {
+        match state {
+            IRQ0_WINDOW_STATE_ARMED => IRQ0_WINDOW_STATE_ARMED_LABEL,
+            IRQ0_WINDOW_STATE_FINISHED => IRQ0_WINDOW_STATE_FINISHED_LABEL,
+            IRQ0_WINDOW_STATE_FAULT => IRQ0_WINDOW_STATE_FAULT_LABEL,
+            _ => IRQ0_WINDOW_STATE_IDLE_LABEL,
+        }
+    }
+
+    fn irq0_window_preconditions_met(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> bool {
+        pic_remap_ready
+            && manual_pic_eoi_proof
+            && irq0_descriptor_bind_proof
+            && transactional_irq0_unmask_proof
+    }
+
+    fn irq0_window_unmet_preconditions(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> &'static str {
+        if !pic_remap_ready {
+            "PIC remap proof required"
+        } else if !manual_pic_eoi_proof {
+            "manual PIC_EOI proof required"
+        } else if !irq0_descriptor_bind_proof {
+            "IRQ0 descriptor bind proof required"
+        } else if !transactional_irq0_unmask_proof {
+            "transactional IRQ0 unmask proof required"
+        } else {
+            "none"
+        }
+    }
+
+    fn irq0_window_status_from_state(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+        hardware_mutation: &'static str,
+        result: &'static str,
+    ) -> Irq0WindowStatus {
+        let state = IRQ0_WINDOW_STATE.load(Ordering::SeqCst);
+        let deliveries = IRQ0_WINDOW_DELIVERIES.load(Ordering::SeqCst);
+        let original_mask_restored = IRQ0_WINDOW_ORIGINAL_MASK_RESTORED.load(Ordering::SeqCst);
+        let vga_irq0_status = match state {
+            IRQ0_WINDOW_STATE_FINISHED if deliveries == 1 => IRQ0_WINDOW_VGA_FIRED_ONCE,
+            IRQ0_WINDOW_STATE_FINISHED => IRQ0_WINDOW_VGA_NO_DELIVERY,
+            IRQ0_WINDOW_STATE_FAULT => IRQ0_WINDOW_VGA_MULTI_FIRE,
+            _ => IRQ0_WINDOW_VGA_PREPARED,
+        };
+
+        Irq0WindowStatus {
+            state: Self::irq0_window_state_label(state),
+            armed: Self::irq0_window_yes_no(IRQ0_WINDOW_ARMED.load(Ordering::SeqCst)),
+            irq0_deliveries: deliveries,
+            irq0_currently_masked: IRQ0_WINDOW_YES,
+            sti_currently_enabled: IRQ0_WINDOW_NO,
+            original_pic_mask_restored: Self::irq0_window_yes_no(original_mask_restored),
+            if_disabled_before_return: IRQ0_WINDOW_YES,
+            runtime_irq_active: IRQ0_WINDOW_RUNTIME_IRQ_ACTIVE_NO,
+            pic_remap_proof: Self::irq0_window_yes_no(pic_remap_ready),
+            manual_pic_eoi_proof: Self::irq0_window_yes_no(manual_pic_eoi_proof),
+            irq0_descriptor_bind_proof: Self::irq0_window_yes_no(irq0_descriptor_bind_proof),
+            transactional_irq0_unmask_proof: Self::irq0_window_yes_no(
+                transactional_irq0_unmask_proof,
+            ),
+            unmet_preconditions: Self::irq0_window_unmet_preconditions(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+            ),
+            hardware_mutation,
+            result,
+            vga_irq0_status,
+        }
+    }
+
+    pub fn irq0_window_status(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0WindowStatus {
+        Self::irq0_window_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+            IRQ0_WINDOW_RESULT_IDLE,
+        )
+    }
+
+    pub fn irq0_window_arm(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0WindowStatus {
+        if !Self::irq0_window_preconditions_met(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+        ) {
+            return Self::irq0_window_status_from_state(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+                IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+                IRQ0_WINDOW_RESULT_BLOCKED_PRECONDITIONS,
+            );
+        }
+
+        IRQ0_TIMER_HANDLER_STUB_COUNTER.store(0, Ordering::SeqCst);
+        IRQ0_WINDOW_DELIVERIES.store(0, Ordering::SeqCst);
+        IRQ0_WINDOW_ORIGINAL_MASK_RESTORED.store(true, Ordering::SeqCst);
+        IRQ0_WINDOW_STATE.store(IRQ0_WINDOW_STATE_ARMED, Ordering::SeqCst);
+        IRQ0_WINDOW_ARMED.store(true, Ordering::SeqCst);
+
+        Self::irq0_window_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+            IRQ0_WINDOW_RESULT_ARMED,
+        )
+    }
+
+    pub fn irq0_window_clear() -> Irq0WindowStatus {
+        IRQ0_WINDOW_ARMED.store(false, Ordering::SeqCst);
+        IRQ0_TIMER_HANDLER_STUB_COUNTER.store(0, Ordering::SeqCst);
+        IRQ0_WINDOW_DELIVERIES.store(0, Ordering::SeqCst);
+        IRQ0_WINDOW_ORIGINAL_MASK_RESTORED.store(true, Ordering::SeqCst);
+        IRQ0_WINDOW_STATE.store(IRQ0_WINDOW_STATE_IDLE, Ordering::SeqCst);
+
+        Self::irq0_window_status_from_state(
+            false,
+            false,
+            false,
+            false,
+            IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+            IRQ0_WINDOW_RESULT_CLEARED,
+        )
+    }
+
+    pub fn irq0_window_fire() -> Irq0WindowStatus {
+        if IRQ0_WINDOW_ARMED
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Self::irq0_window_status_from_state(
+                true,
+                true,
+                true,
+                true,
+                IRQ0_WINDOW_HARDWARE_MUTATION_NO,
+                IRQ0_WINDOW_RESULT_BLOCKED,
+            );
+        }
+
+        IRQ0_WINDOW_ORIGINAL_MASK_RESTORED.store(false, Ordering::SeqCst);
+
+        let restored;
+        unsafe {
+            let original_master_mask = read_pic_port(PIC_MASTER_DATA);
+            let temporary_irq0_unmasked_mask = original_master_mask & !PIC_IRQ0_MASK_BIT;
+            write_pic_port(PIC_MASTER_DATA, temporary_irq0_unmasked_mask);
+
+            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+            for _ in 0..IRQ0_WINDOW_WAIT_ITERATIONS {
+                core::arch::asm!("pause", options(nomem, nostack, preserves_flags));
+                if IRQ0_TIMER_HANDLER_STUB_COUNTER.load(Ordering::SeqCst) > 0 {
+                    break;
+                }
+            }
+            core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+
+            write_pic_port(PIC_MASTER_DATA, original_master_mask);
+            let restored_master_mask_readback = read_pic_port(PIC_MASTER_DATA);
+            restored = restored_master_mask_readback == original_master_mask;
+        }
+
+        IRQ0_WINDOW_ORIGINAL_MASK_RESTORED.store(restored, Ordering::SeqCst);
+        let deliveries = IRQ0_TIMER_HANDLER_STUB_COUNTER.load(Ordering::SeqCst);
+        IRQ0_WINDOW_DELIVERIES.store(deliveries, Ordering::SeqCst);
+
+        let (state, result) = if !restored {
+            (IRQ0_WINDOW_STATE_FAULT, IRQ0_WINDOW_RESULT_RESTORE_FAULT)
+        } else if deliveries > 1 {
+            (IRQ0_WINDOW_STATE_FAULT, IRQ0_WINDOW_RESULT_MULTI_FIRE)
+        } else if deliveries == 1 {
+            (IRQ0_WINDOW_STATE_FINISHED, IRQ0_WINDOW_RESULT_FIRED_ONCE)
+        } else {
+            (IRQ0_WINDOW_STATE_FINISHED, IRQ0_WINDOW_RESULT_NO_DELIVERY)
+        };
+        IRQ0_WINDOW_STATE.store(state, Ordering::SeqCst);
+
+        Self::irq0_window_status_from_state(
+            true,
+            true,
+            true,
+            true,
+            IRQ0_WINDOW_HARDWARE_MUTATION_YES,
+            result,
         )
     }
 
