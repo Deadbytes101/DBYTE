@@ -61,7 +61,7 @@ Not for hype. Not for framework circus. Just open the data, hit the buffer, patc
 
 1. **Try the ISO** (VM recommended): [Download Latest ISO](https://github.com/Deadbytes101/DByte/releases/ISO)
 2. **Read the docs**: [https://dbytelang.site/docs/](https://dbytelang.site/docs/)
-3. **Clone & explore**: [github.com/Deadbytes101/DByte](https://github.com/Deadbytes101/DByte)
+3. **Try MusicPlayers**: [bytedeck](personaltools/bytedeck/musicplayer.dby)
 
 ### Quick Start
 
