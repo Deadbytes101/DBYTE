@@ -13,6 +13,11 @@ faster than Python for every workload, platform, or implementation style.
 
 ## Public Alpha Baseline: v1.9.2 / v2.0.0
 
+
+<img width="700" height="415" alt="image" src="https://github.com/user-attachments/assets/a1d00c13-e6b7-44a7-8574-53fd1a156af8" />
+
+
+
 `v2.0.0` is a public alpha packaging and documentation release based on the
 `v1.9.2` engine plus installer, examples, and release artifacts. No new
 performance claim is introduced by v2.0.0.
