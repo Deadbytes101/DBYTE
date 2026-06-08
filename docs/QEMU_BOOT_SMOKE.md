@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.28.0)
+# DByteOS QEMU Boot Smoke (v10.28.1)
+
+`v10.28.1` is an IRQ0 Activation Preflight Hardening release. It adds no commands and preserves the `v10.28.0` rendered IRQ0 preflight outputs while tightening verifier guards around exact output, read-only isolation, sticky proof inputs, denied activation fields, hardware boundary callsites, no IRQ1 path, and keyboard polling.
 
 `v10.28.0` is an IRQ0 Activation Preflight release. It adds three read-only preflight commands that read the existing sticky IRQ0 descriptor-bind, transactional IRQ0 unmask, and manual PIC_EOI smoke proofs while keeping STI disabled, IRQ0 currently masked, runtime IRQ inactive, and activation denied.
 
