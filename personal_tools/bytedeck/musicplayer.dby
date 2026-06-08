@@ -1,0 +1,96 @@
+import std.env as env
+import std.fs as fs
+import std.process as process
+
+fn helper_path() -> str:
+    return "personal_tools/bytedeck/native/dbyte-audio.exe"
+
+fn show_help():
+    print("BYTEDECK")
+    print("")
+    print("usage:")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby help")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby play <file>")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby pause")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby resume")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby stop")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby status")
+    print("  dbyte run personal_tools/bytedeck/musicplayer.dby list <files...>")
+
+fn show_panel(state: str, file: str):
+    print("BYTEDECK")
+    print("")
+    print("STATE   " + state)
+    if file != "":
+        print("FILE    " + file)
+
+fn print_audio_result(result: str):
+    print(result)
+
+let args: list[str] = env.args()
+let helper: str = helper_path()
+
+if len(args) == 0:
+    show_help()
+else:
+    let cmd: str = args[0]
+
+    if cmd == "help":
+        show_help()
+    else:
+        if cmd == "play":
+            if len(args) < 2:
+                print("ERR MISSING_FILE")
+            else:
+                let path: str = args[1]
+                if fs.exists(path) == 0:
+                    show_panel("ERROR", path)
+                    print("ERR FILE_NOT_FOUND")
+                else:
+                    if fs.exists(helper) == 0:
+                        print("ERR HELPER_NOT_BUILT " + helper)
+                    else:
+                        show_panel("PLAYING", path)
+                        print_audio_result(process.run(helper, ["play", path]))
+        else:
+            if cmd == "pause":
+                if fs.exists(helper) == 0:
+                    print("ERR HELPER_NOT_BUILT " + helper)
+                else:
+                    print_audio_result(process.run(helper, ["pause"]))
+            else:
+                if cmd == "resume":
+                    if fs.exists(helper) == 0:
+                        print("ERR HELPER_NOT_BUILT " + helper)
+                    else:
+                        print_audio_result(process.run(helper, ["resume"]))
+                else:
+                    if cmd == "stop":
+                        if fs.exists(helper) == 0:
+                            print("ERR HELPER_NOT_BUILT " + helper)
+                        else:
+                            print_audio_result(process.run(helper, ["stop"]))
+                    else:
+                        if cmd == "status":
+                            if fs.exists(helper) == 0:
+                                print("ERR HELPER_NOT_BUILT " + helper)
+                            else:
+                                print_audio_result(process.run(helper, ["status"]))
+                        else:
+                            if cmd == "list":
+                                if len(args) < 2:
+                                    print("ERR EMPTY_LIST")
+                                else:
+                                    let i: int = 1
+                                    let n: int = 0
+                                    while i < len(args):
+                                        let path: str = args[i]
+                                        if fs.exists(path) == 1:
+                                            print("[", n, "]", path)
+                                        else:
+                                            print("[", n, "]", path, "(missing)")
+                                        i = i + 1
+                                        n = n + 1
+                            else:
+                                print("ERR UNKNOWN_COMMAND " + cmd)
+                                show_help()
