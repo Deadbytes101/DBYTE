@@ -4,4 +4,11 @@ version = 4
 
 [[package]]
 name = "dbyte_kernel"
-version = "10.31.1"
+version = "10.32.0"
+dependencies = [
+ "dbyte_kernel_vm",
+]
+
+[[package]]
+name = "dbyte_kernel_vm"
+version = "9.0.2"

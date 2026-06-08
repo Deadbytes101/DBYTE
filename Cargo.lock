@@ -104,6 +104,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbyte_kernel_vm"
+version = "9.0.2"
+
+[[package]]
 name = "dbyte_lexer"
 version = "9.0.2"
 dependencies = [

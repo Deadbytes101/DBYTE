@@ -12,6 +12,7 @@ members = [
     "crates/dbyte_project",
     "crates/dbyte_vm",
     "crates/dbyte_embed",
+    "crates/dbyte_kernel_vm",
 ]
 resolver = "2"
 
@@ -33,6 +34,7 @@ dbyte_module = { path = "crates/dbyte_module" }
 dbyte_project = { path = "crates/dbyte_project" }
 dbyte_vm = { path = "crates/dbyte_vm" }
 dbyte_embed = { path = "crates/dbyte_embed" }
+dbyte_kernel_vm = { path = "crates/dbyte_kernel_vm" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 hex = "0.4.3"
