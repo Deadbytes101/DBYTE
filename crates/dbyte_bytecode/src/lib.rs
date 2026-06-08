@@ -48,6 +48,7 @@ pub enum NativeFn {
     FsExists,
     FsMkdir,
     FsRemove,
+    ProcessRun,
 }
 
 impl NativeFn {
@@ -96,6 +97,7 @@ impl NativeFn {
             "std.fs.exists" => Some(Self::FsExists),
             "std.fs.mkdir" => Some(Self::FsMkdir),
             "std.fs.remove" => Some(Self::FsRemove),
+            "std.process.run" => Some(Self::ProcessRun),
             _ => None,
         }
     }

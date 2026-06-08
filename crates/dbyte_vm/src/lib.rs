@@ -1457,6 +1457,24 @@ impl Vm {
                     self.script_args.iter().cloned().map(Value::Str).collect(),
                 ))
             }
+            ProcessRun => {
+                let exe = expect_str(args, 0)?;
+                let argv = expect_str_list(args, 1)?;
+                let output = std::process::Command::new(exe)
+                    .args(&argv)
+                    .output()
+                    .map_err(|e| {
+                        VmError::new(format!("process.run failed for `{}`: {}", exe, e))
+                    })?;
+                let stream = if output.stdout.is_empty() {
+                    &output.stderr
+                } else {
+                    &output.stdout
+                };
+                Ok(Value::Str(
+                    String::from_utf8_lossy(stream).trim_end().to_string(),
+                ))
+            }
             BufferNew | BufferFromBytes | BufferToBytes | BufferLen | BufferGet | BufferSet
             | BufferSlice | BufferLoad | BufferSave | BufferFind | BufferReplace => {
                 self.native_buffer_dispatch(id, args)
@@ -1785,6 +1803,33 @@ fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], VmError> {
         Some(Value::Bytes(bs)) => Ok(bs),
         Some(other) => Err(VmError::new(format!(
             "expected bytes argument {}, found {}",
+            idx + 1,
+            other.kind_name()
+        ))),
+        None => Err(VmError::new(format!("missing argument {}", idx + 1))),
+    }
+}
+
+fn expect_str_list(args: &[Value], idx: usize) -> Result<Vec<String>, VmError> {
+    match args.get(idx) {
+        Some(Value::List(items)) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    Value::Str(s) => out.push(s.clone()),
+                    other => {
+                        return Err(VmError::new(format!(
+                            "expected list[str] argument {}, found list item {}",
+                            idx + 1,
+                            other.kind_name()
+                        )))
+                    }
+                }
+            }
+            Ok(out)
+        }
+        Some(other) => Err(VmError::new(format!(
+            "expected list[str] argument {}, found {}",
             idx + 1,
             other.kind_name()
         ))),

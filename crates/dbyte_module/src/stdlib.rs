@@ -115,6 +115,16 @@ pub fn stdlib_exports(module: &str) -> Option<Vec<(String, StdlibExport)>> {
                 ret: TypeAnnotation::List(Box::new(TypeAnnotation::Str)),
             },
         )]),
+        "std.process" => Some(vec![(
+            "run".into(),
+            StdlibExport::Function {
+                params: vec![
+                    TypeAnnotation::Str,
+                    TypeAnnotation::List(Box::new(TypeAnnotation::Str)),
+                ],
+                ret: TypeAnnotation::Str,
+            },
+        )]),
         "std.buffer" => Some(vec![
             (
                 "new".into(),

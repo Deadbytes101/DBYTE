@@ -344,6 +344,9 @@ impl Interpreter {
             "std.env" => {
                 members.insert("args".into(), ModuleMember::EnvArgs);
             }
+            "std.process" => {
+                members.insert("run".into(), ModuleMember::Native(native_process_run));
+            }
             "std.buffer" => {
                 members.insert("new".into(), ModuleMember::Native(native_buffer_new));
                 members.insert(
@@ -1083,6 +1086,33 @@ fn expect_bytes(args: &[Value], idx: usize) -> Result<&[u8], String> {
     }
 }
 
+fn expect_str_list(args: &[Value], idx: usize) -> Result<Vec<String>, String> {
+    match args.get(idx) {
+        Some(Value::List(items)) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    Value::Str(s) => out.push(s.clone()),
+                    other => {
+                        return Err(format!(
+                            "expected list[str] argument {}, found list item {}",
+                            idx + 1,
+                            other.kind_name()
+                        ))
+                    }
+                }
+            }
+            Ok(out)
+        }
+        Some(other) => Err(format!(
+            "expected list[str] argument {}, found {}",
+            idx + 1,
+            other.kind_name()
+        )),
+        None => Err(format!("missing argument {}", idx + 1)),
+    }
+}
+
 fn expect_buffer(args: &[Value], idx: usize) -> Result<Rc<RefCell<Vec<u8>>>, String> {
     match args.get(idx) {
         Some(Value::Buffer(b)) => Ok(b.clone()),
@@ -1167,6 +1197,23 @@ fn native_fs_remove(args: &[Value]) -> Result<Value, String> {
             .map(|_| Value::Void)
             .map_err(|e| format!("fs.remove failed for `{}`: {}", path, e))
     }
+}
+
+fn native_process_run(args: &[Value]) -> Result<Value, String> {
+    let exe = expect_str(args, 0)?;
+    let argv = expect_str_list(args, 1)?;
+    let output = std::process::Command::new(exe)
+        .args(&argv)
+        .output()
+        .map_err(|e| format!("process.run failed for `{}`: {}", exe, e))?;
+    let stream = if output.stdout.is_empty() {
+        &output.stderr
+    } else {
+        &output.stdout
+    };
+    Ok(Value::Str(
+        String::from_utf8_lossy(stream).trim_end().to_string(),
+    ))
 }
 
 fn native_encoding_hex_encode(args: &[Value]) -> Result<Value, String> {
