@@ -56,6 +56,22 @@ pub fn backspace() {
     }
 }
 
+pub fn set_cursor(row: usize, col: usize) {
+    unsafe {
+        let bounded_row = if row >= BUFFER_HEIGHT {
+            BUFFER_HEIGHT - 1
+        } else {
+            row
+        };
+        let bounded_col = if col >= BUFFER_WIDTH {
+            BUFFER_WIDTH - 1
+        } else {
+            col
+        };
+        CURSOR = bounded_row * BUFFER_WIDTH + bounded_col;
+    }
+}
+
 #[allow(dead_code)]
 pub struct VgaWriter;
 
