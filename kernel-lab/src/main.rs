@@ -4099,6 +4099,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     serial::print("DByteOS Keyboard Lab\n");
     serial::print("status: listening\n");
+    dbyte_vm_probe::run_boot_script();
 
     // Draw the first visible VGA window without changing serial smoke output.
     vga_window::draw_first_window();

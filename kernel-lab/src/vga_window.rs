@@ -2,7 +2,7 @@ const VGA_BUFFER: *mut u8 = 0xB8000 as *mut u8;
 const SCREEN_COLS: usize = 80;
 const SCREEN_ROWS: usize = 25;
 const PANEL_WIDTH: usize = 64;
-const PANEL_HEIGHT: usize = 9;
+const PANEL_HEIGHT: usize = 10;
 const PANEL_X: usize = (SCREEN_COLS - PANEL_WIDTH) / 2;
 const PANEL_Y: usize = (SCREEN_ROWS - PANEL_HEIGHT) / 2;
 const WINDOW_ATTR: u8 = 0x0f;
@@ -27,6 +27,7 @@ pub fn draw_first_window() {
     draw_status_line(4, "MODE", "VGA TEXT");
     draw_status_line(5, "IRQ0", "PREPARED / MASKED");
     draw_status_line(6, "INPUT", "PS/2 POLLING");
+    draw_status_line(7, "DBYTE", "VM ONLINE");
     draw_prompt();
 }
 
@@ -43,7 +44,7 @@ pub fn draw_irq0_status(value: &str) {
 }
 
 pub fn draw_prompt() {
-    let row = PANEL_Y + 7;
+    let row = PANEL_Y + 8;
     let col = PANEL_X + 2;
     draw_text(row, col, b"dbyte-kernel> ", TITLE_ATTR);
     crate::vga::set_cursor(row, col + 14);
