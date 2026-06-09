@@ -34,7 +34,8 @@ impl VmOutput for KernelVmOutput {
 }
 
 pub fn print_status() {
-    let status = "DByte kernel VM\nstate: ready\nmode: embedded bytecode\nheap: none\nfilesystem: none\n";
+    let status =
+        "DByte kernel VM\nstate: ready\nmode: embedded bytecode\nheap: none\nfilesystem: none\n";
     vga::print(status);
     serial::print(status);
 }

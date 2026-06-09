@@ -158,6 +158,7 @@ mod tests {
         fn write_str(&mut self, value: &str) {
             self.strings[self.string_len] = match value {
                 "DBYTE VM ONLINE" => "DBYTE VM ONLINE",
+                "hello" => "hello",
                 _ => "",
             };
             self.string_len += 1;
@@ -200,6 +201,73 @@ mod tests {
     }
 
     #[test]
+    fn adds_two_integers() {
+        let bytecode = [
+            opcode::PUSH_INT,
+            7,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            35,
+            0,
+            0,
+            0,
+            opcode::ADD,
+            opcode::PRINT,
+            opcode::HALT,
+        ];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Ok(()));
+        assert_eq!(output.ints[0], 42);
+    }
+
+    #[test]
+    fn prints_string_constant() {
+        let bytecode = [opcode::PUSH_STR_CONST, 0, 0, opcode::PRINT, opcode::HALT];
+        let strings = ["hello"];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Ok(()));
+        assert_eq!(output.strings[0], "hello");
+    }
+
+    #[test]
+    fn prints_integer() {
+        let bytecode = [opcode::PUSH_INT, 42, 0, 0, 0, opcode::PRINT, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Ok(()));
+        assert_eq!(output.ints[0], 42);
+    }
+
+    #[test]
+    fn rejects_unknown_opcode() {
+        let bytecode = [0x7f];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Err(VmError::UnknownOpcode(0x7f)));
+    }
+
+    #[test]
+    fn rejects_truncated_push_int() {
+        let bytecode = [opcode::PUSH_INT, 1, 0];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Err(VmError::UnexpectedEnd));
+    }
+
+    #[test]
     fn rejects_missing_halt() {
         let bytecode = [opcode::PUSH_INT, 1, 0, 0, 0];
         let strings = [];
@@ -217,5 +285,112 @@ mod tests {
         let mut vm = Vm::new(&bytecode, &strings);
 
         assert_eq!(vm.run(&mut output), Err(VmError::StackUnderflow));
+    }
+
+    #[test]
+    fn rejects_stack_overflow() {
+        let bytecode = [
+            opcode::PUSH_INT,
+            0,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            1,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            2,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            3,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            4,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            5,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            6,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            7,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            8,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            9,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            10,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            11,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            12,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            13,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            14,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            15,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            16,
+            0,
+            0,
+            0,
+            opcode::HALT,
+        ];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Err(VmError::StackOverflow));
+    }
+
+    #[test]
+    fn rejects_invalid_string_constant_index() {
+        let bytecode = [opcode::PUSH_STR_CONST, 1, 0, opcode::PRINT, opcode::HALT];
+        let strings = ["hello"];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Err(VmError::StrConstIndexOutOfBounds));
     }
 }
