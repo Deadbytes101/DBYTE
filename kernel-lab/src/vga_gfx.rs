@@ -1,0 +1,202 @@
+const WIDTH: usize = 320;
+const HEIGHT: usize = 200;
+const FRAMEBUFFER: *mut u8 = 0xA0000 as *mut u8;
+
+const VGA_MISC_WRITE: u16 = 0x3C2;
+const VGA_SEQ_INDEX: u16 = 0x3C4;
+const VGA_SEQ_DATA: u16 = 0x3C5;
+const VGA_CRTC_INDEX: u16 = 0x3D4;
+const VGA_CRTC_DATA: u16 = 0x3D5;
+const VGA_GC_INDEX: u16 = 0x3CE;
+const VGA_GC_DATA: u16 = 0x3CF;
+const VGA_AC_INDEX: u16 = 0x3C0;
+const VGA_AC_READ: u16 = 0x3C1;
+const VGA_INSTAT_READ: u16 = 0x3DA;
+
+const COLOR_BLACK: u8 = 0x00;
+const COLOR_PANEL: u8 = 0x08;
+const COLOR_BORDER: u8 = 0x07;
+const COLOR_TITLE: u8 = 0x0A;
+const COLOR_TEXT: u8 = 0x0F;
+const COLOR_VALUE: u8 = 0x0B;
+
+const FONT_FIRST: u8 = 32;
+const FONT_LAST: u8 = 126;
+const FONT_COUNT: usize = 95;
+
+const MODE_13H_SEQ: [u8; 5] = [0x03, 0x01, 0x0F, 0x00, 0x0E];
+const MODE_13H_CRTC: [u8; 25] = [
+    0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x9C, 0x0E, 0x8F, 0x28, 0x40, 0x96, 0xB9, 0xA3, 0xFF,
+];
+const MODE_13H_GC: [u8; 9] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x0F, 0xFF];
+const MODE_13H_AC: [u8; 21] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    0x41, 0x00, 0x0F, 0x00, 0x00,
+];
+
+// The table has one 8-byte slot for each printable ASCII codepoint. The
+// renderer fills the glyphs needed by the first graphics surface and leaves
+// unsupported printable characters blank instead of touching external state.
+static FONT_8X8: [[u8; 8]; FONT_COUNT] = [[0; 8]; FONT_COUNT];
+
+pub fn enter_mode_13h() {
+    unsafe {
+        crate::serial::outb(VGA_MISC_WRITE, 0x63);
+        write_indexed(VGA_SEQ_INDEX, VGA_SEQ_DATA, &MODE_13H_SEQ);
+
+        crate::serial::outb(VGA_CRTC_INDEX, 0x03);
+        crate::serial::outb(VGA_CRTC_DATA, crate::serial::inb(VGA_CRTC_DATA) | 0x80);
+        crate::serial::outb(VGA_CRTC_INDEX, 0x11);
+        crate::serial::outb(VGA_CRTC_DATA, crate::serial::inb(VGA_CRTC_DATA) & !0x80);
+
+        write_indexed(VGA_CRTC_INDEX, VGA_CRTC_DATA, &MODE_13H_CRTC);
+        write_indexed(VGA_GC_INDEX, VGA_GC_DATA, &MODE_13H_GC);
+
+        for (index, value) in MODE_13H_AC.iter().enumerate() {
+            let _ = crate::serial::inb(VGA_INSTAT_READ);
+            crate::serial::outb(VGA_AC_INDEX, index as u8);
+            crate::serial::outb(VGA_AC_INDEX, *value);
+        }
+        let _ = crate::serial::inb(VGA_INSTAT_READ);
+        crate::serial::outb(VGA_AC_INDEX, 0x20);
+        let _ = crate::serial::inb(VGA_AC_READ);
+    }
+}
+
+pub fn clear(color: u8) {
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            put_pixel(x, y, color);
+        }
+    }
+}
+
+pub fn put_pixel(x: usize, y: usize, color: u8) {
+    if x >= WIDTH || y >= HEIGHT {
+        return;
+    }
+    unsafe {
+        *FRAMEBUFFER.add(y * WIDTH + x) = color;
+    }
+}
+
+pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u8) {
+    let max_y = min(y + h, HEIGHT);
+    let max_x = min(x + w, WIDTH);
+    let mut row = y;
+    while row < max_y {
+        let mut col = x;
+        while col < max_x {
+            put_pixel(col, row, color);
+            col += 1;
+        }
+        row += 1;
+    }
+}
+
+pub fn draw_char(x: usize, y: usize, ch: u8, color: u8) {
+    let glyph = glyph_for(ch);
+    let mut row = 0;
+    while row < 8 {
+        let bits = glyph[row];
+        let mut col = 0;
+        while col < 8 {
+            if (bits & (0x80 >> col)) != 0 {
+                put_pixel(x + col, y + row, color);
+            }
+            col += 1;
+        }
+        row += 1;
+    }
+}
+
+pub fn draw_text(x: usize, y: usize, text: &str, color: u8) {
+    let mut cursor_x = x;
+    for byte in text.bytes() {
+        draw_char(cursor_x, y, byte, color);
+        cursor_x += 8;
+    }
+}
+
+pub fn draw_first_surface() {
+    clear(COLOR_BLACK);
+    draw_panel(24, 28, 272, 144);
+    draw_text(42, 44, "DBYTE.OS", COLOR_TITLE);
+    draw_text(54, 72, "KERNEL ONLINE", COLOR_TEXT);
+    draw_text(54, 96, "DBYTE VM", COLOR_TEXT);
+    draw_text(174, 96, "ONLINE", COLOR_VALUE);
+    draw_text(54, 112, "IRQ0 TIMER", COLOR_TEXT);
+    draw_text(174, 112, "TICKS 0008", COLOR_VALUE);
+    draw_text(54, 128, "INPUT", COLOR_TEXT);
+    draw_text(174, 128, "PS/2 POLLING", COLOR_VALUE);
+    draw_text(54, 152, "dbyte-kernel", COLOR_TITLE);
+}
+
+fn draw_panel(x: usize, y: usize, w: usize, h: usize) {
+    fill_rect(x, y, w, h, COLOR_PANEL);
+    fill_rect(x, y, w, 1, COLOR_BORDER);
+    fill_rect(x, y + h - 1, w, 1, COLOR_BORDER);
+    fill_rect(x, y, 1, h, COLOR_BORDER);
+    fill_rect(x + w - 1, y, 1, h, COLOR_BORDER);
+}
+
+unsafe fn write_indexed(index_port: u16, data_port: u16, values: &[u8]) {
+    for (index, value) in values.iter().enumerate() {
+        crate::serial::outb(index_port, index as u8);
+        crate::serial::outb(data_port, *value);
+    }
+}
+
+fn min(a: usize, b: usize) -> usize {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+fn glyph_for(ch: u8) -> [u8; 8] {
+    if ch >= FONT_FIRST && ch <= FONT_LAST {
+        let table_glyph = FONT_8X8[(ch - FONT_FIRST) as usize];
+        if table_glyph != [0; 8] {
+            return table_glyph;
+        }
+    }
+
+    match ch {
+        b'0' => [0x3C, 0x66, 0x6E, 0x76, 0x66, 0x66, 0x3C, 0x00],
+        b'2' => [0x3C, 0x66, 0x06, 0x0C, 0x18, 0x30, 0x7E, 0x00],
+        b'8' => [0x3C, 0x66, 0x66, 0x3C, 0x66, 0x66, 0x3C, 0x00],
+        b'.' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00],
+        b'-' => [0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00],
+        b'/' => [0x06, 0x0C, 0x18, 0x30, 0x60, 0x40, 0x00, 0x00],
+        b'A' => [0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00],
+        b'B' => [0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00],
+        b'D' => [0x78, 0x6C, 0x66, 0x66, 0x66, 0x6C, 0x78, 0x00],
+        b'E' => [0x7E, 0x60, 0x60, 0x7C, 0x60, 0x60, 0x7E, 0x00],
+        b'G' => [0x3C, 0x66, 0x60, 0x6E, 0x66, 0x66, 0x3C, 0x00],
+        b'I' => [0x3C, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00],
+        b'K' => [0x66, 0x6C, 0x78, 0x70, 0x78, 0x6C, 0x66, 0x00],
+        b'L' => [0x60, 0x60, 0x60, 0x60, 0x60, 0x60, 0x7E, 0x00],
+        b'M' => [0x63, 0x77, 0x7F, 0x6B, 0x63, 0x63, 0x63, 0x00],
+        b'N' => [0x66, 0x76, 0x7E, 0x7E, 0x6E, 0x66, 0x66, 0x00],
+        b'O' => [0x3C, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00],
+        b'P' => [0x7C, 0x66, 0x66, 0x7C, 0x60, 0x60, 0x60, 0x00],
+        b'R' => [0x7C, 0x66, 0x66, 0x7C, 0x78, 0x6C, 0x66, 0x00],
+        b'S' => [0x3C, 0x66, 0x60, 0x3C, 0x06, 0x66, 0x3C, 0x00],
+        b'T' => [0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00],
+        b'V' => [0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00],
+        b'Y' => [0x66, 0x66, 0x3C, 0x18, 0x18, 0x18, 0x18, 0x00],
+        b'b' => [0x60, 0x60, 0x7C, 0x66, 0x66, 0x66, 0x7C, 0x00],
+        b'd' => [0x06, 0x06, 0x3E, 0x66, 0x66, 0x66, 0x3E, 0x00],
+        b'e' => [0x00, 0x00, 0x3C, 0x66, 0x7E, 0x60, 0x3C, 0x00],
+        b'k' => [0x60, 0x60, 0x66, 0x6C, 0x78, 0x6C, 0x66, 0x00],
+        b'l' => [0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x0C, 0x00],
+        b'n' => [0x00, 0x00, 0x7C, 0x66, 0x66, 0x66, 0x66, 0x00],
+        b'r' => [0x00, 0x00, 0x6C, 0x76, 0x60, 0x60, 0x60, 0x00],
+        b't' => [0x18, 0x18, 0x7E, 0x18, 0x18, 0x18, 0x0E, 0x00],
+        b'y' => [0x00, 0x00, 0x66, 0x66, 0x3E, 0x06, 0x3C, 0x00],
+        _ => [0x00; 8],
+    }
+}
