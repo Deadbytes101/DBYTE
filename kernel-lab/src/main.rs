@@ -54,6 +54,7 @@ const GFX_CONSOLE_SHELL_MAX_COMMANDS: usize = 4;
 const GFX_CONSOLE_HELP_COMMAND: &[u8] = b"help";
 const GFX_CONSOLE_STATUS_COMMAND: &[u8] = b"status";
 const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
+const GFX_CONSOLE_VM_COMMAND: &[u8] = b"vm";
 const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
 
 // Verification contract snippets kept stable across rustfmt line wrapping:
@@ -235,6 +236,17 @@ fn run_gfx_console_shell_session() {
         } else if command_text == GFX_CONSOLE_CLEAR_COMMAND {
             gfx_console::draw_command_clear_result();
             serial::print("gfx-console-shell: command dispatched: clear\n");
+        } else if command_text == GFX_CONSOLE_VM_COMMAND {
+            if let Ok(capture) = dbyte_vm_probe::run_probe_capture() {
+                if capture.banner && capture.value {
+                    gfx_console::draw_command_vm_result();
+                } else {
+                    gfx_console::draw_command_vm_error_result();
+                }
+            } else {
+                gfx_console::draw_command_vm_error_result();
+            }
+            serial::print("gfx-console-shell: command dispatched: vm\n");
         } else if command_text == GFX_CONSOLE_EXIT_COMMAND {
             gfx_console::draw_command_exit_result();
             serial::print("gfx-console-shell: exit\n");

@@ -79,7 +79,7 @@ pub fn draw_command_help_result() {
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear exit");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm exit");
 }
 
 pub fn draw_command_clear_result() {
@@ -94,6 +94,21 @@ pub fn draw_command_exit_result() {
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: exit");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "session: closed");
+}
+
+pub fn draw_command_vm_result() {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: vm");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "DBYTE VM ONLINE");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "42");
+}
+
+pub fn draw_command_vm_error_result() {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: vm");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "result: vm error");
 }
 
 pub fn draw_unknown_command_result(command: &[u8]) {

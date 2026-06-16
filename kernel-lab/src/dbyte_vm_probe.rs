@@ -32,6 +32,16 @@ static BOOT_SCRIPT_OK: AtomicBool = AtomicBool::new(false);
 
 struct KernelVmOutput;
 
+pub struct VmProbeCapture {
+    pub banner: bool,
+    pub value: bool,
+}
+
+struct ProbeCaptureOutput {
+    banner: bool,
+    value: bool,
+}
+
 impl VmOutput for KernelVmOutput {
     fn write_str(&mut self, value: &str) {
         vga::print(value);
@@ -45,6 +55,20 @@ impl VmOutput for KernelVmOutput {
         let mut serial_writer = serial::SerialWriter;
         let _ = writeln!(vga_writer, "{}", value);
         let _ = writeln!(serial_writer, "{}", value);
+    }
+}
+
+impl VmOutput for ProbeCaptureOutput {
+    fn write_str(&mut self, value: &str) {
+        if value == DBYTE_VM_PROBE_STRINGS[0] {
+            self.banner = true;
+        }
+    }
+
+    fn write_i32(&mut self, value: i32) {
+        if value == 42 {
+            self.value = true;
+        }
     }
 }
 
@@ -98,6 +122,22 @@ pub fn run_probe() {
     ) {
         print_error("DByte kernel VM error: ", error);
     }
+}
+
+pub fn run_probe_capture() -> Result<VmProbeCapture, VmError> {
+    let mut output = ProbeCaptureOutput {
+        banner: false,
+        value: false,
+    };
+    run_program(
+        &DBYTE_VM_PROBE_BYTECODE,
+        &DBYTE_VM_PROBE_STRINGS,
+        &mut output,
+    )?;
+    Ok(VmProbeCapture {
+        banner: output.banner,
+        value: output.value,
+    })
 }
 
 fn run_program<O: VmOutput>(

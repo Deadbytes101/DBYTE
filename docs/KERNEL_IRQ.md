@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.39.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.40.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -30,6 +30,7 @@ Current release chain:
 - `v10.37.0` is a DByte Graphics Console Input Echo Foundation release.
 - `v10.38.0` is a DByte Graphics Console Command Dispatch Foundation release.
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
+- `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 
 Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
@@ -45,6 +46,8 @@ Thin note for `v10.37.0`: adds `gfx-console-input`, a manual one-shot graphics i
 Thin note for `v10.38.0`: adds `gfx-console-shell`, a manual one-shot graphics command dispatch proof. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, and no VM mutation. The verifier locks the fixed 32-byte command buffer, one `status` graphics command, deterministic unknown-command rendering, graphics-only log redraw, and exact serial proof output. QEMU proof artifacts are `tmp\qemu_gfx_console_shell_v10.38.0.serial.log`, `tmp\qemu_gfx_console_shell_v10.38.0.ppm`, and `tmp\qemu_gfx_console_shell_v10.38.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with no text restore and no persistent graphics shell loop.
 
 Thin note for `v10.39.0`: upgrades existing `gfx-console-shell` into a bounded four-command graphics session loop with `help`, `status`, `clear`, `exit`, and deterministic unknown-command handling. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, and no VM mutation. The verifier locks the fixed 32-byte command buffer, max command count `4`, exact graphics-session serial proof strings, layout-only log redraw, and unchanged `gfx-*` command surface. QEMU proof artifacts are `tmp\qemu_gfx_console_session_v10.39.0.serial.log`, `tmp\qemu_gfx_console_session_v10.39.0.ppm`, and `tmp\qemu_gfx_console_session_v10.39.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with no text restore, no history, and no persistent unbounded graphics shell.
+
+Thin note for `v10.40.0`: adds the `vm` command inside the existing bounded `gfx-console-shell` session without adding a new kernel shell command. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/app registry path, and no VM opcode change. The verifier locks the exact graphics command set `help`, `status`, `clear`, `vm`, `exit`, fixed 32-byte input buffer, max command count `4`, no-heap VM probe capture adapter, exact serial proof string, and unchanged VGA/IRQ/VM boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_vm_v10.40.0.serial.log`, `tmp\qemu_gfx_console_vm_v10.40.0.ppm`, and `tmp\qemu_gfx_console_vm_v10.40.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with no text restore, no app registry, and no persistent unbounded graphics shell.
 
 `v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
 
