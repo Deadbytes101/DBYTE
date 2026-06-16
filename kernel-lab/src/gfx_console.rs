@@ -116,7 +116,7 @@ pub fn draw_command_apps_result() {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: apps");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "apps: hello math");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "apps: hello math sysinfo");
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {

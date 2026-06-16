@@ -5,6 +5,7 @@ pub mod opcode {
     pub const PUSH_STR_CONST: u8 = 0x02;
     pub const ADD: u8 = 0x03;
     pub const PRINT: u8 = 0x04;
+    pub const KCALL: u8 = 0x05;
     pub const HALT: u8 = 0xff;
 }
 
@@ -27,6 +28,12 @@ pub mod vm {
         fn write_i32(&mut self, value: i32);
     }
 
+    pub trait VmHost {
+        fn call<O: VmOutput>(&mut self, service_id: u8, output: &mut O) -> Result<(), VmError>;
+    }
+
+    pub struct NoHost;
+
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum VmError {
         StackOverflow,
@@ -34,8 +41,15 @@ pub mod vm {
         TypeMismatch,
         StrConstIndexOutOfBounds,
         UnexpectedEnd,
+        UnsupportedService(u8),
         UnknownOpcode(u8),
         MissingHalt,
+    }
+
+    impl VmHost for NoHost {
+        fn call<O: VmOutput>(&mut self, service_id: u8, _output: &mut O) -> Result<(), VmError> {
+            Err(VmError::UnsupportedService(service_id))
+        }
     }
 
     pub struct Vm<'a> {
@@ -58,6 +72,15 @@ pub mod vm {
         }
 
         pub fn run<O: VmOutput>(&mut self, output: &mut O) -> Result<(), VmError> {
+            let mut host = NoHost;
+            self.run_with_host(output, &mut host)
+        }
+
+        pub fn run_with_host<O: VmOutput, H: VmHost>(
+            &mut self,
+            output: &mut O,
+            host: &mut H,
+        ) -> Result<(), VmError> {
             loop {
                 let op = self.read_u8()?;
                 match op {
@@ -87,6 +110,10 @@ pub mod vm {
                             output.write_str(text);
                         }
                     },
+                    opcode::KCALL => {
+                        let service_id = self.read_u8()?;
+                        host.call(service_id, output)?;
+                    }
                     opcode::HALT => return Ok(()),
                     other => return Err(VmError::UnknownOpcode(other)),
                 }
@@ -139,25 +166,29 @@ pub mod vm {
 }
 
 pub use value::Value;
-pub use vm::{Vm, VmError, VmOutput, STACK_CAPACITY};
+pub use vm::{NoHost, Vm, VmError, VmHost, VmOutput, STACK_CAPACITY};
 
 #[cfg(test)]
 mod tests {
     use super::opcode;
-    use super::{Vm, VmError, VmOutput};
+    use super::{NoHost, Vm, VmError, VmHost, VmOutput};
 
     #[derive(Default)]
     struct FixedOutput {
-        strings: [&'static str; 2],
+        strings: [&'static str; 4],
         ints: [i32; 2],
         string_len: usize,
         int_len: usize,
     }
 
+    struct MockHost;
+
     impl VmOutput for FixedOutput {
         fn write_str(&mut self, value: &str) {
             self.strings[self.string_len] = match value {
                 "DBYTE VM ONLINE" => "DBYTE VM ONLINE",
+                "KERNEL ONLINE" => "KERNEL ONLINE",
+                "GRAPHICS MODE 13H" => "GRAPHICS MODE 13H",
                 "hello" => "hello",
                 _ => "",
             };
@@ -167,6 +198,20 @@ mod tests {
         fn write_i32(&mut self, value: i32) {
             self.ints[self.int_len] = value;
             self.int_len += 1;
+        }
+    }
+
+    impl VmHost for MockHost {
+        fn call<O: VmOutput>(&mut self, service_id: u8, output: &mut O) -> Result<(), VmError> {
+            match service_id {
+                1 => {
+                    output.write_str("KERNEL ONLINE");
+                    output.write_str("DBYTE VM ONLINE");
+                    output.write_str("GRAPHICS MODE 13H");
+                    Ok(())
+                }
+                _ => Err(VmError::UnsupportedService(service_id)),
+            }
         }
     }
 
@@ -245,6 +290,58 @@ mod tests {
 
         assert_eq!(vm.run(&mut output), Ok(()));
         assert_eq!(output.ints[0], 42);
+    }
+
+    #[test]
+    fn kcall_supported_service_succeeds_with_host() {
+        let bytecode = [opcode::KCALL, 1, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.strings[0], "KERNEL ONLINE");
+        assert_eq!(output.strings[1], "DBYTE VM ONLINE");
+        assert_eq!(output.strings[2], "GRAPHICS MODE 13H");
+    }
+
+    #[test]
+    fn kcall_unsupported_service_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 2, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::UnsupportedService(2))
+        );
+    }
+
+    #[test]
+    fn kcall_truncated_service_id_fails_deterministically() {
+        let bytecode = [opcode::KCALL];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run(&mut output), Err(VmError::UnexpectedEnd));
+    }
+
+    #[test]
+    fn kcall_without_host_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 1, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = NoHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::UnsupportedService(1))
+        );
     }
 
     #[test]

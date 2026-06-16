@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use dbyte_kernel_vm::{Vm, VmError, VmOutput};
+use dbyte_kernel_vm::{opcode, Vm, VmError, VmHost, VmOutput};
 
 use crate::{serial, vga};
 
@@ -15,6 +15,10 @@ const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
     0x04, // PRINT
     0xff, // HALT
 ];
+const KERNEL_STATUS: u8 = 1;
+const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
+const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
+const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
 
 pub struct EmbeddedDbyteApp {
     pub name: &'static str,
@@ -43,8 +47,25 @@ static DBYTE_APP_MATH_BYTECODE: [u8; 17] = [
     0xff, // HALT
 ];
 
+static DBYTE_APP_SYSINFO_STRINGS: [&str; 1] = ["APP SYSINFO"];
+static DBYTE_APP_SYSINFO_OUTPUT_LINES: [&str; 4] = [
+    "APP SYSINFO",
+    KERNEL_STATUS_LINE,
+    DBYTE_VM_STATUS_LINE,
+    GRAPHICS_STATUS_LINE,
+];
+static DBYTE_APP_SYSINFO_BYTECODE: [u8; 7] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    KERNEL_STATUS, // KCALL KERNEL_STATUS
+    opcode::HALT,  // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 2] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 3] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -56,6 +77,12 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 2] = [
         bytecode: &DBYTE_APP_MATH_BYTECODE,
         consts: &DBYTE_APP_MATH_STRINGS,
         output_lines: &DBYTE_APP_MATH_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "sysinfo",
+        bytecode: &DBYTE_APP_SYSINFO_BYTECODE,
+        consts: &DBYTE_APP_SYSINFO_STRINGS,
+        output_lines: &DBYTE_APP_SYSINFO_OUTPUT_LINES,
     },
 ];
 
@@ -89,6 +116,8 @@ struct ProbeCaptureOutput {
     value: bool,
 }
 
+struct KernelServiceHost;
+
 struct DbyteAppCaptureOutput {
     app: &'static EmbeddedDbyteApp,
     line_index: usize,
@@ -121,6 +150,20 @@ impl VmOutput for ProbeCaptureOutput {
     fn write_i32(&mut self, value: i32) {
         if value == 42 {
             self.value = true;
+        }
+    }
+}
+
+impl VmHost for KernelServiceHost {
+    fn call<O: VmOutput>(&mut self, service_id: u8, output: &mut O) -> Result<(), VmError> {
+        match service_id {
+            KERNEL_STATUS => {
+                output.write_str(KERNEL_STATUS_LINE);
+                output.write_str(DBYTE_VM_STATUS_LINE);
+                output.write_str(GRAPHICS_STATUS_LINE);
+                Ok(())
+            }
+            _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
 }
@@ -231,8 +274,8 @@ pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCa
         matched: true,
     };
 
-    let result =
-        run_program(app.bytecode, app.consts, &mut output).map(|_| EmbeddedDbyteAppCapture { app });
+    let result = run_embedded_app_program(app.bytecode, app.consts, &mut output)
+        .map(|_| EmbeddedDbyteAppCapture { app });
     if output.matched && output.line_index == app.output_lines.len() {
         Some(result)
     } else {
@@ -247,6 +290,16 @@ fn run_program<O: VmOutput>(
 ) -> Result<(), VmError> {
     let mut vm = Vm::new(bytecode, strings);
     vm.run(output)
+}
+
+fn run_embedded_app_program<O: VmOutput>(
+    bytecode: &[u8],
+    strings: &[&str],
+    output: &mut O,
+) -> Result<(), VmError> {
+    let mut vm = Vm::new(bytecode, strings);
+    let mut host = KernelServiceHost;
+    vm.run_with_host(output, &mut host)
 }
 
 fn print_error(prefix: &str, error: VmError) {
@@ -283,6 +336,7 @@ fn vm_error_name(error: VmError) -> &'static str {
         VmError::TypeMismatch => "type mismatch",
         VmError::StrConstIndexOutOfBounds => "string constant index out of bounds",
         VmError::UnexpectedEnd => "unexpected end",
+        VmError::UnsupportedService(_) => "unsupported service",
         VmError::UnknownOpcode(_) => "unknown opcode",
         VmError::MissingHalt => "missing halt",
     }

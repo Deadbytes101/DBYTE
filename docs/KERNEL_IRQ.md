@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.42.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.43.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.43.0` is a DByte Kernel Service Call Foundation release.
 - `v10.42.0` is a DByte Generic Embedded App Runner Foundation release.
 
 Persistent safety baseline:
@@ -54,6 +55,8 @@ Thin note for `v10.40.0`: adds the `vm` command inside the existing bounded `gfx
 Thin note for `v10.41.0`: adds a static embedded DByte app registry inside the existing bounded `gfx-console-shell` session without adding a new kernel shell command. Graphics-shell commands now include `apps`, `run hello`, and `run math` alongside the existing commands. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/loader path, and no VM opcode change. The verifier locks exactly two static apps, `hello` and `math`, static bytecode using existing opcodes only, fixed 32-byte input buffer, max command count `4`, no-heap app capture, exact serial proof strings, and unchanged VGA/IRQ/VM boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_apps_v10.41.0.serial.log`, `tmp\qemu_gfx_console_apps_v10.41.0.ppm`, and `tmp\qemu_gfx_console_apps_v10.41.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
 
 Thin note for `v10.42.0`: upgrades the embedded DByte app runner inside the existing bounded `gfx-console-shell` session from separate `run hello` / `run math` branches to generic `run <app_name>` lookup through the static registry. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/loader path, and no VM opcode change. The verifier locks exactly two static apps, `hello` and `math`, generic fixed-slice app lookup, fixed 32-byte input buffer, max command count `5`, deterministic app-not-found behavior, no-heap app capture, exact serial proof strings, and unchanged VGA/IRQ/VM boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_generic_apps_v10.42.0.serial.log`, `tmp\qemu_gfx_console_generic_apps_v10.42.0.ppm`, and `tmp\qemu_gfx_console_generic_apps_v10.42.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.43.0`: adds a narrow `KCALL <service_id>` VM host-call boundary for embedded DByte apps and adds the static `sysinfo` app to the existing generic `run <app_name>` path. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no PIC/IDT/IRQ mutation. The verifier locks exactly three static apps, `hello`, `math`, and `sysinfo`, a six-opcode VM set with `KCALL`, service id `1` as the only supported kernel-status service, deterministic unsupported/truncated service errors, fixed 32-byte input buffer, max command count `5`, exact serial proof strings, and unchanged VGA/IRQ boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_kcall_v10.43.0.serial.log`, `tmp\qemu_gfx_console_kcall_v10.43.0.ppm`, and `tmp\qemu_gfx_console_kcall_v10.43.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
 
 `v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
 
