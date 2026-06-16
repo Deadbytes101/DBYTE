@@ -15,6 +15,8 @@ const PANEL_H: usize = 188;
 const TEXT_X: usize = PANEL_X + 16;
 const VALUE_X: usize = PANEL_X + 128;
 const PROMPT_TEXT: &str = "dbyte-kernel>";
+const PROMPT_Y: usize = PANEL_Y + 178;
+const PROMPT_INPUT_GAP: usize = 8;
 
 pub fn draw_graphics_console() {
     vga_gfx::clear(COLOR_BLACK);
@@ -56,7 +58,18 @@ fn draw_log_line(y: usize, text: &str) {
 }
 
 fn draw_prompt() {
-    draw_prompt_line(PANEL_Y + 178, PROMPT_TEXT);
+    draw_prompt_line(PROMPT_Y, PROMPT_TEXT);
+}
+
+pub fn draw_prompt_input(input: &[u8]) {
+    vga_gfx::fill_rect(TEXT_X, PROMPT_Y, PANEL_W - 32, 8, COLOR_PANEL);
+    vga_gfx::draw_text(TEXT_X, PROMPT_Y, PROMPT_TEXT, COLOR_TITLE);
+    let input_x = TEXT_X + PROMPT_TEXT.len() * 8 + PROMPT_INPUT_GAP;
+    if let Ok(input_text) = core::str::from_utf8(input) {
+        vga_gfx::draw_text(input_x, PROMPT_Y, input_text, COLOR_TITLE);
+    }
+    let cursor_x = input_x + input.len() * 8 + 4;
+    draw_static_cursor(cursor_x, PROMPT_Y);
 }
 
 fn draw_prompt_line(y: usize, prompt: &str) {
