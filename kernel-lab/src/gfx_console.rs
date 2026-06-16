@@ -6,6 +6,7 @@ const COLOR_BORDER: u8 = 0x07;
 const COLOR_TITLE: u8 = 0x0A;
 const COLOR_LABEL: u8 = 0x0F;
 const COLOR_VALUE: u8 = 0x0B;
+const COLOR_CURSOR: u8 = 0x0A;
 
 const PANEL_X: usize = 16;
 const PANEL_Y: usize = 10;
@@ -13,6 +14,7 @@ const PANEL_W: usize = 288;
 const PANEL_H: usize = 188;
 const TEXT_X: usize = PANEL_X + 16;
 const VALUE_X: usize = PANEL_X + 128;
+const PROMPT_TEXT: &str = "dbyte-kernel>";
 
 pub fn draw_graphics_console() {
     vga_gfx::clear(COLOR_BLACK);
@@ -54,5 +56,15 @@ fn draw_log_line(y: usize, text: &str) {
 }
 
 fn draw_prompt() {
-    vga_gfx::draw_text(TEXT_X, PANEL_Y + 178, "dbyte-kernel>", COLOR_TITLE);
+    draw_prompt_line(PANEL_Y + 178, PROMPT_TEXT);
+}
+
+fn draw_prompt_line(y: usize, prompt: &str) {
+    vga_gfx::draw_text(TEXT_X, y, prompt, COLOR_TITLE);
+    let cursor_x = TEXT_X + prompt.len() * 8 + 4;
+    draw_static_cursor(cursor_x, y);
+}
+
+fn draw_static_cursor(x: usize, y: usize) {
+    vga_gfx::fill_rect(x, y, 6, 8, COLOR_CURSOR);
 }

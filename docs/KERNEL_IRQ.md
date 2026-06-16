@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.35.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.36.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -26,6 +26,7 @@ Current release chain:
 - `v10.34.1` is a DByte VGA Graphics Surface Hardening release.
 - `v10.35.0` is a DByte Graphics Console Foundation release.
 - `v10.35.1` is a DByte Graphics Console Glyph Polish release.
+- `v10.36.0` is a DByte Graphics Console Cursor Foundation release.
 
 Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
@@ -33,6 +34,8 @@ Persistent safety baseline:
 - Runtime IRQ readiness remains blocked.
 
 Thin note for `v10.35.1`: no new command; `gfx-console` is unchanged and remains one-way Mode 13h with no text restore. Hardware boundaries are unchanged. The verifier locks graphics-console glyph coverage for `INPUT`, `PS/2 POLLING`, `IRQ0`, `42`, and the prompt text. QEMU proof artifacts are `tmp\qemu_gfx_console_v10.35.1.serial.log`, `tmp\qemu_gfx_console_v10.35.1.ppm`, and `tmp\qemu_gfx_console_v10.35.1.png`.
+
+Thin note for `v10.36.0`: no new command; `gfx-console` draws a static pixel cursor after `dbyte-kernel>`. Hardware boundaries are unchanged. The verifier locks derived cursor placement, no blink/timer/input loop, and layout-only graphics console isolation. QEMU proof artifacts are `tmp\qemu_gfx_console_cursor_v10.36.0.serial.log`, `tmp\qemu_gfx_console_cursor_v10.36.0.ppm`, and `tmp\qemu_gfx_console_cursor_v10.36.0.png`. Known limitation: `gfx-console` remains one-way Mode 13h with no text restore.
 
 `v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
 
