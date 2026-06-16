@@ -55,6 +55,12 @@ const GFX_CONSOLE_HELP_COMMAND: &[u8] = b"help";
 const GFX_CONSOLE_STATUS_COMMAND: &[u8] = b"status";
 const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
 const GFX_CONSOLE_VM_COMMAND: &[u8] = b"vm";
+const GFX_CONSOLE_APPS_COMMAND: &[u8] = b"apps";
+const GFX_CONSOLE_RUN_PREFIX: &[u8] = b"run ";
+const GFX_CONSOLE_RUN_HELLO_COMMAND: &[u8] = b"run hello";
+const GFX_CONSOLE_RUN_MATH_COMMAND: &[u8] = b"run math";
+const GFX_CONSOLE_APP_HELLO: &[u8] = b"hello";
+const GFX_CONSOLE_APP_MATH: &[u8] = b"math";
 const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
 
 // Verification contract snippets kept stable across rustfmt line wrapping:
@@ -218,6 +224,16 @@ fn print_gfx_console_shell_unknown(command_text: &[u8]) {
     }
 }
 
+fn print_gfx_console_shell_app_not_found(command_text: &[u8]) {
+    serial::print("gfx-console-shell: app not found: ");
+    if let Ok(input_text) = core::str::from_utf8(command_text) {
+        let mut writer = serial::SerialWriter;
+        let _ = write!(writer, "{}\n", input_text);
+    } else {
+        serial::print("\n");
+    }
+}
+
 fn run_gfx_console_shell_session() {
     let mut commands_seen: usize = 0;
 
@@ -237,8 +253,10 @@ fn run_gfx_console_shell_session() {
             gfx_console::draw_command_clear_result();
             serial::print("gfx-console-shell: command dispatched: clear\n");
         } else if command_text == GFX_CONSOLE_VM_COMMAND {
-            if let Ok(capture) = dbyte_vm_probe::run_probe_capture() {
-                if capture.banner && capture.value {
+            if let Some(Ok(capture)) =
+                dbyte_vm_probe::run_embedded_app_capture(GFX_CONSOLE_APP_HELLO)
+            {
+                if capture.hello {
                     gfx_console::draw_command_vm_result();
                 } else {
                     gfx_console::draw_command_vm_error_result();
@@ -247,6 +265,36 @@ fn run_gfx_console_shell_session() {
                 gfx_console::draw_command_vm_error_result();
             }
             serial::print("gfx-console-shell: command dispatched: vm\n");
+        } else if command_text == GFX_CONSOLE_APPS_COMMAND {
+            gfx_console::draw_command_apps_result();
+            serial::print("gfx-console-shell: command dispatched: apps\n");
+        } else if command_text == GFX_CONSOLE_RUN_HELLO_COMMAND {
+            if let Ok(capture) = dbyte_vm_probe::run_probe_capture() {
+                if capture.banner && capture.value {
+                    gfx_console::draw_command_run_hello_result();
+                } else {
+                    gfx_console::draw_app_not_found_result(command_text);
+                }
+            } else {
+                gfx_console::draw_app_not_found_result(command_text);
+            }
+            serial::print("gfx-console-shell: app dispatched: hello\n");
+        } else if command_text == GFX_CONSOLE_RUN_MATH_COMMAND {
+            if let Some(Ok(capture)) =
+                dbyte_vm_probe::run_embedded_app_capture(GFX_CONSOLE_APP_MATH)
+            {
+                if capture.math_title && capture.math_value {
+                    gfx_console::draw_command_run_math_result();
+                } else {
+                    gfx_console::draw_app_not_found_result(command_text);
+                }
+            } else {
+                gfx_console::draw_app_not_found_result(command_text);
+            }
+            serial::print("gfx-console-shell: app dispatched: math\n");
+        } else if command_text.starts_with(GFX_CONSOLE_RUN_PREFIX) {
+            gfx_console::draw_app_not_found_result(command_text);
+            print_gfx_console_shell_app_not_found(command_text);
         } else if command_text == GFX_CONSOLE_EXIT_COMMAND {
             gfx_console::draw_command_exit_result();
             serial::print("gfx-console-shell: exit\n");

@@ -16,6 +16,47 @@ const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
     0xff, // HALT
 ];
 
+pub struct EmbeddedDbyteApp {
+    #[allow(dead_code)]
+    pub name: &'static str,
+    #[allow(dead_code)]
+    pub bytecode: &'static [u8],
+    #[allow(dead_code)]
+    pub consts: &'static [&'static str],
+}
+
+static DBYTE_APP_HELLO_STRINGS: [&str; 1] = ["HELLO FROM DBYTE APP"];
+static DBYTE_APP_HELLO_BYTECODE: [u8; 5] = [
+    0x02, 0x00, 0x00, // PUSH_STR_CONST 0
+    0x04, // PRINT
+    0xff, // HALT
+];
+
+static DBYTE_APP_MATH_STRINGS: [&str; 1] = ["APP MATH"];
+static DBYTE_APP_MATH_BYTECODE: [u8; 17] = [
+    0x02, 0x00, 0x00, // PUSH_STR_CONST 0
+    0x04, // PRINT
+    0x01, 0x03, 0x00, 0x00, 0x00, // PUSH_INT 3
+    0x01, 0x04, 0x00, 0x00, 0x00, // PUSH_INT 4
+    0x03, // ADD
+    0x04, // PRINT
+    0xff, // HALT
+];
+
+#[allow(dead_code)]
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 2] = [
+    EmbeddedDbyteApp {
+        name: "hello",
+        bytecode: &DBYTE_APP_HELLO_BYTECODE,
+        consts: &DBYTE_APP_HELLO_STRINGS,
+    },
+    EmbeddedDbyteApp {
+        name: "math",
+        bytecode: &DBYTE_APP_MATH_BYTECODE,
+        consts: &DBYTE_APP_MATH_STRINGS,
+    },
+];
+
 const DBYTE_VM_BOOT_SCRIPT_STRINGS: [&str; 1] = ["DBYTE BOOT SCRIPT"];
 const DBYTE_VM_BOOT_SCRIPT_BYTECODE: [u8; 17] = [
     0x02, 0x00, 0x00, // PUSH_STR_CONST 0
@@ -35,6 +76,12 @@ struct KernelVmOutput;
 pub struct VmProbeCapture {
     pub banner: bool,
     pub value: bool,
+}
+
+pub struct EmbeddedDbyteAppCapture {
+    pub hello: bool,
+    pub math_title: bool,
+    pub math_value: bool,
 }
 
 struct ProbeCaptureOutput {
@@ -138,6 +185,26 @@ pub fn run_probe_capture() -> Result<VmProbeCapture, VmError> {
         banner: output.banner,
         value: output.value,
     })
+}
+
+pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCapture, VmError>> {
+    if name == b"hello" {
+        return Some(run_probe_capture().map(|_| EmbeddedDbyteAppCapture {
+            hello: true,
+            math_title: false,
+            math_value: false,
+        }));
+    }
+
+    if name == b"math" {
+        return Some(run_probe_capture().map(|_| EmbeddedDbyteAppCapture {
+            hello: false,
+            math_title: true,
+            math_value: true,
+        }));
+    }
+
+    None
 }
 
 fn run_program<O: VmOutput>(
