@@ -79,8 +79,8 @@ pub fn draw_command_help_result() {
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm exit");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "apps run hello run math");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm apps exit");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "run <app_name>");
 }
 
 pub fn draw_command_clear_result() {
@@ -119,19 +119,24 @@ pub fn draw_command_apps_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "apps: hello math");
 }
 
-pub fn draw_command_run_hello_result() {
+pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
-    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: run hello");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "HELLO FROM DBYTE APP");
-}
+    vga_gfx::draw_text(TEXT_X, LOG_Y + LOG_LINE_STEP, "command: ", COLOR_LABEL);
+    if let Ok(command_text) = core::str::from_utf8(command) {
+        vga_gfx::draw_text(
+            TEXT_X + 9 * 8,
+            LOG_Y + LOG_LINE_STEP,
+            command_text,
+            COLOR_LABEL,
+        );
+    }
 
-pub fn draw_command_run_math_result() {
-    clear_log_area();
-    draw_log_line(LOG_Y, "SYSTEM LOG");
-    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: run math");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "APP MATH");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "7");
+    let mut index: usize = 0;
+    while index < output_lines.len() {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * (index + 2), output_lines[index]);
+        index += 1;
+    }
 }
 
 pub fn draw_app_not_found_result(command: &[u8]) {

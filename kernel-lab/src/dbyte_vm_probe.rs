@@ -17,15 +17,14 @@ const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
 ];
 
 pub struct EmbeddedDbyteApp {
-    #[allow(dead_code)]
     pub name: &'static str,
-    #[allow(dead_code)]
     pub bytecode: &'static [u8],
-    #[allow(dead_code)]
     pub consts: &'static [&'static str],
+    pub output_lines: &'static [&'static str],
 }
 
 static DBYTE_APP_HELLO_STRINGS: [&str; 1] = ["HELLO FROM DBYTE APP"];
+static DBYTE_APP_HELLO_OUTPUT_LINES: [&str; 1] = ["HELLO FROM DBYTE APP"];
 static DBYTE_APP_HELLO_BYTECODE: [u8; 5] = [
     0x02, 0x00, 0x00, // PUSH_STR_CONST 0
     0x04, // PRINT
@@ -33,6 +32,7 @@ static DBYTE_APP_HELLO_BYTECODE: [u8; 5] = [
 ];
 
 static DBYTE_APP_MATH_STRINGS: [&str; 1] = ["APP MATH"];
+static DBYTE_APP_MATH_OUTPUT_LINES: [&str; 2] = ["APP MATH", "7"];
 static DBYTE_APP_MATH_BYTECODE: [u8; 17] = [
     0x02, 0x00, 0x00, // PUSH_STR_CONST 0
     0x04, // PRINT
@@ -49,11 +49,13 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 2] = [
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
         consts: &DBYTE_APP_HELLO_STRINGS,
+        output_lines: &DBYTE_APP_HELLO_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "math",
         bytecode: &DBYTE_APP_MATH_BYTECODE,
         consts: &DBYTE_APP_MATH_STRINGS,
+        output_lines: &DBYTE_APP_MATH_OUTPUT_LINES,
     },
 ];
 
@@ -79,14 +81,18 @@ pub struct VmProbeCapture {
 }
 
 pub struct EmbeddedDbyteAppCapture {
-    pub hello: bool,
-    pub math_title: bool,
-    pub math_value: bool,
+    pub app: &'static EmbeddedDbyteApp,
 }
 
 struct ProbeCaptureOutput {
     banner: bool,
     value: bool,
+}
+
+struct DbyteAppCaptureOutput {
+    app: &'static EmbeddedDbyteApp,
+    line_index: usize,
+    matched: bool,
 }
 
 impl VmOutput for KernelVmOutput {
@@ -116,6 +122,26 @@ impl VmOutput for ProbeCaptureOutput {
         if value == 42 {
             self.value = true;
         }
+    }
+}
+
+impl VmOutput for DbyteAppCaptureOutput {
+    fn write_str(&mut self, value: &str) {
+        if self.line_index >= self.app.output_lines.len()
+            || value != self.app.output_lines[self.line_index]
+        {
+            self.matched = false;
+        }
+        self.line_index += 1;
+    }
+
+    fn write_i32(&mut self, value: i32) {
+        if self.line_index >= self.app.output_lines.len()
+            || Some(value) != expected_i32_value(self.app.output_lines[self.line_index])
+        {
+            self.matched = false;
+        }
+        self.line_index += 1;
     }
 }
 
@@ -187,24 +213,31 @@ pub fn run_probe_capture() -> Result<VmProbeCapture, VmError> {
     })
 }
 
-pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCapture, VmError>> {
-    if name == b"hello" {
-        return Some(run_probe_capture().map(|_| EmbeddedDbyteAppCapture {
-            hello: true,
-            math_title: false,
-            math_value: false,
-        }));
-    }
-
-    if name == b"math" {
-        return Some(run_probe_capture().map(|_| EmbeddedDbyteAppCapture {
-            hello: false,
-            math_title: true,
-            math_value: true,
-        }));
+pub fn find_embedded_app(name: &[u8]) -> Option<&'static EmbeddedDbyteApp> {
+    for app in &EMBEDDED_DBYTE_APPS {
+        if name == app.name.as_bytes() {
+            return Some(app);
+        }
     }
 
     None
+}
+
+pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCapture, VmError>> {
+    let app = find_embedded_app(name)?;
+    let mut output = DbyteAppCaptureOutput {
+        app,
+        line_index: 0,
+        matched: true,
+    };
+
+    let result =
+        run_program(app.bytecode, app.consts, &mut output).map(|_| EmbeddedDbyteAppCapture { app });
+    if output.matched && output.line_index == app.output_lines.len() {
+        Some(result)
+    } else {
+        Some(Err(VmError::TypeMismatch))
+    }
 }
 
 fn run_program<O: VmOutput>(
@@ -221,6 +254,26 @@ fn print_error(prefix: &str, error: VmError) {
     let mut serial_writer = serial::SerialWriter;
     let _ = writeln!(vga_writer, "{}{}", prefix, vm_error_name(error));
     let _ = writeln!(serial_writer, "{}{}", prefix, vm_error_name(error));
+}
+
+fn expected_i32_value(value: &str) -> Option<i32> {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let mut number: i32 = 0;
+    let mut index: usize = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte < b'0' || byte > b'9' {
+            return None;
+        }
+        number = number * 10 + (byte - b'0') as i32;
+        index += 1;
+    }
+
+    Some(number)
 }
 
 fn vm_error_name(error: VmError) -> &'static str {
