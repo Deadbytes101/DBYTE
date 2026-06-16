@@ -74,6 +74,28 @@ pub fn draw_command_status_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "input: ps/2 polling");
 }
 
+pub fn draw_command_help_result() {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear exit");
+}
+
+pub fn draw_command_clear_result() {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: clear");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "log: cleared");
+}
+
+pub fn draw_command_exit_result() {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: exit");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "session: closed");
+}
+
 pub fn draw_unknown_command_result(command: &[u8]) {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");

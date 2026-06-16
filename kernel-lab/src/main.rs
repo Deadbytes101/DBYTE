@@ -50,7 +50,11 @@ static mut CAPS_LOCK_ACTIVE: bool = false;
 static mut LINE_BUFFER: [u8; 128] = [0; 128];
 static mut LINE_LEN: usize = 0;
 const GFX_CONSOLE_INPUT_CAPACITY: usize = 32;
+const GFX_CONSOLE_SHELL_MAX_COMMANDS: usize = 4;
+const GFX_CONSOLE_HELP_COMMAND: &[u8] = b"help";
 const GFX_CONSOLE_STATUS_COMMAND: &[u8] = b"status";
+const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
+const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
 
 // Verification contract snippets kept stable across rustfmt line wrapping:
 // line_str == "exception-status" || line_str == "exceptions"
@@ -203,22 +207,41 @@ fn run_gfx_console_input_echo() {
     }
 }
 
-fn run_gfx_console_shell_dispatch() {
-    let mut command: [u8; GFX_CONSOLE_INPUT_CAPACITY] = [0; GFX_CONSOLE_INPUT_CAPACITY];
-    let command_len = read_gfx_console_input_line(&mut command);
-    let command_text = &command[..command_len];
-
-    if command_text == GFX_CONSOLE_STATUS_COMMAND {
-        gfx_console::draw_command_status_result();
-        serial::print("gfx-console-shell: command dispatched: status\n");
+fn print_gfx_console_shell_unknown(command_text: &[u8]) {
+    serial::print("gfx-console-shell: unknown command: ");
+    if let Ok(input_text) = core::str::from_utf8(command_text) {
+        let mut writer = serial::SerialWriter;
+        let _ = write!(writer, "{}\n", input_text);
     } else {
-        gfx_console::draw_unknown_command_result(command_text);
-        serial::print("gfx-console-shell: unknown command: ");
-        if let Ok(input_text) = core::str::from_utf8(command_text) {
-            let mut writer = serial::SerialWriter;
-            let _ = write!(writer, "{}\n", input_text);
+        serial::print("\n");
+    }
+}
+
+fn run_gfx_console_shell_session() {
+    let mut commands_seen: usize = 0;
+
+    while commands_seen < GFX_CONSOLE_SHELL_MAX_COMMANDS {
+        let mut command: [u8; GFX_CONSOLE_INPUT_CAPACITY] = [0; GFX_CONSOLE_INPUT_CAPACITY];
+        let command_len = read_gfx_console_input_line(&mut command);
+        let command_text = &command[..command_len];
+        commands_seen += 1;
+
+        if command_text == GFX_CONSOLE_HELP_COMMAND {
+            gfx_console::draw_command_help_result();
+            serial::print("gfx-console-shell: command dispatched: help\n");
+        } else if command_text == GFX_CONSOLE_STATUS_COMMAND {
+            gfx_console::draw_command_status_result();
+            serial::print("gfx-console-shell: command dispatched: status\n");
+        } else if command_text == GFX_CONSOLE_CLEAR_COMMAND {
+            gfx_console::draw_command_clear_result();
+            serial::print("gfx-console-shell: command dispatched: clear\n");
+        } else if command_text == GFX_CONSOLE_EXIT_COMMAND {
+            gfx_console::draw_command_exit_result();
+            serial::print("gfx-console-shell: exit\n");
+            break;
         } else {
-            serial::print("\n");
+            gfx_console::draw_unknown_command_result(command_text);
+            print_gfx_console_shell_unknown(command_text);
         }
     }
 }
@@ -4334,7 +4357,7 @@ pub extern "C" fn kernel_main() -> ! {
                                         } else if line_str == "gfx-console-shell" {
                                             vga_gfx::enter_mode_13h();
                                             gfx_console::draw_graphics_console();
-                                            run_gfx_console_shell_dispatch();
+                                            run_gfx_console_shell_session();
                                             vga_prompt_already_rendered = true;
                                         } else if line_str == "echo" {
                                             vga::print("\n");
