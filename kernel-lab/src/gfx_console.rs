@@ -17,6 +17,8 @@ const VALUE_X: usize = PANEL_X + 128;
 const PROMPT_TEXT: &str = "dbyte-kernel>";
 const PROMPT_Y: usize = PANEL_Y + 178;
 const PROMPT_INPUT_GAP: usize = 8;
+const LOG_Y: usize = PANEL_Y + 116;
+const LOG_LINE_STEP: usize = 9;
 
 pub fn draw_graphics_console() {
     vga_gfx::clear(COLOR_BLACK);
@@ -55,6 +57,36 @@ fn draw_status_row(y: usize, label: &str, value: &str) {
 
 fn draw_log_line(y: usize, text: &str) {
     vga_gfx::draw_text(TEXT_X, y, text, COLOR_LABEL);
+}
+
+fn clear_log_area() {
+    vga_gfx::fill_rect(TEXT_X, LOG_Y, PANEL_W - 32, PROMPT_Y - LOG_Y, COLOR_PANEL);
+}
+
+pub fn draw_command_status_result() {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_line(LOG_Y + LOG_LINE_STEP, "command: status");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "kernel: online");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "dbyte vm: online");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "boot script: ok");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "irq0: ticks 0008 / masked");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "input: ps/2 polling");
+}
+
+pub fn draw_unknown_command_result(command: &[u8]) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    vga_gfx::draw_text(TEXT_X, LOG_Y + LOG_LINE_STEP, "command: ", COLOR_LABEL);
+    if let Ok(command_text) = core::str::from_utf8(command) {
+        vga_gfx::draw_text(
+            TEXT_X + 9 * 8,
+            LOG_Y + LOG_LINE_STEP,
+            command_text,
+            COLOR_LABEL,
+        );
+    }
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "result: unknown command");
 }
 
 fn draw_prompt() {
