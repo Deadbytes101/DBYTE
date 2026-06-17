@@ -31,6 +31,7 @@ const ARG_VALUE_7_LINE: &str = "ARG VALUE 7";
 const ARG_TEXT_DBYTE_SERVICE_ARG_LINE: &str = "ARG TEXT DBYTE SERVICE ARG";
 const HELLO_GRAPHICS_LOG_LINE: &str = "HELLO GRAPHICS LOG";
 const LOG_CLEARED_LINE: &str = "LOG CLEARED";
+const GRAPHICS_LOG_READY_LINE: &str = "GRAPHICS LOG READY";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -41,6 +42,7 @@ pub struct EmbeddedDbyteApp {
     pub bytecode: &'static [u8],
     pub consts: &'static [&'static str],
     pub output_lines: &'static [&'static str],
+    pub display_lines: &'static [&'static str],
 }
 
 static DBYTE_APP_HELLO_STRINGS: [&str; 1] = ["HELLO FROM DBYTE APP"];
@@ -171,61 +173,113 @@ static DBYTE_APP_LOGCLEAR_BYTECODE: [u8; 7] = [
     opcode::HALT,              // HALT
 ];
 
+static DBYTE_APP_UIDEMO_STRINGS: [&str; 2] = ["APP UIDEMO", GRAPHICS_LOG_READY_LINE];
+static DBYTE_APP_UIDEMO_OUTPUT_LINES: [&str; 8] = [
+    "APP UIDEMO",
+    LOG_CLEARED_LINE,
+    GRAPHICS_LOG_READY_LINE,
+    KERNEL_STATUS_LINE,
+    DBYTE_VM_STATUS_LINE,
+    GRAPHICS_STATUS_LINE,
+    IRQ0_TICKS_0008_LINE,
+    IRQ0_MASKED_LINE,
+];
+static DBYTE_APP_UIDEMO_DISPLAY_LINES: [&str; 4] = [
+    "APP UIDEMO",
+    GRAPHICS_LOG_READY_LINE,
+    KERNEL_STATUS_LINE,
+    IRQ0_TICKS_0008_LINE,
+];
+static DBYTE_APP_UIDEMO_BYTECODE: [u8; 16] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    KERNEL_GRAPHICS_LOG_CLEAR, // KCALL KERNEL_GRAPHICS_LOG_CLEAR
+    opcode::PUSH_STR_CONST,
+    0x01,
+    0x00, // PUSH_STR_CONST 1
+    opcode::KCALL,
+    KERNEL_GRAPHICS_LOG, // KCALL KERNEL_GRAPHICS_LOG
+    opcode::KCALL,
+    KERNEL_STATUS, // KCALL KERNEL_STATUS
+    opcode::KCALL,
+    KERNEL_TICKS, // KCALL KERNEL_TICKS
+    opcode::HALT, // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 9] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 10] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
         consts: &DBYTE_APP_HELLO_STRINGS,
         output_lines: &DBYTE_APP_HELLO_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_HELLO_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "math",
         bytecode: &DBYTE_APP_MATH_BYTECODE,
         consts: &DBYTE_APP_MATH_STRINGS,
         output_lines: &DBYTE_APP_MATH_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_MATH_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "sysinfo",
         bytecode: &DBYTE_APP_SYSINFO_BYTECODE,
         consts: &DBYTE_APP_SYSINFO_STRINGS,
         output_lines: &DBYTE_APP_SYSINFO_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_SYSINFO_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "ticks",
         bytecode: &DBYTE_APP_TICKS_BYTECODE,
         consts: &DBYTE_APP_TICKS_STRINGS,
         output_lines: &DBYTE_APP_TICKS_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_TICKS_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "tickmath",
         bytecode: &DBYTE_APP_TICKMATH_BYTECODE,
         consts: &DBYTE_APP_TICKMATH_STRINGS,
         output_lines: &DBYTE_APP_TICKMATH_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_TICKMATH_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "argtest",
         bytecode: &DBYTE_APP_ARGTEST_BYTECODE,
         consts: &DBYTE_APP_ARGTEST_STRINGS,
         output_lines: &DBYTE_APP_ARGTEST_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_ARGTEST_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "strtest",
         bytecode: &DBYTE_APP_STRTEST_BYTECODE,
         consts: &DBYTE_APP_STRTEST_STRINGS,
         output_lines: &DBYTE_APP_STRTEST_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_STRTEST_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "logtest",
         bytecode: &DBYTE_APP_LOGTEST_BYTECODE,
         consts: &DBYTE_APP_LOGTEST_STRINGS,
         output_lines: &DBYTE_APP_LOGTEST_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_LOGTEST_OUTPUT_LINES,
     },
     EmbeddedDbyteApp {
         name: "logclear",
         bytecode: &DBYTE_APP_LOGCLEAR_BYTECODE,
         consts: &DBYTE_APP_LOGCLEAR_STRINGS,
         output_lines: &DBYTE_APP_LOGCLEAR_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_LOGCLEAR_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "uidemo",
+        bytecode: &DBYTE_APP_UIDEMO_BYTECODE,
+        consts: &DBYTE_APP_UIDEMO_STRINGS,
+        output_lines: &DBYTE_APP_UIDEMO_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_UIDEMO_DISPLAY_LINES,
     },
 ];
 

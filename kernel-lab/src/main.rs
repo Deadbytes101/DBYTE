@@ -275,7 +275,7 @@ fn run_gfx_console_shell_session() {
         } else if command_text.starts_with(GFX_CONSOLE_RUN_PREFIX) {
             let app_name = &command_text[GFX_CONSOLE_RUN_PREFIX.len()..];
             if let Some(Ok(capture)) = dbyte_vm_probe::run_embedded_app_capture(app_name) {
-                gfx_console::draw_embedded_app_result(command_text, capture.app.output_lines);
+                gfx_console::draw_embedded_app_result(command_text, capture.app.display_lines);
                 print_gfx_console_shell_app_dispatched(app_name);
             } else {
                 gfx_console::draw_app_not_found_result(command_text);
