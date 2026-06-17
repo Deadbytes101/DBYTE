@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use dbyte_kernel_vm::{opcode, Vm, VmError, VmHost, VmOutput};
+use dbyte_kernel_vm::{opcode, Vm, VmError, VmHost, VmHostResult, VmOutput};
 
 use crate::{irq0_ticks_status_snapshot, serial, vga};
 
@@ -17,6 +17,7 @@ const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
 ];
 const KERNEL_STATUS: u8 = 1;
 const KERNEL_TICKS: u8 = 2;
+const KERNEL_TICK_VALUE: u8 = 3;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
@@ -82,8 +83,27 @@ static DBYTE_APP_TICKS_BYTECODE: [u8; 7] = [
     opcode::HALT, // HALT
 ];
 
+static DBYTE_APP_TICKMATH_STRINGS: [&str; 1] = ["APP TICKMATH"];
+static DBYTE_APP_TICKMATH_OUTPUT_LINES: [&str; 2] = ["APP TICKMATH", "9"];
+static DBYTE_APP_TICKMATH_BYTECODE: [u8; 14] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    KERNEL_TICK_VALUE, // KCALL KERNEL_TICK_VALUE
+    opcode::PUSH_INT,
+    0x01,
+    0x00,
+    0x00,
+    0x00,        // PUSH_INT 1
+    opcode::ADD, // ADD
+    opcode::PRINT,
+    opcode::HALT, // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 4] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 5] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -107,6 +127,12 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 4] = [
         bytecode: &DBYTE_APP_TICKS_BYTECODE,
         consts: &DBYTE_APP_TICKS_STRINGS,
         output_lines: &DBYTE_APP_TICKS_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "tickmath",
+        bytecode: &DBYTE_APP_TICKMATH_BYTECODE,
+        consts: &DBYTE_APP_TICKMATH_STRINGS,
+        output_lines: &DBYTE_APP_TICKMATH_OUTPUT_LINES,
     },
 ];
 
@@ -179,21 +205,31 @@ impl VmOutput for ProbeCaptureOutput {
 }
 
 impl VmHost for KernelServiceHost {
-    fn call<O: VmOutput>(&mut self, service_id: u8, output: &mut O) -> Result<(), VmError> {
+    fn call<O: VmOutput>(
+        &mut self,
+        service_id: u8,
+        output: &mut O,
+    ) -> Result<VmHostResult, VmError> {
         match service_id {
             KERNEL_STATUS => {
                 output.write_str(KERNEL_STATUS_LINE);
                 output.write_str(DBYTE_VM_STATUS_LINE);
                 output.write_str(GRAPHICS_STATUS_LINE);
-                Ok(())
+                Ok(VmHostResult::None)
             }
             KERNEL_TICKS => {
                 write_kernel_ticks(output);
-                Ok(())
+                Ok(VmHostResult::None)
             }
+            KERNEL_TICK_VALUE => Ok(VmHostResult::PushI32(kernel_tick_value())),
             _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
+}
+
+fn kernel_tick_value() -> i32 {
+    let ticks = irq0_ticks_status_snapshot();
+    ticks.target_ticks as i32
 }
 
 fn write_kernel_ticks<O: VmOutput>(output: &mut O) {

@@ -28,8 +28,18 @@ pub mod vm {
         fn write_i32(&mut self, value: i32);
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum VmHostResult {
+        None,
+        PushI32(i32),
+    }
+
     pub trait VmHost {
-        fn call<O: VmOutput>(&mut self, service_id: u8, output: &mut O) -> Result<(), VmError>;
+        fn call<O: VmOutput>(
+            &mut self,
+            service_id: u8,
+            output: &mut O,
+        ) -> Result<VmHostResult, VmError>;
     }
 
     pub struct NoHost;
@@ -47,7 +57,11 @@ pub mod vm {
     }
 
     impl VmHost for NoHost {
-        fn call<O: VmOutput>(&mut self, service_id: u8, _output: &mut O) -> Result<(), VmError> {
+        fn call<O: VmOutput>(
+            &mut self,
+            service_id: u8,
+            _output: &mut O,
+        ) -> Result<VmHostResult, VmError> {
             Err(VmError::UnsupportedService(service_id))
         }
     }
@@ -112,7 +126,10 @@ pub mod vm {
                     },
                     opcode::KCALL => {
                         let service_id = self.read_u8()?;
-                        host.call(service_id, output)?;
+                        match host.call(service_id, output)? {
+                            VmHostResult::None => {}
+                            VmHostResult::PushI32(value) => self.push(Value::Int(value))?,
+                        }
                     }
                     opcode::HALT => return Ok(()),
                     other => return Err(VmError::UnknownOpcode(other)),
@@ -166,12 +183,12 @@ pub mod vm {
 }
 
 pub use value::Value;
-pub use vm::{NoHost, Vm, VmError, VmHost, VmOutput, STACK_CAPACITY};
+pub use vm::{NoHost, Vm, VmError, VmHost, VmHostResult, VmOutput, STACK_CAPACITY};
 
 #[cfg(test)]
 mod tests {
     use super::opcode;
-    use super::{NoHost, Vm, VmError, VmHost, VmOutput};
+    use super::{NoHost, Vm, VmError, VmHost, VmHostResult, VmOutput};
 
     #[derive(Default)]
     struct FixedOutput {
@@ -204,19 +221,24 @@ mod tests {
     }
 
     impl VmHost for MockHost {
-        fn call<O: VmOutput>(&mut self, service_id: u8, output: &mut O) -> Result<(), VmError> {
+        fn call<O: VmOutput>(
+            &mut self,
+            service_id: u8,
+            output: &mut O,
+        ) -> Result<VmHostResult, VmError> {
             match service_id {
                 1 => {
                     output.write_str("KERNEL ONLINE");
                     output.write_str("DBYTE VM ONLINE");
                     output.write_str("GRAPHICS MODE 13H");
-                    Ok(())
+                    Ok(VmHostResult::None)
                 }
                 2 => {
                     output.write_str("TICKS SERVICE OK");
                     output.write_str("MASK SERVICE OK");
-                    Ok(())
+                    Ok(VmHostResult::None)
                 }
+                3 => Ok(VmHostResult::PushI32(8)),
                 _ => Err(VmError::UnsupportedService(service_id)),
             }
         }
@@ -327,8 +349,126 @@ mod tests {
     }
 
     #[test]
-    fn kcall_unsupported_service_fails_deterministically() {
+    fn kcall_tick_value_pushes_i32_with_host() {
         let bytecode = [opcode::KCALL, 3, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+    }
+
+    #[test]
+    fn kcall_tick_value_can_be_added_and_printed() {
+        let bytecode = [
+            opcode::KCALL,
+            3,
+            opcode::PUSH_INT,
+            1,
+            0,
+            0,
+            0,
+            opcode::ADD,
+            opcode::PRINT,
+            opcode::HALT,
+        ];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.ints[0], 9);
+    }
+
+    #[test]
+    fn kcall_tick_value_stack_overflow_fails_deterministically() {
+        let bytecode = [
+            opcode::PUSH_INT,
+            0,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            1,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            2,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            3,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            4,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            5,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            6,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            7,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            8,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            9,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            10,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            11,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            12,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            13,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            14,
+            0,
+            0,
+            0,
+            opcode::PUSH_INT,
+            15,
+            0,
+            0,
+            0,
+            opcode::KCALL,
+            3,
+            opcode::HALT,
+        ];
         let strings = [];
         let mut output = FixedOutput::default();
         let mut host = MockHost;
@@ -336,7 +476,21 @@ mod tests {
 
         assert_eq!(
             vm.run_with_host(&mut output, &mut host),
-            Err(VmError::UnsupportedService(3))
+            Err(VmError::StackOverflow)
+        );
+    }
+
+    #[test]
+    fn kcall_unsupported_service_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 4, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::UnsupportedService(4))
         );
     }
 
