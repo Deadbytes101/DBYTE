@@ -22,11 +22,13 @@ const KERNEL_TICKS: u8 = 2;
 const KERNEL_TICK_VALUE: u8 = 3;
 const KERNEL_ECHO_I32: u8 = 4;
 const KERNEL_ECHO_STR: u8 = 5;
+const KERNEL_GRAPHICS_LOG: u8 = 6;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
 const ARG_VALUE_7_LINE: &str = "ARG VALUE 7";
 const ARG_TEXT_DBYTE_SERVICE_ARG_LINE: &str = "ARG TEXT DBYTE SERVICE ARG";
+const HELLO_GRAPHICS_LOG_LINE: &str = "HELLO GRAPHICS LOG";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -140,8 +142,23 @@ static DBYTE_APP_STRTEST_BYTECODE: [u8; 10] = [
     opcode::HALT,    // HALT
 ];
 
+static DBYTE_APP_LOGTEST_STRINGS: [&str; 2] = ["APP LOGTEST", HELLO_GRAPHICS_LOG_LINE];
+static DBYTE_APP_LOGTEST_OUTPUT_LINES: [&str; 2] = ["APP LOGTEST", HELLO_GRAPHICS_LOG_LINE];
+static DBYTE_APP_LOGTEST_BYTECODE: [u8; 10] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::PUSH_STR_CONST,
+    0x01,
+    0x00, // PUSH_STR_CONST 1
+    opcode::KCALL,
+    KERNEL_GRAPHICS_LOG, // KCALL KERNEL_GRAPHICS_LOG
+    opcode::HALT,        // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 7] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 8] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -183,6 +200,12 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 7] = [
         bytecode: &DBYTE_APP_STRTEST_BYTECODE,
         consts: &DBYTE_APP_STRTEST_STRINGS,
         output_lines: &DBYTE_APP_STRTEST_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "logtest",
+        bytecode: &DBYTE_APP_LOGTEST_BYTECODE,
+        consts: &DBYTE_APP_LOGTEST_STRINGS,
+        output_lines: &DBYTE_APP_LOGTEST_OUTPUT_LINES,
     },
 ];
 
@@ -288,6 +311,7 @@ impl VmHost for KernelServiceHost {
             KERNEL_STATUS | KERNEL_TICKS | KERNEL_TICK_VALUE => Ok(VmHostArgSpec::None),
             KERNEL_ECHO_I32 => Ok(VmHostArgSpec::I32),
             KERNEL_ECHO_STR => Ok(VmHostArgSpec::StrConst),
+            KERNEL_GRAPHICS_LOG => Ok(VmHostArgSpec::StrConst),
             _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
@@ -320,6 +344,13 @@ impl VmHost for KernelServiceHost {
             KERNEL_ECHO_STR => match args {
                 VmHostArgs::StrConst(value) => {
                     write_kernel_echo_str(value, output)?;
+                    Ok(VmHostResult::None)
+                }
+                VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),
+            },
+            KERNEL_GRAPHICS_LOG => match args {
+                VmHostArgs::StrConst(value) => {
+                    output.write_str(value);
                     Ok(VmHostResult::None)
                 }
                 VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),

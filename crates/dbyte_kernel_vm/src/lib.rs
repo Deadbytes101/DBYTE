@@ -260,6 +260,7 @@ mod tests {
                 "TICKS SERVICE OK" => "TICKS SERVICE OK",
                 "MASK SERVICE OK" => "MASK SERVICE OK",
                 "ARG TEXT DBYTE SERVICE ARG" => "ARG TEXT DBYTE SERVICE ARG",
+                "HELLO GRAPHICS LOG" => "HELLO GRAPHICS LOG",
                 "hello" => "hello",
                 _ => "",
             };
@@ -277,7 +278,7 @@ mod tests {
             match service_id {
                 1..=3 => Ok(VmHostArgSpec::None),
                 4 => Ok(VmHostArgSpec::I32),
-                5 => Ok(VmHostArgSpec::StrConst),
+                5 | 6 => Ok(VmHostArgSpec::StrConst),
                 _ => Err(VmError::UnsupportedService(service_id)),
             }
         }
@@ -321,6 +322,13 @@ mod tests {
                         } else {
                             Err(VmError::TypeMismatch)
                         }
+                    }
+                    VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),
+                },
+                6 => match args {
+                    VmHostArgs::StrConst(value) => {
+                        output.write_str(value);
+                        Ok(VmHostResult::None)
                     }
                     VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),
                 },
@@ -642,6 +650,46 @@ mod tests {
         assert_eq!(
             vm.run_with_host(&mut output, &mut host),
             Err(VmError::StrConstIndexOutOfBounds)
+        );
+    }
+
+    #[test]
+    fn kcall_graphics_log_consumes_string_constant_with_host() {
+        let bytecode = [opcode::PUSH_STR_CONST, 0, 0, opcode::KCALL, 6, opcode::HALT];
+        let strings = ["HELLO GRAPHICS LOG"];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.strings[0], "HELLO GRAPHICS LOG");
+    }
+
+    #[test]
+    fn kcall_graphics_log_wrong_type_fails_deterministically() {
+        let bytecode = [opcode::PUSH_INT, 7, 0, 0, 0, opcode::KCALL, 6, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::TypeMismatch)
+        );
+    }
+
+    #[test]
+    fn kcall_graphics_log_stack_underflow_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 6, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::StackUnderflow)
         );
     }
 
