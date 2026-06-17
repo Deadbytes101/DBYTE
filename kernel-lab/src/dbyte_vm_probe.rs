@@ -42,6 +42,7 @@ pub struct EmbeddedDbyteApp {
     pub bytecode: &'static [u8],
     pub consts: &'static [&'static str],
     pub output_lines: &'static [&'static str],
+    // Bounded graphics projection only. App execution is proven by output_lines capture.
     pub display_lines: &'static [&'static str],
 }
 
@@ -478,6 +479,7 @@ fn write_kernel_echo_str<O: VmOutput>(value: &str, output: &mut O) -> Result<(),
 
 impl VmOutput for DbyteAppCaptureOutput {
     fn write_str(&mut self, value: &str) {
+        // Full app output is the execution contract; display_lines must not bypass this capture.
         if self.line_index >= self.app.output_lines.len()
             || value != self.app.output_lines[self.line_index]
         {
@@ -584,6 +586,7 @@ pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCa
 
     let result = run_embedded_app_program(app.bytecode, app.consts, &mut output)
         .map(|_| EmbeddedDbyteAppCapture { app });
+    // A display projection is renderable only after bytecode produced every expected output line.
     if output.matched && output.line_index == app.output_lines.len() {
         Some(result)
     } else {
