@@ -1,7 +1,9 @@
 use core::fmt::Write;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use dbyte_kernel_vm::{opcode, Vm, VmError, VmHost, VmHostResult, VmOutput};
+use dbyte_kernel_vm::{
+    opcode, Vm, VmError, VmHost, VmHostArgSpec, VmHostArgs, VmHostResult, VmOutput,
+};
 
 use crate::{irq0_ticks_status_snapshot, serial, vga};
 
@@ -18,9 +20,11 @@ const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
 const KERNEL_STATUS: u8 = 1;
 const KERNEL_TICKS: u8 = 2;
 const KERNEL_TICK_VALUE: u8 = 3;
+const KERNEL_ECHO_I32: u8 = 4;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
+const ARG_VALUE_7_LINE: &str = "ARG VALUE 7";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -102,8 +106,25 @@ static DBYTE_APP_TICKMATH_BYTECODE: [u8; 14] = [
     opcode::HALT, // HALT
 ];
 
+static DBYTE_APP_ARGTEST_STRINGS: [&str; 1] = ["APP ARGTEST"];
+static DBYTE_APP_ARGTEST_OUTPUT_LINES: [&str; 2] = ["APP ARGTEST", ARG_VALUE_7_LINE];
+static DBYTE_APP_ARGTEST_BYTECODE: [u8; 12] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::PUSH_INT,
+    0x07,
+    0x00,
+    0x00,
+    0x00, // PUSH_INT 7
+    opcode::KCALL,
+    KERNEL_ECHO_I32, // KCALL KERNEL_ECHO_I32
+    opcode::HALT,    // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 5] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 6] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -133,6 +154,12 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 5] = [
         bytecode: &DBYTE_APP_TICKMATH_BYTECODE,
         consts: &DBYTE_APP_TICKMATH_STRINGS,
         output_lines: &DBYTE_APP_TICKMATH_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "argtest",
+        bytecode: &DBYTE_APP_ARGTEST_BYTECODE,
+        consts: &DBYTE_APP_ARGTEST_STRINGS,
+        output_lines: &DBYTE_APP_ARGTEST_OUTPUT_LINES,
     },
 ];
 
@@ -168,10 +195,38 @@ struct ProbeCaptureOutput {
 
 struct KernelServiceHost;
 
+struct FixedLineBuffer<'a> {
+    bytes: &'a mut [u8],
+    len: usize,
+}
+
 struct DbyteAppCaptureOutput {
     app: &'static EmbeddedDbyteApp,
     line_index: usize,
     matched: bool,
+}
+
+impl<'a> FixedLineBuffer<'a> {
+    fn new(bytes: &'a mut [u8]) -> Self {
+        Self { bytes, len: 0 }
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("")
+    }
+}
+
+impl Write for FixedLineBuffer<'_> {
+    fn write_str(&mut self, value: &str) -> core::fmt::Result {
+        let available = self.bytes.len().saturating_sub(self.len);
+        if value.len() > available {
+            return Err(core::fmt::Error);
+        }
+        let end = self.len + value.len();
+        self.bytes[self.len..end].copy_from_slice(value.as_bytes());
+        self.len = end;
+        Ok(())
+    }
 }
 
 impl VmOutput for KernelVmOutput {
@@ -205,9 +260,18 @@ impl VmOutput for ProbeCaptureOutput {
 }
 
 impl VmHost for KernelServiceHost {
+    fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError> {
+        match service_id {
+            KERNEL_STATUS | KERNEL_TICKS | KERNEL_TICK_VALUE => Ok(VmHostArgSpec::None),
+            KERNEL_ECHO_I32 => Ok(VmHostArgSpec::I32),
+            _ => Err(VmError::UnsupportedService(service_id)),
+        }
+    }
+
     fn call<O: VmOutput>(
         &mut self,
         service_id: u8,
+        args: VmHostArgs,
         output: &mut O,
     ) -> Result<VmHostResult, VmError> {
         match service_id {
@@ -222,6 +286,13 @@ impl VmHost for KernelServiceHost {
                 Ok(VmHostResult::None)
             }
             KERNEL_TICK_VALUE => Ok(VmHostResult::PushI32(kernel_tick_value())),
+            KERNEL_ECHO_I32 => match args {
+                VmHostArgs::I32(value) => {
+                    write_kernel_echo_i32(value, output);
+                    Ok(VmHostResult::None)
+                }
+                VmHostArgs::None => Err(VmError::TypeMismatch),
+            },
             _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
@@ -242,6 +313,13 @@ fn write_kernel_ticks<O: VmOutput>(output: &mut O) {
         "yes" => output.write_str(IRQ0_MASKED_LINE),
         _ => output.write_str(IRQ0_UNMASKED_LINE),
     }
+}
+
+fn write_kernel_echo_i32<O: VmOutput>(value: i32, output: &mut O) {
+    let mut bytes = [0u8; 24];
+    let mut line = FixedLineBuffer::new(&mut bytes);
+    let _ = write!(line, "ARG VALUE {}", value);
+    output.write_str(line.as_str());
 }
 
 impl VmOutput for DbyteAppCaptureOutput {

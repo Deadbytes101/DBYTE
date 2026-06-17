@@ -34,10 +34,25 @@ pub mod vm {
         PushI32(i32),
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum VmHostArgSpec {
+        None,
+        I32,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum VmHostArgs {
+        None,
+        I32(i32),
+    }
+
     pub trait VmHost {
+        fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError>;
+
         fn call<O: VmOutput>(
             &mut self,
             service_id: u8,
+            args: VmHostArgs,
             output: &mut O,
         ) -> Result<VmHostResult, VmError>;
     }
@@ -57,9 +72,14 @@ pub mod vm {
     }
 
     impl VmHost for NoHost {
+        fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError> {
+            Err(VmError::UnsupportedService(service_id))
+        }
+
         fn call<O: VmOutput>(
             &mut self,
             service_id: u8,
+            _args: VmHostArgs,
             _output: &mut O,
         ) -> Result<VmHostResult, VmError> {
             Err(VmError::UnsupportedService(service_id))
@@ -126,7 +146,8 @@ pub mod vm {
                     },
                     opcode::KCALL => {
                         let service_id = self.read_u8()?;
-                        match host.call(service_id, output)? {
+                        let args = self.read_host_args(host.arg_spec(service_id)?)?;
+                        match host.call(service_id, args, output)? {
                             VmHostResult::None => {}
                             VmHostResult::PushI32(value) => self.push(Value::Int(value))?,
                         }
@@ -160,6 +181,20 @@ pub mod vm {
                 .ok_or(VmError::StackUnderflow)
         }
 
+        fn pop_i32(&mut self) -> Result<i32, VmError> {
+            match self.pop()? {
+                Value::Int(value) => Ok(value),
+                Value::StrConst(_) => Err(VmError::TypeMismatch),
+            }
+        }
+
+        fn read_host_args(&mut self, spec: VmHostArgSpec) -> Result<VmHostArgs, VmError> {
+            match spec {
+                VmHostArgSpec::None => Ok(VmHostArgs::None),
+                VmHostArgSpec::I32 => Ok(VmHostArgs::I32(self.pop_i32()?)),
+            }
+        }
+
         fn read_u8(&mut self) -> Result<u8, VmError> {
             let byte = *self.bytecode.get(self.ip).ok_or(VmError::UnexpectedEnd)?;
             self.ip += 1;
@@ -183,12 +218,14 @@ pub mod vm {
 }
 
 pub use value::Value;
-pub use vm::{NoHost, Vm, VmError, VmHost, VmHostResult, VmOutput, STACK_CAPACITY};
+pub use vm::{
+    NoHost, Vm, VmError, VmHost, VmHostArgSpec, VmHostArgs, VmHostResult, VmOutput, STACK_CAPACITY,
+};
 
 #[cfg(test)]
 mod tests {
     use super::opcode;
-    use super::{NoHost, Vm, VmError, VmHost, VmHostResult, VmOutput};
+    use super::{NoHost, Vm, VmError, VmHost, VmHostArgSpec, VmHostArgs, VmHostResult, VmOutput};
 
     #[derive(Default)]
     struct FixedOutput {
@@ -221,24 +258,45 @@ mod tests {
     }
 
     impl VmHost for MockHost {
+        fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError> {
+            match service_id {
+                1..=3 => Ok(VmHostArgSpec::None),
+                4 => Ok(VmHostArgSpec::I32),
+                _ => Err(VmError::UnsupportedService(service_id)),
+            }
+        }
+
         fn call<O: VmOutput>(
             &mut self,
             service_id: u8,
+            args: VmHostArgs,
             output: &mut O,
         ) -> Result<VmHostResult, VmError> {
             match service_id {
                 1 => {
+                    assert_eq!(args, VmHostArgs::None);
                     output.write_str("KERNEL ONLINE");
                     output.write_str("DBYTE VM ONLINE");
                     output.write_str("GRAPHICS MODE 13H");
                     Ok(VmHostResult::None)
                 }
                 2 => {
+                    assert_eq!(args, VmHostArgs::None);
                     output.write_str("TICKS SERVICE OK");
                     output.write_str("MASK SERVICE OK");
                     Ok(VmHostResult::None)
                 }
-                3 => Ok(VmHostResult::PushI32(8)),
+                3 => {
+                    assert_eq!(args, VmHostArgs::None);
+                    Ok(VmHostResult::PushI32(8))
+                }
+                4 => match args {
+                    VmHostArgs::I32(value) => {
+                        output.write_i32(value);
+                        Ok(VmHostResult::None)
+                    }
+                    VmHostArgs::None => Err(VmError::TypeMismatch),
+                },
                 _ => Err(VmError::UnsupportedService(service_id)),
             }
         }
@@ -481,7 +539,19 @@ mod tests {
     }
 
     #[test]
-    fn kcall_unsupported_service_fails_deterministically() {
+    fn kcall_echo_i32_consumes_argument_with_host() {
+        let bytecode = [opcode::PUSH_INT, 7, 0, 0, 0, opcode::KCALL, 4, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.ints[0], 7);
+    }
+
+    #[test]
+    fn kcall_echo_i32_stack_underflow_fails_deterministically() {
         let bytecode = [opcode::KCALL, 4, opcode::HALT];
         let strings = [];
         let mut output = FixedOutput::default();
@@ -490,7 +560,21 @@ mod tests {
 
         assert_eq!(
             vm.run_with_host(&mut output, &mut host),
-            Err(VmError::UnsupportedService(4))
+            Err(VmError::StackUnderflow)
+        );
+    }
+
+    #[test]
+    fn kcall_unsupported_service_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 99, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::UnsupportedService(99))
         );
     }
 
