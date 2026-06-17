@@ -38,12 +38,14 @@ pub mod vm {
     pub enum VmHostArgSpec {
         None,
         I32,
+        StrConst,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum VmHostArgs {
+    pub enum VmHostArgs<'a> {
         None,
         I32(i32),
+        StrConst(&'a str),
     }
 
     pub trait VmHost {
@@ -52,7 +54,7 @@ pub mod vm {
         fn call<O: VmOutput>(
             &mut self,
             service_id: u8,
-            args: VmHostArgs,
+            args: VmHostArgs<'_>,
             output: &mut O,
         ) -> Result<VmHostResult, VmError>;
     }
@@ -79,7 +81,7 @@ pub mod vm {
         fn call<O: VmOutput>(
             &mut self,
             service_id: u8,
-            _args: VmHostArgs,
+            _args: VmHostArgs<'_>,
             _output: &mut O,
         ) -> Result<VmHostResult, VmError> {
             Err(VmError::UnsupportedService(service_id))
@@ -188,10 +190,22 @@ pub mod vm {
             }
         }
 
-        fn read_host_args(&mut self, spec: VmHostArgSpec) -> Result<VmHostArgs, VmError> {
+        fn pop_str_const(&mut self) -> Result<&'a str, VmError> {
+            match self.pop()? {
+                Value::StrConst(index) => self
+                    .strings
+                    .get(index as usize)
+                    .copied()
+                    .ok_or(VmError::StrConstIndexOutOfBounds),
+                Value::Int(_) => Err(VmError::TypeMismatch),
+            }
+        }
+
+        fn read_host_args(&mut self, spec: VmHostArgSpec) -> Result<VmHostArgs<'a>, VmError> {
             match spec {
                 VmHostArgSpec::None => Ok(VmHostArgs::None),
                 VmHostArgSpec::I32 => Ok(VmHostArgs::I32(self.pop_i32()?)),
+                VmHostArgSpec::StrConst => Ok(VmHostArgs::StrConst(self.pop_str_const()?)),
             }
         }
 
@@ -229,7 +243,7 @@ mod tests {
 
     #[derive(Default)]
     struct FixedOutput {
-        strings: [&'static str; 6],
+        strings: [&'static str; 8],
         ints: [i32; 2],
         string_len: usize,
         int_len: usize,
@@ -245,6 +259,7 @@ mod tests {
                 "GRAPHICS MODE 13H" => "GRAPHICS MODE 13H",
                 "TICKS SERVICE OK" => "TICKS SERVICE OK",
                 "MASK SERVICE OK" => "MASK SERVICE OK",
+                "ARG TEXT DBYTE SERVICE ARG" => "ARG TEXT DBYTE SERVICE ARG",
                 "hello" => "hello",
                 _ => "",
             };
@@ -262,6 +277,7 @@ mod tests {
             match service_id {
                 1..=3 => Ok(VmHostArgSpec::None),
                 4 => Ok(VmHostArgSpec::I32),
+                5 => Ok(VmHostArgSpec::StrConst),
                 _ => Err(VmError::UnsupportedService(service_id)),
             }
         }
@@ -269,7 +285,7 @@ mod tests {
         fn call<O: VmOutput>(
             &mut self,
             service_id: u8,
-            args: VmHostArgs,
+            args: VmHostArgs<'_>,
             output: &mut O,
         ) -> Result<VmHostResult, VmError> {
             match service_id {
@@ -295,7 +311,18 @@ mod tests {
                         output.write_i32(value);
                         Ok(VmHostResult::None)
                     }
-                    VmHostArgs::None => Err(VmError::TypeMismatch),
+                    VmHostArgs::None | VmHostArgs::StrConst(_) => Err(VmError::TypeMismatch),
+                },
+                5 => match args {
+                    VmHostArgs::StrConst(value) => {
+                        if value == "DBYTE SERVICE ARG" {
+                            output.write_str("ARG TEXT DBYTE SERVICE ARG");
+                            Ok(VmHostResult::None)
+                        } else {
+                            Err(VmError::TypeMismatch)
+                        }
+                    }
+                    VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),
                 },
                 _ => Err(VmError::UnsupportedService(service_id)),
             }
@@ -561,6 +588,60 @@ mod tests {
         assert_eq!(
             vm.run_with_host(&mut output, &mut host),
             Err(VmError::StackUnderflow)
+        );
+    }
+
+    #[test]
+    fn kcall_echo_str_consumes_string_constant_with_host() {
+        let bytecode = [opcode::PUSH_STR_CONST, 0, 0, opcode::KCALL, 5, opcode::HALT];
+        let strings = ["DBYTE SERVICE ARG"];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.strings[0], "ARG TEXT DBYTE SERVICE ARG");
+    }
+
+    #[test]
+    fn kcall_echo_str_wrong_type_fails_deterministically() {
+        let bytecode = [opcode::PUSH_INT, 7, 0, 0, 0, opcode::KCALL, 5, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::TypeMismatch)
+        );
+    }
+
+    #[test]
+    fn kcall_echo_str_stack_underflow_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 5, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::StackUnderflow)
+        );
+    }
+
+    #[test]
+    fn kcall_echo_str_invalid_const_index_fails_deterministically() {
+        let bytecode = [opcode::PUSH_STR_CONST, 1, 0, opcode::KCALL, 5, opcode::HALT];
+        let strings = ["DBYTE SERVICE ARG"];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::StrConstIndexOutOfBounds)
         );
     }
 

@@ -21,10 +21,12 @@ const KERNEL_STATUS: u8 = 1;
 const KERNEL_TICKS: u8 = 2;
 const KERNEL_TICK_VALUE: u8 = 3;
 const KERNEL_ECHO_I32: u8 = 4;
+const KERNEL_ECHO_STR: u8 = 5;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
 const ARG_VALUE_7_LINE: &str = "ARG VALUE 7";
+const ARG_TEXT_DBYTE_SERVICE_ARG_LINE: &str = "ARG TEXT DBYTE SERVICE ARG";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -123,8 +125,23 @@ static DBYTE_APP_ARGTEST_BYTECODE: [u8; 12] = [
     opcode::HALT,    // HALT
 ];
 
+static DBYTE_APP_STRTEST_STRINGS: [&str; 2] = ["APP STRTEST", "DBYTE SERVICE ARG"];
+static DBYTE_APP_STRTEST_OUTPUT_LINES: [&str; 2] = ["APP STRTEST", ARG_TEXT_DBYTE_SERVICE_ARG_LINE];
+static DBYTE_APP_STRTEST_BYTECODE: [u8; 10] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::PUSH_STR_CONST,
+    0x01,
+    0x00, // PUSH_STR_CONST 1
+    opcode::KCALL,
+    KERNEL_ECHO_STR, // KCALL KERNEL_ECHO_STR
+    opcode::HALT,    // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 6] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 7] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -160,6 +177,12 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 6] = [
         bytecode: &DBYTE_APP_ARGTEST_BYTECODE,
         consts: &DBYTE_APP_ARGTEST_STRINGS,
         output_lines: &DBYTE_APP_ARGTEST_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "strtest",
+        bytecode: &DBYTE_APP_STRTEST_BYTECODE,
+        consts: &DBYTE_APP_STRTEST_STRINGS,
+        output_lines: &DBYTE_APP_STRTEST_OUTPUT_LINES,
     },
 ];
 
@@ -264,6 +287,7 @@ impl VmHost for KernelServiceHost {
         match service_id {
             KERNEL_STATUS | KERNEL_TICKS | KERNEL_TICK_VALUE => Ok(VmHostArgSpec::None),
             KERNEL_ECHO_I32 => Ok(VmHostArgSpec::I32),
+            KERNEL_ECHO_STR => Ok(VmHostArgSpec::StrConst),
             _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
@@ -271,7 +295,7 @@ impl VmHost for KernelServiceHost {
     fn call<O: VmOutput>(
         &mut self,
         service_id: u8,
-        args: VmHostArgs,
+        args: VmHostArgs<'_>,
         output: &mut O,
     ) -> Result<VmHostResult, VmError> {
         match service_id {
@@ -291,7 +315,14 @@ impl VmHost for KernelServiceHost {
                     write_kernel_echo_i32(value, output);
                     Ok(VmHostResult::None)
                 }
-                VmHostArgs::None => Err(VmError::TypeMismatch),
+                VmHostArgs::None | VmHostArgs::StrConst(_) => Err(VmError::TypeMismatch),
+            },
+            KERNEL_ECHO_STR => match args {
+                VmHostArgs::StrConst(value) => {
+                    write_kernel_echo_str(value, output)?;
+                    Ok(VmHostResult::None)
+                }
+                VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),
             },
             _ => Err(VmError::UnsupportedService(service_id)),
         }
@@ -320,6 +351,14 @@ fn write_kernel_echo_i32<O: VmOutput>(value: i32, output: &mut O) {
     let mut line = FixedLineBuffer::new(&mut bytes);
     let _ = write!(line, "ARG VALUE {}", value);
     output.write_str(line.as_str());
+}
+
+fn write_kernel_echo_str<O: VmOutput>(value: &str, output: &mut O) -> Result<(), VmError> {
+    let mut bytes = [0u8; 64];
+    let mut line = FixedLineBuffer::new(&mut bytes);
+    write!(line, "ARG TEXT {}", value).map_err(|_| VmError::TypeMismatch)?;
+    output.write_str(line.as_str());
+    Ok(())
 }
 
 impl VmOutput for DbyteAppCaptureOutput {
