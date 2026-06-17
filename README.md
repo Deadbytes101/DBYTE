@@ -128,6 +128,4 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 
 ---
 
-**License**: MIT. See [LICENSE](LICENSE).
-
 **This is alpha software. Run in VM if you value your data.**
