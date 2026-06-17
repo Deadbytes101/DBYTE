@@ -175,7 +175,7 @@ mod tests {
 
     #[derive(Default)]
     struct FixedOutput {
-        strings: [&'static str; 4],
+        strings: [&'static str; 6],
         ints: [i32; 2],
         string_len: usize,
         int_len: usize,
@@ -189,6 +189,8 @@ mod tests {
                 "DBYTE VM ONLINE" => "DBYTE VM ONLINE",
                 "KERNEL ONLINE" => "KERNEL ONLINE",
                 "GRAPHICS MODE 13H" => "GRAPHICS MODE 13H",
+                "TICKS SERVICE OK" => "TICKS SERVICE OK",
+                "MASK SERVICE OK" => "MASK SERVICE OK",
                 "hello" => "hello",
                 _ => "",
             };
@@ -208,6 +210,11 @@ mod tests {
                     output.write_str("KERNEL ONLINE");
                     output.write_str("DBYTE VM ONLINE");
                     output.write_str("GRAPHICS MODE 13H");
+                    Ok(())
+                }
+                2 => {
+                    output.write_str("TICKS SERVICE OK");
+                    output.write_str("MASK SERVICE OK");
                     Ok(())
                 }
                 _ => Err(VmError::UnsupportedService(service_id)),
@@ -307,8 +314,21 @@ mod tests {
     }
 
     #[test]
-    fn kcall_unsupported_service_fails_deterministically() {
+    fn kcall_ticks_service_succeeds_with_host() {
         let bytecode = [opcode::KCALL, 2, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.strings[0], "TICKS SERVICE OK");
+        assert_eq!(output.strings[1], "MASK SERVICE OK");
+    }
+
+    #[test]
+    fn kcall_unsupported_service_fails_deterministically() {
+        let bytecode = [opcode::KCALL, 3, opcode::HALT];
         let strings = [];
         let mut output = FixedOutput::default();
         let mut host = MockHost;
@@ -316,7 +336,7 @@ mod tests {
 
         assert_eq!(
             vm.run_with_host(&mut output, &mut host),
-            Err(VmError::UnsupportedService(2))
+            Err(VmError::UnsupportedService(3))
         );
     }
 

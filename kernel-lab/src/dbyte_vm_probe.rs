@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use dbyte_kernel_vm::{opcode, Vm, VmError, VmHost, VmOutput};
 
-use crate::{serial, vga};
+use crate::{irq0_ticks_status_snapshot, serial, vga};
 
 const DBYTE_VM_PROBE_STRINGS: [&str; 1] = ["DBYTE VM ONLINE"];
 const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
@@ -16,9 +16,14 @@ const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
     0xff, // HALT
 ];
 const KERNEL_STATUS: u8 = 1;
+const KERNEL_TICKS: u8 = 2;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
+const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
+const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
+const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
+const IRQ0_TICKS_UNKNOWN_LINE: &str = "IRQ0 TICKS UNKNOWN";
 
 pub struct EmbeddedDbyteApp {
     pub name: &'static str,
@@ -64,8 +69,21 @@ static DBYTE_APP_SYSINFO_BYTECODE: [u8; 7] = [
     opcode::HALT,  // HALT
 ];
 
+static DBYTE_APP_TICKS_STRINGS: [&str; 1] = ["APP TICKS"];
+static DBYTE_APP_TICKS_OUTPUT_LINES: [&str; 3] =
+    ["APP TICKS", IRQ0_TICKS_0008_LINE, IRQ0_MASKED_LINE];
+static DBYTE_APP_TICKS_BYTECODE: [u8; 7] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    KERNEL_TICKS, // KCALL KERNEL_TICKS
+    opcode::HALT, // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 3] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 4] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -83,6 +101,12 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 3] = [
         bytecode: &DBYTE_APP_SYSINFO_BYTECODE,
         consts: &DBYTE_APP_SYSINFO_STRINGS,
         output_lines: &DBYTE_APP_SYSINFO_OUTPUT_LINES,
+    },
+    EmbeddedDbyteApp {
+        name: "ticks",
+        bytecode: &DBYTE_APP_TICKS_BYTECODE,
+        consts: &DBYTE_APP_TICKS_STRINGS,
+        output_lines: &DBYTE_APP_TICKS_OUTPUT_LINES,
     },
 ];
 
@@ -163,8 +187,24 @@ impl VmHost for KernelServiceHost {
                 output.write_str(GRAPHICS_STATUS_LINE);
                 Ok(())
             }
+            KERNEL_TICKS => {
+                write_kernel_ticks(output);
+                Ok(())
+            }
             _ => Err(VmError::UnsupportedService(service_id)),
         }
+    }
+}
+
+fn write_kernel_ticks<O: VmOutput>(output: &mut O) {
+    let ticks = irq0_ticks_status_snapshot();
+    match ticks.target_ticks {
+        8 => output.write_str(IRQ0_TICKS_0008_LINE),
+        _ => output.write_str(IRQ0_TICKS_UNKNOWN_LINE),
+    }
+    match ticks.irq0_currently_masked {
+        "yes" => output.write_str(IRQ0_MASKED_LINE),
+        _ => output.write_str(IRQ0_UNMASKED_LINE),
     }
 }
 
