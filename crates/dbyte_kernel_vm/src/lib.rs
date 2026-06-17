@@ -26,6 +26,8 @@ pub mod vm {
     pub trait VmOutput {
         fn write_str(&mut self, value: &str);
         fn write_i32(&mut self, value: i32);
+
+        fn clear_log(&mut self) {}
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,6 +249,7 @@ mod tests {
         ints: [i32; 2],
         string_len: usize,
         int_len: usize,
+        clears: usize,
     }
 
     struct MockHost;
@@ -261,6 +264,7 @@ mod tests {
                 "MASK SERVICE OK" => "MASK SERVICE OK",
                 "ARG TEXT DBYTE SERVICE ARG" => "ARG TEXT DBYTE SERVICE ARG",
                 "HELLO GRAPHICS LOG" => "HELLO GRAPHICS LOG",
+                "LOG CLEARED" => "LOG CLEARED",
                 "hello" => "hello",
                 _ => "",
             };
@@ -271,12 +275,16 @@ mod tests {
             self.ints[self.int_len] = value;
             self.int_len += 1;
         }
+
+        fn clear_log(&mut self) {
+            self.clears += 1;
+        }
     }
 
     impl VmHost for MockHost {
         fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError> {
             match service_id {
-                1..=3 => Ok(VmHostArgSpec::None),
+                1..=3 | 7 => Ok(VmHostArgSpec::None),
                 4 => Ok(VmHostArgSpec::I32),
                 5 | 6 => Ok(VmHostArgSpec::StrConst),
                 _ => Err(VmError::UnsupportedService(service_id)),
@@ -331,6 +339,14 @@ mod tests {
                         Ok(VmHostResult::None)
                     }
                     VmHostArgs::None | VmHostArgs::I32(_) => Err(VmError::TypeMismatch),
+                },
+                7 => match args {
+                    VmHostArgs::None => {
+                        output.clear_log();
+                        output.write_str("LOG CLEARED");
+                        Ok(VmHostResult::None)
+                    }
+                    VmHostArgs::I32(_) | VmHostArgs::StrConst(_) => Err(VmError::TypeMismatch),
                 },
                 _ => Err(VmError::UnsupportedService(service_id)),
             }
@@ -691,6 +707,19 @@ mod tests {
             vm.run_with_host(&mut output, &mut host),
             Err(VmError::StackUnderflow)
         );
+    }
+
+    #[test]
+    fn kcall_graphics_log_clear_succeeds_with_host() {
+        let bytecode = [opcode::KCALL, 7, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = MockHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(vm.run_with_host(&mut output, &mut host), Ok(()));
+        assert_eq!(output.clears, 1);
+        assert_eq!(output.strings[0], "LOG CLEARED");
     }
 
     #[test]

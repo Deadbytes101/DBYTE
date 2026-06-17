@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.48.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.49.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.49.0` is a DByte Graphics Log Clear Service Foundation release.
 - `v10.48.0` is a DByte Graphics Log Service Foundation release.
 - `v10.47.1` is a DByte Graphics Console X Glyph Polish release.
 - `v10.47.0` is a DByte Kernel Service String Argument Foundation release.
@@ -78,6 +79,8 @@ Thin note for `v10.47.0`: adds `KERNEL_ECHO_STR = 5`, a no-allocation string-con
 Thin note for `v10.47.1`: adds the missing uppercase `X` glyph to the graphics console font so the existing `strtest` proof renders `ARG TEXT DBYTE SERVICE ARG` without a blank cell. `strtest`, KCALL behavior, service ids `1` through `5`, the seven-app registry, the six-opcode VM set, graphics clipping, and shell command surface remain unchanged. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.serial.log`, `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.ppm`, and `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.png`.
 
 Thin note for `v10.48.0`: adds `KERNEL_GRAPHICS_LOG = 6`, a no-allocation string-constant service argument proof through the existing `KCALL` boundary. The VM owns string argument pop, type checks, and const-table bounds checks, then passes a borrowed `VmHostArgs::StrConst(&str)` to the kernel host for the duration of the service call; the host writes the borrowed text through `VmOutput` and returns no stack value. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, and `logtest`, and `apps` output is split across three clipped graphics log rows. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_logtest_v10.48.0.serial.log`, `tmp\qemu_gfx_console_logtest_v10.48.0.ppm`, and `tmp\qemu_gfx_console_logtest_v10.48.0.png`.
+
+Thin note for `v10.49.0`: adds `KERNEL_GRAPHICS_LOG_CLEAR = 7`, a no-allocation adapter clear event through the existing `KCALL` boundary. The service consumes no VM stack arguments, calls `VmOutput::clear_log()`, writes `LOG CLEARED`, and returns no stack value. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, and `logclear`, and `apps` output is split across three clipped graphics log rows. Hardware boundaries are unchanged: no VM framebuffer access, no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_logclear_v10.49.0.serial.log`, `tmp\qemu_gfx_console_logclear_v10.49.0.ppm`, and `tmp\qemu_gfx_console_logclear_v10.49.0.png`.
 
 `v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
 

@@ -146,7 +146,7 @@ pub fn draw_command_apps_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: apps");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "apps: hello math sysinfo");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "apps: ticks tickmath argtest");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "apps: strtest logtest");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "apps: strtest logtest logclear");
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
