@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.45.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.45.1)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.45.1` is a DByte Graphics Log Clipping Polish release.
 - `v10.45.0` is a DByte Kernel Service Return Value Foundation release.
 - `v10.44.0` is a DByte Kernel Tick Service Foundation release.
 - `v10.43.0` is a DByte Kernel Service Call Foundation release.
@@ -63,6 +64,8 @@ Thin note for `v10.43.0`: adds a narrow `KCALL <service_id>` VM host-call bounda
 Thin note for `v10.44.0`: adds read-only `KERNEL_TICKS = 2` service access through the existing `KCALL` boundary and adds the static `ticks` app to the existing generic `run <app_name>` path. The service reports controlled IRQ0 tick-window telemetry, not a persistent runtime clock. Hardware boundaries are unchanged: no IRQ0 fire, no IRQ0 or IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no text-shell execution, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. The verifier locks exactly four static apps, `hello`, `math`, `sysinfo`, and `ticks`, service ids `1` and `2`, unchanged six-opcode VM set, fixed 32-byte input buffer, bounded graphics shell, exact serial proof strings, and unchanged VGA/IRQ boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_ticks_v10.44.0.serial.log`, `tmp\qemu_gfx_console_ticks_v10.44.0.ppm`, and `tmp\qemu_gfx_console_ticks_v10.44.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
 
 Thin note for `v10.45.0`: adds read-only `KERNEL_TICK_VALUE = 3` service return access through the existing `KCALL` boundary and adds the static `tickmath` app to the existing generic `run <app_name>` path. The service reads controlled IRQ0 tick-window target telemetry and returns an i32 to the VM stack; the VM owns the stack push and stack overflow check. Hardware boundaries are unchanged: no IRQ0 fire, no IRQ0 or IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no text-shell execution, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. The verifier locks exactly five static apps, `hello`, `math`, `sysinfo`, `ticks`, and `tickmath`, service ids `1`, `2`, and `3`, unchanged six-opcode VM set, fixed 32-byte input buffer, bounded graphics shell, exact serial proof strings, and unchanged VGA/IRQ boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_tickmath_v10.45.0.serial.log`, `tmp\qemu_gfx_console_tickmath_v10.45.0.ppm`, and `tmp\qemu_gfx_console_tickmath_v10.45.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.45.1`: graphics log rows in `gfx-console-shell` are cleared before redraw and variable log text is clipped to the console content edge to remove stale or overflow glyphs. `tickmath`, `KCALL`, service ids `1`, `2`, and `3`, the six-opcode VM set, the static app registry, and the shell command surface remain unchanged. Hardware boundaries are unchanged: no IRQ0 fire, no IRQ0 or IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.serial.log`, `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.ppm`, and `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.png`.
 
 `v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
 

@@ -19,6 +19,9 @@ const PROMPT_Y: usize = PANEL_Y + 178;
 const PROMPT_INPUT_GAP: usize = 8;
 const LOG_Y: usize = PANEL_Y + 116;
 const LOG_LINE_STEP: usize = 9;
+const LOG_RIGHT_X: usize = PANEL_X + PANEL_W - 16;
+const LOG_ROW_W: usize = LOG_RIGHT_X - TEXT_X;
+const GLYPH_W: usize = 8;
 
 pub fn draw_graphics_console() {
     vga_gfx::clear(COLOR_BLACK);
@@ -56,11 +59,36 @@ fn draw_status_row(y: usize, label: &str, value: &str) {
 }
 
 fn draw_log_line(y: usize, text: &str) {
-    vga_gfx::draw_text(TEXT_X, y, text, COLOR_LABEL);
+    clear_log_row(y);
+    vga_gfx::draw_text_clipped(TEXT_X, y, text, COLOR_LABEL, LOG_RIGHT_X);
 }
 
 fn clear_log_area() {
-    vga_gfx::fill_rect(TEXT_X, LOG_Y, PANEL_W - 32, PROMPT_Y - LOG_Y, COLOR_PANEL);
+    vga_gfx::fill_rect(TEXT_X, LOG_Y, LOG_ROW_W, PROMPT_Y - LOG_Y, COLOR_PANEL);
+}
+
+fn clear_log_row(y: usize) {
+    vga_gfx::fill_rect(TEXT_X, y, LOG_ROW_W, GLYPH_W, COLOR_PANEL);
+}
+
+fn draw_log_command_line(command: &[u8]) {
+    clear_log_row(LOG_Y + LOG_LINE_STEP);
+    vga_gfx::draw_text_clipped(
+        TEXT_X,
+        LOG_Y + LOG_LINE_STEP,
+        "command: ",
+        COLOR_LABEL,
+        LOG_RIGHT_X,
+    );
+    if let Ok(command_text) = core::str::from_utf8(command) {
+        vga_gfx::draw_text_clipped(
+            TEXT_X + 9 * GLYPH_W,
+            LOG_Y + LOG_LINE_STEP,
+            command_text,
+            COLOR_LABEL,
+            LOG_RIGHT_X,
+        );
+    }
 }
 
 pub fn draw_command_status_result() {
@@ -125,15 +153,7 @@ pub fn draw_command_apps_result() {
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
-    vga_gfx::draw_text(TEXT_X, LOG_Y + LOG_LINE_STEP, "command: ", COLOR_LABEL);
-    if let Ok(command_text) = core::str::from_utf8(command) {
-        vga_gfx::draw_text(
-            TEXT_X + 9 * 8,
-            LOG_Y + LOG_LINE_STEP,
-            command_text,
-            COLOR_LABEL,
-        );
-    }
+    draw_log_command_line(command);
 
     let mut index: usize = 0;
     while index < output_lines.len() {
@@ -145,30 +165,14 @@ pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
 pub fn draw_app_not_found_result(command: &[u8]) {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
-    vga_gfx::draw_text(TEXT_X, LOG_Y + LOG_LINE_STEP, "command: ", COLOR_LABEL);
-    if let Ok(command_text) = core::str::from_utf8(command) {
-        vga_gfx::draw_text(
-            TEXT_X + 9 * 8,
-            LOG_Y + LOG_LINE_STEP,
-            command_text,
-            COLOR_LABEL,
-        );
-    }
+    draw_log_command_line(command);
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "result: app not found");
 }
 
 pub fn draw_unknown_command_result(command: &[u8]) {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
-    vga_gfx::draw_text(TEXT_X, LOG_Y + LOG_LINE_STEP, "command: ", COLOR_LABEL);
-    if let Ok(command_text) = core::str::from_utf8(command) {
-        vga_gfx::draw_text(
-            TEXT_X + 9 * 8,
-            LOG_Y + LOG_LINE_STEP,
-            command_text,
-            COLOR_LABEL,
-        );
-    }
+    draw_log_command_line(command);
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "result: unknown command");
 }
 

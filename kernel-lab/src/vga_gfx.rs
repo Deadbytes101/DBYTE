@@ -119,6 +119,17 @@ pub fn draw_text(x: usize, y: usize, text: &str, color: u8) {
     }
 }
 
+pub fn draw_text_clipped(x: usize, y: usize, text: &str, color: u8, max_x: usize) {
+    let mut cursor_x = x;
+    for byte in text.bytes() {
+        if cursor_x + 8 > max_x {
+            break;
+        }
+        draw_char(cursor_x, y, byte, color);
+        cursor_x += 8;
+    }
+}
+
 pub fn draw_first_surface() {
     clear(COLOR_BLACK);
     draw_panel(24, 28, 272, 144);
