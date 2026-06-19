@@ -34,6 +34,18 @@ const LOG_CLEARED_LINE: &str = "LOG CLEARED";
 const GRAPHICS_LOG_READY_LINE: &str = "GRAPHICS LOG READY";
 const APP_OK_LINE: &str = "APP OK";
 const APP_NOT_FOUND_LINE: &str = "APP NOT FOUND";
+const APP_INFO_RESULT_READY: &str = "READY";
+const APP_INFO_RESULT_VM_ERROR_TEST: &str = "VM ERROR TEST";
+const APP_INFO_SERVICES_NONE: &str = "none";
+const APP_INFO_SERVICES_SYSINFO: &str = "1";
+const APP_INFO_SERVICES_TICKS: &str = "2";
+const APP_INFO_SERVICES_TICKMATH: &str = "3";
+const APP_INFO_SERVICES_ARGTEST: &str = "4";
+const APP_INFO_SERVICES_STRTEST: &str = "5";
+const APP_INFO_SERVICES_LOGTEST: &str = "6";
+const APP_INFO_SERVICES_LOGCLEAR: &str = "7";
+const APP_INFO_SERVICES_UIDEMO: &str = "7 6 1 2";
+const APP_INFO_SERVICES_ERRTEST: &str = "99";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -46,6 +58,8 @@ pub struct EmbeddedDbyteApp {
     pub output_lines: &'static [&'static str],
     // Bounded graphics projection only. App execution is proven by output_lines capture.
     pub display_lines: &'static [&'static str],
+    pub info_services: &'static str,
+    pub info_result: &'static str,
 }
 
 static DBYTE_APP_HELLO_STRINGS: [&str; 1] = ["HELLO FROM DBYTE APP"];
@@ -232,6 +246,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_HELLO_STRINGS,
         output_lines: &DBYTE_APP_HELLO_OUTPUT_LINES,
         display_lines: &DBYTE_APP_HELLO_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_NONE,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "math",
@@ -239,6 +255,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_MATH_STRINGS,
         output_lines: &DBYTE_APP_MATH_OUTPUT_LINES,
         display_lines: &DBYTE_APP_MATH_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_NONE,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "sysinfo",
@@ -246,6 +264,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_SYSINFO_STRINGS,
         output_lines: &DBYTE_APP_SYSINFO_OUTPUT_LINES,
         display_lines: &DBYTE_APP_SYSINFO_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_SYSINFO,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "ticks",
@@ -253,6 +273,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_TICKS_STRINGS,
         output_lines: &DBYTE_APP_TICKS_OUTPUT_LINES,
         display_lines: &DBYTE_APP_TICKS_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_TICKS,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "tickmath",
@@ -260,6 +282,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_TICKMATH_STRINGS,
         output_lines: &DBYTE_APP_TICKMATH_OUTPUT_LINES,
         display_lines: &DBYTE_APP_TICKMATH_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_TICKMATH,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "argtest",
@@ -267,6 +291,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_ARGTEST_STRINGS,
         output_lines: &DBYTE_APP_ARGTEST_OUTPUT_LINES,
         display_lines: &DBYTE_APP_ARGTEST_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_ARGTEST,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "strtest",
@@ -274,6 +300,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_STRTEST_STRINGS,
         output_lines: &DBYTE_APP_STRTEST_OUTPUT_LINES,
         display_lines: &DBYTE_APP_STRTEST_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_STRTEST,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "logtest",
@@ -281,6 +309,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_LOGTEST_STRINGS,
         output_lines: &DBYTE_APP_LOGTEST_OUTPUT_LINES,
         display_lines: &DBYTE_APP_LOGTEST_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_LOGTEST,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "logclear",
@@ -288,6 +318,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_LOGCLEAR_STRINGS,
         output_lines: &DBYTE_APP_LOGCLEAR_OUTPUT_LINES,
         display_lines: &DBYTE_APP_LOGCLEAR_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_LOGCLEAR,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "uidemo",
@@ -295,6 +327,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_UIDEMO_STRINGS,
         output_lines: &DBYTE_APP_UIDEMO_OUTPUT_LINES,
         display_lines: &DBYTE_APP_UIDEMO_DISPLAY_LINES,
+        info_services: APP_INFO_SERVICES_UIDEMO,
+        info_result: APP_INFO_RESULT_READY,
     },
     EmbeddedDbyteApp {
         name: "errtest",
@@ -302,6 +336,8 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         consts: &DBYTE_APP_ERRTEST_STRINGS,
         output_lines: &DBYTE_APP_ERRTEST_OUTPUT_LINES,
         display_lines: &DBYTE_APP_ERRTEST_OUTPUT_LINES,
+        info_services: APP_INFO_SERVICES_ERRTEST,
+        info_result: APP_INFO_RESULT_VM_ERROR_TEST,
     },
 ];
 

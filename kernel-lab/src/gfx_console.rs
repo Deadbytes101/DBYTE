@@ -162,6 +162,18 @@ fn draw_log_prefixed_bytes_line(y: usize, prefix: &str, value: &[u8], empty_valu
     }
 }
 
+fn draw_log_prefixed_str_line(y: usize, prefix: &str, value: &str) {
+    clear_log_row(y);
+    vga_gfx::draw_text_clipped(TEXT_X, y, prefix, COLOR_LABEL, LOG_RIGHT_X);
+    vga_gfx::draw_text_clipped(
+        TEXT_X + prefix.len() * GLYPH_W,
+        y,
+        value,
+        COLOR_LABEL,
+        LOG_RIGHT_X,
+    );
+}
+
 pub fn draw_command_status_result() {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
@@ -178,11 +190,10 @@ pub fn draw_command_help_result() {
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
-    draw_log_line(
-        LOG_Y + LOG_LINE_STEP * 3,
-        "help status clear vm apps last exit",
-    );
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "run <app_name>");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm apps");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "last info exit");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "run <app_name>");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "info <app_name>");
 }
 
 pub fn draw_command_clear_result() {
@@ -257,6 +268,24 @@ pub fn draw_command_last_result(command: &[u8], app_name: &[u8], status: LastRes
             draw_log_line(LOG_Y + LOG_LINE_STEP * 4, result_line.as_str());
         }
     }
+}
+
+pub fn draw_command_app_info_found(command: &[u8], app_name: &[u8], services: &str, result: &str) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+    draw_log_prefixed_bytes_line(LOG_Y + LOG_LINE_STEP * 2, "APP ", app_name, "none");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "STATUS FOUND");
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 4, "SERVICES ", services);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 5, "RESULT ", result);
+}
+
+pub fn draw_command_app_info_not_found(command: &[u8], app_name: &[u8]) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+    draw_log_prefixed_bytes_line(LOG_Y + LOG_LINE_STEP * 2, "APP ", app_name, "none");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "STATUS NOT FOUND");
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {

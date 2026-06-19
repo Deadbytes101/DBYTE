@@ -57,6 +57,7 @@ const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
 const GFX_CONSOLE_VM_COMMAND: &[u8] = b"vm";
 const GFX_CONSOLE_APPS_COMMAND: &[u8] = b"apps";
 const GFX_CONSOLE_LAST_COMMAND: &[u8] = b"last";
+const GFX_CONSOLE_INFO_PREFIX: &[u8] = b"info ";
 const GFX_CONSOLE_RUN_PREFIX: &[u8] = b"run ";
 const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
 
@@ -251,6 +252,26 @@ fn print_gfx_console_shell_app_error(app_name: &[u8]) {
     }
 }
 
+fn print_gfx_console_shell_app_info_dispatched(app_name: &[u8]) {
+    serial::print("gfx-console-shell: command dispatched: info ");
+    if let Ok(input_text) = core::str::from_utf8(app_name) {
+        let mut writer = serial::SerialWriter;
+        let _ = write!(writer, "{}\n", input_text);
+    } else {
+        serial::print("\n");
+    }
+}
+
+fn print_gfx_console_shell_app_info_not_found(app_name: &[u8]) {
+    serial::print("gfx-console-shell: app info not found: ");
+    if let Ok(input_text) = core::str::from_utf8(app_name) {
+        let mut writer = serial::SerialWriter;
+        let _ = write!(writer, "{}\n", input_text);
+    } else {
+        serial::print("\n");
+    }
+}
+
 fn is_gfx_console_last_command(command_text: &[u8]) -> bool {
     if command_text.len() != GFX_CONSOLE_LAST_COMMAND.len() {
         return false;
@@ -366,6 +387,23 @@ fn run_gfx_console_shell_session() {
                 last_result.app_name(),
                 last_result.render_status(),
             );
+        } else if command_text.starts_with(GFX_CONSOLE_INFO_PREFIX) {
+            let app_name = &command_text[GFX_CONSOLE_INFO_PREFIX.len()..];
+            match dbyte_vm_probe::find_embedded_app(app_name) {
+                Some(app) => {
+                    gfx_console::draw_command_app_info_found(
+                        command_text,
+                        app_name,
+                        app.info_services,
+                        app.info_result,
+                    );
+                    print_gfx_console_shell_app_info_dispatched(app_name);
+                }
+                None => {
+                    gfx_console::draw_command_app_info_not_found(command_text, app_name);
+                    print_gfx_console_shell_app_info_not_found(app_name);
+                }
+            }
         } else if command_text.starts_with(GFX_CONSOLE_RUN_PREFIX) {
             let app_name = &command_text[GFX_CONSOLE_RUN_PREFIX.len()..];
             match dbyte_vm_probe::run_embedded_app(app_name) {
