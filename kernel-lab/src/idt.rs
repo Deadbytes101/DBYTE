@@ -37,8 +37,7 @@ const IDT_BIND_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path o
 const IDT_BIND_HW_SMOKE_BLOCKER_TEST_VECTOR: &str = "dedicated non-IRQ test vector only";
 const IDT_BIND_HW_SMOKE_BLOCKER_INERT_STUB: &str = "inert test stub only";
 const IDT_BIND_HW_SMOKE_BLOCKER_NO_INVOCATION: &str = "interrupt invocation remains disabled";
-const IDT_BIND_HW_SMOKE_BLOCKER_NO_LIVE_IRQ: &str =
-    "live IRQ0/IRQ1 binding remains disabled";
+const IDT_BIND_HW_SMOKE_BLOCKER_NO_LIVE_IRQ: &str = "live IRQ0/IRQ1 binding remains disabled";
 const IDT_BIND_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 
 static IDT_BIND_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
@@ -64,14 +63,12 @@ const IRQ0_BIND_HW_SMOKE_RESULT_IDLE: &str = "status: IRQ0 timer bind smoke idle
 const IRQ0_BIND_HW_SMOKE_RESULT_ARMED: &str = "armed: IRQ0 timer bind smoke armed";
 const IRQ0_BIND_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IRQ0 timer bind smoke unarmed";
 const IRQ0_BIND_HW_SMOKE_RESULT_BLOCKED: &str = "blocked: IRQ0 bind smoke is not armed";
-const IRQ0_BIND_HW_SMOKE_RESULT_PERFORMED: &str =
-    "performed: one IRQ0 IDT descriptor bind";
+const IRQ0_BIND_HW_SMOKE_RESULT_PERFORMED: &str = "performed: one IRQ0 IDT descriptor bind";
 const IRQ0_BIND_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
 const IRQ0_BIND_HW_SMOKE_BLOCKER_IRQ0_ONLY: &str = "IRQ0 timer vector bind only";
 const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_UNMASK: &str = "PIC IRQ0 unmask remains disabled";
 const IRQ0_BIND_HW_SMOKE_BLOCKER_STI: &str = "STI remains disabled";
-const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_DELIVERY: &str =
-    "timer interrupt delivery remains disabled";
+const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_DELIVERY: &str = "timer interrupt delivery remains disabled";
 const IRQ0_BIND_HW_SMOKE_BLOCKER_NO_EOI: &str = "handler-triggered EOI remains disabled";
 const IRQ0_BIND_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 
@@ -94,18 +91,14 @@ const IDT_INVOKE_HW_SMOKE_INVOCATIONS_ONE: &str = "1";
 const IDT_INVOKE_HW_SMOKE_RESULT_IDLE: &str = "status: IDT vector invocation smoke idle";
 const IDT_INVOKE_HW_SMOKE_RESULT_ARMED: &str = "armed: IDT vector invocation smoke armed";
 const IDT_INVOKE_HW_SMOKE_RESULT_CLEARED: &str = "cleared: IDT vector invocation smoke unarmed";
-const IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_BIND: &str =
-    "blocked: manual IDT bind proof is required";
-const IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_UNARMED: &str =
-    "blocked: invocation smoke is not armed";
+const IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_BIND: &str = "blocked: manual IDT bind proof is required";
+const IDT_INVOKE_HW_SMOKE_RESULT_BLOCKED_UNARMED: &str = "blocked: invocation smoke is not armed";
 const IDT_INVOKE_HW_SMOKE_RESULT_PERFORMED: &str = "performed: one int 0x81 invocation";
-const IDT_INVOKE_HW_SMOKE_BLOCKER_BIND_PROOF: &str =
-    "manual IDT bind proof is required";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_BIND_PROOF: &str = "manual IDT bind proof is required";
 const IDT_INVOKE_HW_SMOKE_BLOCKER_MANUAL_ONLY: &str = "manual shell command path only";
 const IDT_INVOKE_HW_SMOKE_BLOCKER_VECTOR: &str = "dedicated vector 0x81 only";
 const IDT_INVOKE_HW_SMOKE_BLOCKER_NO_IRQ: &str = "IRQ0/IRQ1 binding remains disabled";
-const IDT_INVOKE_HW_SMOKE_BLOCKER_RUNTIME: &str =
-    "runtime IRQ dispatch remains disabled";
+const IDT_INVOKE_HW_SMOKE_BLOCKER_RUNTIME: &str = "runtime IRQ dispatch remains disabled";
 
 static IDT_INVOKE_HW_SMOKE_ARMED: AtomicBool = AtomicBool::new(false);
 static IDT_INVOKE_HW_SMOKE_CONSUMED: AtomicBool = AtomicBool::new(false);
@@ -285,12 +278,8 @@ pub fn irq0_bind_hw_smoke_clear() -> Irq0BindHwSmokeStatus {
 }
 
 pub fn irq0_bind_hw_smoke_fire() -> Irq0BindHwSmokeStatus {
-    match IRQ0_BIND_HW_SMOKE_ARMED.compare_exchange(
-        true,
-        false,
-        Ordering::SeqCst,
-        Ordering::SeqCst,
-    ) {
+    match IRQ0_BIND_HW_SMOKE_ARMED.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+    {
         Ok(_) => {
             unsafe {
                 IDT.entries[pic::ICW2_MASTER_OFFSET as usize]
@@ -398,12 +387,8 @@ pub fn idt_bind_hw_smoke_clear() -> IdtBindHwSmokeStatus {
 }
 
 pub fn idt_bind_hw_smoke_fire() -> IdtBindHwSmokeStatus {
-    match IDT_BIND_HW_SMOKE_ARMED.compare_exchange(
-        true,
-        false,
-        Ordering::SeqCst,
-        Ordering::SeqCst,
-    ) {
+    match IDT_BIND_HW_SMOKE_ARMED.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+    {
         Ok(_) => {
             unsafe {
                 IDT.entries[0x81].set_handler(interrupts::idt_bind_hw_smoke_test_asm as *const ());

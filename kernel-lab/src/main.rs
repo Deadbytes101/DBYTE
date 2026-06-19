@@ -57,6 +57,9 @@ const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
 const GFX_CONSOLE_VM_COMMAND: &[u8] = b"vm";
 const GFX_CONSOLE_APPS_COMMAND: &[u8] = b"apps";
 const GFX_CONSOLE_LAST_COMMAND: &[u8] = b"last";
+const GFX_CONSOLE_TIMER_STATUS_COMMAND: &[u8] = b"timer status";
+const GFX_CONSOLE_TIMER_START_COMMAND: &[u8] = b"timer start";
+const GFX_CONSOLE_TIMER_STOP_COMMAND: &[u8] = b"timer stop";
 const GFX_CONSOLE_INFO_PREFIX: &[u8] = b"info ";
 const GFX_CONSOLE_RUN_PREFIX: &[u8] = b"run ";
 const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
@@ -387,6 +390,33 @@ fn run_gfx_console_shell_session() {
                 last_result.app_name(),
                 last_result.render_status(),
             );
+        } else if command_text == GFX_CONSOLE_TIMER_STATUS_COMMAND {
+            let runtime = irq0_runtime_status_snapshot();
+            gfx_console::draw_command_timer_status_result(
+                command_text,
+                runtime.state,
+                runtime.ticks,
+                runtime.irq0_currently_masked,
+                runtime.sti_currently_enabled,
+            );
+            serial::print("gfx-console-shell: command dispatched: timer status\n");
+        } else if command_text == GFX_CONSOLE_TIMER_START_COMMAND {
+            let runtime = irq0_runtime_start_snapshot();
+            gfx_console::draw_command_timer_start_result(
+                command_text,
+                runtime.result,
+                runtime.state,
+            );
+            serial::print("gfx-console-shell: command dispatched: timer start\n");
+        } else if command_text == GFX_CONSOLE_TIMER_STOP_COMMAND {
+            let runtime = irq0_runtime_stop_snapshot();
+            gfx_console::draw_command_timer_stop_result(
+                command_text,
+                runtime.result,
+                runtime.irq0_currently_masked,
+                runtime.irq0_forced_masked,
+            );
+            serial::print("gfx-console-shell: command dispatched: timer stop\n");
         } else if command_text.starts_with(GFX_CONSOLE_INFO_PREFIX) {
             let app_name = &command_text[GFX_CONSOLE_INFO_PREFIX.len()..];
             match dbyte_vm_probe::find_embedded_app(app_name) {

@@ -191,9 +191,9 @@ pub fn draw_command_help_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm apps");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "last info exit");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "run <app_name>");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "info <app_name>");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "last info timer exit");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "run <app_name> info <app_name>");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "timer status start stop");
 }
 
 pub fn draw_command_clear_result() {
@@ -286,6 +286,66 @@ pub fn draw_command_app_info_not_found(command: &[u8], app_name: &[u8]) {
     draw_log_command_line(command);
     draw_log_prefixed_bytes_line(LOG_Y + LOG_LINE_STEP * 2, "APP ", app_name, "none");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "STATUS NOT FOUND");
+}
+
+pub fn draw_command_timer_status_result(
+    command: &[u8],
+    state: &str,
+    ticks: u32,
+    irq0_masked: &str,
+    sti_enabled: &str,
+) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 TIMER ", state);
+
+    let mut tick_bytes = [0u8; 32];
+    let mut tick_line = FixedLineBuffer::new(&mut tick_bytes);
+    let _ = write!(tick_line, "{:04}", ticks);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 3, "IRQ0 TICKS ", tick_line.as_str());
+
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 4, "IRQ0 MASKED ", irq0_masked);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 5, "STI ENABLED ", sti_enabled);
+}
+
+pub fn draw_command_timer_start_result(command: &[u8], result: &str, state: &str) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+
+    if result == "irq0 runtime: not ready" {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 RUNTIME NOT READY");
+    } else if result == "irq0 runtime: already running" {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 RUNTIME ALREADY RUNNING");
+    } else if state == "RUNNING" {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 TIMER RUNNING");
+    } else {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 RUNTIME NOT READY");
+    }
+}
+
+pub fn draw_command_timer_stop_result(
+    command: &[u8],
+    result: &str,
+    irq0_masked: &str,
+    irq0_forced_masked: &str,
+) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+
+    if result == "irq0 runtime: not running" {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 RUNTIME NOT RUNNING");
+    } else {
+        draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "IRQ0 TIMER STOPPED");
+        draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 3, "IRQ0 MASKED ", irq0_masked);
+        draw_log_prefixed_str_line(
+            LOG_Y + LOG_LINE_STEP * 4,
+            "IRQ0 FORCED MASKED ",
+            irq0_forced_masked,
+        );
+    }
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
