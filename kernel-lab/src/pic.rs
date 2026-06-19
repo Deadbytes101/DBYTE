@@ -135,6 +135,12 @@ static IRQ0_UNMASK_HW_SMOKE_MASTER_MASK_RESTORED: AtomicBool = AtomicBool::new(f
 static PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT: AtomicBool = AtomicBool::new(false);
 static IRQ0_TIMER_HANDLER_STUB_COUNTER: AtomicU32 = AtomicU32::new(0);
 static IRQ0_TIMER_HANDLER_MASK_TARGET: AtomicU32 = AtomicU32::new(1);
+static IRQ0_RUNTIME_ACTIVE: AtomicBool = AtomicBool::new(false);
+static IRQ0_RUNTIME_ORIGINAL_MASTER_MASK: AtomicU8 = AtomicU8::new(PIC_MASK_ALL);
+static IRQ0_RUNTIME_ORIGINAL_MASTER_MASK_VALID: AtomicBool = AtomicBool::new(false);
+static IRQ0_RUNTIME_FINAL_TICKS: AtomicU32 = AtomicU32::new(0);
+static IRQ0_RUNTIME_NON_IRQ0_MASK_RESTORED: AtomicBool = AtomicBool::new(true);
+static IRQ0_RUNTIME_IRQ0_FORCED_MASKED: AtomicBool = AtomicBool::new(true);
 static IRQ0_WINDOW_ARMED: AtomicBool = AtomicBool::new(false);
 static IRQ0_WINDOW_STATE: AtomicU8 = AtomicU8::new(IRQ0_WINDOW_STATE_IDLE);
 static IRQ0_WINDOW_DELIVERIES: AtomicU32 = AtomicU32::new(0);
@@ -193,6 +199,15 @@ const IRQ0_TICKS_VGA_PREPARED: &str = "PREPARED / MASKED";
 const IRQ0_TICKS_VGA_FINISHED: &str = "TICKS 0008 / MASKED";
 const IRQ0_TICKS_VGA_TIMEOUT: &str = "TIMEOUT / MASKED";
 const IRQ0_TICKS_VGA_OVERFLOW: &str = "FAULT OVERFLOW";
+const IRQ0_RUNTIME_STATE_RUNNING: &str = "RUNNING";
+const IRQ0_RUNTIME_STATE_STOPPED: &str = "STOPPED";
+const IRQ0_RUNTIME_RESULT_STATUS: &str = "status: IRQ0 runtime observed";
+const IRQ0_RUNTIME_RESULT_STARTED: &str = "started: IRQ0 runtime ticking";
+const IRQ0_RUNTIME_RESULT_STOPPED: &str = "stopped: IRQ0 runtime masked";
+const IRQ0_RUNTIME_RESULT_ALREADY_RUNNING: &str = "irq0 runtime: already running";
+const IRQ0_RUNTIME_RESULT_NOT_RUNNING: &str = "irq0 runtime: not running";
+const IRQ0_RUNTIME_RESULT_NOT_READY: &str = "irq0 runtime: not ready";
+const IRQ0_RUNTIME_UNMET_PRECONDITIONS_NONE: &str = "none";
 const IRQ0_UNMASK_HW_SMOKE_SCOPE: &str = "controlled PIC IRQ0 unmask one-shot hardware smoke";
 const IRQ0_UNMASK_HW_SMOKE_MODE: &str = "manual transactional command only";
 const IRQ0_UNMASK_HW_SMOKE_YES: &str = "yes";
@@ -357,6 +372,26 @@ pub struct Irq0TicksStatus {
     pub hardware_mutation: &'static str,
     pub result: &'static str,
     pub vga_irq0_status: &'static str,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Irq0RuntimeStatus {
+    pub runtime_ready: &'static str,
+    pub runtime_stopped: &'static str,
+    pub pic_remap_proof: &'static str,
+    pub manual_pic_eoi_proof: &'static str,
+    pub irq0_descriptor_bind_proof: &'static str,
+    pub transactional_irq0_unmask_proof: &'static str,
+    pub state: &'static str,
+    pub ticks: u32,
+    pub irq0_currently_masked: &'static str,
+    pub sti_currently_enabled: &'static str,
+    pub saved_original_master_mask: u8,
+    pub final_master_mask: u8,
+    pub non_irq0_pic_mask_restored: &'static str,
+    pub irq0_forced_masked: &'static str,
+    pub unmet_preconditions: &'static str,
+    pub result: &'static str,
 }
 
 /// Read-only state telemetry for the controlled PIC remap smoke path.
@@ -1161,6 +1196,191 @@ impl ProgrammableInterruptController {
         )
     }
 
+    fn irq0_runtime_status_from_state(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+        result: &'static str,
+    ) -> Irq0RuntimeStatus {
+        let running = IRQ0_RUNTIME_ACTIVE.load(Ordering::SeqCst);
+        let saved_original_master_mask = IRQ0_RUNTIME_ORIGINAL_MASTER_MASK.load(Ordering::SeqCst);
+        let final_master_mask = saved_original_master_mask | PIC_IRQ0_MASK_BIT;
+        let current_master_mask = unsafe { read_pic_port(PIC_MASTER_DATA) };
+        let irq0_masked = (current_master_mask & PIC_IRQ0_MASK_BIT) != 0;
+        let ready = Self::irq0_window_preconditions_met(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+        );
+
+        Irq0RuntimeStatus {
+            runtime_ready: Self::irq0_window_yes_no(ready),
+            runtime_stopped: Self::irq0_window_yes_no(!running),
+            pic_remap_proof: Self::irq0_window_yes_no(pic_remap_ready),
+            manual_pic_eoi_proof: Self::irq0_window_yes_no(manual_pic_eoi_proof),
+            irq0_descriptor_bind_proof: Self::irq0_window_yes_no(irq0_descriptor_bind_proof),
+            transactional_irq0_unmask_proof: Self::irq0_window_yes_no(
+                transactional_irq0_unmask_proof,
+            ),
+            state: if running {
+                IRQ0_RUNTIME_STATE_RUNNING
+            } else {
+                IRQ0_RUNTIME_STATE_STOPPED
+            },
+            ticks: if running {
+                IRQ0_TIMER_HANDLER_STUB_COUNTER.load(Ordering::SeqCst)
+            } else {
+                IRQ0_RUNTIME_FINAL_TICKS.load(Ordering::SeqCst)
+            },
+            irq0_currently_masked: Self::irq0_window_yes_no(irq0_masked),
+            sti_currently_enabled: Self::irq0_window_yes_no(interrupts_currently_enabled()),
+            saved_original_master_mask,
+            final_master_mask,
+            non_irq0_pic_mask_restored: Self::irq0_window_yes_no(
+                IRQ0_RUNTIME_NON_IRQ0_MASK_RESTORED.load(Ordering::SeqCst),
+            ),
+            irq0_forced_masked: Self::irq0_window_yes_no(
+                IRQ0_RUNTIME_IRQ0_FORCED_MASKED.load(Ordering::SeqCst),
+            ),
+            unmet_preconditions: if ready {
+                IRQ0_RUNTIME_UNMET_PRECONDITIONS_NONE
+            } else {
+                Self::irq0_window_unmet_preconditions(
+                    pic_remap_ready,
+                    manual_pic_eoi_proof,
+                    irq0_descriptor_bind_proof,
+                    transactional_irq0_unmask_proof,
+                )
+            },
+            result,
+        }
+    }
+
+    pub fn irq0_runtime_status(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0RuntimeStatus {
+        Self::irq0_runtime_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_RUNTIME_RESULT_STATUS,
+        )
+    }
+
+    pub fn irq0_runtime_start(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0RuntimeStatus {
+        if IRQ0_RUNTIME_ACTIVE.load(Ordering::SeqCst) {
+            return Self::irq0_runtime_status_from_state(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+                IRQ0_RUNTIME_RESULT_ALREADY_RUNNING,
+            );
+        }
+
+        if !Self::irq0_window_preconditions_met(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+        ) {
+            return Self::irq0_runtime_status_from_state(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+                IRQ0_RUNTIME_RESULT_NOT_READY,
+            );
+        }
+
+        unsafe {
+            let saved_original_master_mask = read_pic_port(PIC_MASTER_DATA);
+            IRQ0_RUNTIME_ORIGINAL_MASTER_MASK.store(saved_original_master_mask, Ordering::SeqCst);
+            IRQ0_RUNTIME_ORIGINAL_MASTER_MASK_VALID.store(true, Ordering::SeqCst);
+            IRQ0_RUNTIME_FINAL_TICKS.store(0, Ordering::SeqCst);
+            IRQ0_RUNTIME_NON_IRQ0_MASK_RESTORED.store(false, Ordering::SeqCst);
+            IRQ0_RUNTIME_IRQ0_FORCED_MASKED.store(false, Ordering::SeqCst);
+            IRQ0_TIMER_HANDLER_STUB_COUNTER.store(0, Ordering::SeqCst);
+            IRQ0_TIMER_HANDLER_MASK_TARGET.store(u32::MAX, Ordering::SeqCst);
+            IRQ0_RUNTIME_ACTIVE.store(true, Ordering::SeqCst);
+
+            let irq0_unmasked_mask = saved_original_master_mask & !PIC_IRQ0_MASK_BIT;
+            write_pic_port(PIC_MASTER_DATA, irq0_unmasked_mask);
+            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+        }
+
+        Self::irq0_runtime_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_RUNTIME_RESULT_STARTED,
+        )
+    }
+
+    pub fn irq0_runtime_stop(
+        pic_remap_ready: bool,
+        manual_pic_eoi_proof: bool,
+        irq0_descriptor_bind_proof: bool,
+        transactional_irq0_unmask_proof: bool,
+    ) -> Irq0RuntimeStatus {
+        unsafe {
+            core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+        }
+
+        if !IRQ0_RUNTIME_ACTIVE.load(Ordering::SeqCst) {
+            return Self::irq0_runtime_status_from_state(
+                pic_remap_ready,
+                manual_pic_eoi_proof,
+                irq0_descriptor_bind_proof,
+                transactional_irq0_unmask_proof,
+                IRQ0_RUNTIME_RESULT_NOT_RUNNING,
+            );
+        }
+
+        let observed_ticks = IRQ0_TIMER_HANDLER_STUB_COUNTER.load(Ordering::SeqCst);
+        IRQ0_RUNTIME_FINAL_TICKS.store(observed_ticks, Ordering::SeqCst);
+
+        unsafe {
+            let saved_original_master_mask =
+                IRQ0_RUNTIME_ORIGINAL_MASTER_MASK.load(Ordering::SeqCst);
+            let final_master_mask = saved_original_master_mask | PIC_IRQ0_MASK_BIT;
+            write_pic_port(PIC_MASTER_DATA, final_master_mask);
+            let readback_master_mask = read_pic_port(PIC_MASTER_DATA);
+            IRQ0_RUNTIME_NON_IRQ0_MASK_RESTORED.store(
+                (readback_master_mask & !PIC_IRQ0_MASK_BIT)
+                    == (saved_original_master_mask & !PIC_IRQ0_MASK_BIT),
+                Ordering::SeqCst,
+            );
+            IRQ0_RUNTIME_IRQ0_FORCED_MASKED.store(
+                (readback_master_mask & PIC_IRQ0_MASK_BIT) != 0,
+                Ordering::SeqCst,
+            );
+        }
+
+        IRQ0_RUNTIME_ACTIVE.store(false, Ordering::SeqCst);
+        IRQ0_TIMER_HANDLER_MASK_TARGET.store(1, Ordering::SeqCst);
+
+        Self::irq0_runtime_status_from_state(
+            pic_remap_ready,
+            manual_pic_eoi_proof,
+            irq0_descriptor_bind_proof,
+            transactional_irq0_unmask_proof,
+            IRQ0_RUNTIME_RESULT_STOPPED,
+        )
+    }
+
     pub fn irq0_ticks_fire() -> Irq0TicksStatus {
         if IRQ0_TICKS_ARMED
             .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
@@ -1392,11 +1612,26 @@ impl ProgrammableInterruptController {
 pub extern "C" fn irq0_timer_gate_smoke_rust() {
     let observed = IRQ0_TIMER_HANDLER_STUB_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
     unsafe {
-        if observed >= IRQ0_TIMER_HANDLER_MASK_TARGET.load(Ordering::SeqCst) {
+        if !IRQ0_RUNTIME_ACTIVE.load(Ordering::SeqCst)
+            && observed >= IRQ0_TIMER_HANDLER_MASK_TARGET.load(Ordering::SeqCst)
+        {
             mask_master_pic_irq0();
         }
         write_master_pic_eoi();
     }
+}
+
+fn interrupts_currently_enabled() -> bool {
+    let flags: u32;
+    unsafe {
+        core::arch::asm!(
+            "pushfd",
+            "pop {flags:e}",
+            flags = out(reg) flags,
+            options(nomem, preserves_flags)
+        );
+    }
+    (flags & (1 << 9)) != 0
 }
 
 /// Masks IRQ0 on the master PIC data port for the prepared IRQ0 timer stub.
