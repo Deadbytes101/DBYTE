@@ -50,12 +50,13 @@ static mut CAPS_LOCK_ACTIVE: bool = false;
 static mut LINE_BUFFER: [u8; 128] = [0; 128];
 static mut LINE_LEN: usize = 0;
 const GFX_CONSOLE_INPUT_CAPACITY: usize = 32;
-const GFX_CONSOLE_SHELL_MAX_COMMANDS: usize = 5;
+const GFX_CONSOLE_SHELL_MAX_COMMANDS: usize = 7;
 const GFX_CONSOLE_HELP_COMMAND: &[u8] = b"help";
 const GFX_CONSOLE_STATUS_COMMAND: &[u8] = b"status";
 const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
 const GFX_CONSOLE_VM_COMMAND: &[u8] = b"vm";
 const GFX_CONSOLE_APPS_COMMAND: &[u8] = b"apps";
+const GFX_CONSOLE_LAST_COMMAND: &[u8] = b"last";
 const GFX_CONSOLE_RUN_PREFIX: &[u8] = b"run ";
 const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
 
@@ -250,8 +251,84 @@ fn print_gfx_console_shell_app_error(app_name: &[u8]) {
     }
 }
 
+fn is_gfx_console_last_command(command_text: &[u8]) -> bool {
+    if command_text.len() != GFX_CONSOLE_LAST_COMMAND.len() {
+        return false;
+    }
+
+    let mut index: usize = 0;
+    while index < GFX_CONSOLE_LAST_COMMAND.len() {
+        if command_text[index] != GFX_CONSOLE_LAST_COMMAND[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+#[derive(Clone, Copy)]
+enum GfxConsoleLastResultKind {
+    None,
+    Ok,
+    NotFound,
+    VmError {
+        name: &'static str,
+        payload: Option<u8>,
+    },
+}
+
+struct GfxConsoleLastResult {
+    app_name: [u8; GFX_CONSOLE_INPUT_CAPACITY],
+    app_name_len: usize,
+    kind: GfxConsoleLastResultKind,
+}
+
+impl GfxConsoleLastResult {
+    fn new() -> Self {
+        Self {
+            app_name: [0; GFX_CONSOLE_INPUT_CAPACITY],
+            app_name_len: 0,
+            kind: GfxConsoleLastResultKind::None,
+        }
+    }
+
+    fn record(&mut self, app_name: &[u8], kind: GfxConsoleLastResultKind) {
+        let mut index: usize = 0;
+        while index < app_name.len() && index < GFX_CONSOLE_INPUT_CAPACITY {
+            self.app_name[index] = app_name[index];
+            index += 1;
+        }
+        while index < GFX_CONSOLE_INPUT_CAPACITY {
+            self.app_name[index] = 0;
+            index += 1;
+        }
+        self.app_name_len = if app_name.len() < GFX_CONSOLE_INPUT_CAPACITY {
+            app_name.len()
+        } else {
+            GFX_CONSOLE_INPUT_CAPACITY
+        };
+        self.kind = kind;
+    }
+
+    fn app_name(&self) -> &[u8] {
+        &self.app_name[..self.app_name_len]
+    }
+
+    fn render_status(&self) -> gfx_console::LastResultStatus {
+        match self.kind {
+            GfxConsoleLastResultKind::None => gfx_console::LastResultStatus::None,
+            GfxConsoleLastResultKind::Ok => gfx_console::LastResultStatus::Ok,
+            GfxConsoleLastResultKind::NotFound => gfx_console::LastResultStatus::NotFound,
+            GfxConsoleLastResultKind::VmError { name, payload } => {
+                gfx_console::LastResultStatus::VmError { name, payload }
+            }
+        }
+    }
+}
+
 fn run_gfx_console_shell_session() {
     let mut commands_seen: usize = 0;
+    let mut last_result = GfxConsoleLastResult::new();
 
     while commands_seen < GFX_CONSOLE_SHELL_MAX_COMMANDS {
         let mut command: [u8; GFX_CONSOLE_INPUT_CAPACITY] = [0; GFX_CONSOLE_INPUT_CAPACITY];
@@ -282,10 +359,18 @@ fn run_gfx_console_shell_session() {
         } else if command_text == GFX_CONSOLE_APPS_COMMAND {
             gfx_console::draw_command_apps_result();
             serial::print("gfx-console-shell: command dispatched: apps\n");
+        } else if is_gfx_console_last_command(command_text) {
+            serial::print("gfx-console-shell: command dispatched: last\n");
+            gfx_console::draw_command_last_result(
+                command_text,
+                last_result.app_name(),
+                last_result.render_status(),
+            );
         } else if command_text.starts_with(GFX_CONSOLE_RUN_PREFIX) {
             let app_name = &command_text[GFX_CONSOLE_RUN_PREFIX.len()..];
             match dbyte_vm_probe::run_embedded_app(app_name) {
                 dbyte_vm_probe::EmbeddedDbyteAppRunResult::Ok(capture) => {
+                    last_result.record(app_name, GfxConsoleLastResultKind::Ok);
                     // Render the bounded projection only after app bytecode capture has succeeded.
                     gfx_console::draw_embedded_app_success_result(
                         command_text,
@@ -295,6 +380,13 @@ fn run_gfx_console_shell_session() {
                     print_gfx_console_shell_app_dispatched(app_name);
                 }
                 dbyte_vm_probe::EmbeddedDbyteAppRunResult::VmError(error) => {
+                    last_result.record(
+                        app_name,
+                        GfxConsoleLastResultKind::VmError {
+                            name: dbyte_vm_probe::vm_error_graphics_name(error.error),
+                            payload: dbyte_vm_probe::vm_error_graphics_u8_payload(error.error),
+                        },
+                    );
                     gfx_console::draw_embedded_app_vm_error_result(
                         command_text,
                         error.app.display_lines,
@@ -305,6 +397,7 @@ fn run_gfx_console_shell_session() {
                     print_gfx_console_shell_app_error(app_name);
                 }
                 dbyte_vm_probe::EmbeddedDbyteAppRunResult::NotFound => {
+                    last_result.record(app_name, GfxConsoleLastResultKind::NotFound);
                     gfx_console::draw_app_not_found_result(
                         command_text,
                         dbyte_vm_probe::app_not_found_line(),

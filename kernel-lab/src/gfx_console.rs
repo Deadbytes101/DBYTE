@@ -53,6 +53,17 @@ impl Write for FixedLineBuffer<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum LastResultStatus {
+    None,
+    Ok,
+    NotFound,
+    VmError {
+        name: &'static str,
+        payload: Option<u8>,
+    },
+}
+
 pub fn draw_graphics_console() {
     vga_gfx::clear(COLOR_BLACK);
     draw_frame();
@@ -121,6 +132,36 @@ fn draw_log_command_line(command: &[u8]) {
     }
 }
 
+fn draw_log_prefixed_bytes_line(y: usize, prefix: &str, value: &[u8], empty_value: &str) {
+    clear_log_row(y);
+    vga_gfx::draw_text_clipped(TEXT_X, y, prefix, COLOR_LABEL, LOG_RIGHT_X);
+    if value.is_empty() {
+        vga_gfx::draw_text_clipped(
+            TEXT_X + prefix.len() * GLYPH_W,
+            y,
+            empty_value,
+            COLOR_LABEL,
+            LOG_RIGHT_X,
+        );
+    } else if let Ok(value_text) = core::str::from_utf8(value) {
+        vga_gfx::draw_text_clipped(
+            TEXT_X + prefix.len() * GLYPH_W,
+            y,
+            value_text,
+            COLOR_LABEL,
+            LOG_RIGHT_X,
+        );
+    } else {
+        vga_gfx::draw_text_clipped(
+            TEXT_X + prefix.len() * GLYPH_W,
+            y,
+            empty_value,
+            COLOR_LABEL,
+            LOG_RIGHT_X,
+        );
+    }
+}
+
 pub fn draw_command_status_result() {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
@@ -137,7 +178,10 @@ pub fn draw_command_help_result() {
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm apps exit");
+    draw_log_line(
+        LOG_Y + LOG_LINE_STEP * 3,
+        "help status clear vm apps last exit",
+    );
     draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "run <app_name>");
 }
 
@@ -178,6 +222,41 @@ pub fn draw_command_apps_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "apps: ticks tickmath argtest");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "apps: strtest logtest logclear");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "apps: uidemo errtest");
+}
+
+pub fn draw_command_last_result(command: &[u8], app_name: &[u8], status: LastResultStatus) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+
+    match status {
+        LastResultStatus::None => {
+            let _ = app_name;
+            draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "LAST APP none");
+            draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "LAST RESULT none");
+        }
+        LastResultStatus::Ok => {
+            draw_log_prefixed_bytes_line(LOG_Y + LOG_LINE_STEP * 2, "LAST APP ", app_name, "none");
+            draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "LAST RESULT APP OK");
+        }
+        LastResultStatus::NotFound => {
+            draw_log_prefixed_bytes_line(LOG_Y + LOG_LINE_STEP * 2, "LAST APP ", app_name, "none");
+            draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "LAST RESULT APP NOT FOUND");
+        }
+        LastResultStatus::VmError { name, payload } => {
+            draw_log_prefixed_bytes_line(LOG_Y + LOG_LINE_STEP * 2, "LAST APP ", app_name, "none");
+            let mut result_bytes = [0u8; 64];
+            let mut result_line = FixedLineBuffer::new(&mut result_bytes);
+            if let Some(value) = payload {
+                draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "LAST RESULT VM ERROR");
+                let _ = write!(result_line, "{}({})", name, value);
+            } else {
+                draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "LAST RESULT VM ERROR");
+                let _ = write!(result_line, "{}", name);
+            }
+            draw_log_line(LOG_Y + LOG_LINE_STEP * 4, result_line.as_str());
+        }
+    }
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {

@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.51.0)
+# DByteOS QEMU Boot Smoke (v10.52.0)
+
+`v10.52.0` is a DByte Graphics Shell Last Result Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding one bounded graphics-shell command, `last`, for in-session app-result status. The session stores the requested app name in a fixed `[u8; 32]` buffer and stores the result as a fixed enum: `none`, `APP OK`, `APP NOT FOUND`, or `VM ERROR UnsupportedService(99)`. VM-error last-result rendering uses bounded clipped rows for `LAST RESULT VM ERROR` and `UnsupportedService(99)` so the payload is not silently clipped. It adds no VM opcode, KCALL service id, app registry entry, loader, heap allocation, dynamic registry, process bridge, or IRQ/PIC/IDT behavior change. QEMU proof artifacts: `tmp\qemu_gfx_console_last_result_v10.52.0.serial.log`, `tmp\qemu_gfx_console_last_result_v10.52.0.ppm`, and `tmp\qemu_gfx_console_last_result_v10.52.0.png`.
 
 `v10.51.0` is a DByte App Result Status Foundation release. It keeps the existing `gfx-console-shell` command and generic `run <app_name>` runner while adding a deterministic app-run result contract: successful apps render their bounded `display_lines` projection plus `APP OK`, VM-error apps render the verified captured prefix plus `VM ERROR UnsupportedService(99)`, and unknown apps render `APP NOT FOUND`. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, `uidemo`, and `errtest`; service ids remain exactly `1` through `7`, and the six-opcode VM set is unchanged. QEMU proof artifacts: `tmp\qemu_gfx_console_app_result_v10.51.0.serial.log`, `tmp\qemu_gfx_console_app_result_v10.51.0.ppm`, and `tmp\qemu_gfx_console_app_result_v10.51.0.png`.
 
@@ -12,9 +14,9 @@
 
 Pinned graphics-session serial proofs remain: `gfx-console-shell: command dispatched: help`, `gfx-console-shell: command dispatched: status`, `gfx-console-shell: command dispatched: clear`, `gfx-console-shell: command dispatched: vm`, and `gfx-console-shell: exit`.
 
-Pinned `v10.51.0` graphics app-result serial proofs are: `gfx-console-shell: app dispatched: uidemo`, `gfx-console-shell: app dispatched: errtest`, `gfx-console-shell: app error: errtest`, `gfx-console-shell: app not found: nope`, and `gfx-console-shell: exit`.
+Pinned `v10.52.0` graphics last-result serial proofs are: `gfx-console-shell: app dispatched: uidemo`, `gfx-console-shell: command dispatched: last`, `gfx-console-shell: app dispatched: errtest`, `gfx-console-shell: app error: errtest`, `gfx-console-shell: app not found: nope`, and `gfx-console-shell: exit`.
 
-Pinned `v10.51.0` graphics app-result proof strings are: `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, `apps: strtest logtest logclear`, `apps: uidemo errtest`, `command: run uidemo`, `APP OK`, `command: run errtest`, `APP ERRTEST`, `VM ERROR UnsupportedService(99)`, `command: run nope`, and `APP NOT FOUND`.
+Pinned `v10.52.0` graphics last-result proof strings are: `command: run uidemo`, `APP OK`, `command: last`, `LAST APP uidemo`, `LAST RESULT APP OK`, `command: run errtest`, `APP ERRTEST`, `VM ERROR UnsupportedService(99)`, `LAST APP errtest`, `LAST RESULT VM ERROR`, `UnsupportedService(99)`, `command: run nope`, `APP NOT FOUND`, `LAST APP nope`, and `LAST RESULT APP NOT FOUND`. Initial `last` state remains deterministic as `LAST APP none` and `LAST RESULT none`.
 
 `v10.28.0` is an IRQ0 Activation Preflight release. It adds three read-only preflight commands that read the existing sticky IRQ0 descriptor-bind, transactional IRQ0 unmask, and manual PIC_EOI smoke proofs while keeping STI disabled, IRQ0 currently masked, runtime IRQ inactive, and activation denied.
 
