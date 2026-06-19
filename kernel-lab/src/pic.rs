@@ -378,6 +378,7 @@ pub struct Irq0TicksStatus {
 pub struct Irq0RuntimeStatus {
     pub runtime_ready: &'static str,
     pub runtime_stopped: &'static str,
+    pub saved_original_master_mask_valid: &'static str,
     pub pic_remap_proof: &'static str,
     pub manual_pic_eoi_proof: &'static str,
     pub irq0_descriptor_bind_proof: &'static str,
@@ -1218,6 +1219,9 @@ impl ProgrammableInterruptController {
         Irq0RuntimeStatus {
             runtime_ready: Self::irq0_window_yes_no(ready),
             runtime_stopped: Self::irq0_window_yes_no(!running),
+            saved_original_master_mask_valid: Self::irq0_window_yes_no(
+                IRQ0_RUNTIME_ORIGINAL_MASTER_MASK_VALID.load(Ordering::SeqCst),
+            ),
             pic_remap_proof: Self::irq0_window_yes_no(pic_remap_ready),
             manual_pic_eoi_proof: Self::irq0_window_yes_no(manual_pic_eoi_proof),
             irq0_descriptor_bind_proof: Self::irq0_window_yes_no(irq0_descriptor_bind_proof),

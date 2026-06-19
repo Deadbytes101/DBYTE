@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.55.1)
+# DByteOS QEMU Boot Smoke (v10.56.0)
+
+`v10.56.0` is a DByte Graphics Console Runtime Header Sync release. It keeps the existing graphics-shell `timer status`, `timer start`, and `timer stop` commands unchanged while redrawing the Mode 13h status header from the same IRQ0 runtime snapshots used by the timer log renderers. The initial console may still show `IRQ0 TIMER    TICKS 0008 / MASKED`; after timer commands, the header reflects `IRQ0 TIMER    RUNNING <ticks>` or `IRQ0 TIMER    STOPPED <ticks> / MASKED`. The graphics shell does not create readiness, remap PIC, bind IDT, install handlers, touch IRQ1, touch the slave PIC, execute STI/CLI directly, write PIC ports directly, or mutate app last-result state. It adds no kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_runtime_header_v10.56.0.serial.log`, `tmp\qemu_gfx_console_runtime_header_v10.56.0.ppm`, and `tmp\qemu_gfx_console_runtime_header_v10.56.0.png`.
 
 `v10.55.1` is a DByte Graphics Shell IRQ0 Runtime Bridge Hardening release. It adds no runtime behavior and preserves the existing graphics-shell `timer status`, `timer start`, and `timer stop` commands as a remote-control surface over the existing IRQ0 runtime snapshot helpers only. The hardening verifier locks that the graphics shell cannot create readiness, remap PIC, bind IDT, install handlers, touch IRQ1, touch the slave PIC, execute STI/CLI directly, write PIC ports directly, or mutate app last-result state. It adds no kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.serial.log`, `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.ppm`, and `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.png`.
 
@@ -22,11 +24,11 @@
 
 Pinned graphics-session serial proofs remain: `gfx-console-shell: command dispatched: help`, `gfx-console-shell: command dispatched: status`, `gfx-console-shell: command dispatched: clear`, `gfx-console-shell: command dispatched: vm`, and `gfx-console-shell: exit`.
 
-Pinned `v10.55.1` graphics IRQ0 runtime bridge serial proofs are: `gfx-console-shell: command dispatched: timer status`, `gfx-console-shell: command dispatched: timer start`, `gfx-console-shell: command dispatched: timer stop`, and `gfx-console-shell: exit`.
+Pinned `v10.56.0` graphics IRQ0 runtime header serial proofs are: `gfx-console-shell: command dispatched: timer status`, `gfx-console-shell: command dispatched: timer start`, `gfx-console-shell: command dispatched: timer stop`, and `gfx-console-shell: exit`.
 
-Pinned `v10.55.1` graphics IRQ0 runtime bridge proof strings are: `command: timer status`, `command: timer start`, `command: timer stop`, `IRQ0 TIMER RUNNING`, `IRQ0 TIMER STOPPED`, `IRQ0 TICKS`, `IRQ0 MASKED yes`, `IRQ0 MASKED no`, `STI ENABLED yes`, `STI ENABLED no`, and `IRQ0 FORCED MASKED yes`.
+Pinned `v10.56.0` graphics IRQ0 runtime header proof strings are: `command: timer status`, `command: timer start`, `command: timer stop`, `IRQ0 TIMER RUNNING`, `IRQ0 TIMER STOPPED`, `IRQ0 TICKS`, `IRQ0 MASKED yes`, `IRQ0 MASKED no`, `STI ENABLED yes`, `STI ENABLED no`, `IRQ0 FORCED MASKED yes`, and refreshed header states `RUNNING <ticks>` plus `STOPPED <ticks> / MASKED`.
 
-Pinned `v10.55.1` QEMU command flow: run the existing prepared IRQ0 setup proof commands, enter `gfx-console-shell`, run `timer status`, run `timer start`, run `timer status`, run `timer stop`, and run `exit`.
+Pinned `v10.56.0` QEMU command flow: run the existing prepared IRQ0 setup proof commands, enter `gfx-console-shell`, run `timer start`, visually confirm the header shows `IRQ0 TIMER    RUNNING <ticks>`, run `timer stop`, visually confirm the header shows `IRQ0 TIMER    STOPPED <ticks> / MASKED`, and run `exit`.
 
 Pinned `v10.54.1` IRQ0 runtime serial proof strings are: `irq0-runtime-status`, `IRQ0 TIMER STOPPED`, `irq0-runtime-start`, `irq0 runtime: already running`, `IRQ0 TIMER RUNNING`, `irq0-runtime-stop`, `irq0 runtime: not running`, `runtime stopped: yes`, `non-IRQ0 PIC mask restored: yes`, `IRQ0 forced masked: yes`, and `IRQ0 currently masked: yes`.
 

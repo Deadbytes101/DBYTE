@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.55.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.56.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.56.0` is a DByte Graphics Console Runtime Header Sync release.
 - `v10.55.1` is a DByte Graphics Shell IRQ0 Runtime Bridge Hardening release.
 - `v10.55.0` is a DByte Graphics Shell IRQ0 Runtime Bridge Foundation release.
 - `v10.54.1` is a DByte IRQ0 Runtime Start Stop Hardening release.
@@ -56,6 +57,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.56.0`: syncs the Mode 13h graphics console status header with the current IRQ0 runtime snapshot after graphics-shell `timer status`, `timer start`, and `timer stop`. The initial graphics console may still show the bounded proof header `IRQ0 TIMER    TICKS 0008 / MASKED`; after timer commands, the header redraws as `IRQ0 TIMER    RUNNING <ticks>` or `IRQ0 TIMER    STOPPED <ticks> / MASKED` from existing runtime status data. The graphics shell remains only a UI control surface over the existing IRQ0 runtime snapshot helpers, with no direct PIC writes, PIC remap, IDT bind, handler install, IRQ1 path, slave PIC path, direct STI/CLI, VM opcode, KCALL service id, app registry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_header_v10.56.0.serial.log`, `tmp\qemu_gfx_console_runtime_header_v10.56.0.ppm`, and `tmp\qemu_gfx_console_runtime_header_v10.56.0.png`.
 
 Thin note for `v10.35.1`: no new command; `gfx-console` is unchanged and remains one-way Mode 13h with no text restore. Hardware boundaries are unchanged. The verifier locks graphics-console glyph coverage for `INPUT`, `PS/2 POLLING`, `IRQ0`, `42`, and the prompt text. QEMU proof artifacts are `tmp\qemu_gfx_console_v10.35.1.serial.log`, `tmp\qemu_gfx_console_v10.35.1.ppm`, and `tmp\qemu_gfx_console_v10.35.1.png`.
 

@@ -24,6 +24,10 @@ const LOG_LINE_STEP: usize = 9;
 const LOG_RIGHT_X: usize = PANEL_X + PANEL_W - 16;
 const LOG_ROW_W: usize = LOG_RIGHT_X - TEXT_X;
 const GLYPH_W: usize = 8;
+const STATUS_IRQ0_Y: usize = PANEL_Y + 74;
+const STATUS_IRQ0_VALUE_X: usize = VALUE_X - GLYPH_W * 2;
+const STATUS_RIGHT_X: usize = PANEL_X + PANEL_W - 4;
+const STATUS_IRQ0_VALUE_W: usize = STATUS_RIGHT_X - STATUS_IRQ0_VALUE_X;
 
 struct FixedLineBuffer<'a> {
     bytes: &'a mut [u8],
@@ -71,7 +75,7 @@ pub fn draw_graphics_console() {
     draw_status_row(PANEL_Y + 38, "KERNEL", "ONLINE");
     draw_status_row(PANEL_Y + 50, "DBYTE VM", "ONLINE");
     draw_status_row(PANEL_Y + 62, "BOOT SCRIPT", "OK");
-    draw_status_row(PANEL_Y + 74, "IRQ0 TIMER", "TICKS 0008 / MASKED");
+    draw_status_row(STATUS_IRQ0_Y, "IRQ0 TIMER", "TICKS 0008 / MASKED");
     draw_status_row(PANEL_Y + 86, "INPUT", "PS/2 POLLING");
     draw_status_row(PANEL_Y + 98, "GRAPHICS", "MODE 13H");
     draw_log_line(PANEL_Y + 116, "SYSTEM LOG");
@@ -97,6 +101,50 @@ fn draw_title() {
 fn draw_status_row(y: usize, label: &str, value: &str) {
     vga_gfx::draw_text(TEXT_X, y, label, COLOR_LABEL);
     vga_gfx::draw_text(VALUE_X, y, value, COLOR_VALUE);
+}
+
+fn clear_irq0_status_value_row() {
+    vga_gfx::fill_rect(
+        STATUS_IRQ0_VALUE_X,
+        STATUS_IRQ0_Y,
+        STATUS_IRQ0_VALUE_W,
+        GLYPH_W,
+        COLOR_PANEL,
+    );
+}
+
+fn draw_irq0_status_value_clipped(value: &str) {
+    clear_irq0_status_value_row();
+    vga_gfx::draw_text_clipped(
+        STATUS_IRQ0_VALUE_X,
+        STATUS_IRQ0_Y,
+        value,
+        COLOR_VALUE,
+        STATUS_RIGHT_X,
+    );
+}
+
+pub fn draw_irq0_runtime_header(
+    state: &str,
+    ticks: u32,
+    irq0_masked: &str,
+    saved_original_master_mask_valid: &str,
+) {
+    if saved_original_master_mask_valid != "yes" {
+        draw_irq0_status_value_clipped("TICKS 0008 / MASKED");
+        return;
+    }
+
+    let mut value_bytes = [0u8; 32];
+    let mut value = FixedLineBuffer::new(&mut value_bytes);
+    if state == "RUNNING" {
+        let _ = write!(value, "RUNNING {:04}", ticks);
+    } else if irq0_masked == "yes" {
+        let _ = write!(value, "STOPPED {:04} / MASKED", ticks);
+    } else {
+        let _ = write!(value, "STOPPED {:04}", ticks);
+    }
+    draw_irq0_status_value_clipped(value.as_str());
 }
 
 fn draw_log_line(y: usize, text: &str) {

@@ -399,6 +399,12 @@ fn run_gfx_console_shell_session() {
                 runtime.irq0_currently_masked,
                 runtime.sti_currently_enabled,
             );
+            gfx_console::draw_irq0_runtime_header(
+                runtime.state,
+                runtime.ticks,
+                runtime.irq0_currently_masked,
+                runtime.saved_original_master_mask_valid,
+            );
             serial::print("gfx-console-shell: command dispatched: timer status\n");
         } else if command_text == GFX_CONSOLE_TIMER_START_COMMAND {
             let runtime = irq0_runtime_start_snapshot();
@@ -406,6 +412,12 @@ fn run_gfx_console_shell_session() {
                 command_text,
                 runtime.result,
                 runtime.state,
+            );
+            gfx_console::draw_irq0_runtime_header(
+                runtime.state,
+                runtime.ticks,
+                runtime.irq0_currently_masked,
+                runtime.saved_original_master_mask_valid,
             );
             serial::print("gfx-console-shell: command dispatched: timer start\n");
         } else if command_text == GFX_CONSOLE_TIMER_STOP_COMMAND {
@@ -415,6 +427,12 @@ fn run_gfx_console_shell_session() {
                 runtime.result,
                 runtime.irq0_currently_masked,
                 runtime.irq0_forced_masked,
+            );
+            gfx_console::draw_irq0_runtime_header(
+                runtime.state,
+                runtime.ticks,
+                runtime.irq0_currently_masked,
+                runtime.saved_original_master_mask_valid,
             );
             serial::print("gfx-console-shell: command dispatched: timer stop\n");
         } else if command_text.starts_with(GFX_CONSOLE_INFO_PREFIX) {
