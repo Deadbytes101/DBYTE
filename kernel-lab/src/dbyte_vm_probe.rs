@@ -32,6 +32,8 @@ const ARG_TEXT_DBYTE_SERVICE_ARG_LINE: &str = "ARG TEXT DBYTE SERVICE ARG";
 const HELLO_GRAPHICS_LOG_LINE: &str = "HELLO GRAPHICS LOG";
 const LOG_CLEARED_LINE: &str = "LOG CLEARED";
 const GRAPHICS_LOG_READY_LINE: &str = "GRAPHICS LOG READY";
+const APP_OK_LINE: &str = "APP OK";
+const APP_NOT_FOUND_LINE: &str = "APP NOT FOUND";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -210,8 +212,20 @@ static DBYTE_APP_UIDEMO_BYTECODE: [u8; 16] = [
     opcode::HALT, // HALT
 ];
 
+static DBYTE_APP_ERRTEST_STRINGS: [&str; 1] = ["APP ERRTEST"];
+static DBYTE_APP_ERRTEST_OUTPUT_LINES: [&str; 1] = ["APP ERRTEST"];
+static DBYTE_APP_ERRTEST_BYTECODE: [u8; 7] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    99,           // KCALL unsupported service proof
+    opcode::HALT, // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 10] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -282,6 +296,13 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 10] = [
         output_lines: &DBYTE_APP_UIDEMO_OUTPUT_LINES,
         display_lines: &DBYTE_APP_UIDEMO_DISPLAY_LINES,
     },
+    EmbeddedDbyteApp {
+        name: "errtest",
+        bytecode: &DBYTE_APP_ERRTEST_BYTECODE,
+        consts: &DBYTE_APP_ERRTEST_STRINGS,
+        output_lines: &DBYTE_APP_ERRTEST_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_ERRTEST_OUTPUT_LINES,
+    },
 ];
 
 const DBYTE_VM_BOOT_SCRIPT_STRINGS: [&str; 1] = ["DBYTE BOOT SCRIPT"];
@@ -307,6 +328,17 @@ pub struct VmProbeCapture {
 
 pub struct EmbeddedDbyteAppCapture {
     pub app: &'static EmbeddedDbyteApp,
+}
+
+pub struct EmbeddedDbyteAppError {
+    pub app: &'static EmbeddedDbyteApp,
+    pub error: VmError,
+}
+
+pub enum EmbeddedDbyteAppRunResult {
+    Ok(EmbeddedDbyteAppCapture),
+    NotFound,
+    VmError(EmbeddedDbyteAppError),
 }
 
 struct ProbeCaptureOutput {
@@ -576,8 +608,11 @@ pub fn find_embedded_app(name: &[u8]) -> Option<&'static EmbeddedDbyteApp> {
     None
 }
 
-pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCapture, VmError>> {
-    let app = find_embedded_app(name)?;
+pub fn run_embedded_app(name: &[u8]) -> EmbeddedDbyteAppRunResult {
+    let app = match find_embedded_app(name) {
+        Some(app) => app,
+        None => return EmbeddedDbyteAppRunResult::NotFound,
+    };
     let mut output = DbyteAppCaptureOutput {
         app,
         line_index: 0,
@@ -588,9 +623,57 @@ pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCa
         .map(|_| EmbeddedDbyteAppCapture { app });
     // A display projection is renderable only after bytecode produced every expected output line.
     if output.matched && output.line_index == app.output_lines.len() {
-        Some(result)
+        match result {
+            Ok(capture) => EmbeddedDbyteAppRunResult::Ok(capture),
+            Err(error) => EmbeddedDbyteAppRunResult::VmError(EmbeddedDbyteAppError { app, error }),
+        }
     } else {
-        Some(Err(VmError::TypeMismatch))
+        EmbeddedDbyteAppRunResult::VmError(EmbeddedDbyteAppError {
+            app,
+            error: VmError::TypeMismatch,
+        })
+    }
+}
+
+#[allow(dead_code)]
+pub fn run_embedded_app_capture(name: &[u8]) -> Option<Result<EmbeddedDbyteAppCapture, VmError>> {
+    match run_embedded_app(name) {
+        EmbeddedDbyteAppRunResult::Ok(capture) => Some(Ok(capture)),
+        EmbeddedDbyteAppRunResult::VmError(error) => Some(Err(error.error)),
+        EmbeddedDbyteAppRunResult::NotFound => None,
+    }
+}
+
+pub fn app_ok_line() -> &'static str {
+    APP_OK_LINE
+}
+
+pub fn app_not_found_line() -> &'static str {
+    APP_NOT_FOUND_LINE
+}
+
+pub fn vm_error_graphics_name(error: VmError) -> &'static str {
+    match error {
+        VmError::StackOverflow => "StackOverflow",
+        VmError::StackUnderflow => "StackUnderflow",
+        VmError::TypeMismatch => "TypeMismatch",
+        VmError::StrConstIndexOutOfBounds => "StrConstIndexOutOfBounds",
+        VmError::UnexpectedEnd => "UnexpectedEnd",
+        VmError::UnsupportedService(_) => "UnsupportedService",
+        VmError::UnknownOpcode(_) => "UnknownOpcode",
+        VmError::MissingHalt => "MissingHalt",
+    }
+}
+
+pub fn vm_error_graphics_u8_payload(error: VmError) -> Option<u8> {
+    match error {
+        VmError::UnsupportedService(value) | VmError::UnknownOpcode(value) => Some(value),
+        VmError::StackOverflow
+        | VmError::StackUnderflow
+        | VmError::TypeMismatch
+        | VmError::StrConstIndexOutOfBounds
+        | VmError::UnexpectedEnd
+        | VmError::MissingHalt => None,
     }
 }
 

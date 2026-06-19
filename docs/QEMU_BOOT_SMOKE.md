@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.50.1)
+# DByteOS QEMU Boot Smoke (v10.51.0)
+
+`v10.51.0` is a DByte App Result Status Foundation release. It keeps the existing `gfx-console-shell` command and generic `run <app_name>` runner while adding a deterministic app-run result contract: successful apps render their bounded `display_lines` projection plus `APP OK`, VM-error apps render the verified captured prefix plus `VM ERROR UnsupportedService(99)`, and unknown apps render `APP NOT FOUND`. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, `uidemo`, and `errtest`; service ids remain exactly `1` through `7`, and the six-opcode VM set is unchanged. QEMU proof artifacts: `tmp\qemu_gfx_console_app_result_v10.51.0.serial.log`, `tmp\qemu_gfx_console_app_result_v10.51.0.ppm`, and `tmp\qemu_gfx_console_app_result_v10.51.0.png`.
 
 `v10.50.1` is a DByte App Display Contract Hardening release. It adds no app, KCALL service, VM opcode, shell command, loader, heap allocation, dynamic registry, or hardware mutation. It locks the contract that embedded app `output_lines` are the full captured execution contract and `display_lines` are only a bounded graphics UI projection rendered after successful app capture. The existing `uidemo` proof remains unchanged and continues to use only `KERNEL_GRAPHICS_LOG_CLEAR = 7`, `KERNEL_GRAPHICS_LOG = 6`, `KERNEL_STATUS = 1`, and `KERNEL_TICKS = 2`. QEMU proof artifacts: `tmp\qemu_gfx_console_uidemo_v10.50.1.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.1.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.1.png`.
 
@@ -10,9 +12,9 @@
 
 Pinned graphics-session serial proofs remain: `gfx-console-shell: command dispatched: help`, `gfx-console-shell: command dispatched: status`, `gfx-console-shell: command dispatched: clear`, `gfx-console-shell: command dispatched: vm`, and `gfx-console-shell: exit`.
 
-Pinned `v10.50.1` graphics uidemo serial proofs are: `gfx-console-shell: command dispatched: apps`, `gfx-console-shell: app dispatched: uidemo`, and `gfx-console-shell: exit`.
+Pinned `v10.51.0` graphics app-result serial proofs are: `gfx-console-shell: app dispatched: uidemo`, `gfx-console-shell: app dispatched: errtest`, `gfx-console-shell: app error: errtest`, `gfx-console-shell: app not found: nope`, and `gfx-console-shell: exit`.
 
-Pinned `v10.50.1` graphics uidemo proof strings are: `command: apps`, `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, `apps: strtest logtest logclear`, `apps: uidemo`, `command: run uidemo`, `APP UIDEMO`, `GRAPHICS LOG READY`, `KERNEL ONLINE`, and `IRQ0 TICKS 0008`.
+Pinned `v10.51.0` graphics app-result proof strings are: `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, `apps: strtest logtest logclear`, `apps: uidemo errtest`, `command: run uidemo`, `APP OK`, `command: run errtest`, `APP ERRTEST`, `VM ERROR UnsupportedService(99)`, `command: run nope`, and `APP NOT FOUND`.
 
 `v10.28.0` is an IRQ0 Activation Preflight release. It adds three read-only preflight commands that read the existing sticky IRQ0 descriptor-bind, transactional IRQ0 unmask, and manual PIC_EOI smoke proofs while keeping STI disabled, IRQ0 currently masked, runtime IRQ inactive, and activation denied.
 

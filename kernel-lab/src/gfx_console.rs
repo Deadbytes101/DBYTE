@@ -1,3 +1,5 @@
+use core::fmt::Write;
+
 use crate::vga_gfx;
 
 const COLOR_BLACK: u8 = 0x00;
@@ -22,6 +24,34 @@ const LOG_LINE_STEP: usize = 9;
 const LOG_RIGHT_X: usize = PANEL_X + PANEL_W - 16;
 const LOG_ROW_W: usize = LOG_RIGHT_X - TEXT_X;
 const GLYPH_W: usize = 8;
+
+struct FixedLineBuffer<'a> {
+    bytes: &'a mut [u8],
+    len: usize,
+}
+
+impl<'a> FixedLineBuffer<'a> {
+    fn new(bytes: &'a mut [u8]) -> Self {
+        Self { bytes, len: 0 }
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("")
+    }
+}
+
+impl Write for FixedLineBuffer<'_> {
+    fn write_str(&mut self, value: &str) -> core::fmt::Result {
+        let available = self.bytes.len().saturating_sub(self.len);
+        if value.len() > available {
+            return Err(core::fmt::Error);
+        }
+        let end = self.len + value.len();
+        self.bytes[self.len..end].copy_from_slice(value.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
 
 pub fn draw_graphics_console() {
     vga_gfx::clear(COLOR_BLACK);
@@ -147,7 +177,7 @@ pub fn draw_command_apps_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "apps: hello math sysinfo");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "apps: ticks tickmath argtest");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "apps: strtest logtest logclear");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "apps: uidemo");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "apps: uidemo errtest");
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
@@ -162,11 +192,37 @@ pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
     }
 }
 
-pub fn draw_app_not_found_result(command: &[u8]) {
+pub fn draw_embedded_app_success_result(command: &[u8], output_lines: &[&str], status: &str) {
+    draw_embedded_app_result(command, output_lines);
+    draw_log_line(LOG_Y + LOG_LINE_STEP * (output_lines.len() + 2), status);
+}
+
+pub fn draw_embedded_app_vm_error_result(
+    command: &[u8],
+    output_lines: &[&str],
+    error_name: &str,
+    error_payload: Option<u8>,
+) {
+    draw_embedded_app_result(command, output_lines);
+
+    let mut bytes = [0u8; 48];
+    let mut line = FixedLineBuffer::new(&mut bytes);
+    if let Some(payload) = error_payload {
+        let _ = write!(line, "VM ERROR {}({})", error_name, payload);
+    } else {
+        let _ = write!(line, "VM ERROR {}", error_name);
+    }
+    draw_log_line(
+        LOG_Y + LOG_LINE_STEP * (output_lines.len() + 2),
+        line.as_str(),
+    );
+}
+
+pub fn draw_app_not_found_result(command: &[u8], status: &str) {
     clear_log_area();
     draw_log_line(LOG_Y, "SYSTEM LOG");
     draw_log_command_line(command);
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "result: app not found");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, status);
 }
 
 pub fn draw_unknown_command_result(command: &[u8]) {

@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.50.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.51.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.51.0` is a DByte App Result Status Foundation release.
 - `v10.50.1` is a DByte App Display Contract Hardening release.
 - `v10.50.0` is a DByte App UI Service Pack Foundation release.
 - `v10.49.0` is a DByte Graphics Log Clear Service Foundation release.
@@ -87,6 +88,8 @@ Thin note for `v10.49.0`: adds `KERNEL_GRAPHICS_LOG_CLEAR = 7`, a no-allocation 
 Thin note for `v10.50.0`: adds the static `uidemo` app as a DByte App UI Service Pack Foundation proof. It uses only existing `KCALL` services: `KERNEL_GRAPHICS_LOG_CLEAR = 7`, `KERNEL_GRAPHICS_LOG = 6`, `KERNEL_STATUS = 1`, and `KERNEL_TICKS = 2`. The app clears the graphics log adapter, writes `GRAPHICS LOG READY`, reads kernel status, and reads controlled IRQ0 tick-window telemetry without adding an opcode, service id, shell command, loader, heap allocation, dynamic registry, or hardware mutation. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, and `uidemo`, and `apps` output is split across four clipped graphics log rows. QEMU proof artifacts are `tmp\qemu_gfx_console_uidemo_v10.50.0.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.0.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.0.png`.
 
 Thin note for `v10.50.1`: hardens the embedded app display contract without changing runtime behavior. `output_lines` remains the full captured VM/service-output source of truth, while `display_lines` is only a bounded graphics UI projection rendered after successful `run <app_name>` capture. `uidemo`, the ten-app registry, service ids `1` through `7`, and the six-opcode VM set remain unchanged. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_uidemo_v10.50.1.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.1.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.1.png`.
+
+Thin note for `v10.51.0`: adds a deterministic app-result status contract to the existing generic `run <app_name>` path. Successful apps render verified bounded display projection plus `APP OK`; VM-error apps render the captured prefix plus `VM ERROR UnsupportedService(99)`; unknown apps render `APP NOT FOUND`. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, `uidemo`, and `errtest`. Service ids remain exactly `1` through `7`, the VM opcode set remains unchanged, and hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_app_result_v10.51.0.serial.log`, `tmp\qemu_gfx_console_app_result_v10.51.0.ppm`, and `tmp\qemu_gfx_console_app_result_v10.51.0.png`.
 
 `v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
 
