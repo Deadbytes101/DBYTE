@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.58.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.59.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.59.0` is a DByte Graphics Shell Kernel Clock Bridge release.
 - `v10.58.0` is a DByte Kernel Runtime Clock Foundation release.
 - `v10.57.1` is a DByte Graphics Runtime Header Live Refresh Hardening release.
 - `v10.57.0` is a DByte Graphics Runtime Header Live Refresh Foundation release.
@@ -60,6 +61,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.59.0`: adds graphics-shell `clock status` inside the existing `gfx-console-shell` as a read-only bridge over the existing kernel clock projection. The graphics clock path reads only `kernel_clock_status_snapshot()`, renders `KERNEL CLOCK`, source `IRQ0 runtime`, runtime state, zero-padded ticks, IRQ0 mask state, and STI state through bounded clipped log rows, and emits `gfx-console-shell: command dispatched: clock status`. It does not add a kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, IRQ1 path, slave PIC path, VGA allowlist change, serial path change, direct PIC write, direct STI/CLI, PIC remap, IDT bind, handler install, or IRQ0 runtime semantic change. QEMU proof artifacts are `tmp\qemu_gfx_console_kernel_clock_v10.59.0.serial.log`, `tmp\qemu_gfx_console_kernel_clock_v10.59.0.ppm`, and `tmp\qemu_gfx_console_kernel_clock_v10.59.0.png`.
 
 Thin note for `v10.58.0`: adds the read-only text-shell `kernel-clock-status` command as a kernel clock projection backed only by the existing IRQ0 runtime status snapshot. The clock reports fixed source `IRQ0 runtime`, runtime state, tick count, IRQ0 mask state, and STI state without starting or stopping runtime, creating readiness, unmasking IRQ0, writing PIC ports, executing STI/CLI, binding IDT, installing handlers, touching IRQ1, touching the slave PIC, or changing IRQ0 runtime semantics. Before runtime has ever started, the clock reports the deterministic bounded proof tick contract `0008`. No graphics-shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, VGA allowlist change, or serial path change is added. QEMU proof artifact is `tmp\qemu_kernel_clock_v10.58.0.serial.log`.
 

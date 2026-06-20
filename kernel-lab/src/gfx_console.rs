@@ -20,7 +20,7 @@ const PROMPT_TEXT: &str = "dbyte-kernel>";
 const PROMPT_Y: usize = PANEL_Y + 178;
 const PROMPT_INPUT_GAP: usize = 8;
 const LOG_Y: usize = PANEL_Y + 116;
-const LOG_LINE_STEP: usize = 9;
+const LOG_LINE_STEP: usize = 8;
 const LOG_RIGHT_X: usize = PANEL_X + PANEL_W - 16;
 const LOG_ROW_W: usize = LOG_RIGHT_X - TEXT_X;
 const GLYPH_W: usize = 8;
@@ -239,9 +239,12 @@ pub fn draw_command_help_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP, "command: help");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "commands:");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "help status clear vm apps");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "last info timer exit");
+    draw_log_line(
+        LOG_Y + LOG_LINE_STEP * 4,
+        "last info timer exit clock status",
+    );
     draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "run <app_name> info <app_name>");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "timer status start stop");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 6, "timer status start stop clock");
 }
 
 pub fn draw_command_clear_result() {
@@ -394,6 +397,30 @@ pub fn draw_command_timer_stop_result(
             irq0_forced_masked,
         );
     }
+}
+
+pub fn draw_command_kernel_clock_status_result(
+    command: &[u8],
+    source: &str,
+    runtime: &str,
+    ticks: u32,
+    irq0_masked: &str,
+    sti_enabled: &str,
+) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "KERNEL CLOCK");
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 3, "source: ", source);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 4, "runtime: ", runtime);
+
+    let mut tick_bytes = [0u8; 32];
+    let mut tick_line = FixedLineBuffer::new(&mut tick_bytes);
+    let _ = write!(tick_line, "{:04}", ticks);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 5, "ticks: ", tick_line.as_str());
+
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 6, "irq0 masked: ", irq0_masked);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 7, "sti enabled: ", sti_enabled);
 }
 
 pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {

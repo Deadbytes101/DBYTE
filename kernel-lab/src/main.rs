@@ -61,6 +61,7 @@ const GFX_CONSOLE_LAST_COMMAND: &[u8] = b"last";
 const GFX_CONSOLE_TIMER_STATUS_COMMAND: &[u8] = b"timer status";
 const GFX_CONSOLE_TIMER_START_COMMAND: &[u8] = b"timer start";
 const GFX_CONSOLE_TIMER_STOP_COMMAND: &[u8] = b"timer stop";
+const GFX_CONSOLE_CLOCK_STATUS_COMMAND: &[u8] = b"clock status";
 const GFX_CONSOLE_INFO_PREFIX: &[u8] = b"info ";
 const GFX_CONSOLE_RUN_PREFIX: &[u8] = b"run ";
 const GFX_CONSOLE_EXIT_COMMAND: &[u8] = b"exit";
@@ -487,6 +488,17 @@ fn run_gfx_console_shell_session() {
                 runtime.saved_original_master_mask_valid,
             );
             serial::print("gfx-console-shell: command dispatched: timer stop\n");
+        } else if command_text == GFX_CONSOLE_CLOCK_STATUS_COMMAND {
+            let clock = kernel_clock_status_snapshot();
+            gfx_console::draw_command_kernel_clock_status_result(
+                command_text,
+                clock.source,
+                clock.runtime,
+                clock.ticks,
+                clock.irq0_masked,
+                clock.sti_enabled,
+            );
+            serial::print("gfx-console-shell: command dispatched: clock status\n");
         } else if command_text.starts_with(GFX_CONSOLE_INFO_PREFIX) {
             let app_name = &command_text[GFX_CONSOLE_INFO_PREFIX.len()..];
             match dbyte_vm_probe::find_embedded_app(app_name) {
