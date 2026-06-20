@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.56.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.57.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.57.0` is a DByte Graphics Runtime Header Live Refresh Foundation release.
 - `v10.56.0` is a DByte Graphics Console Runtime Header Sync release.
 - `v10.55.1` is a DByte Graphics Shell IRQ0 Runtime Bridge Hardening release.
 - `v10.55.0` is a DByte Graphics Shell IRQ0 Runtime Bridge Foundation release.
@@ -57,6 +58,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.57.0`: adds bounded live refresh for the Mode 13h IRQ0 status header while `gfx-console-shell` is waiting for input. The graphics shell keeps PS/2 polling and periodically reads only `irq0_runtime_status_snapshot()` when no key is pending, then redraws the existing IRQ0 header row through `draw_irq0_runtime_header()`. This lets an active runtime show advancing `IRQ0 TIMER    RUNNING <ticks>` before the next command while preserving `IRQ0 TIMER    STOPPED <ticks> / MASKED` after stop and `IRQ0 TIMER    TICKS 0008 / MASKED` before runtime has ever started. No kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, IRQ0 runtime semantic, scheduler, multitasking, timer callback, keyboard IRQ path, PIC/IDT/runtime setup duplication, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.png`.
 
 Thin note for `v10.56.0`: syncs the Mode 13h graphics console status header with the current IRQ0 runtime snapshot after graphics-shell `timer status`, `timer start`, and `timer stop`. The initial graphics console may still show the bounded proof header `IRQ0 TIMER    TICKS 0008 / MASKED`; after timer commands, the header redraws as `IRQ0 TIMER    RUNNING <ticks>` or `IRQ0 TIMER    STOPPED <ticks> / MASKED` from existing runtime status data. The graphics shell remains only a UI control surface over the existing IRQ0 runtime snapshot helpers, with no direct PIC writes, PIC remap, IDT bind, handler install, IRQ1 path, slave PIC path, direct STI/CLI, VM opcode, KCALL service id, app registry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_header_v10.56.0.serial.log`, `tmp\qemu_gfx_console_runtime_header_v10.56.0.ppm`, and `tmp\qemu_gfx_console_runtime_header_v10.56.0.png`.
 

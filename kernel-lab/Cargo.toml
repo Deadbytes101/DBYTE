@@ -1,6 +1,6 @@
 [package]
 name = "dbyte_kernel"
-version = "10.56.0"
+version = "10.57.0"
 edition = "2021"
 
 [dependencies]

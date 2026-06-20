@@ -51,6 +51,7 @@ static mut LINE_BUFFER: [u8; 128] = [0; 128];
 static mut LINE_LEN: usize = 0;
 const GFX_CONSOLE_INPUT_CAPACITY: usize = 32;
 const GFX_CONSOLE_SHELL_MAX_COMMANDS: usize = 7;
+const GFX_CONSOLE_HEADER_REFRESH_POLL_INTERVAL: u32 = 4096;
 const GFX_CONSOLE_HELP_COMMAND: &[u8] = b"help";
 const GFX_CONSOLE_STATUS_COMMAND: &[u8] = b"status";
 const GFX_CONSOLE_CLEAR_COMMAND: &[u8] = b"clear";
@@ -179,6 +180,57 @@ fn read_gfx_console_input_line(input: &mut [u8; GFX_CONSOLE_INPUT_CAPACITY]) -> 
                 continue;
             }
 
+            let scancode = serial::inb(0x60);
+            if scancode >= 0x80 {
+                continue;
+            }
+
+            if let Some(byte) = gfx_console_input_scancode_to_ascii(scancode) {
+                if byte == b'\n' {
+                    return input_len;
+                } else if byte == 0x08 {
+                    if input_len > 0 {
+                        input_len -= 1;
+                        input[input_len] = 0;
+                        gfx_console::draw_prompt_input(&input[..input_len]);
+                    }
+                } else if input_len < GFX_CONSOLE_INPUT_CAPACITY {
+                    input[input_len] = byte;
+                    input_len += 1;
+                    gfx_console::draw_prompt_input(&input[..input_len]);
+                }
+            }
+        }
+    }
+}
+
+fn refresh_gfx_console_runtime_header_from_snapshot() {
+    let runtime = irq0_runtime_status_snapshot();
+    gfx_console::draw_irq0_runtime_header(
+        runtime.state,
+        runtime.ticks,
+        runtime.irq0_currently_masked,
+        runtime.saved_original_master_mask_valid,
+    );
+}
+
+fn read_gfx_console_shell_input_line(input: &mut [u8; GFX_CONSOLE_INPUT_CAPACITY]) -> usize {
+    let mut input_len: usize = 0;
+    let mut refresh_polls: u32 = 0;
+    gfx_console::draw_prompt_input(&input[..input_len]);
+    loop {
+        unsafe {
+            let status = serial::inb(0x64);
+            if (status & 1) == 0 {
+                refresh_polls = refresh_polls.wrapping_add(1);
+                if refresh_polls >= GFX_CONSOLE_HEADER_REFRESH_POLL_INTERVAL {
+                    refresh_polls = 0;
+                    refresh_gfx_console_runtime_header_from_snapshot();
+                }
+                continue;
+            }
+
+            refresh_polls = 0;
             let scancode = serial::inb(0x60);
             if scancode >= 0x80 {
                 continue;
@@ -356,7 +408,7 @@ fn run_gfx_console_shell_session() {
 
     while commands_seen < GFX_CONSOLE_SHELL_MAX_COMMANDS {
         let mut command: [u8; GFX_CONSOLE_INPUT_CAPACITY] = [0; GFX_CONSOLE_INPUT_CAPACITY];
-        let command_len = read_gfx_console_input_line(&mut command);
+        let command_len = read_gfx_console_shell_input_line(&mut command);
         let command_text = &command[..command_len];
         commands_seen += 1;
 
