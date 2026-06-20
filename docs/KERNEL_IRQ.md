@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.57.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.57.1)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.57.1` is a DByte Graphics Runtime Header Live Refresh Hardening release.
 - `v10.57.0` is a DByte Graphics Runtime Header Live Refresh Foundation release.
 - `v10.56.0` is a DByte Graphics Console Runtime Header Sync release.
 - `v10.55.1` is a DByte Graphics Shell IRQ0 Runtime Bridge Hardening release.
@@ -58,6 +59,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.57.1`: hardens the live Mode 13h IRQ0 header refresh without changing runtime behavior. `gfx-console-shell` keeps the live-refresh input reader, `gfx-console-input` keeps the non-refresh input reader, and refresh remains a read-only UI polling path that runs only while no PS/2 key is pending. The refresh helper reads only `irq0_runtime_status_snapshot()` and redraws only through `draw_irq0_runtime_header()`. No kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, IRQ0 runtime semantic, scheduler, multitasking, timer callback, keyboard IRQ path, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, PIC/IDT/runtime setup duplication, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.png`.
 
 Thin note for `v10.57.0`: adds bounded live refresh for the Mode 13h IRQ0 status header while `gfx-console-shell` is waiting for input. The graphics shell keeps PS/2 polling and periodically reads only `irq0_runtime_status_snapshot()` when no key is pending, then redraws the existing IRQ0 header row through `draw_irq0_runtime_header()`. This lets an active runtime show advancing `IRQ0 TIMER    RUNNING <ticks>` before the next command while preserving `IRQ0 TIMER    STOPPED <ticks> / MASKED` after stop and `IRQ0 TIMER    TICKS 0008 / MASKED` before runtime has ever started. No kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, IRQ0 runtime semantic, scheduler, multitasking, timer callback, keyboard IRQ path, PIC/IDT/runtime setup duplication, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.png`.
 

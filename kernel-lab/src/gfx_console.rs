@@ -25,7 +25,7 @@ const LOG_RIGHT_X: usize = PANEL_X + PANEL_W - 16;
 const LOG_ROW_W: usize = LOG_RIGHT_X - TEXT_X;
 const GLYPH_W: usize = 8;
 const STATUS_IRQ0_Y: usize = PANEL_Y + 74;
-const STATUS_IRQ0_VALUE_X: usize = VALUE_X - GLYPH_W * 2;
+const STATUS_IRQ0_VALUE_X: usize = VALUE_X - GLYPH_W * 3;
 const STATUS_RIGHT_X: usize = PANEL_X + PANEL_W - 4;
 const STATUS_IRQ0_VALUE_W: usize = STATUS_RIGHT_X - STATUS_IRQ0_VALUE_X;
 
