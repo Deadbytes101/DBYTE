@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.60.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.60.1)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.60.1` is a DByte Kernel Clock Service Hardening release.
 - `v10.60.0` is a DByte Kernel Clock Service Foundation release.
 - `v10.59.0` is a DByte Graphics Shell Kernel Clock Bridge release.
 - `v10.58.0` is a DByte Kernel Runtime Clock Foundation release.
@@ -62,6 +63,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.60.1`: hardens the existing read-only `KERNEL_CLOCK_STATUS = 8` and static `clockinfo` app without changing Rust behavior, commands, VM opcodes, service output, app order, graphics session limit, or IRQ runtime semantics. The verifier locks one `kernel_clock_status_snapshot()` read, bounded runtime/tick capture, service ids `1..=8`, six VM opcodes, `clockinfo` after `errtest`, no visible `APP OK` in the clock projection, and `last` retaining `APP OK`. Hardware boundaries remain unchanged. QEMU proof artifacts are `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.serial.log`, `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.ppm`, and `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
 
 Thin note for `v10.60.0`: adds read-only `KERNEL_CLOCK_STATUS = 8` through the existing `KCALL` boundary and appends static app `clockinfo` to the existing generic `run <app_name>` registry. The service reads `kernel_clock_status_snapshot()` once and emits bounded `KERNEL CLOCK`, runtime state, and zero-padded ticks through `VmOutput`; the graphics projection renders the same captured runtime/ticks without `APP OK`, while `last` records `APP OK`. No kernel or graphics command, VM opcode, runtime control, PIC/IDT/IRQ mutation, scheduler, sleep API, loader, heap allocation, process path, keyboard IRQ, IRQ1 path, or VGA port change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_clockinfo_v10.60.0.serial.log`, `tmp\qemu_gfx_console_clockinfo_v10.60.0.ppm`, and `tmp\qemu_gfx_console_clockinfo_v10.60.0.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
 

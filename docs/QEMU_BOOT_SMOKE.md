@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.60.0)
+# DByteOS QEMU Boot Smoke (v10.60.1)
+
+`v10.60.1` is a DByte Kernel Clock Service Hardening release. It preserves `KERNEL_CLOCK_STATUS = 8`, `clockinfo`, six VM opcodes, twelve static apps, the seven-command graphics session limit, and all IRQ/PIC/IDT behavior. The clock projection intentionally omits visible `APP OK`; a following `last` command must report `LAST APP clockinfo` and `LAST RESULT APP OK`. QEMU proof artifacts: `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.serial.log`, `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.ppm`, and `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.png`. Known limitation: the registry remains static and graphics mode remains one-way.
 
 `v10.60.0` is a DByte Kernel Clock Service Foundation release. It adds read-only `KERNEL_CLOCK_STATUS = 8` and static app `clockinfo` without adding a shell command or VM opcode. `run clockinfo` renders `APP CLOCKINFO`, `KERNEL CLOCK`, current runtime state, and zero-padded ticks captured from one `kernel_clock_status_snapshot()` service output. The service cannot start or stop runtime, mutate PIC/IDT/IRQ state, execute STI/CLI, or create readiness. QEMU proof artifacts: `tmp\qemu_gfx_console_clockinfo_v10.60.0.serial.log`, `tmp\qemu_gfx_console_clockinfo_v10.60.0.ppm`, and `tmp\qemu_gfx_console_clockinfo_v10.60.0.png`. Known limitation: the app registry remains static and graphics mode remains one-way.
 
