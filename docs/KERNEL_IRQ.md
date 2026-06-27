@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.60.1)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.61.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.61.0` is a DByte Kernel Clock Value Service Foundation release.
 - `v10.60.1` is a DByte Kernel Clock Service Hardening release.
 - `v10.60.0` is a DByte Kernel Clock Service Foundation release.
 - `v10.59.0` is a DByte Graphics Shell Kernel Clock Bridge release.
@@ -63,6 +64,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.61.0`: adds read-only `KERNEL_CLOCK_TICKS_VALUE = 9` and appends static app `clockmath` after `clockinfo`. KCALL 9 reads `kernel_clock_status_snapshot()` once, rejects ticks above `i32::MAX - 1` with platform-neutral `HostValueOutOfRange(9)`, and otherwise pushes the exact tick value for the app to add one. It does not saturate, wrap, truncate, read raw IRQ0 counters, control runtime, mutate PIC/IDT/IRQ state, add commands, or add VM opcodes. Successful `clockmath` renders `APP CLOCKMATH`, `CLOCK PLUS ONE`, and an unpadded decimal result without visual `APP OK`; `last` retains `APP OK`. QEMU proof artifacts are `tmp\qemu_gfx_console_clockmath_v10.61.0.serial.log`, `tmp\qemu_gfx_console_clockmath_v10.61.0.ppm`, and `tmp\qemu_gfx_console_clockmath_v10.61.0.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
 
 Thin note for `v10.60.1`: hardens the existing read-only `KERNEL_CLOCK_STATUS = 8` and static `clockinfo` app without changing Rust behavior, commands, VM opcodes, service output, app order, graphics session limit, or IRQ runtime semantics. The verifier locks one `kernel_clock_status_snapshot()` read, bounded runtime/tick capture, service ids `1..=8`, six VM opcodes, `clockinfo` after `errtest`, no visible `APP OK` in the clock projection, and `last` retaining `APP OK`. Hardware boundaries remain unchanged. QEMU proof artifacts are `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.serial.log`, `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.ppm`, and `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
 

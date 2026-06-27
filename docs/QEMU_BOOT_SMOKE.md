@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.60.1)
+# DByteOS QEMU Boot Smoke (v10.61.0)
+
+`v10.61.0` is a DByte Kernel Clock Value Service Foundation release. It adds no command or VM opcode; it adds KCALL `9 KERNEL_CLOCK_TICKS_VALUE` and static app `clockmath`. The service reads one kernel clock snapshot, pushes an app-safe `i32` tick value, and returns `HostValueOutOfRange(9)` without a stack push when ticks exceed `i32::MAX - 1`. `run clockmath` renders `APP CLOCKMATH`, `CLOCK PLUS ONE`, and the unpadded decimal clock value plus one; `last` records `APP OK`. Hardware boundaries remain unchanged. QEMU proof artifacts: `tmp\qemu_gfx_console_clockmath_v10.61.0.serial.log`, `tmp\qemu_gfx_console_clockmath_v10.61.0.ppm`, and `tmp\qemu_gfx_console_clockmath_v10.61.0.png`. Known limitation: the app registry remains static and graphics mode remains one-way.
 
 `v10.60.1` is a DByte Kernel Clock Service Hardening release. It preserves `KERNEL_CLOCK_STATUS = 8`, `clockinfo`, six VM opcodes, twelve static apps, the seven-command graphics session limit, and all IRQ/PIC/IDT behavior. The clock projection intentionally omits visible `APP OK`; a following `last` command must report `LAST APP clockinfo` and `LAST RESULT APP OK`. QEMU proof artifacts: `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.serial.log`, `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.ppm`, and `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.png`. Known limitation: the registry remains static and graphics mode remains one-way.
 

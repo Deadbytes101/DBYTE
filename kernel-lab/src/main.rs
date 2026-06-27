@@ -528,6 +528,8 @@ fn run_gfx_console_shell_session() {
                             clock.runtime,
                             clock.ticks,
                         );
+                    } else if let Some(value) = capture.clock_math_value {
+                        gfx_console::draw_embedded_clockmath_success_result(command_text, value);
                     } else {
                         gfx_console::draw_embedded_app_success_result(
                             command_text,

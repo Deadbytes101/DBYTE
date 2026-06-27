@@ -25,6 +25,8 @@ const KERNEL_ECHO_STR: u8 = 5;
 const KERNEL_GRAPHICS_LOG: u8 = 6;
 const KERNEL_GRAPHICS_LOG_CLEAR: u8 = 7;
 const KERNEL_CLOCK_STATUS: u8 = 8;
+const KERNEL_CLOCK_TICKS_VALUE: u8 = 9;
+const KERNEL_CLOCK_TICKS_VALUE_MAX: u32 = (i32::MAX as u32) - 1;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
@@ -48,6 +50,7 @@ const APP_INFO_SERVICES_LOGCLEAR: &str = "7";
 const APP_INFO_SERVICES_UIDEMO: &str = "7 6 1 2";
 const APP_INFO_SERVICES_ERRTEST: &str = "99";
 const APP_INFO_SERVICES_CLOCKINFO: &str = "8";
+const APP_INFO_SERVICES_CLOCKMATH: &str = "9";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
@@ -261,8 +264,33 @@ static DBYTE_APP_CLOCKINFO_BYTECODE: [u8; 7] = [
     opcode::HALT,        // HALT
 ];
 
+static DBYTE_APP_CLOCKMATH_STRINGS: [&str; 2] = ["APP CLOCKMATH", "CLOCK PLUS ONE"];
+static DBYTE_APP_CLOCKMATH_OUTPUT_LINES: [&str; 3] =
+    ["APP CLOCKMATH", "CLOCK PLUS ONE", "<clock plus one>"];
+static DBYTE_APP_CLOCKMATH_DISPLAY_LINES: [&str; 2] = ["APP CLOCKMATH", "CLOCK PLUS ONE"];
+static DBYTE_APP_CLOCKMATH_BYTECODE: [u8; 18] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::PUSH_STR_CONST,
+    0x01,
+    0x00,          // PUSH_STR_CONST 1
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    KERNEL_CLOCK_TICKS_VALUE, // KCALL KERNEL_CLOCK_TICKS_VALUE
+    opcode::PUSH_INT,
+    0x01,
+    0x00,
+    0x00,
+    0x00,        // PUSH_INT 1
+    opcode::ADD, // ADD
+    opcode::PRINT,
+    opcode::HALT, // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 12] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 13] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -371,6 +399,15 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 12] = [
         info_services: APP_INFO_SERVICES_CLOCKINFO,
         info_result: APP_INFO_RESULT_READY,
     },
+    EmbeddedDbyteApp {
+        name: "clockmath",
+        bytecode: &DBYTE_APP_CLOCKMATH_BYTECODE,
+        consts: &DBYTE_APP_CLOCKMATH_STRINGS,
+        output_lines: &DBYTE_APP_CLOCKMATH_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_CLOCKMATH_DISPLAY_LINES,
+        info_services: APP_INFO_SERVICES_CLOCKMATH,
+        info_result: APP_INFO_RESULT_READY,
+    },
 ];
 
 const DBYTE_VM_BOOT_SCRIPT_STRINGS: [&str; 1] = ["DBYTE BOOT SCRIPT"];
@@ -397,6 +434,7 @@ pub struct VmProbeCapture {
 pub struct EmbeddedDbyteAppCapture {
     pub app: &'static EmbeddedDbyteApp,
     pub clock_status: Option<EmbeddedDbyteClockStatus>,
+    pub clock_math_value: Option<i32>,
 }
 
 #[derive(Clone, Copy)]
@@ -434,6 +472,7 @@ struct DbyteAppCaptureOutput {
     matched: bool,
     clock_runtime: Option<&'static str>,
     clock_ticks: Option<u32>,
+    clock_math_value: Option<i32>,
 }
 
 impl<'a> FixedLineBuffer<'a> {
@@ -496,7 +535,8 @@ impl VmHost for KernelServiceHost {
             | KERNEL_TICKS
             | KERNEL_TICK_VALUE
             | KERNEL_GRAPHICS_LOG_CLEAR
-            | KERNEL_CLOCK_STATUS => Ok(VmHostArgSpec::None),
+            | KERNEL_CLOCK_STATUS
+            | KERNEL_CLOCK_TICKS_VALUE => Ok(VmHostArgSpec::None),
             KERNEL_ECHO_I32 => Ok(VmHostArgSpec::I32),
             KERNEL_ECHO_STR => Ok(VmHostArgSpec::StrConst),
             KERNEL_GRAPHICS_LOG => Ok(VmHostArgSpec::StrConst),
@@ -555,6 +595,7 @@ impl VmHost for KernelServiceHost {
                 write_kernel_clock_status(output);
                 Ok(VmHostResult::None)
             }
+            KERNEL_CLOCK_TICKS_VALUE => Ok(VmHostResult::PushI32(kernel_clock_ticks_value()?)),
             _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
@@ -592,6 +633,14 @@ fn write_kernel_clock_status<O: VmOutput>(output: &mut O) {
     output.write_str(line.as_str());
 }
 
+fn kernel_clock_ticks_value() -> Result<i32, VmError> {
+    let snapshot = kernel_clock_status_snapshot();
+    if snapshot.ticks > KERNEL_CLOCK_TICKS_VALUE_MAX {
+        return Err(VmError::HostValueOutOfRange(KERNEL_CLOCK_TICKS_VALUE));
+    }
+    Ok(snapshot.ticks as i32)
+}
+
 fn write_kernel_echo_i32<O: VmOutput>(value: i32, output: &mut O) {
     let mut bytes = [0u8; 24];
     let mut line = FixedLineBuffer::new(&mut bytes);
@@ -626,6 +675,12 @@ impl VmOutput for DbyteAppCaptureOutput {
                 },
                 _ => self.matched = false,
             }
+        } else if self.app.name == "clockmath" {
+            match self.line_index {
+                0 if value == "APP CLOCKMATH" => {}
+                1 if value == "CLOCK PLUS ONE" => {}
+                _ => self.matched = false,
+            }
         } else if self.line_index >= self.app.output_lines.len()
             || value != self.app.output_lines[self.line_index]
         {
@@ -635,7 +690,13 @@ impl VmOutput for DbyteAppCaptureOutput {
     }
 
     fn write_i32(&mut self, value: i32) {
-        if self.app.name == "clockinfo"
+        if self.app.name == "clockmath" {
+            if self.line_index == 2 && value > 0 {
+                self.clock_math_value = Some(value);
+            } else {
+                self.matched = false;
+            }
+        } else if self.app.name == "clockinfo"
             || self.line_index >= self.app.output_lines.len()
             || Some(value) != expected_i32_value(self.app.output_lines[self.line_index])
         {
@@ -751,6 +812,7 @@ pub fn run_embedded_app(name: &[u8]) -> EmbeddedDbyteAppRunResult {
         matched: true,
         clock_runtime: None,
         clock_ticks: None,
+        clock_math_value: None,
     };
 
     let result = run_embedded_app_program(app.bytecode, app.consts, &mut output);
@@ -758,11 +820,25 @@ pub fn run_embedded_app(name: &[u8]) -> EmbeddedDbyteAppRunResult {
         (Some(runtime), Some(ticks)) => Some(EmbeddedDbyteClockStatus { runtime, ticks }),
         _ => None,
     };
-    let dynamic_output_complete = app.name != "clockinfo" || clock_status.is_some();
+    let clock_math_value = output.clock_math_value;
+    if app.name == "clockmath"
+        && output.matched
+        && output.line_index == DBYTE_APP_CLOCKMATH_DISPLAY_LINES.len()
+    {
+        if let Err(error @ VmError::HostValueOutOfRange(KERNEL_CLOCK_TICKS_VALUE)) = result {
+            return EmbeddedDbyteAppRunResult::VmError(EmbeddedDbyteAppError { app, error });
+        }
+    }
+    let dynamic_output_complete = (app.name != "clockinfo" || clock_status.is_some())
+        && (app.name != "clockmath" || clock_math_value.is_some());
     // A display projection is renderable only after bytecode produced every expected output line.
     if output.matched && output.line_index == app.output_lines.len() && dynamic_output_complete {
         match result {
-            Ok(()) => EmbeddedDbyteAppRunResult::Ok(EmbeddedDbyteAppCapture { app, clock_status }),
+            Ok(()) => EmbeddedDbyteAppRunResult::Ok(EmbeddedDbyteAppCapture {
+                app,
+                clock_status,
+                clock_math_value,
+            }),
             Err(error) => EmbeddedDbyteAppRunResult::VmError(EmbeddedDbyteAppError { app, error }),
         }
     } else {
@@ -798,6 +874,7 @@ pub fn vm_error_graphics_name(error: VmError) -> &'static str {
         VmError::StrConstIndexOutOfBounds => "StrConstIndexOutOfBounds",
         VmError::UnexpectedEnd => "UnexpectedEnd",
         VmError::UnsupportedService(_) => "UnsupportedService",
+        VmError::HostValueOutOfRange(_) => "HostValueOutOfRange",
         VmError::UnknownOpcode(_) => "UnknownOpcode",
         VmError::MissingHalt => "MissingHalt",
     }
@@ -805,7 +882,9 @@ pub fn vm_error_graphics_name(error: VmError) -> &'static str {
 
 pub fn vm_error_graphics_u8_payload(error: VmError) -> Option<u8> {
     match error {
-        VmError::UnsupportedService(value) | VmError::UnknownOpcode(value) => Some(value),
+        VmError::UnsupportedService(value)
+        | VmError::HostValueOutOfRange(value)
+        | VmError::UnknownOpcode(value) => Some(value),
         VmError::StackOverflow
         | VmError::StackUnderflow
         | VmError::TypeMismatch
@@ -869,6 +948,7 @@ fn vm_error_name(error: VmError) -> &'static str {
         VmError::StrConstIndexOutOfBounds => "string constant index out of bounds",
         VmError::UnexpectedEnd => "unexpected end",
         VmError::UnsupportedService(_) => "unsupported service",
+        VmError::HostValueOutOfRange(_) => "host value out of range",
         VmError::UnknownOpcode(_) => "unknown opcode",
         VmError::MissingHalt => "missing halt",
     }

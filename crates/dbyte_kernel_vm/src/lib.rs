@@ -71,6 +71,7 @@ pub mod vm {
         StrConstIndexOutOfBounds,
         UnexpectedEnd,
         UnsupportedService(u8),
+        HostValueOutOfRange(u8),
         UnknownOpcode(u8),
         MissingHalt,
     }
@@ -175,6 +176,11 @@ pub mod vm {
             Ok(())
         }
 
+        #[cfg(test)]
+        pub(crate) fn stack_len_for_test(&self) -> usize {
+            self.stack_len
+        }
+
         fn pop(&mut self) -> Result<Value, VmError> {
             if self.stack_len == 0 {
                 return Err(VmError::StackUnderflow);
@@ -253,6 +259,28 @@ mod tests {
     }
 
     struct MockHost;
+
+    struct RangeErrorHost;
+
+    impl VmHost for RangeErrorHost {
+        fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError> {
+            match service_id {
+                9 => Ok(VmHostArgSpec::None),
+                _ => Err(VmError::UnsupportedService(service_id)),
+            }
+        }
+
+        fn call<O: VmOutput>(
+            &mut self,
+            service_id: u8,
+            args: VmHostArgs<'_>,
+            _output: &mut O,
+        ) -> Result<VmHostResult, VmError> {
+            assert_eq!(service_id, 9);
+            assert_eq!(args, VmHostArgs::None);
+            Err(VmError::HostValueOutOfRange(service_id))
+        }
+    }
 
     impl VmOutput for FixedOutput {
         fn write_str(&mut self, value: &str) {
@@ -734,6 +762,22 @@ mod tests {
             vm.run_with_host(&mut output, &mut host),
             Err(VmError::UnsupportedService(99))
         );
+    }
+
+    #[test]
+    fn kcall_host_value_out_of_range_propagates_without_stack_push() {
+        let bytecode = [opcode::PUSH_INT, 7, 0, 0, 0, opcode::KCALL, 9, opcode::HALT];
+        let strings = [];
+        let mut output = FixedOutput::default();
+        let mut host = RangeErrorHost;
+        let mut vm = Vm::new(&bytecode, &strings);
+
+        assert_eq!(
+            vm.run_with_host(&mut output, &mut host),
+            Err(VmError::HostValueOutOfRange(9))
+        );
+        assert_eq!(vm.stack_len_for_test(), 1);
+        assert_eq!(output.int_len, 0);
     }
 
     #[test]
