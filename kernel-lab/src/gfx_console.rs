@@ -283,7 +283,7 @@ pub fn draw_command_apps_result() {
     draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "apps: hello math sysinfo");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "apps: ticks tickmath argtest");
     draw_log_line(LOG_Y + LOG_LINE_STEP * 4, "apps: strtest logtest logclear");
-    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "apps: uidemo errtest");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 5, "apps: uidemo errtest clockinfo");
 }
 
 pub fn draw_command_last_result(command: &[u8], app_name: &[u8], status: LastResultStatus) {
@@ -438,6 +438,20 @@ pub fn draw_embedded_app_result(command: &[u8], output_lines: &[&str]) {
 pub fn draw_embedded_app_success_result(command: &[u8], output_lines: &[&str], status: &str) {
     draw_embedded_app_result(command, output_lines);
     draw_log_line(LOG_Y + LOG_LINE_STEP * (output_lines.len() + 2), status);
+}
+
+pub fn draw_embedded_clockinfo_success_result(command: &[u8], runtime: &str, ticks: u32) {
+    clear_log_area();
+    draw_log_line(LOG_Y, "SYSTEM LOG");
+    draw_log_command_line(command);
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 2, "APP CLOCKINFO");
+    draw_log_line(LOG_Y + LOG_LINE_STEP * 3, "KERNEL CLOCK");
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 4, "runtime: ", runtime);
+
+    let mut tick_bytes = [0u8; 24];
+    let mut tick_line = FixedLineBuffer::new(&mut tick_bytes);
+    let _ = write!(tick_line, "{:04}", ticks);
+    draw_log_prefixed_str_line(LOG_Y + LOG_LINE_STEP * 5, "ticks: ", tick_line.as_str());
 }
 
 pub fn draw_embedded_app_vm_error_result(

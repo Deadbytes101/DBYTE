@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.59.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.60.0)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.60.0` is a DByte Kernel Clock Service Foundation release.
 - `v10.59.0` is a DByte Graphics Shell Kernel Clock Bridge release.
 - `v10.58.0` is a DByte Kernel Runtime Clock Foundation release.
 - `v10.57.1` is a DByte Graphics Runtime Header Live Refresh Hardening release.
@@ -61,6 +62,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.60.0`: adds read-only `KERNEL_CLOCK_STATUS = 8` through the existing `KCALL` boundary and appends static app `clockinfo` to the existing generic `run <app_name>` registry. The service reads `kernel_clock_status_snapshot()` once and emits bounded `KERNEL CLOCK`, runtime state, and zero-padded ticks through `VmOutput`; the graphics projection renders the same captured runtime/ticks without `APP OK`, while `last` records `APP OK`. No kernel or graphics command, VM opcode, runtime control, PIC/IDT/IRQ mutation, scheduler, sleep API, loader, heap allocation, process path, keyboard IRQ, IRQ1 path, or VGA port change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_clockinfo_v10.60.0.serial.log`, `tmp\qemu_gfx_console_clockinfo_v10.60.0.ppm`, and `tmp\qemu_gfx_console_clockinfo_v10.60.0.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
 
 Thin note for `v10.59.0`: adds graphics-shell `clock status` inside the existing `gfx-console-shell` as a read-only bridge over the existing kernel clock projection. The graphics clock path reads only `kernel_clock_status_snapshot()`, renders `KERNEL CLOCK`, source `IRQ0 runtime`, runtime state, zero-padded ticks, IRQ0 mask state, and STI state through bounded clipped log rows, and emits `gfx-console-shell: command dispatched: clock status`. It does not add a kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, IRQ1 path, slave PIC path, VGA allowlist change, serial path change, direct PIC write, direct STI/CLI, PIC remap, IDT bind, handler install, or IRQ0 runtime semantic change. QEMU proof artifacts are `tmp\qemu_gfx_console_kernel_clock_v10.59.0.serial.log`, `tmp\qemu_gfx_console_kernel_clock_v10.59.0.ppm`, and `tmp\qemu_gfx_console_kernel_clock_v10.59.0.png`.
 

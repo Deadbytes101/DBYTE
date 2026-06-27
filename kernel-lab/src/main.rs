@@ -522,11 +522,19 @@ fn run_gfx_console_shell_session() {
                 dbyte_vm_probe::EmbeddedDbyteAppRunResult::Ok(capture) => {
                     last_result.record(app_name, GfxConsoleLastResultKind::Ok);
                     // Render the bounded projection only after app bytecode capture has succeeded.
-                    gfx_console::draw_embedded_app_success_result(
-                        command_text,
-                        capture.app.display_lines,
-                        dbyte_vm_probe::app_ok_line(),
-                    );
+                    if let Some(clock) = capture.clock_status {
+                        gfx_console::draw_embedded_clockinfo_success_result(
+                            command_text,
+                            clock.runtime,
+                            clock.ticks,
+                        );
+                    } else {
+                        gfx_console::draw_embedded_app_success_result(
+                            command_text,
+                            capture.app.display_lines,
+                            dbyte_vm_probe::app_ok_line(),
+                        );
+                    }
                     print_gfx_console_shell_app_dispatched(app_name);
                 }
                 dbyte_vm_probe::EmbeddedDbyteAppRunResult::VmError(error) => {

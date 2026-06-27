@@ -5,7 +5,7 @@ use dbyte_kernel_vm::{
     opcode, Vm, VmError, VmHost, VmHostArgSpec, VmHostArgs, VmHostResult, VmOutput,
 };
 
-use crate::{irq0_ticks_status_snapshot, serial, vga};
+use crate::{irq0_ticks_status_snapshot, kernel_clock_status_snapshot, serial, vga};
 
 const DBYTE_VM_PROBE_STRINGS: [&str; 1] = ["DBYTE VM ONLINE"];
 const DBYTE_VM_PROBE_BYTECODE: [u8; 17] = [
@@ -24,6 +24,7 @@ const KERNEL_ECHO_I32: u8 = 4;
 const KERNEL_ECHO_STR: u8 = 5;
 const KERNEL_GRAPHICS_LOG: u8 = 6;
 const KERNEL_GRAPHICS_LOG_CLEAR: u8 = 7;
+const KERNEL_CLOCK_STATUS: u8 = 8;
 const KERNEL_STATUS_LINE: &str = "KERNEL ONLINE";
 const DBYTE_VM_STATUS_LINE: &str = "DBYTE VM ONLINE";
 const GRAPHICS_STATUS_LINE: &str = "GRAPHICS MODE 13H";
@@ -46,10 +47,14 @@ const APP_INFO_SERVICES_LOGTEST: &str = "6";
 const APP_INFO_SERVICES_LOGCLEAR: &str = "7";
 const APP_INFO_SERVICES_UIDEMO: &str = "7 6 1 2";
 const APP_INFO_SERVICES_ERRTEST: &str = "99";
+const APP_INFO_SERVICES_CLOCKINFO: &str = "8";
 const IRQ0_TICKS_0008_LINE: &str = "IRQ0 TICKS 0008";
 const IRQ0_MASKED_LINE: &str = "IRQ0 MASKED";
 const IRQ0_UNMASKED_LINE: &str = "IRQ0 UNMASKED";
 const IRQ0_TICKS_UNKNOWN_LINE: &str = "IRQ0 TICKS UNKNOWN";
+const KERNEL_CLOCK_LINE: &str = "KERNEL CLOCK";
+const KERNEL_CLOCK_RUNTIME_RUNNING_LINE: &str = "runtime: running";
+const KERNEL_CLOCK_RUNTIME_STOPPED_LINE: &str = "runtime: stopped";
 
 pub struct EmbeddedDbyteApp {
     pub name: &'static str,
@@ -238,8 +243,26 @@ static DBYTE_APP_ERRTEST_BYTECODE: [u8; 7] = [
     opcode::HALT, // HALT
 ];
 
+static DBYTE_APP_CLOCKINFO_STRINGS: [&str; 1] = ["APP CLOCKINFO"];
+static DBYTE_APP_CLOCKINFO_OUTPUT_LINES: [&str; 4] = [
+    "APP CLOCKINFO",
+    KERNEL_CLOCK_LINE,
+    "runtime: <running|stopped>",
+    "ticks: <current>",
+];
+static DBYTE_APP_CLOCKINFO_DISPLAY_LINES: [&str; 2] = ["APP CLOCKINFO", KERNEL_CLOCK_LINE];
+static DBYTE_APP_CLOCKINFO_BYTECODE: [u8; 7] = [
+    opcode::PUSH_STR_CONST,
+    0x00,
+    0x00,          // PUSH_STR_CONST 0
+    opcode::PRINT, // PRINT
+    opcode::KCALL,
+    KERNEL_CLOCK_STATUS, // KCALL KERNEL_CLOCK_STATUS
+    opcode::HALT,        // HALT
+];
+
 #[allow(dead_code)]
-pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
+pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 12] = [
     EmbeddedDbyteApp {
         name: "hello",
         bytecode: &DBYTE_APP_HELLO_BYTECODE,
@@ -339,6 +362,15 @@ pub const EMBEDDED_DBYTE_APPS: [EmbeddedDbyteApp; 11] = [
         info_services: APP_INFO_SERVICES_ERRTEST,
         info_result: APP_INFO_RESULT_VM_ERROR_TEST,
     },
+    EmbeddedDbyteApp {
+        name: "clockinfo",
+        bytecode: &DBYTE_APP_CLOCKINFO_BYTECODE,
+        consts: &DBYTE_APP_CLOCKINFO_STRINGS,
+        output_lines: &DBYTE_APP_CLOCKINFO_OUTPUT_LINES,
+        display_lines: &DBYTE_APP_CLOCKINFO_DISPLAY_LINES,
+        info_services: APP_INFO_SERVICES_CLOCKINFO,
+        info_result: APP_INFO_RESULT_READY,
+    },
 ];
 
 const DBYTE_VM_BOOT_SCRIPT_STRINGS: [&str; 1] = ["DBYTE BOOT SCRIPT"];
@@ -364,6 +396,13 @@ pub struct VmProbeCapture {
 
 pub struct EmbeddedDbyteAppCapture {
     pub app: &'static EmbeddedDbyteApp,
+    pub clock_status: Option<EmbeddedDbyteClockStatus>,
+}
+
+#[derive(Clone, Copy)]
+pub struct EmbeddedDbyteClockStatus {
+    pub runtime: &'static str,
+    pub ticks: u32,
 }
 
 pub struct EmbeddedDbyteAppError {
@@ -393,6 +432,8 @@ struct DbyteAppCaptureOutput {
     app: &'static EmbeddedDbyteApp,
     line_index: usize,
     matched: bool,
+    clock_runtime: Option<&'static str>,
+    clock_ticks: Option<u32>,
 }
 
 impl<'a> FixedLineBuffer<'a> {
@@ -451,9 +492,11 @@ impl VmOutput for ProbeCaptureOutput {
 impl VmHost for KernelServiceHost {
     fn arg_spec(&self, service_id: u8) -> Result<VmHostArgSpec, VmError> {
         match service_id {
-            KERNEL_STATUS | KERNEL_TICKS | KERNEL_TICK_VALUE | KERNEL_GRAPHICS_LOG_CLEAR => {
-                Ok(VmHostArgSpec::None)
-            }
+            KERNEL_STATUS
+            | KERNEL_TICKS
+            | KERNEL_TICK_VALUE
+            | KERNEL_GRAPHICS_LOG_CLEAR
+            | KERNEL_CLOCK_STATUS => Ok(VmHostArgSpec::None),
             KERNEL_ECHO_I32 => Ok(VmHostArgSpec::I32),
             KERNEL_ECHO_STR => Ok(VmHostArgSpec::StrConst),
             KERNEL_GRAPHICS_LOG => Ok(VmHostArgSpec::StrConst),
@@ -508,6 +551,10 @@ impl VmHost for KernelServiceHost {
                 }
                 VmHostArgs::I32(_) | VmHostArgs::StrConst(_) => Err(VmError::TypeMismatch),
             },
+            KERNEL_CLOCK_STATUS => {
+                write_kernel_clock_status(output);
+                Ok(VmHostResult::None)
+            }
             _ => Err(VmError::UnsupportedService(service_id)),
         }
     }
@@ -530,6 +577,21 @@ fn write_kernel_ticks<O: VmOutput>(output: &mut O) {
     }
 }
 
+fn write_kernel_clock_status<O: VmOutput>(output: &mut O) {
+    let clock = kernel_clock_status_snapshot();
+    output.write_str(KERNEL_CLOCK_LINE);
+    output.write_str(if clock.runtime == "running" {
+        KERNEL_CLOCK_RUNTIME_RUNNING_LINE
+    } else {
+        KERNEL_CLOCK_RUNTIME_STOPPED_LINE
+    });
+
+    let mut bytes = [0u8; 24];
+    let mut line = FixedLineBuffer::new(&mut bytes);
+    let _ = write!(line, "ticks: {:04}", clock.ticks);
+    output.write_str(line.as_str());
+}
+
 fn write_kernel_echo_i32<O: VmOutput>(value: i32, output: &mut O) {
     let mut bytes = [0u8; 24];
     let mut line = FixedLineBuffer::new(&mut bytes);
@@ -548,7 +610,23 @@ fn write_kernel_echo_str<O: VmOutput>(value: &str, output: &mut O) -> Result<(),
 impl VmOutput for DbyteAppCaptureOutput {
     fn write_str(&mut self, value: &str) {
         // Full app output is the execution contract; display_lines must not bypass this capture.
-        if self.line_index >= self.app.output_lines.len()
+        if self.app.name == "clockinfo" {
+            match self.line_index {
+                0 if value == "APP CLOCKINFO" => {}
+                1 if value == KERNEL_CLOCK_LINE => {}
+                2 if value == KERNEL_CLOCK_RUNTIME_RUNNING_LINE => {
+                    self.clock_runtime = Some("running");
+                }
+                2 if value == KERNEL_CLOCK_RUNTIME_STOPPED_LINE => {
+                    self.clock_runtime = Some("stopped");
+                }
+                3 => match decode_kernel_clock_ticks_line(value) {
+                    Some(ticks) => self.clock_ticks = Some(ticks),
+                    None => self.matched = false,
+                },
+                _ => self.matched = false,
+            }
+        } else if self.line_index >= self.app.output_lines.len()
             || value != self.app.output_lines[self.line_index]
         {
             self.matched = false;
@@ -557,13 +635,31 @@ impl VmOutput for DbyteAppCaptureOutput {
     }
 
     fn write_i32(&mut self, value: i32) {
-        if self.line_index >= self.app.output_lines.len()
+        if self.app.name == "clockinfo"
+            || self.line_index >= self.app.output_lines.len()
             || Some(value) != expected_i32_value(self.app.output_lines[self.line_index])
         {
             self.matched = false;
         }
         self.line_index += 1;
     }
+}
+
+fn decode_kernel_clock_ticks_line(value: &str) -> Option<u32> {
+    const PREFIX: &[u8] = b"ticks: ";
+    let bytes = value.as_bytes();
+    if !bytes.starts_with(PREFIX) || bytes.len() < PREFIX.len() + 4 {
+        return None;
+    }
+
+    let mut ticks: u32 = 0;
+    for byte in &bytes[PREFIX.len()..] {
+        if *byte < b'0' || *byte > b'9' {
+            return None;
+        }
+        ticks = ticks.checked_mul(10)?.checked_add((*byte - b'0') as u32)?;
+    }
+    Some(ticks)
 }
 
 pub fn print_status() {
@@ -653,14 +749,20 @@ pub fn run_embedded_app(name: &[u8]) -> EmbeddedDbyteAppRunResult {
         app,
         line_index: 0,
         matched: true,
+        clock_runtime: None,
+        clock_ticks: None,
     };
 
-    let result = run_embedded_app_program(app.bytecode, app.consts, &mut output)
-        .map(|_| EmbeddedDbyteAppCapture { app });
+    let result = run_embedded_app_program(app.bytecode, app.consts, &mut output);
+    let clock_status = match (output.clock_runtime, output.clock_ticks) {
+        (Some(runtime), Some(ticks)) => Some(EmbeddedDbyteClockStatus { runtime, ticks }),
+        _ => None,
+    };
+    let dynamic_output_complete = app.name != "clockinfo" || clock_status.is_some();
     // A display projection is renderable only after bytecode produced every expected output line.
-    if output.matched && output.line_index == app.output_lines.len() {
+    if output.matched && output.line_index == app.output_lines.len() && dynamic_output_complete {
         match result {
-            Ok(capture) => EmbeddedDbyteAppRunResult::Ok(capture),
+            Ok(()) => EmbeddedDbyteAppRunResult::Ok(EmbeddedDbyteAppCapture { app, clock_status }),
             Err(error) => EmbeddedDbyteAppRunResult::VmError(EmbeddedDbyteAppError { app, error }),
         }
     } else {
