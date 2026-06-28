@@ -1,4 +1,6 @@
-# DByteOS QEMU Boot Smoke (v10.62.0)
+# DByteOS QEMU Boot Smoke (v10.62.1)
+
+`v10.62.1` is a DByte Kernel Uptime Tick Projection Hardening release. It adds no Rust behavior or command. `kernel-uptime-status` still reads one `kernel_clock_status_snapshot()`, reports unit `ticks` only with minimum width four, inherits pre-runtime stopped `0008`, advances while runtime is active, and remains stable after stop. It does not convert to seconds/milliseconds, claim PIT frequency, start or stop runtime, create readiness, unmask IRQ0, write PIC ports, execute STI/CLI, mutate IDT/IRQ state, add a graphics command, KCALL, app, opcode, scheduler, or sleep API. QEMU proof artifact: `tmp\qemu_kernel_uptime_hardening_v10.62.1.serial.log`.
 
 `v10.62.0` is a DByte Kernel Uptime Tick Projection Foundation release. It adds exactly one read-only text-shell command, `kernel-uptime-status`, which reads `kernel_clock_status_snapshot()` once and prints `KERNEL UPTIME`, source `IRQ0 runtime`, unit `ticks`, runtime state, and minimum-width-four ticks without truncation. Before runtime starts it inherits stopped `0008`; while running ticks advance, and after stop they remain fixed. No graphics command, KCALL 10, app, opcode, time conversion, PIT frequency claim, sleep API, scheduler, runtime control, readiness creation, or PIC/IDT/IRQ mutation is added. QEMU proof artifact: `tmp\qemu_kernel_uptime_v10.62.0.serial.log`. Known limitation: uptime remains an uncalibrated tick projection.
 

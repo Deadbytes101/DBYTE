@@ -1,4 +1,4 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.62.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.62.1)
 
 Current release chain:
 - `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
@@ -32,6 +32,7 @@ Current release chain:
 - `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
 - `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
 - `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.62.1` is a DByte Kernel Uptime Tick Projection Hardening release.
 - `v10.62.0` is a DByte Kernel Uptime Tick Projection Foundation release.
 - `v10.61.1` is a DByte Kernel Clock Value Service Hardening release.
 - `v10.61.0` is a DByte Kernel Clock Value Service Foundation release.
@@ -66,6 +67,8 @@ Persistent safety baseline:
 - Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
 - PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
 - Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.62.1`: hardens the existing read-only `kernel-uptime-status` tick projection without changing Rust behavior, commands, graphics surfaces, KCALL services, apps, VM opcodes, session limits, or IRQ runtime semantics. The verifier locks one `kernel_clock_status_snapshot()` read, identical VGA/serial output, exact unit `ticks`, minimum-width-four formatting without truncation, pre-runtime stopped `0008`, no time conversion or PIT calibration claim, and no runtime/PIC/IDT/IRQ mutation. QEMU repeats the pre-runtime, running, stopped, and repeated-stopped sequence and requires the stopped tick to remain stable. Proof artifact: `tmp\qemu_kernel_uptime_hardening_v10.62.1.serial.log`. Known limitation: uptime remains an uncalibrated tick projection.
 
 Thin note for `v10.62.0`: adds one read-only text-shell command, `kernel-uptime-status`, as a bounded uptime-tick projection over exactly one `kernel_clock_status_snapshot()` read. Output is `KERNEL UPTIME`, source `IRQ0 runtime`, unit `ticks`, runtime state, and minimum-width-four ticks; values above `9999` are not truncated. Before runtime has ever started it intentionally inherits stopped `0008` from the existing clock abstraction. It adds no graphics command, KCALL 10, app, VM opcode, seconds/milliseconds conversion, PIT frequency claim, sleep API, scheduler, runtime control, readiness mutation, or PIC/IDT/IRQ path. QEMU proof artifact is `tmp\qemu_kernel_uptime_v10.62.0.serial.log`. Known limitation: uptime is measured only in kernel-clock ticks and is not calibrated wall time.
 
