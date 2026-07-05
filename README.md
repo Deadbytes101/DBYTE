@@ -35,10 +35,10 @@
 Built for byte-level jobs.
 Not for hype. Not for framework circus. Just open the data, hit the buffer, patch what needs patching, and ship.
 
-> **Public Alpha** — Expect breaking changes before stable release.
-
 > [!CAUTION]
 > **Warning:** This OS is experimental. Run it in a VM if you value your data.
+> 
+> **Public Alpha** — Expect breaking changes before stable release.
 
 ## Features
 
@@ -119,12 +119,6 @@ Ok(())
 
 The embed API uses persistent tree-interpreter state and does not auto-load
 `.dbyterc`; host applications opt into startup scripts with `load_rc()`.
-
-## Repository & Contact
-
-- **Repository**: [Deadbytes101/DByte](https://github.com/Deadbytes101/DByte)
-- **Creator**: [About DEADBYTE](https://dbytelang.site/about)
-- **Discord**: [Join Community](https://discord.gg/hWuwUbrujb)
 
 ---
 
