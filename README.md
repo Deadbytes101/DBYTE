@@ -128,5 +128,7 @@ The embed API uses persistent tree-interpreter state and does not auto-load
 
 ---
 
-**This is alpha software. Run in VM if you value your data.**
-**TWhat people are going to read is Its about a pathetic schizophrenic who made a crappy operating system My perspective is God said I made His temple**T
+*this is alpha software run in vm if you value your data*
+*what people are going to read is its about a pathetic schizophrenic
+who made a crappy operating system my perspective is god said i made
+his temple*
