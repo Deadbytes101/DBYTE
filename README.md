@@ -49,7 +49,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 - Default branch: **main**
 - Repository visibility: **public**
 - License: **MIT**
-- GitHub language policy: `.dby` files are marked as `DBYTE`; Rust, PowerShell, lockfiles, and linker scripts are excluded from language statistics through `.gitattributes`.
+- GitHub language policy: `.dby` files request the `DBYTE` language label through `.gitattributes`; non-DBYTE implementation and benchmark files are excluded from language statistics.
 
 Tracked line counts are measured from `git ls-files`, so ignored build output, release zips, bundles, VM logs, and `target/` directories are excluded:
 

@@ -1,5 +1,7 @@
 *.dby linguist-language=DBYTE linguist-detectable=true
 *.rs linguist-vendored
 *.ps1 linguist-vendored
+*.py linguist-vendored
+*.c linguist-vendored
 Cargo.lock linguist-vendored
 kernel-lab/boot/linker.ld linguist-vendored
