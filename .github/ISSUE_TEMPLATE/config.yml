@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: DBYTE Docs
+    url: https://dbytelang.site/docs/
+    about: Read the current DBYTE documentation.
+  - name: DBYTE Discord
+    url: https://discord.gg/hWuwUbrujb
+    about: Join the community discussion.
+

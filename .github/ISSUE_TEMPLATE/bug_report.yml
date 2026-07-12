@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible DBYTE issue
+title: ""
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - DByte language
+        - DByteOS userland
+        - Kernel Lab
+        - Packaging
+        - Docs
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke and what should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Commands, source files, and exact steps.
+      render: powershell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: Paste relevant terminal output.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v10.62.1 or commit SHA
+

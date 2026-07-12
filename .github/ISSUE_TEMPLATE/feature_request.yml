@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a scoped DBYTE improvement
+title: ""
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - DByte language
+        - DByteOS userland
+        - Kernel Lab
+        - Tooling
+        - Docs
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What job should DBYTE handle better?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful change.
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Tradeoffs
+      description: What complexity, risk, or compatibility cost does this add?
+

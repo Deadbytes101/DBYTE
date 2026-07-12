@@ -24,6 +24,12 @@
 <a href="https://github.com/Deadbytes101/DBYTE/blob/main/LICENSE">
 <img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="MIT License" />
 </a>
+<a href="CONTRIBUTING.md">
+<img src="https://img.shields.io/badge/contributing-open-178da5?style=flat" alt="Contributing" />
+</a>
+<a href="SECURITY.md">
+<img src="https://img.shields.io/badge/security-policy-111111?style=flat" alt="Security Policy" />
+</a>
 </p>
 
 > [!IMPORTANT]
@@ -57,8 +63,8 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 
 - Kernel Rust source: **15,530 lines** across `kernel-lab/src/*.rs`.
 - Full Kernel Lab tracked files: **15,642 lines** across kernel sources, linker script, scripts, manifest, and lab README.
-- Main tracked source and docs set: **63,303 lines** across **475 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, and `*.ld`.
-- Total tracked files in the repository: **795**.
+- Main tracked source and docs set: **63,512 lines** across **483 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
+- Total tracked files in the repository: **803**.
 
 ## Language Stack
 
@@ -157,6 +163,24 @@ Ignored local artifacts include:
 - `test_release_v*/`
 
 This keeps the repository focused on source, docs, scripts, and reproducible project state.
+
+## Community Files
+
+This repo includes the core GitHub community surface:
+
+- [MIT License](LICENSE)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Support Notes](SUPPORT.md)
+- [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)
+- [Issue Templates](.github/ISSUE_TEMPLATE/)
+
+## License
+
+DBYTE is released under the [MIT License](LICENSE).
+
+The license applies to the tracked source and documentation in this repository. Generated build output, local scratch files, release bundles, VM logs, and ignored artifacts are not part of the source distribution.
 
 ## Project Warning
 
