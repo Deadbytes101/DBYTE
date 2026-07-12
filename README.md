@@ -2,151 +2,169 @@
 <img src="assets/logo/dbyte-logo.png" width="180" alt="DBYTEOS Logo" />
 </p>
 
-<h1 align="center">THE DBYTE PROGRAMMING LANGUAGE</h1>
+<h1 align="center">DBYTE</h1>
 
 <p align="center">
-<b>[ <a href="https://dbytelang.site">Official Site</a> ]</b> 
-<b>[ <a href="https://dbytelang.site/about">About</a> ]</b> 
-<b>[ <a href="#features">Features</a> ]</b> 
-<b>[ <a href="benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">BENCHMARKS</a> ]</b> 
-<b>[ <a href="https://dbytelang.site/docs/">DOCUMENTATION</a> ]</b>
+<b>A byte-level programming language, personal userland, and bare-metal kernel laboratory.</b>
+</p>
+
+<p align="center">
+<b>[ <a href="https://dbytelang.site">Official Site</a> ]</b>
+<b>[ <a href="https://dbytelang.site/docs/">Docs</a> ]</b>
+<b>[ <a href="benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">Benchmarks</a> ]</b>
+<b>[ <a href="docs/DBYTEOS_KERNEL.md">Kernel Notes</a> ]</b>
+<b>[ <a href="https://discord.gg/hWuwUbrujb">Discord</a> ]</b>
 </p>
 
 <p align="center">
 <a href="https://github.com/Deadbytes101/DBYTE/releases/ISO">
-<img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B" alt="Try the DByte ISO" />
+<img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat" alt="Try the DByte ISO" />
 </a>
-
-<a href="https://discord.gg/hWuwUbrujb">
-<img src="https://img.shields.io/discord/1505230512820588746?label=DISCORD&logo=discord&logoColor=white&color=5865F2" alt="Discord" />
-</a>
-
-<a href="https://github.com/Deadbytes101/DBYTE/stargazers">
-<img src="https://img.shields.io/github/stars/Deadbytes101/DBYTE?style=flat&color=yellow" alt="STARS" />
-</a>
-
 <a href="https://github.com/Deadbytes101/DBYTE/blob/main/LICENSE">
-<img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="MIT LICENSE" />
+<img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="MIT License" />
 </a>
 </p>
 
-**DByte** is a fast low-level scripting language for binary parsing, buffer patching, byte search, typed integer work, and automation scripts that need simple syntax with predictable performance.
-
-Built for byte-level jobs.
-Not for hype. Not for framework circus. Just open the data, hit the buffer, patch what needs patching, and ship.
-
-> **Public Alpha** — Expect breaking changes before stable release.
+> [!IMPORTANT]
+> This repository is currently a private working snapshot. DBYTE is still moving fast, and the full source is not ready for broad public review.
 
 > [!CAUTION]
-> **Warning:** This OS is experimental. Run it in a VM if you value your data.
+> DByteOS and the Kernel Lab are experimental. Run VM and kernel builds in an isolated environment.
 
-## Features
+## What DBYTE Is
 
-- Low-level scripting focused on **binary parsing**, buffer patching, byte search, and typed integer work
-- Statically checked, Python-like syntax with a bytecode VM
-- `bytes` and mutable `buffer` data types with powerful stdlib
-- DByteOS userland experiments (host-runnable, not a full OS)
-- Handmade, minimal, direct — no framework bloat
+DBYTE is a compact systems-oriented project built around a custom language named **DByte**. The language is designed for binary work, low-level automation, typed integer processing, byte search, buffer patching, and tooling that should stay direct and predictable.
 
-## Highlights
+The repo currently contains three connected layers:
 
-- Project workflow with `Dbyte.toml`
-- Binary stdlib for endian-aware operations
-- Buffer stdlib (`load`, `save`, `find`, `replace`, `slice`, etc.)
-- Built-in test runner: `dbyte test`
-- Interactive REPL + real DByte-native shell
-- Personal tools for hexdump, patching, binary inspection
+- **DByte language toolchain**: lexer, parser, type checker, tree interpreter, bytecode compiler, bytecode VM, project loader, test runner, shell, REPL, and embedding API.
+- **DByteOS userland**: host-runnable `.dby` programs under `examples/dbyteos/` that model a personal operating environment, shell commands, config, diagnostics, security checks, workspace flows, and system tools.
+- **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU boot experiments, VGA output, serial logs, IDT and IRQ research, exception surfaces, PIC planning, and controlled runtime probes.
 
-## Project Snapshot
+DBYTE is not trying to be a web framework or a general productivity language. It is built for inspecting bytes, moving data, testing low-level ideas, and turning rough system experiments into executable tools.
 
-Current tracked snapshot: **v10.62.1**.
+## Current Snapshot
 
-DBYTE is three connected pieces:
+- Snapshot version: **v10.62.1**
+- Default branch: **main**
+- Repository visibility: **private**
+- License: **MIT**
+- GitHub language policy: `.dby` files are marked as `DBYTE`; Rust, PowerShell, lockfiles, and linker scripts are excluded from language statistics through `.gitattributes`.
 
-- **DByte language**: a Rust-built programming language for byte-level scripting, binary parsing, buffer patching, byte search, typed integer work, project workflows, tests, REPL, shell, and embedding.
-- **DByteOS userland**: host-runnable `.dby` scripts and shell workflows under `examples/dbyteos/`; this is the personal operating-environment experiment.
-- **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU experiments. It is experimental and is not a production OS kernel.
-
-Tracked line counts, measured from `git ls-files` so ignored build/release output is excluded:
+Tracked line counts are measured from `git ls-files`, so ignored build output, release zips, bundles, VM logs, and `target/` directories are excluded:
 
 - Kernel Rust source: **15,530 lines** across `kernel-lab/src/*.rs`.
-- Full Kernel Lab tracked files: **15,642 lines** across `kernel-lab/src`, `kernel-lab/boot`, scripts, manifest, and lab README.
-- Main tracked source/docs set: **63,282 lines** across **475 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, and `*.ld`.
-- Total tracked files in the repository: **794**.
+- Full Kernel Lab tracked files: **15,642 lines** across kernel sources, linker script, scripts, manifest, and lab README.
+- Main tracked source and docs set: **63,301 lines** across **475 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, and `*.ld`.
+- Total tracked files in the repository: **795**.
 
-Ignored local artifacts include `target/`, `kernel-lab/target/`, release bundles/zips, unpacked release directories, scratch binaries, temporary VM logs, and `test_release_v*/`.
+## Language Stack
 
-## Getting Started
+| Layer | Path | Purpose |
+| --- | --- | --- |
+| AST | `crates/dbyte_ast` | Shared syntax and typed node structures |
+| Lexer and parser | `crates/dbyte_lexer`, `crates/dbyte_parser` | Source tokenization and grammar parsing |
+| Type checker | `crates/dbyte_typeck` | Static checks for DByte programs |
+| Tree runtime | `crates/dbyte_interp` | Direct interpreter runtime |
+| Bytecode path | `crates/dbyte_bytecode`, `crates/dbyte_compiler`, `crates/dbyte_vm` | Compilation and VM execution |
+| Modules and projects | `crates/dbyte_module`, `crates/dbyte_project` | Imports, packages, `Dbyte.toml` workflows |
+| CLI | `crates/dbyte_cli` | `dbyte run`, `dbyte test`, REPL, shell, tools |
+| Embedding | `crates/dbyte_embed` | Rust host integration |
+| Kernel bridge | `crates/dbyte_kernel_vm` | Shared kernel VM probe support |
 
-1. **Try the ISO** (VM recommended): [Download Latest ISO](https://github.com/Deadbytes101/DBYTE/releases/ISO)
-2. **Read the docs**: [https://dbytelang.site/docs/](https://dbytelang.site/docs/)
-3. **Clone & explore**: [github.com/Deadbytes101/DBYTE](https://github.com/Deadbytes101/DBYTE)
+## What It Can Do
 
-### Quick Start
+- Parse and run DByte scripts with Python-like block syntax.
+- Work with typed integers, bytes, buffers, and binary-oriented standard modules.
+- Patch buffers, search byte sequences, inspect binary files, and save modified outputs.
+- Run DByte projects with `Dbyte.toml`.
+- Execute tests with `dbyte test`.
+- Launch a DByte REPL or shell.
+- Embed DByte in Rust applications.
+- Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
+
+## Quick Commands
 
 ```powershell
-dbyte --version
-dbyte repl
-dbyte shell
-dbyte run examples/hello.dby
-dbyte test
+cargo check
+cargo run -p dbyte_cli -- --version
+cargo run -p dbyte_cli -- run examples/hello.dby
+cargo run -p dbyte_cli -- test
 ```
 
-### Launch DByteOS Shell
+Launch the DByte shell with the DByteOS userland profile:
 
 ```powershell
-dbyte shell --rc examples/dbyteos/.dbyterc
+cargo run -p dbyte_cli -- shell --rc examples/dbyteos/.dbyterc
 ```
 
-## Example: Binary Patch
+Build the Kernel Lab:
+
+```powershell
+cd kernel-lab
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+```
+
+Run the Kernel Lab in QEMU when QEMU is installed:
+
+```powershell
+cd kernel-lab
+powershell -ExecutionPolicy Bypass -File .\scripts\run.ps1
+```
+
+## Binary Patch Example
 
 ```dbyte
 import std.buffer as buf
-import std.fs as fs
 
-let b: buffer = buf.load("sample.bin")
-let pos: int = buf.find(b, b"\xDE\xAD\xBE\xEF")
+let image: buffer = buf.load("firmware.bin")
+let offset: int = buf.find(image, b"\xDE\xAD\xBE\xEF")
 
-if pos >= 0:
-    buf.replace(b, pos, b"\x90\x90\x90\x90")
-    buf.save("sample.patched.bin", b)
+if offset >= 0:
+    buf.replace(image, offset, b"\x90\x90\x90\x90")
+    buf.save("firmware.patched.bin", image)
 ```
 
-## Personal Tools
+## Kernel Lab Status
 
-`personal_tools/` — hexdump, bininfo, find-bytes, patch-bytes, u32-table
+The Kernel Lab is intentionally separate from the host-runnable DByteOS userland. It is a freestanding x86 research sandbox, not a production kernel.
 
-Run with shortcuts inside the shell: `hexdump`, `patch-bytes`, etc.
+Current kernel research areas include:
 
-## Embedding DByte
+- Multiboot-compatible boot path.
+- VGA text and graphics output.
+- Serial logging.
+- IDT and exception handling foundations.
+- Page fault smoke surfaces.
+- PIC and IRQ planning.
+- Controlled IRQ0 and IRQ1 runtime experiments.
+- Kernel-side DByte VM probe integration.
 
-Rust host applications can embed the tree runtime through `dbyte_embed`:
+The guardrail is deliberate: hardware mutation paths stay controlled, documented, and testable.
 
-```rust
-use dbyte_embed::DByteRuntime;
+## Repository Hygiene
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut rt = DByteRuntime::new();
+Ignored local artifacts include:
 
-    rt.run_source("host", "let x: int = 40")?;
-    let out = rt.run_source_capture("host", "print(x + 2)")?;
+- `target/`
+- `kernel-lab/target/`
+- release bundles and zip packages
+- unpacked release directories
+- scratch binaries
+- temporary VM logs
+- `test_release_v*/`
 
-    assert_eq!(out.stdout.trim(), "42");
-    Ok(())
-}
-```
+This keeps the repository focused on source, docs, scripts, and reproducible project state.
 
-The embed API uses persistent tree-interpreter state and does not auto-load
-`.dbyterc`; host applications opt into startup scripts with `load_rc()`.
+## Project Warning
 
-## Repository & Contact
+DBYTE is alpha software. Interfaces can change. Kernel Lab behavior can break. Use a VM for OS experiments and keep real data away from unsafe test runs.
 
-- **Repository**: [Deadbytes101/DBYTE](https://github.com/Deadbytes101/DBYTE)
-- **Creator**: [About DEADBYTE](https://dbytelang.site/about)
-- **Discord**: [Join Community](https://discord.gg/hWuwUbrujb)
+## Repository
 
----
+- Repository: [Deadbytes101/DBYTE](https://github.com/Deadbytes101/DBYTE)
+- Site: [dbytelang.site](https://dbytelang.site)
+- Docs: [dbytelang.site/docs](https://dbytelang.site/docs/)
+- Discord: [Join Community](https://discord.gg/hWuwUbrujb)
 
-**License**: MIT. See [LICENSE](LICENSE).
-
-**This is alpha software. Run in VM if you value your data.**
+MIT licensed. See [LICENSE](LICENSE).
