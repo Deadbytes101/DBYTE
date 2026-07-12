@@ -26,7 +26,7 @@
 </p>
 
 > [!IMPORTANT]
-> This repository is currently a private working snapshot. DBYTE is still moving fast, and the full source is not ready for broad public review.
+> This repository is a public working snapshot. DBYTE is still moving fast, and the public source surface is not the final stable release surface.
 
 > [!CAUTION]
 > DByteOS and the Kernel Lab are experimental. Run VM and kernel builds in an isolated environment.
@@ -47,7 +47,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 - Snapshot version: **v10.62.1**
 - Default branch: **main**
-- Repository visibility: **private**
+- Repository visibility: **public**
 - License: **MIT**
 - GitHub language policy: `.dby` files are marked as `DBYTE`; Rust, PowerShell, lockfiles, and linker scripts are excluded from language statistics through `.gitattributes`.
 
