@@ -1,0 +1,34 @@
+DByteOS Search Command
+
+The search command provides deterministic scanning and indexed retrieval of workspace resources, project notes, tasks, journals, and agendas.
+
+Usage:
+  search summary            - show workspace search index summary
+  search recent             - show 5 most recently indexed records
+  search projects <text>    - search project notes and tasks
+  search tasks <text>       - search all project tasks
+  search notes <text>       - search global and project notes
+  search journal <text>     - search global daily journal records
+  search help               - display help usage instructions
+
+Legacy Workspace Scanners:
+  workspace search <text>   - search all workspace files
+  project search <p> <t>    - search specific project files
+  task search <p> <t>       - search specific project tasks
+  daily search <text>       - search daily journals and notes
+  search index <text>       - raw search query on active index cache
+  search status             - show raw index status
+  search rebuild            - rebuild search index cache from scratch
+  search doctor             - check index integrity
+  search clear-cache        - remove index cache
+  search reset-demo         - reset workspace seed data
+
+Examples:
+  search summary
+  search recent
+  search projects note
+  search tasks tests
+  search notes seed
+  search journal JOURNAL
+  workspace search tests
+  search rebuild

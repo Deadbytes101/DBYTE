@@ -1,0 +1,4 @@
+import std.buffer as buf
+import std.binary as bin
+let b = buf.new(2)
+bin.write_u32_le(b, 0, 1)

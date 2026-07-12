@@ -1,0 +1,5 @@
+fn add(a: int, b: int) -> int:
+    return a + b
+
+let x: int = add(add(1, 2), 3)
+print(x)

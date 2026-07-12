@@ -1,0 +1,3 @@
+import "./math.dby" as math
+
+print(math.hidden)

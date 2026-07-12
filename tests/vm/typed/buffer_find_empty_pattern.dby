@@ -1,0 +1,4 @@
+import std.buffer as bytes
+
+let target: buffer = bytes.from_bytes(b"\x00\x11")
+print(bytes.find(target, b""))

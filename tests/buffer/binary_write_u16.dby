@@ -1,0 +1,9 @@
+import std.buffer as buf
+import std.binary as bin
+import std.encoding as enc
+
+let b = buf.new(4)
+bin.write_u16_le(b, 0, 0x1234)
+bin.write_u16_be(b, 2, 0x5678)
+
+print(enc.hex_encode(buf.to_bytes(b)))

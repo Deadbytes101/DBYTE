@@ -1,0 +1,5 @@
+fn secret() -> int:
+    return 1337
+
+pub fn public_value() -> int:
+    return 7

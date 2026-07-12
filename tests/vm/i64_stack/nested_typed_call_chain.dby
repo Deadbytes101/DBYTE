@@ -1,0 +1,11 @@
+fn a(n: int) -> int:
+    return n + 1
+
+fn b(n: int) -> int:
+    return a(n) + 1
+
+fn c(n: int) -> int:
+    return b(n) + 1
+
+let value: int = c(39)
+print(value)

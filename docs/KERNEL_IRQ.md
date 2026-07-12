@@ -1,6 +1,200 @@
-# DByteOS Kernel IRQ/PIC Safety Notes (v10.11.0)
+# DByteOS Kernel IRQ/PIC Safety Notes (v10.62.1)
 
-DByteOS Kernel Lab `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. It adds a read-only one-shot command path after the hardened permit model without setting a latch, enabling fire, or touching hardware. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. It hardens the existing `v10.10.0` read-only permit model without changing permit output or touching hardware. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. It adds a read-only permit model before any first real PIC EOI write while keeping permit denied. The checklist, decision, sequencer, preflight, candidate, permit, and one-shot outputs remain blocked. The `pic-remap-arm` command must still run before `pic-remap-smoke`; only that explicit command path may write the PIC ICW sequence and mask all IRQ lines afterward. The `irq-gate-arm` / `irq-gate-bind-smoke` path may install IDT vectors `32` and `33` only after explicit arming, with smoke stubs that return through `iretd`. Runtime IRQ readiness remains blocked. No boot path installs gates, no EOI is actively dispatched, `sti` remains disabled, PIC IRQ lines remain masked, live IDT runtime binding remains disabled, and keyboard input remains polling-only through PS/2 ports `0x64` and `0x60`.
+Current release chain:
+- `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release.
+- `v10.24.1` is a Controlled IDT Invocation Runtime Bridge Hardening release.
+- `v10.25.0` is a Controlled Hardware IRQ Delivery Candidate Foundation release.
+- `v10.25.1` is a Controlled Hardware IRQ Delivery Candidate Hardening release.
+- `v10.26.0` is a Controlled IRQ0 Timer Bind One-Shot Smoke Foundation release.
+- `v10.26.1` is a Controlled IRQ0 Timer Bind One-Shot Smoke Hardening release.
+- `v10.27.0` is a Controlled PIC IRQ0 Unmask One-Shot Smoke Foundation release.
+- `v10.27.1` is a Controlled PIC IRQ0 Unmask One-Shot Smoke Hardening release.
+- `v10.28.0` is an IRQ0 Activation Preflight release.
+- `v10.28.1` is an IRQ0 Activation Preflight Hardening release.
+- `v10.29.0` is a Controlled IRQ0 Timer Handler Stub Foundation release.
+- `v10.29.1` is a Controlled IRQ0 Timer Handler Stub Hardening release.
+- `v10.29.2` is a First VGA Text Window Smoke release.
+- `v10.29.3` is a VGA Text Window Cleanup release.
+- `v10.30.0` is a Controlled IRQ0 Delivery One-Shot Window Foundation release.
+- `v10.30.1` is a Controlled IRQ0 Delivery One-Shot Window Hardening release.
+- `v10.31.0` is a Controlled IRQ0 Tick Counter Window Foundation release.
+- `v10.31.1` is a Controlled IRQ0 Tick Counter Window Hardening release.
+- `v10.32.0` is a DByte Kernel VM Probe Foundation release.
+- `v10.32.1` is a DByte Kernel VM Probe Hardening release.
+- `v10.33.0` is a DByte Embedded Boot Script Foundation release.
+- `v10.33.1` is a DByte Embedded Boot Script Hardening release.
+- `v10.34.1` is a DByte VGA Graphics Surface Hardening release.
+- `v10.35.0` is a DByte Graphics Console Foundation release.
+- `v10.35.1` is a DByte Graphics Console Glyph Polish release.
+- `v10.36.0` is a DByte Graphics Console Cursor Foundation release.
+- `v10.37.0` is a DByte Graphics Console Input Echo Foundation release.
+- `v10.38.0` is a DByte Graphics Console Command Dispatch Foundation release.
+- `v10.39.0` is a DByte Graphics Console Session Loop Foundation release.
+- `v10.40.0` is a DByte Graphics Shell VM Command Foundation release.
+- `v10.41.0` is a DByte Embedded App Registry Foundation release.
+- `v10.62.1` is a DByte Kernel Uptime Tick Projection Hardening release.
+- `v10.62.0` is a DByte Kernel Uptime Tick Projection Foundation release.
+- `v10.61.1` is a DByte Kernel Clock Value Service Hardening release.
+- `v10.61.0` is a DByte Kernel Clock Value Service Foundation release.
+- `v10.60.1` is a DByte Kernel Clock Service Hardening release.
+- `v10.60.0` is a DByte Kernel Clock Service Foundation release.
+- `v10.59.0` is a DByte Graphics Shell Kernel Clock Bridge release.
+- `v10.58.0` is a DByte Kernel Runtime Clock Foundation release.
+- `v10.57.1` is a DByte Graphics Runtime Header Live Refresh Hardening release.
+- `v10.57.0` is a DByte Graphics Runtime Header Live Refresh Foundation release.
+- `v10.56.0` is a DByte Graphics Console Runtime Header Sync release.
+- `v10.55.1` is a DByte Graphics Shell IRQ0 Runtime Bridge Hardening release.
+- `v10.55.0` is a DByte Graphics Shell IRQ0 Runtime Bridge Foundation release.
+- `v10.54.1` is a DByte IRQ0 Runtime Start Stop Hardening release.
+- `v10.54.0` is a DByte IRQ0 Runtime Start Stop Foundation release.
+- `v10.52.1` is a DByte Graphics Shell Last Result Hardening release.
+- `v10.52.0` is a DByte Graphics Shell Last Result Foundation release.
+- `v10.51.0` is a DByte App Result Status Foundation release.
+- `v10.50.1` is a DByte App Display Contract Hardening release.
+- `v10.50.0` is a DByte App UI Service Pack Foundation release.
+- `v10.49.0` is a DByte Graphics Log Clear Service Foundation release.
+- `v10.48.0` is a DByte Graphics Log Service Foundation release.
+- `v10.47.1` is a DByte Graphics Console X Glyph Polish release.
+- `v10.47.0` is a DByte Kernel Service String Argument Foundation release.
+- `v10.46.0` is a DByte Kernel Service Argument Foundation release.
+- `v10.45.1` is a DByte Graphics Log Clipping Polish release.
+- `v10.45.0` is a DByte Kernel Service Return Value Foundation release.
+- `v10.44.0` is a DByte Kernel Tick Service Foundation release.
+- `v10.43.0` is a DByte Kernel Service Call Foundation release.
+- `v10.42.0` is a DByte Generic Embedded App Runner Foundation release.
+
+Persistent safety baseline:
+- Keyboard polling remains on PS/2 ports `0x64` and `0x60`.
+- PIC remap is command-only; only that explicit command path may write the PIC ICW sequence.
+- Runtime IRQ readiness remains blocked.
+
+Thin note for `v10.62.1`: hardens the existing read-only `kernel-uptime-status` tick projection without changing Rust behavior, commands, graphics surfaces, KCALL services, apps, VM opcodes, session limits, or IRQ runtime semantics. The verifier locks one `kernel_clock_status_snapshot()` read, identical VGA/serial output, exact unit `ticks`, minimum-width-four formatting without truncation, pre-runtime stopped `0008`, no time conversion or PIT calibration claim, and no runtime/PIC/IDT/IRQ mutation. QEMU repeats the pre-runtime, running, stopped, and repeated-stopped sequence and requires the stopped tick to remain stable. Proof artifact: `tmp\qemu_kernel_uptime_hardening_v10.62.1.serial.log`. Known limitation: uptime remains an uncalibrated tick projection.
+
+Thin note for `v10.62.0`: adds one read-only text-shell command, `kernel-uptime-status`, as a bounded uptime-tick projection over exactly one `kernel_clock_status_snapshot()` read. Output is `KERNEL UPTIME`, source `IRQ0 runtime`, unit `ticks`, runtime state, and minimum-width-four ticks; values above `9999` are not truncated. Before runtime has ever started it intentionally inherits stopped `0008` from the existing clock abstraction. It adds no graphics command, KCALL 10, app, VM opcode, seconds/milliseconds conversion, PIT frequency claim, sleep API, scheduler, runtime control, readiness mutation, or PIC/IDT/IRQ path. QEMU proof artifact is `tmp\qemu_kernel_uptime_v10.62.0.serial.log`. Known limitation: uptime is measured only in kernel-clock ticks and is not calibrated wall time.
+
+Thin note for `v10.61.1`: hardens the existing read-only `KERNEL_CLOCK_TICKS_VALUE = 9` and static `clockmath` app without changing Rust behavior, commands, VM opcodes, service ids, app order, graphics output, session limits, or IRQ runtime semantics. The verifier locks one `kernel_clock_status_snapshot()` read, the `i32::MAX - 1` range guard, exact `HostValueOutOfRange(9)` propagation with no stack push or fake result, exact KCALL 9 plus ADD bytecode, separate `clockinfo` and `clockmath` dynamic captures, no visible `APP OK` for clockmath, successful `last` as `APP OK`, and overflow `last` as `VM ERROR`. Hardware boundaries remain unchanged. QEMU proof artifacts are `tmp\qemu_gfx_console_clockmath_hardening_v10.61.1.serial.log`, `tmp\qemu_gfx_console_clockmath_hardening_v10.61.1.ppm`, and `tmp\qemu_gfx_console_clockmath_hardening_v10.61.1.png`. Known limitation: overflow is unit/verifier-proven, the registry remains static, and Mode 13h remains one-way.
+
+Thin note for `v10.61.0`: adds read-only `KERNEL_CLOCK_TICKS_VALUE = 9` and appends static app `clockmath` after `clockinfo`. KCALL 9 reads `kernel_clock_status_snapshot()` once, rejects ticks above `i32::MAX - 1` with platform-neutral `HostValueOutOfRange(9)`, and otherwise pushes the exact tick value for the app to add one. It does not saturate, wrap, truncate, read raw IRQ0 counters, control runtime, mutate PIC/IDT/IRQ state, add commands, or add VM opcodes. Successful `clockmath` renders `APP CLOCKMATH`, `CLOCK PLUS ONE`, and an unpadded decimal result without visual `APP OK`; `last` retains `APP OK`. QEMU proof artifacts are `tmp\qemu_gfx_console_clockmath_v10.61.0.serial.log`, `tmp\qemu_gfx_console_clockmath_v10.61.0.ppm`, and `tmp\qemu_gfx_console_clockmath_v10.61.0.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
+
+Thin note for `v10.60.1`: hardens the existing read-only `KERNEL_CLOCK_STATUS = 8` and static `clockinfo` app without changing Rust behavior, commands, VM opcodes, service output, app order, graphics session limit, or IRQ runtime semantics. The verifier locks one `kernel_clock_status_snapshot()` read, bounded runtime/tick capture, service ids `1..=8`, six VM opcodes, `clockinfo` after `errtest`, no visible `APP OK` in the clock projection, and `last` retaining `APP OK`. Hardware boundaries remain unchanged. QEMU proof artifacts are `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.serial.log`, `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.ppm`, and `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
+
+Thin note for `v10.60.0`: adds read-only `KERNEL_CLOCK_STATUS = 8` through the existing `KCALL` boundary and appends static app `clockinfo` to the existing generic `run <app_name>` registry. The service reads `kernel_clock_status_snapshot()` once and emits bounded `KERNEL CLOCK`, runtime state, and zero-padded ticks through `VmOutput`; the graphics projection renders the same captured runtime/ticks without `APP OK`, while `last` records `APP OK`. No kernel or graphics command, VM opcode, runtime control, PIC/IDT/IRQ mutation, scheduler, sleep API, loader, heap allocation, process path, keyboard IRQ, IRQ1 path, or VGA port change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_clockinfo_v10.60.0.serial.log`, `tmp\qemu_gfx_console_clockinfo_v10.60.0.ppm`, and `tmp\qemu_gfx_console_clockinfo_v10.60.0.png`. Known limitation: the registry remains static and Mode 13h remains one-way.
+
+Thin note for `v10.59.0`: adds graphics-shell `clock status` inside the existing `gfx-console-shell` as a read-only bridge over the existing kernel clock projection. The graphics clock path reads only `kernel_clock_status_snapshot()`, renders `KERNEL CLOCK`, source `IRQ0 runtime`, runtime state, zero-padded ticks, IRQ0 mask state, and STI state through bounded clipped log rows, and emits `gfx-console-shell: command dispatched: clock status`. It does not add a kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, IRQ1 path, slave PIC path, VGA allowlist change, serial path change, direct PIC write, direct STI/CLI, PIC remap, IDT bind, handler install, or IRQ0 runtime semantic change. QEMU proof artifacts are `tmp\qemu_gfx_console_kernel_clock_v10.59.0.serial.log`, `tmp\qemu_gfx_console_kernel_clock_v10.59.0.ppm`, and `tmp\qemu_gfx_console_kernel_clock_v10.59.0.png`.
+
+Thin note for `v10.58.0`: adds the read-only text-shell `kernel-clock-status` command as a kernel clock projection backed only by the existing IRQ0 runtime status snapshot. The clock reports fixed source `IRQ0 runtime`, runtime state, tick count, IRQ0 mask state, and STI state without starting or stopping runtime, creating readiness, unmasking IRQ0, writing PIC ports, executing STI/CLI, binding IDT, installing handlers, touching IRQ1, touching the slave PIC, or changing IRQ0 runtime semantics. Before runtime has ever started, the clock reports the deterministic bounded proof tick contract `0008`. No graphics-shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, VGA allowlist change, or serial path change is added. QEMU proof artifact is `tmp\qemu_kernel_clock_v10.58.0.serial.log`.
+
+Thin note for `v10.57.1`: hardens the live Mode 13h IRQ0 header refresh without changing runtime behavior. `gfx-console-shell` keeps the live-refresh input reader, `gfx-console-input` keeps the non-refresh input reader, and refresh remains a read-only UI polling path that runs only while no PS/2 key is pending. The refresh helper reads only `irq0_runtime_status_snapshot()` and redraws only through `draw_irq0_runtime_header()`. No kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, IRQ0 runtime semantic, scheduler, multitasking, timer callback, keyboard IRQ path, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, PIC/IDT/runtime setup duplication, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.png`.
+
+Thin note for `v10.57.0`: adds bounded live refresh for the Mode 13h IRQ0 status header while `gfx-console-shell` is waiting for input. The graphics shell keeps PS/2 polling and periodically reads only `irq0_runtime_status_snapshot()` when no key is pending, then redraws the existing IRQ0 header row through `draw_irq0_runtime_header()`. This lets an active runtime show advancing `IRQ0 TIMER    RUNNING <ticks>` before the next command while preserving `IRQ0 TIMER    STOPPED <ticks> / MASKED` after stop and `IRQ0 TIMER    TICKS 0008 / MASKED` before runtime has ever started. No kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, IRQ0 runtime semantic, scheduler, multitasking, timer callback, keyboard IRQ path, PIC/IDT/runtime setup duplication, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.png`.
+
+Thin note for `v10.56.0`: syncs the Mode 13h graphics console status header with the current IRQ0 runtime snapshot after graphics-shell `timer status`, `timer start`, and `timer stop`. The initial graphics console may still show the bounded proof header `IRQ0 TIMER    TICKS 0008 / MASKED`; after timer commands, the header redraws as `IRQ0 TIMER    RUNNING <ticks>` or `IRQ0 TIMER    STOPPED <ticks> / MASKED` from existing runtime status data. The graphics shell remains only a UI control surface over the existing IRQ0 runtime snapshot helpers, with no direct PIC writes, PIC remap, IDT bind, handler install, IRQ1 path, slave PIC path, direct STI/CLI, VM opcode, KCALL service id, app registry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts are `tmp\qemu_gfx_console_runtime_header_v10.56.0.serial.log`, `tmp\qemu_gfx_console_runtime_header_v10.56.0.ppm`, and `tmp\qemu_gfx_console_runtime_header_v10.56.0.png`.
+
+Thin note for `v10.35.1`: no new command; `gfx-console` is unchanged and remains one-way Mode 13h with no text restore. Hardware boundaries are unchanged. The verifier locks graphics-console glyph coverage for `INPUT`, `PS/2 POLLING`, `IRQ0`, `42`, and the prompt text. QEMU proof artifacts are `tmp\qemu_gfx_console_v10.35.1.serial.log`, `tmp\qemu_gfx_console_v10.35.1.ppm`, and `tmp\qemu_gfx_console_v10.35.1.png`.
+
+Thin note for `v10.36.0`: no new command; `gfx-console` draws a static pixel cursor after `dbyte-kernel>`. Hardware boundaries are unchanged. The verifier locks derived cursor placement, no blink/timer/input loop, and layout-only graphics console isolation. QEMU proof artifacts are `tmp\qemu_gfx_console_cursor_v10.36.0.serial.log`, `tmp\qemu_gfx_console_cursor_v10.36.0.ppm`, and `tmp\qemu_gfx_console_cursor_v10.36.0.png`. Known limitation: `gfx-console` remains one-way Mode 13h with no text restore.
+
+Thin note for `v10.37.0`: adds `gfx-console-input`, a manual one-shot graphics input echo proof. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no parser/command execution, and no VM mutation. The verifier locks fixed 32-byte input buffering, Backspace bounds, prompt-row redraw, cursor movement, and exact serial proof output. QEMU proof artifacts are `tmp\qemu_gfx_console_input_v10.37.0.serial.log`, `tmp\qemu_gfx_console_input_v10.37.0.ppm`, and `tmp\qemu_gfx_console_input_v10.37.0.png`. Known limitation: `gfx-console-input` remains one-way Mode 13h with no text restore.
+
+Thin note for `v10.38.0`: adds `gfx-console-shell`, a manual one-shot graphics command dispatch proof. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, and no VM mutation. The verifier locks the fixed 32-byte command buffer, one `status` graphics command, deterministic unknown-command rendering, graphics-only log redraw, and exact serial proof output. QEMU proof artifacts are `tmp\qemu_gfx_console_shell_v10.38.0.serial.log`, `tmp\qemu_gfx_console_shell_v10.38.0.ppm`, and `tmp\qemu_gfx_console_shell_v10.38.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with no text restore and no persistent graphics shell loop.
+
+Thin note for `v10.39.0`: upgrades existing `gfx-console-shell` into a bounded four-command graphics session loop with `help`, `status`, `clear`, `exit`, and deterministic unknown-command handling. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, and no VM mutation. The verifier locks the fixed 32-byte command buffer, max command count `4`, exact graphics-session serial proof strings, layout-only log redraw, and unchanged `gfx-*` command surface. QEMU proof artifacts are `tmp\qemu_gfx_console_session_v10.39.0.serial.log`, `tmp\qemu_gfx_console_session_v10.39.0.ppm`, and `tmp\qemu_gfx_console_session_v10.39.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with no text restore, no history, and no persistent unbounded graphics shell.
+
+Thin note for `v10.40.0`: adds the `vm` command inside the existing bounded `gfx-console-shell` session without adding a new kernel shell command. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/app registry path, and no VM opcode change. The verifier locks the exact graphics command set `help`, `status`, `clear`, `vm`, `exit`, fixed 32-byte input buffer, max command count `4`, no-heap VM probe capture adapter, exact serial proof string, and unchanged VGA/IRQ/VM boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_vm_v10.40.0.serial.log`, `tmp\qemu_gfx_console_vm_v10.40.0.ppm`, and `tmp\qemu_gfx_console_vm_v10.40.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with no text restore, no app registry, and no persistent unbounded graphics shell.
+
+Thin note for `v10.41.0`: adds a static embedded DByte app registry inside the existing bounded `gfx-console-shell` session without adding a new kernel shell command. Graphics-shell commands now include `apps`, `run hello`, and `run math` alongside the existing commands. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/loader path, and no VM opcode change. The verifier locks exactly two static apps, `hello` and `math`, static bytecode using existing opcodes only, fixed 32-byte input buffer, max command count `4`, no-heap app capture, exact serial proof strings, and unchanged VGA/IRQ/VM boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_apps_v10.41.0.serial.log`, `tmp\qemu_gfx_console_apps_v10.41.0.ppm`, and `tmp\qemu_gfx_console_apps_v10.41.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.42.0`: upgrades the embedded DByte app runner inside the existing bounded `gfx-console-shell` session from separate `run hello` / `run math` branches to generic `run <app_name>` lookup through the static registry. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/loader path, and no VM opcode change. The verifier locks exactly two static apps, `hello` and `math`, generic fixed-slice app lookup, fixed 32-byte input buffer, max command count `5`, deterministic app-not-found behavior, no-heap app capture, exact serial proof strings, and unchanged VGA/IRQ/VM boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_generic_apps_v10.42.0.serial.log`, `tmp\qemu_gfx_console_generic_apps_v10.42.0.ppm`, and `tmp\qemu_gfx_console_generic_apps_v10.42.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.43.0`: adds a narrow `KCALL <service_id>` VM host-call boundary for embedded DByte apps and adds the static `sysinfo` app to the existing generic `run <app_name>` path. Hardware boundaries are unchanged: PS/2 input remains polling-only, no IRQ1, no STI, no text-shell execution, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no PIC/IDT/IRQ mutation. The verifier locks exactly three static apps, `hello`, `math`, and `sysinfo`, a six-opcode VM set with `KCALL`, service id `1` as the only supported kernel-status service, deterministic unsupported/truncated service errors, fixed 32-byte input buffer, max command count `5`, exact serial proof strings, and unchanged VGA/IRQ boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_kcall_v10.43.0.serial.log`, `tmp\qemu_gfx_console_kcall_v10.43.0.ppm`, and `tmp\qemu_gfx_console_kcall_v10.43.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.44.0`: adds read-only `KERNEL_TICKS = 2` service access through the existing `KCALL` boundary and adds the static `ticks` app to the existing generic `run <app_name>` path. The service reports controlled IRQ0 tick-window telemetry, not a persistent runtime clock. Hardware boundaries are unchanged: no IRQ0 fire, no IRQ0 or IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no text-shell execution, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. The verifier locks exactly four static apps, `hello`, `math`, `sysinfo`, and `ticks`, service ids `1` and `2`, unchanged six-opcode VM set, fixed 32-byte input buffer, bounded graphics shell, exact serial proof strings, and unchanged VGA/IRQ boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_ticks_v10.44.0.serial.log`, `tmp\qemu_gfx_console_ticks_v10.44.0.ppm`, and `tmp\qemu_gfx_console_ticks_v10.44.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.45.0`: adds read-only `KERNEL_TICK_VALUE = 3` service return access through the existing `KCALL` boundary and adds the static `tickmath` app to the existing generic `run <app_name>` path. The service reads controlled IRQ0 tick-window target telemetry and returns an i32 to the VM stack; the VM owns the stack push and stack overflow check. Hardware boundaries are unchanged: no IRQ0 fire, no IRQ0 or IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no text-shell execution, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. The verifier locks exactly five static apps, `hello`, `math`, `sysinfo`, `ticks`, and `tickmath`, service ids `1`, `2`, and `3`, unchanged six-opcode VM set, fixed 32-byte input buffer, bounded graphics shell, exact serial proof strings, and unchanged VGA/IRQ boundaries. QEMU proof artifacts are `tmp\qemu_gfx_console_tickmath_v10.45.0.serial.log`, `tmp\qemu_gfx_console_tickmath_v10.45.0.ppm`, and `tmp\qemu_gfx_console_tickmath_v10.45.0.png`. Known limitation: `gfx-console-shell` remains one-way Mode 13h with a static registry only; no text restore, filesystem app loader, BYTEDECK path, or persistent unbounded graphics shell.
+
+Thin note for `v10.45.1`: graphics log rows in `gfx-console-shell` are cleared before redraw and variable log text is clipped to the console content edge to remove stale or overflow glyphs. `tickmath`, `KCALL`, service ids `1`, `2`, and `3`, the six-opcode VM set, the static app registry, and the shell command surface remain unchanged. Hardware boundaries are unchanged: no IRQ0 fire, no IRQ0 or IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.serial.log`, `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.ppm`, and `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.png`.
+
+Thin note for `v10.46.0`: adds `KERNEL_ECHO_I32 = 4`, a read-only service argument proof through the existing `KCALL` boundary. The VM owns argument pop and stack underflow checks, then passes `VmHostArgs::I32(7)` to the kernel host; the host writes `ARG VALUE 7` and returns no stack value. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, and `argtest`, and `apps` output is split across two clipped graphics log rows. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_argtest_v10.46.0.serial.log`, `tmp\qemu_gfx_console_argtest_v10.46.0.ppm`, and `tmp\qemu_gfx_console_argtest_v10.46.0.png`.
+
+Thin note for `v10.47.0`: adds `KERNEL_ECHO_STR = 5`, a no-allocation string-constant service argument proof through the existing `KCALL` boundary. The VM owns string argument pop, type checks, and const-table bounds checks, then passes a borrowed `VmHostArgs::StrConst(&str)` to the kernel host for the duration of the service call; the host writes `ARG TEXT DBYTE SERVICE ARG` and returns no stack value. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, and `strtest`, and `apps` output is split across three clipped graphics log rows. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_strtest_v10.47.0.serial.log`, `tmp\qemu_gfx_console_strtest_v10.47.0.ppm`, and `tmp\qemu_gfx_console_strtest_v10.47.0.png`.
+
+Thin note for `v10.47.1`: adds the missing uppercase `X` glyph to the graphics console font so the existing `strtest` proof renders `ARG TEXT DBYTE SERVICE ARG` without a blank cell. `strtest`, KCALL behavior, service ids `1` through `5`, the seven-app registry, the six-opcode VM set, graphics clipping, and shell command surface remain unchanged. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.serial.log`, `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.ppm`, and `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.png`.
+
+Thin note for `v10.48.0`: adds `KERNEL_GRAPHICS_LOG = 6`, a no-allocation string-constant service argument proof through the existing `KCALL` boundary. The VM owns string argument pop, type checks, and const-table bounds checks, then passes a borrowed `VmHostArgs::StrConst(&str)` to the kernel host for the duration of the service call; the host writes the borrowed text through `VmOutput` and returns no stack value. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, and `logtest`, and `apps` output is split across three clipped graphics log rows. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_logtest_v10.48.0.serial.log`, `tmp\qemu_gfx_console_logtest_v10.48.0.ppm`, and `tmp\qemu_gfx_console_logtest_v10.48.0.png`.
+
+Thin note for `v10.49.0`: adds `KERNEL_GRAPHICS_LOG_CLEAR = 7`, a no-allocation adapter clear event through the existing `KCALL` boundary. The service consumes no VM stack arguments, calls `VmOutput::clear_log()`, writes `LOG CLEARED`, and returns no stack value. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, and `logclear`, and `apps` output is split across three clipped graphics log rows. Hardware boundaries are unchanged: no VM framebuffer access, no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no port I/O, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_logclear_v10.49.0.serial.log`, `tmp\qemu_gfx_console_logclear_v10.49.0.ppm`, and `tmp\qemu_gfx_console_logclear_v10.49.0.png`.
+
+Thin note for `v10.50.0`: adds the static `uidemo` app as a DByte App UI Service Pack Foundation proof. It uses only existing `KCALL` services: `KERNEL_GRAPHICS_LOG_CLEAR = 7`, `KERNEL_GRAPHICS_LOG = 6`, `KERNEL_STATUS = 1`, and `KERNEL_TICKS = 2`. The app clears the graphics log adapter, writes `GRAPHICS LOG READY`, reads kernel status, and reads controlled IRQ0 tick-window telemetry without adding an opcode, service id, shell command, loader, heap allocation, dynamic registry, or hardware mutation. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, and `uidemo`, and `apps` output is split across four clipped graphics log rows. QEMU proof artifacts are `tmp\qemu_gfx_console_uidemo_v10.50.0.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.0.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.0.png`.
+
+Thin note for `v10.50.1`: hardens the embedded app display contract without changing runtime behavior. `output_lines` remains the full captured VM/service-output source of truth, while `display_lines` is only a bounded graphics UI projection rendered after successful `run <app_name>` capture. `uidemo`, the ten-app registry, service ids `1` through `7`, and the six-opcode VM set remain unchanged. Hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_uidemo_v10.50.1.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.1.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.1.png`.
+
+Thin note for `v10.51.0`: adds a deterministic app-result status contract to the existing generic `run <app_name>` path. Successful apps render verified bounded display projection plus `APP OK`; VM-error apps render the captured prefix plus `VM ERROR UnsupportedService(99)`; unknown apps render `APP NOT FOUND`. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, `uidemo`, and `errtest`. Service ids remain exactly `1` through `7`, the VM opcode set remains unchanged, and hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_app_result_v10.51.0.serial.log`, `tmp\qemu_gfx_console_app_result_v10.51.0.ppm`, and `tmp\qemu_gfx_console_app_result_v10.51.0.png`.
+
+Thin note for `v10.53.0`: adds read-only graphics-shell app introspection through `info <app_name>` inside the existing bounded `gfx-console-shell` session. The command looks up static app metadata from the embedded registry, reports `STATUS FOUND` with deterministic `SERVICES` and `RESULT` lines, or reports `STATUS NOT FOUND` for missing apps. It does not execute app bytecode, does not mutate `last` session state, and adds no kernel shell command, VM opcode, KCALL service id, app registry entry, loader, heap allocation, dynamic registry, process bridge, or hardware behavior change. Service ids remain exactly `1` through `7`, the VM opcode set remains unchanged, and hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_app_info_v10.53.0.serial.log`, `tmp\qemu_gfx_console_app_info_v10.53.0.ppm`, and `tmp\qemu_gfx_console_app_info_v10.53.0.png`.
+
+Thin note for `v10.55.1`: hardens the graphics-shell IRQ0 runtime bridge without changing runtime behavior. The graphics commands `timer status`, `timer start`, and `timer stop` remain a remote-control surface over the existing IRQ0 runtime snapshot helpers only, with verifier guards locking no readiness creation, no PIC remap, no IDT bind, no handler install, no direct PIC write, no direct STI/CLI, no IRQ1 path, no slave PIC path, and no app last-result mutation. The existing text-shell commands `irq0-runtime-status`, `irq0-runtime-start`, and `irq0-runtime-stop` remain unchanged. No kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.serial.log`, `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.ppm`, and `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.png`.
+
+Thin note for `v10.55.0`: adds graphics-shell IRQ0 runtime controls inside the existing bounded `gfx-console-shell` session. The graphics commands `timer status`, `timer start`, and `timer stop` call only the existing IRQ0 runtime snapshot helpers, so the graphics shell acts as a remote-control surface and does not create readiness, remap PIC, bind IDT, install handlers, write PIC ports directly, touch IRQ1, touch the slave PIC, or duplicate masked-exact restore logic. The existing text-shell commands `irq0-runtime-status`, `irq0-runtime-start`, and `irq0-runtime-stop` remain unchanged. No kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change is added. QEMU proof artifacts are `tmp\qemu_gfx_console_irq0_runtime_v10.55.0.serial.log`, `tmp\qemu_gfx_console_irq0_runtime_v10.55.0.ppm`, and `tmp\qemu_gfx_console_irq0_runtime_v10.55.0.png`.
+
+Thin note for `v10.54.1`: hardens the controlled text-shell IRQ0 runtime lifecycle without changing runtime behavior. It preserves exactly `irq0-runtime-status`, `irq0-runtime-start`, and `irq0-runtime-stop`; repeated start remains `irq0 runtime: already running` without resaving the PIC mask, unmasking again, or repeating STI; repeated stop remains `irq0 runtime: not running` without using a stale saved mask. The verifier locks masked-exact restore, non-IRQ0 mask preservation, forced IRQ0 masking, inactive bounded 8-tick self-mask, active continuous ticking, and master EOI delivery. No graphics shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, IRQ1 path, slave PIC mutation, or serial path change is added. QEMU proof artifact is `tmp\qemu_irq0_runtime_start_stop_hardening_v10.54.1.serial.log`.
+
+Thin note for `v10.54.0`: adds a controlled text-shell IRQ0 runtime lifecycle with `irq0-runtime-status`, `irq0-runtime-start`, and `irq0-runtime-stop`. Runtime start validates existing PIC remap, manual PIC_EOI, IRQ0 descriptor bind, and transactional IRQ0 unmask proof before unmasking IRQ0 only and enabling STI; it does not perform PIC remap, IDT bind, handler install, or setup creation. Repeated start returns `irq0 runtime: already running` without resaving the PIC mask, unmasking again, or repeating STI. Runtime stop executes CLI, writes a masked-exact master PIC mask as `saved_original_master_mask | 0x01`, preserves non-IRQ0 master PIC mask bits, forces IRQ0 masked, records final ticks, and returns with interrupts disabled/safe. Repeated stop returns `irq0 runtime: not running` without using an invalid saved mask. No graphics shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, IRQ1 path, slave PIC mutation, or serial path change is added. QEMU proof artifact is `tmp\qemu_irq0_runtime_start_stop_v10.54.0.serial.log`.
+
+Thin note for `v10.52.1`: hardens the graphics-shell `last` command contract without changing runtime behavior. The command still reports the last app name and fixed enum result as `LAST APP <name-or-none>` and `LAST RESULT <APP OK | APP NOT FOUND | VM ERROR | none>` using fixed buffers and clipped graphics log rows; VM-error payloads still render on the next bounded row, for example `UnsupportedService(99)`. It adds no kernel shell command, graphics-shell command, VM opcode, KCALL service id, app registry entry, loader, heap allocation, dynamic registry, process bridge, or hardware behavior change. Service ids remain exactly `1` through `7`, the VM opcode set remains unchanged, and hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_last_result_hardening_v10.52.1.serial.log`, `tmp\qemu_gfx_console_last_result_hardening_v10.52.1.ppm`, and `tmp\qemu_gfx_console_last_result_hardening_v10.52.1.png`.
+
+Thin note for `v10.52.0`: adds the graphics-shell `last` command inside the existing bounded `gfx-console-shell` session. The command reports the last app name and fixed enum result as `LAST APP <name-or-none>` and `LAST RESULT <APP OK | APP NOT FOUND | VM ERROR | none>` using fixed buffers and clipped graphics log rows; VM-error payloads render on the next bounded row, for example `UnsupportedService(99)`. It adds no kernel shell command, VM opcode, KCALL service id, app registry entry, loader, heap allocation, dynamic registry, process bridge, or hardware behavior change. Service ids remain exactly `1` through `7`, the VM opcode set remains unchanged, and hardware boundaries are unchanged: no IRQ0 behavior change, no IRQ1 unmask, no STI, no PIC/IDT/IRQ mutation, no filesystem/parser/compiler/loader path, no process bridge, no heap allocation, and no dynamic registry. QEMU proof artifacts are `tmp\qemu_gfx_console_last_result_v10.52.0.serial.log`, `tmp\qemu_gfx_console_last_result_v10.52.0.ppm`, and `tmp\qemu_gfx_console_last_result_v10.52.0.png`.
+
+`v10.15.0` evaluates the software EOI write chain without changing it. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry, then reports `evaluation ready: no` with the permit, bridge, first-write, hardware, and runtime fields still denied.
+
+`v10.15.1` is hardening-only. The evaluator command outputs remain unchanged from `v10.15.0`; verifier guards now lock exact output, reader ordering, helper and dispatcher isolation, no latch/transition/permit/bridge mutation, no positive evaluator state, no hardware write path, no live IRQ path, and unchanged keyboard polling.
+
+`v10.16.0` allows the first real PIC EOI hardware smoke, but only through `eoi-write-hw-smoke-fire` after `eoi-write-hw-smoke-arm`. A successful fire writes exactly one `PIC_EOI` to `PIC_MASTER_COMMAND`, consumes the one-shot latch, and leaves IRQ runtime inactive; a second fire without re-arm is blocked.
+
+`v10.16.1` is hardening-only. The hw-smoke command outputs remain unchanged from `v10.16.0`; verifier guards now lock the exact manual sequence, the single manual fire callsite, no slave EOI write, no handler-triggered EOI, no looped write, no `sti`, no PIC unmask, no live IRQ0/IRQ1, no live IDT bind, no keyboard IRQ switch, and `runtime irq active: no`.
+
+`v10.17.0` adds a read-only runtime bridge readiness layer. It reads session-local manual PIC_EOI smoke proof and existing software readiness state, then reports `runtime bridge ready: no`, `handler-triggered EOI allowed: no`, `runtime irq active: no`, `sti: disabled`, `pic unmask: disabled`, `live irq handlers: no`, and `keyboard mode: polling`.
+
+`v10.17.1` repairs the bridge proof source. The bridge reads sticky boot-session proof set only after a successful manual hw-smoke fire, while transient `first PIC_EOI write performed` can still reset to `no` on clear.
+
+`v10.17.2` is hardening-only. The runtime bridge command outputs remain unchanged from `v10.17.1`; verifier guards now lock sticky proof source isolation, read-only bridge surfaces, no handler-triggered EOI, and the single manual PIC_EOI write boundary.
+
+`v10.18.0` adds a read-only IRQ handler EOI path candidate. It reads runtime bridge readiness and reports `handler EOI candidate ready: no`, `handler-triggered EOI allowed: no`, `live handler bind: no`, `PIC_EOI callsites: 1 manual-only`, `runtime irq active: no`, `sti: disabled`, `pic unmask: disabled`, and `keyboard mode: polling`.
+
+`v10.18.1` is hardening-only. The handler EOI candidate command outputs remain unchanged from `v10.18.0`; verifier guards now lock exact output, runtime bridge input isolation, read-only surfaces, no interrupt-path invocation, and the single manual PIC_EOI write boundary.
+
+`v10.19.0` adds a read-only IRQ handler EOI stub placeholder. It reads the handler EOI candidate and reports `stub exists: yes`, `stub bound to live IRQ path: no`, `stub invocation allowed: no`, `stub performs PIC_EOI write: no`, `handler-triggered EOI allowed: no`, `PIC_EOI callsites: 1 manual-only`, `runtime irq active: no`, `sti: disabled`, `pic unmask: disabled`, and `keyboard mode: polling`.
+
+`v10.19.1` is hardening-only. The handler EOI stub command outputs remain unchanged from `v10.19.0`; verifier guards now lock exact output, candidate input isolation, read-only surfaces, no interrupt-path invocation, and the single manual PIC_EOI write boundary.
+
+`v10.20.1` is hardening-only. The handler bind candidate command outputs remain unchanged from `v10.20.0`; verifier guards now lock exact output, stub/candidate/runtime-bridge input boundaries, read-only surfaces, no live IDT bind, no interrupt-path invocation, and the single manual PIC_EOI write boundary.
+
+`v10.20.0` adds a read-only IRQ handler bind candidate. It reads the unbound handler EOI stub and reports `bind candidate exists: yes`, `bind candidate ready: no`, `live IDT bind performed: no`, `IRQ handler reachable: no`, `handler-triggered EOI allowed: no`, `runtime irq active: no`, `sti: disabled`, `pic unmask: disabled`, and `keyboard mode: polling`.
+
+`v10.21.0` adds a manual one-shot IDT descriptor bind smoke. It binds only dedicated non-IRQ vector `0x81` to an inert test stub after explicit arming, consumes the latch after a successful fire, blocks repeated fire without re-arm, does not unbind on clear, does not invoke the interrupt, does not bind IRQ0/IRQ1, does not enable `sti`, does not unmask PIC lines, does not add handler-triggered EOI, and keeps keyboard input polling-only.
+
+`v10.21.1` is hardening-only. The IDT bind smoke command outputs remain unchanged from `v10.21.0`; verifier guards now lock the exact state sequence, the single manual `0x81` bind callsite, no `0x80`, no IRQ0/IRQ1 bind, no interrupt invocation, no `sti`, no PIC unmask, no handler-triggered EOI, keyboard polling, and the single manual PIC_EOI write boundary.
+
+`v10.22.0` adds a read-only IDT bind runtime bridge. It reads sticky boot-session proof from the manual IDT bind smoke, not transient performed/consumed/armed telemetry, and reports `runtime IDT bridge ready: no`, `live IRQ bind allowed: no`, `IRQ handler reachable: no`, `interrupt invocation allowed: no`, and `runtime irq active: no`.
+
+`v10.22.1` is hardening-only. The bridge command outputs remain unchanged from `v10.22.0`; verifier guards now lock exact output, sticky proof source, read-only helper/dispatcher isolation, no `int 0x81`, no IRQ0/IRQ1 bind, no `sti`, no PIC unmask, keyboard polling, and the single manual PIC_EOI write boundary.
+
+`v10.23.0` adds a manual one-shot IDT vector invocation smoke. It invokes only dedicated vector `0x81` through one manual command path, only after the current boot has sticky proof of the manual `0x81` IDT descriptor bind, and records inert-stub reach telemetry. The stub remains software-only: no PIC_EOI write, no EOI helper call, no PIC unmask, no `sti`, no IRQ0/IRQ1 bind, no keyboard IRQ switch, and no runtime IRQ activation.
+
+`v10.23.1` is a Controlled IDT Vector Invocation One-Shot Smoke Hardening release. It adds no commands and preserves the `v10.23.0` manual invocation outputs while tightening verifier guards around the exact state sequence, the single manual `int 0x81` callsite, inert-stub telemetry, sticky proof, forbidden IRQ0/IRQ1 binding, forbidden runtime activation, keyboard polling, and the single manual PIC_EOI callsite.
+
+`v10.14.1` is hardening-only. The transition command outputs remain unchanged from `v10.14.0`; verifier guards now lock the denied/unarmed sequence, single true/false store paths, read-only status/check/blockers surfaces, no latch mutation, no permit mutation, no positive permit state, and no hardware write path.
+
+`v10.14.0` permits software transition telemetry only. `eoi-write-permit-transition-arm` sets `permit transition armed: yes`, `eoi-write-permit-transition-clear` returns it to `no`, and `eoi-write-permit-transition-check` remains denied without granting a permit. `permit granted: no`, `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no` remain mandatory.
+
+`v10.13.1` is hardening-only. The bridge still reads permit telemetry, reads latch telemetry, derives readiness as denied, and reports blockers without setting or clearing the latch. `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no` remain mandatory.
+
+`v10.13.0` bridges latch and permit telemetry only. `eoi-write-bridge-status` and `eoi-write-bridge-check` report `bridge ready: no`, `permit granted: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no`. The bridge never sets or clears the latch.
+
+`v10.12.1` is hardening-only. The allowed mutation remains limited to `EOI_WRITE_ONESHOT_LATCH_ARMED: AtomicBool`; arm is the only path that stores `true`, clear is the only path that stores `false`, and fire only reads the latch. The hardened sequence is: initial unarmed, unarmed fire blocked before any hardware write, arm to armed, armed fire blocked by the permit model, status remains armed, clear to unarmed, status remains unarmed.
+
+`v10.12.0` permits software latch telemetry only. `eoi-write-oneshot-latch-arm` sets `one-shot armed: yes`, `eoi-write-oneshot-latch-clear` returns it to `no`, and blocked `eoi-write-oneshot-latch-fire` does not clear the latch. `first PIC_EOI write performed: no`, `hardware mutation: no`, and `runtime irq active: no` remain mandatory.
+
+`v10.11.1` is not a latch or EOI write release. It hardens the one-shot command path only: `one-shot armed: no`, `fire allowed: no`, `first PIC_EOI write performed: no`, and no `PIC_EOI` write.
 
 `v10.11.0` is not an EOI write release. It defines the one-shot command path only: `one-shot armed: no`, `fire allowed: no`, `first PIC_EOI write performed: no`, and no `PIC_EOI` write.
 
@@ -19,6 +213,234 @@ DByteOS Kernel Lab `v10.11.0` is a Controlled EOI Write One-Shot Command Path Fo
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
 This milestone still implements an EOI strategy foundation on top of the IRQ handler skeleton while keeping the IRQ gate plan and disabled bind path dormant and adding a preflight status surface. It adds no new runtime IRQ behavior, no active IDT bind path, and no dry-bind readiness path.
+
+## Controlled IRQ0 Timer Handler Stub Foundation
+
+`v10.29.0` prepares the IRQ0 timer handler body without making it reachable from hardware. The stub body increments software counter state, masks IRQ0 on the master PIC, calls the single master PIC_EOI helper, and returns through `iretd`; no command invokes it, `sti` remains disabled, IRQ0 remains masked outside transactional smoke, IRQ1 remains untouched, runtime IRQ stays inactive, and keyboard input remains polling-only.
+
+`irq0-handler-stub-status` and `irq0-handler-stub-check` render:
+
+```txt
+IRQ0 timer handler stub
+IRQ0 timer handler stub exists: yes
+stub reachable from hardware: no
+counter increment path: prepared
+IRQ0 self-mask path: prepared
+master PIC_EOI path: prepared
+STI: disabled
+IRQ0 currently masked: yes
+runtime irq active: no
+keyboard mode: polling
+```
+
+`irq0-handler-stub-blockers` renders:
+
+```txt
+IRQ0 timer handler stub blockers
+- STI remains disabled
+- IRQ0 remains masked outside transactional smoke
+- hardware IRQ delivery remains disabled
+- activation window missing
+stub reachable from hardware: no
+runtime irq active: no
+keyboard mode: polling
+```
+
+## DByte Kernel VM Probe Foundation
+`v10.32.0` adds the first embedded DByte bytecode VM probe inside the kernel. The VM is a tiny `no_std` interpreter over fixed bytecode and fixed stack storage. It does not embed the host parser, compiler, type checker, CLI, host std modules, filesystem loading, process spawning, BYTEDECK, or IRQ runtime behavior.
+
+Commands:
+```txt
+dbyte-vm-status
+dbyte-vm-run-probe
+gfx-show
+gfx-console
+gfx-console-input
+```
+
+Status:
+```txt
+DByte kernel VM
+state: ready
+mode: embedded bytecode
+heap: none
+filesystem: none
+boot script: executed
+boot script result: ok
+```
+
+Probe:
+```txt
+DBYTE VM ONLINE
+42
+```
+
+## DByte VGA Graphics Surface Foundation
+`v10.34.0` adds `gfx-show`, a manual-only Mode 13h smoke command. It renders a static pixel surface with `DBYTE.OS`, kernel, VM, IRQ0, input, and prompt state text. It does not add text-mode restore, persistent graphics shell, animation, mouse input, IRQ changes, or VM opcode changes.
+
+Serial proof:
+```txt
+gfx-show: VGA graphics surface rendered
+```
+
+## DByte Graphics Console Foundation
+`v10.35.0` adds `gfx-console`, a manual-only Mode 13h graphics console command. It uses the existing `vga_gfx` hardware primitives to render a structured pixel console with kernel, VM, boot-script, IRQ0, input, graphics, log, and prompt rows. It does not add text-mode restore, mouse input, animation, compositor, filesystem/process paths, IRQ changes, or VM opcode changes.
+
+Serial proof:
+```txt
+gfx-console: DByte graphics console rendered
+```
+
+## Controlled IRQ0 Tick Counter Window Foundation
+`v10.31.0` adds a manual-only bounded IRQ0 tick counter window. `irq0-ticks-arm` requires the same proven PIC remap, manual PIC_EOI, IRQ0 descriptor bind, and transactional IRQ0 unmask chain as the one-shot window. `irq0-ticks-fire` temporarily unmasks IRQ0, opens a bounded `sti` observation window for `IRQ0_TICK_TARGET = 8`, executes `cli`, restores the original master PIC mask, redraws the VGA IRQ0 status line, and returns with IF disabled, IRQ0 masked, runtime IRQ inactive, and keyboard polling unchanged.
+```txt
+irq0-ticks-status
+irq0-ticks-arm
+irq0-ticks-fire
+irq0-ticks-clear
+```
+Initial status:
+```txt
+IRQ0 tick counter window
+state: idle
+target ticks: 8
+observed ticks: 0
+IRQ0 currently masked: yes
+STI currently enabled: no
+original PIC mask restored: yes
+IF disabled before return: yes
+runtime irq active: no
+preconditions:
+- PIC remap proof: no
+- manual PIC_EOI proof: no
+- IRQ0 descriptor bind proof: no
+- transactional IRQ0 unmask proof: no
+unmet preconditions: PIC remap proof, manual PIC_EOI proof, IRQ0 descriptor bind proof, transactional IRQ0 unmask proof
+```
+Armed after proof chain:
+```txt
+IRQ0 tick counter window arm
+armed: IRQ0 tick counter window ready
+state: armed
+armed: yes
+target ticks: 8
+observed ticks: 0
+hardware mutation: no
+runtime irq active: no
+unmet preconditions: none
+```
+Successful fire:
+```txt
+IRQ0 tick counter window fire
+finished: eight IRQ0 ticks observed
+state: finished
+target ticks: 8
+observed ticks: 8
+IRQ0 currently masked: yes
+STI currently enabled: no
+original PIC mask restored: yes
+IF disabled before return: yes
+hardware mutation: yes
+runtime irq active: no
+VGA IRQ0 status: TICKS 0008 / MASKED
+```
+Timeout and fault classifications:
+```txt
+timeout: fewer than eight IRQ0 ticks observed
+VGA IRQ0 status: TIMEOUT / MASKED
+fault: IRQ0 tick counter overflow
+VGA IRQ0 status: FAULT OVERFLOW
+```
+Clear:
+```txt
+IRQ0 tick counter window clear
+cleared: IRQ0 tick counter telemetry reset
+state: idle
+armed: no
+target ticks: 8
+observed ticks: 0
+hardware mutation: no
+runtime irq active: no
+```
+
+## Controlled IRQ0 Delivery One-Shot Window Foundation
+
+`v10.30.0` adds a manual-only bounded IRQ0 delivery window. `irq0-window-arm` requires the current boot to have proven PIC remap, manual PIC_EOI, IRQ0 descriptor bind, and transactional IRQ0 unmask smoke before arming. `irq0-window-fire` is the only mutation path: it saves the original master PIC mask, temporarily clears only the IRQ0 mask bit, opens one bounded `sti` observation window, executes `cli`, restores the original mask, records the IRQ0 handler counter, redraws the VGA IRQ0 status line, and returns with IF disabled, IRQ0 masked, and runtime IRQ inactive. `irq0-window-clear` resets transient window telemetry only.
+
+`irq0-window-status` renders:
+
+```txt
+IRQ0 delivery one-shot window
+state: idle
+IRQ0 deliveries: 0
+IRQ0 currently masked: yes
+STI currently enabled: no
+original PIC mask restored: yes
+IF disabled before return: yes
+runtime irq active: no
+preconditions:
+- PIC remap proof: no
+- manual PIC_EOI proof: no
+- IRQ0 descriptor bind proof: no
+- transactional IRQ0 unmask proof: no
+unmet preconditions: PIC remap proof required
+```
+
+`irq0-window-arm` renders a blocked precondition result until the manual proof chain is complete:
+
+```txt
+IRQ0 delivery one-shot window arm
+blocked: preconditions missing
+state: idle
+armed: no
+IRQ0 deliveries: 0
+hardware mutation: no
+runtime irq active: no
+unmet preconditions: PIC remap proof required
+```
+
+After the proof chain, `irq0-window-arm` renders:
+
+```txt
+IRQ0 delivery one-shot window arm
+armed: IRQ0 delivery window ready
+state: armed
+armed: yes
+IRQ0 deliveries: 0
+hardware mutation: no
+runtime irq active: no
+unmet preconditions: none
+```
+
+`irq0-window-fire` reports the bounded delivery result. A one-delivery result renders:
+
+```txt
+IRQ0 delivery one-shot window fire
+finished: one IRQ0 delivery observed
+state: finished
+IRQ0 deliveries: 1
+IRQ0 currently masked: yes
+STI currently enabled: no
+original PIC mask restored: yes
+IF disabled before return: yes
+hardware mutation: yes
+runtime irq active: no
+VGA IRQ0 status: FIRED ONCE / MASKED
+```
+
+Zero delivery remains a bounded, restored result and uses `VGA IRQ0 status: NO DELIVERY / MASKED`; more than one delivery enters `fault` and uses `VGA IRQ0 status: FAULT MULTI-FIRE`.
+
+`irq0-window-clear` renders:
+
+```txt
+IRQ0 delivery one-shot window clear
+cleared: IRQ0 delivery window idle
+state: idle
+armed: no
+IRQ0 deliveries: 0
+hardware mutation: no
+runtime irq active: no
+```
 
 ## PIC Remap Plan
 
@@ -56,6 +478,25 @@ PIC Remap State Telemetry remains available through state/history/preflight comm
 - `IrqRuntimeReadiness`, `IrqRuntimeRisk`, `IrqRuntimePreflight`, and their helpers describe readiness, risk, and preflight telemetry without accepting IDT/PIC references or changing runtime state.
 - The skeletons are not called from boot, shell commands, IDT setup, PIC setup, or keyboard input paths.
 - IRQ0/IRQ1 smoke assembly wrappers exist only as dormant IDT targets for the controlled bind smoke path. They return with `iretd`, perform no EOI, perform no port I/O, and are not hardware-triggered because `sti` remains disabled and PIC IRQ lines remain masked.
+
+## Controlled PIC IRQ0 Unmask One-Shot Smoke Foundation
+
+`v10.27.0` adds a manual-only transactional PIC IRQ0 unmask smoke. It proves the master PIC IRQ0 mask bit can be cleared and restored without leaving IRQ0 unmasked after the command returns.
+
+Commands:
+
+```text
+irq0-unmask-hw-smoke-note
+irq0-unmask-hw-smoke-status
+irq0-unmask-hw-smoke-arm
+irq0-unmask-hw-smoke-fire
+irq0-unmask-hw-smoke-clear
+irq0-unmask-hw-smoke-blockers
+```
+
+The `fire` command reads the current master PIC mask, writes a temporary mask with only the IRQ0 bit cleared, reads proof telemetry, restores the original master mask immediately, consumes the latch, and sets `PIC_IRQ0_UNMASK_HW_SMOKE_PROVEN_THIS_BOOT` only after the temporary unmask and restore have both completed. `clear` resets transient software telemetry only.
+
+The boundary remains locked: `sti` is disabled, hardware IRQ delivery is disabled, IRQ0 handler reachability is `no`, handler-triggered EOI is disabled, IRQ1 remains masked, the slave PIC mask is untouched, keyboard input remains polling-only, and runtime IRQ activation remains `no`.
 
 ## EOI Strategy Foundation
 
@@ -549,6 +990,424 @@ EOI write one-shot blockers
 - PIC unmask disabled
 - live IRQ runtime disabled
 first PIC_EOI write performed: no
+```
+
+## Controlled EOI Write One-Shot Command Path Hardening
+
+`v10.11.1` hardens the one-shot command path from `v10.11.0` without adding latch state or enabling fire. `eoi-write-oneshot-arm` remains read-only and reports the same denied status snapshot. `eoi-write-oneshot-fire` remains blocked by the permit model and performs no PIC command port write.
+
+## Controlled EOI Write One-Shot Latch Foundation
+
+`v10.12.0` adds a software-only latch layer for the controlled first EOI write path. The latch is telemetry state only: it may be armed or cleared from the shell, but it never grants permit, never dispatches `PIC_EOI`, never unmasks the PIC, never enables `sti`, never binds live IRQ0/IRQ1 handlers, and never changes keyboard IRQ mode.
+
+Commands:
+
+```txt
+eoi-write-oneshot-latch-note
+eoi-write-oneshot-latch-status
+eoi-write-oneshot-latch-arm
+eoi-write-oneshot-latch-clear
+eoi-write-oneshot-latch-fire
+eoi-write-oneshot-latch-blockers
+```
+
+Latch semantics:
+
+- `eoi-write-oneshot-latch-arm` sets `one-shot armed: yes`.
+- `eoi-write-oneshot-latch-clear` sets `one-shot armed: no`.
+- `eoi-write-oneshot-latch-fire` reads the latch and remains blocked by the permit model.
+- Blocked fire does not clear the latch.
+- Clear is the only command that returns the latch to `no`.
+- `first PIC_EOI write performed: no`, `hardware mutation: no`, and `runtime irq active: no` remain invariant.
+
+## Controlled EOI Write One-Shot Latch Hardening
+
+`v10.12.1` is a hardening-only release for the `v10.12.0` latch namespace. It adds no commands, preserves existing latch output, and extends guards so the software latch cannot be confused with hardware readiness.
+
+Hardened latch state sequence:
+
+```txt
+initial one-shot armed: no
+unarmed fire: blocked by latch state before hardware write
+arm: one-shot armed: yes
+armed fire: blocked by permit model
+status after blocked fire: one-shot armed: yes
+clear: one-shot armed: no
+status after clear: one-shot armed: no
+```
+
+Hardening invariants:
+
+```txt
+AtomicBool owner: EOI_WRITE_ONESHOT_LATCH_ARMED
+arm store path: only eoi_write_oneshot_latch_arm stores true
+clear store path: only eoi_write_oneshot_latch_clear stores false
+fire store path: none
+first PIC_EOI write performed: no
+hardware mutation: no
+runtime irq active: no
+keyboard mode: polling
+```
+
+## Controlled EOI Write One-Shot Permit Bridge Foundation
+
+`v10.13.0` adds a read-only bridge between the `v10.10.0` permit model and the `v10.12.0` software latch. It derives readiness from those two telemetry surfaces only; it does not arm, clear, fire, write a PIC command port, unmask PIC lines, enable `sti`, bind live IDT handlers, or switch keyboard input away from polling.
+
+Commands:
+
+```txt
+eoi-write-bridge-note
+eoi-write-bridge-status
+eoi-write-bridge-check
+eoi-write-bridge-blockers
+```
+
+Bridge baseline:
+
+```txt
+bridge: read-only telemetry bridge
+permit granted: no
+one-shot armed: yes/no
+bridge ready: no
+first PIC_EOI write allowed: no
+target command port: none
+target value: none
+hardware mutation: no
+runtime irq active: no
+```
+
+Bridge blockers:
+
+```txt
+- latch not armed
+- permit denied
+- first PIC_EOI write allowed: no
+- hardware mutation: no
+- runtime irq active: no
+- STI disabled
+- PIC unmask disabled
+- live IRQ runtime disabled
+bridge ready: no
+```
+
+## Controlled EOI Write One-Shot Permit Bridge Hardening
+
+`v10.13.1` preserves the `v10.13.0` command output and bridge behavior. The hardening layer verifies that the bridge reads the permit model before the latch status, calls the bridge derivation helper afterward, and never calls latch arm, latch clear, latch store, PIC EOI write, `sti`, PIC unmask, live IDT bind, or keyboard IRQ mode paths.
+
+## Controlled EOI Write Permit Transition Model Foundation
+
+`v10.14.0` adds a software-only transition state above the denied permit model. The transition can be armed and cleared in software, but it never turns `permit granted` to `yes` and never makes the bridge ready.
+
+Commands:
+
+```txt
+eoi-write-permit-transition-note
+eoi-write-permit-transition-status
+eoi-write-permit-transition-arm
+eoi-write-permit-transition-clear
+eoi-write-permit-transition-check
+eoi-write-permit-transition-blockers
+```
+
+Transition sequence:
+
+```txt
+initial: permit transition armed: no
+arm: permit transition armed: yes
+check: permit granted: no
+check: bridge ready: no
+check: first PIC_EOI write allowed: no
+clear: permit transition armed: no
+```
+
+Hardening invariants:
+
+```txt
+transition state: software-only permit transition
+permit granted: no
+bridge ready: no
+first PIC_EOI write allowed: no
+hardware mutation: no
+runtime irq active: no
+keyboard mode: polling
+```
+
+## Controlled EOI Write Permit Transition Model Hardening
+
+`v10.14.1` preserves the `v10.14.0` command output and transition behavior. The hardening layer verifies the transition state sequence, keeps `arm` as the only true store path, keeps `clear` as the only false store path, and proves status/check/blockers remain read-only.
+
+Additional guards ensure transition code cannot mutate the one-shot latch, cannot mutate the underlying permit model, cannot produce positive permit or bridge readiness states, and cannot reach a PIC EOI hardware write path.
+
+Hardened sequence:
+
+```txt
+initial: permit transition armed: no
+initial: permit granted: no
+check: transition check remains denied
+arm: permit transition armed: yes
+check: permit granted: no
+check: bridge ready: no
+status: permit transition armed: yes
+clear: permit transition armed: no
+status: permit transition armed: no
+```
+
+## Controlled EOI Write Permit Evaluation Hardening
+
+`v10.15.1` adds no commands and keeps the evaluator read-only. It hardens the existing evaluator contract by verifying exact rendered output, read ordering, helper isolation, dispatcher isolation, denied readiness fields, and the absence of latch, transition, permit, bridge, PIC, STI, unmask, IRQ, IDT, or keyboard-mode mutation.
+
+## Controlled PIC_EOI Runtime Bridge Readiness Foundation
+
+`v10.17.1` keeps the bridge read-only and repairs its proof input. The bridge reports whether the current boot session has proven the manual smoke, then keeps handler-triggered EOI and runtime IRQ activation denied.
+
+Commands:
+
+```txt
+eoi-runtime-bridge-note
+eoi-runtime-bridge-status
+eoi-runtime-bridge-check
+eoi-runtime-bridge-blockers
+```
+
+Runtime bridge invariants:
+
+```txt
+manual PIC_EOI smoke proven: session-local yes/no
+proof source: sticky boot-session flag
+transient performed telemetry: may reset on clear
+runtime bridge ready: no
+handler-triggered EOI allowed: no
+runtime irq active: no
+sti: disabled
+pic unmask: disabled
+live irq handlers: no
+keyboard mode: polling
+PIC_EOI write callsites: exactly 1 manual-only
+```
+
+## Controlled IRQ Handler EOI Path Candidate Foundation
+
+`v10.18.0` adds an unreachable candidate layer for a future handler-side EOI path. The candidate reads runtime bridge readiness but is not called from interrupt handlers, boot, live IDT bind, timer IRQ, or keyboard IRQ paths.
+
+Commands:
+
+```txt
+irq-handler-eoi-candidate-note
+irq-handler-eoi-candidate-status
+irq-handler-eoi-candidate-check
+irq-handler-eoi-candidate-blockers
+```
+
+Candidate invariants:
+
+```txt
+runtime bridge ready: no
+handler EOI candidate ready: no
+handler-triggered EOI allowed: no
+live handler bind: no
+PIC_EOI callsites: 1 manual-only
+runtime irq active: no
+sti: disabled
+pic unmask: disabled
+keyboard mode: polling
+handler invocation: unreachable
+```
+
+## Controlled IRQ Handler EOI Stub Foundation
+
+`v10.19.0` adds an unbound stub layer for a future handler-side EOI path. The stub reads the handler EOI candidate but is not called from interrupt handlers, boot, live IDT bind, timer IRQ, keyboard IRQ, or PIC paths.
+
+Commands:
+
+```txt
+irq-handler-eoi-stub-note
+irq-handler-eoi-stub-status
+irq-handler-eoi-stub-check
+irq-handler-eoi-stub-blockers
+```
+
+Stub invariants:
+
+```txt
+stub exists: yes
+stub bound to live IRQ path: no
+stub invocation allowed: no
+stub performs PIC_EOI write: no
+handler-triggered EOI allowed: no
+PIC_EOI callsites: 1 manual-only
+runtime irq active: no
+sti: disabled
+pic unmask: disabled
+keyboard mode: polling
+handler invocation: unreachable
+```
+
+## Controlled IRQ Handler Bind Candidate Foundation
+
+`v10.20.0` adds a telemetry-only bind candidate above the unbound handler EOI stub. The candidate reads stub telemetry but is not a live IDT bind, does not register IRQ0/IRQ1 handlers, and is not reachable from interrupt runtime.
+
+Commands:
+
+```txt
+irq-handler-bind-candidate-note
+irq-handler-bind-candidate-status
+irq-handler-bind-candidate-check
+irq-handler-bind-candidate-blockers
+```
+
+Bind candidate invariants:
+
+```txt
+stub exists: yes
+bind candidate exists: yes
+bind candidate ready: no
+live IDT bind performed: no
+IRQ handler reachable: no
+handler-triggered EOI allowed: no
+runtime irq active: no
+sti: disabled
+pic unmask: disabled
+keyboard mode: polling
+```
+
+## Controlled IDT Bind One-Shot Smoke Foundation
+
+`v10.21.0` adds the first controlled real IDT descriptor bind. The path is manual shell only, targets dedicated non-IRQ vector `0x81`, binds an inert test stub, consumes the latch after one successful fire, and remains separate from IRQ0/IRQ1 runtime binding.
+
+Commands:
+
+```txt
+idt-bind-hw-smoke-note
+idt-bind-hw-smoke-status
+idt-bind-hw-smoke-arm
+idt-bind-hw-smoke-fire
+idt-bind-hw-smoke-clear
+idt-bind-hw-smoke-blockers
+```
+
+IDT bind smoke invariants:
+
+```txt
+target vector: 0x81
+target handler: inert test stub
+live IRQ bind: no
+IRQ0 bind: no
+IRQ1 bind: no
+interrupt invocation: no
+hardware mutation allowed: one IDT descriptor bind only
+runtime irq active: no
+sti: disabled
+pic unmask: disabled
+keyboard mode: polling
+```
+
+Forbidden in this release:
+
+```txt
+no IRQ0/IRQ1 registration
+no interrupt invocation
+no int 0x81 command
+no handler-triggered PIC_EOI
+no second PIC_EOI command-port write callsite
+no asm!("sti")
+no PIC unmask
+no keyboard IRQ switch
+```
+
+## Controlled IDT Bind Runtime Bridge Foundation
+
+`v10.22.0` adds a read-only runtime bridge above the manual IDT bind smoke. It reads sticky boot-session proof from the successful vector `0x81` bind path and does not derive proof from transient `performed`, `consumed`, or `armed` telemetry.
+
+Commands:
+
+```txt
+idt-bind-runtime-bridge-note
+idt-bind-runtime-bridge-status
+idt-bind-runtime-bridge-check
+idt-bind-runtime-bridge-blockers
+```
+
+Bridge invariants:
+
+```txt
+manual IDT bind smoke proven this boot: yes/no
+runtime IDT bridge ready: no
+live IRQ bind allowed: no
+IRQ handler reachable: no
+interrupt invocation allowed: no
+runtime irq active: no
+sti: disabled
+pic unmask: disabled
+keyboard mode: polling
+```
+
+Forbidden in this release:
+
+```txt
+no int 0x81 invocation
+no live IRQ0/IRQ1 registration
+no live IDT IRQ bind
+no handler-triggered PIC_EOI
+no second PIC_EOI command-port write callsite
+no asm!("sti")
+no PIC unmask
+no keyboard IRQ switch
+```
+
+## First Controlled PIC_EOI Write Smoke Foundation
+
+`v10.16.0` adds a manual one-shot hardware smoke path for the first real PIC EOI write. It is not IRQ runtime activation and must never run from a handler, boot path, loop, timer IRQ, keyboard IRQ, or live IDT bind.
+
+Commands:
+
+```txt
+eoi-write-hw-smoke-note
+eoi-write-hw-smoke-status
+eoi-write-hw-smoke-arm
+eoi-write-hw-smoke-fire
+eoi-write-hw-smoke-clear
+eoi-write-hw-smoke-blockers
+```
+
+Hardware smoke invariants:
+
+```txt
+manual shell command path only
+target command port: PIC_MASTER_COMMAND
+target value: PIC_EOI
+slave PIC command write: forbidden
+PIC_EOI write callsites: exactly 1
+successful fire consumes latch: yes
+repeated fire without re-arm: blocked
+sti: disabled
+PIC unmask: disabled
+runtime irq active: no
+keyboard mode: polling
+```
+
+## Controlled EOI Write Permit Evaluation Foundation
+
+`v10.15.0` adds a read-only evaluator above the transition model. The evaluator reads existing software telemetry and reports why the first PIC EOI write remains denied; it does not store latch state, store transition state, grant a permit, change bridge readiness, or touch hardware.
+
+Commands:
+
+```txt
+eoi-write-eval-note
+eoi-write-eval-status
+eoi-write-eval-check
+eoi-write-eval-blockers
+```
+
+Evaluation invariants:
+
+```txt
+evaluation ready: no
+permit granted: no
+bridge ready: no
+first PIC_EOI write allowed: no
+hardware mutation: no
+runtime irq active: no
+keyboard mode: polling
 ```
 
 ## IRQ Gate Binding Plan

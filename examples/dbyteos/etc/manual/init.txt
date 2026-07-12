@@ -1,0 +1,12 @@
+DByteOS Init System
+
+The init system (sys/init.dby) manages the DByteOS userland lifecycle.
+It is automatically executed during the 'boot' sequence.
+
+Functions:
+- Reads the etc/services.dby registry.
+- Initializes enabled services.
+- Sets up session markers in /tmp.
+
+Deterministic behavior ensures that every boot results in the same
+system state.

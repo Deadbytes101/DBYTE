@@ -1,0 +1,4 @@
+import std.binary as b
+
+let data: bytes = b"\x78\x56\x34\x12"
+print(b.u32_le(data, 0))

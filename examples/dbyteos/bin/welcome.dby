@@ -1,4 +1,5 @@
 import "../sys/profile.dby" as profile
+
 print("--- Welcome to DByteOS Alpha ---")
 print("DByteOS is a personal userland built on the DByte runtime.")
 print("")

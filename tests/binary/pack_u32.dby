@@ -1,0 +1,6 @@
+import std.binary as bin
+import std.encoding as enc
+
+print(enc.hex_encode(bin.pack_u32_le(67305985)))
+print(enc.hex_encode(bin.pack_u32_be(67305985)))
+print(enc.hex_encode(bin.pack_u32_le(4294967295)))

@@ -1,0 +1,20 @@
+DByteOS Profile
+
+The profile command prints the current deterministic DByteOS profile.
+It is read-only in v6.0.0 and does not write configuration files.
+
+Usage:
+  profile
+  profile show
+  profile whoami
+  profile home
+  profile theme
+  profile prompt
+
+Fields:
+  user: deadbyte
+  home: home/deadbyte
+  shell: dbyte shell
+  mode: beta-userland
+  theme: default
+  prompt: dbyte-shell>

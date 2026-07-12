@@ -1,0 +1,5 @@
+fn name() -> str:
+    return "dbyte"
+
+let x = name()
+print(x)

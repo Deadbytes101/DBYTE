@@ -1,0 +1,14 @@
+[package]
+name = "dbyte_interp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+byteorder = "1.5.0"
+dbyte_ast.workspace = true
+dbyte_lexer.workspace = true
+dbyte_module.workspace = true
+dbyte_parser.workspace = true
+hex.workspace = true
+sha2.workspace = true
+memchr.workspace = true

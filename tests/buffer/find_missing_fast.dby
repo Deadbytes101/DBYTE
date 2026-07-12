@@ -1,0 +1,4 @@
+import std.buffer as buf
+
+let b = buf.from_bytes(b"\xDE\xAD\xBE\xEF")
+print(buf.find(b, b"\xAB\xCD"))

@@ -1,0 +1,18 @@
+DByteOS Snapshot
+
+The snapshot command prints deterministic read-only summaries of DByteOS Alpha
+subsystems. It is intended for debugging, package smoke tests, and first-run
+inspection.
+
+Usage:
+  snapshot
+  snapshot system
+  snapshot profile
+  snapshot config
+  snapshot security
+  snapshot logs
+
+Notes:
+  snapshot does not write files or mutate config.
+  snapshot system is the default full summary.
+  snapshot config reads the same values as config show.

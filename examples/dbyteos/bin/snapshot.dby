@@ -3,89 +3,98 @@ import "../sys/config.dby" as config
 import "../sys/profile.dby" as profile
 import std.env as env
 import std.fs as fs
+
 let args: list[str] = env.args()
+
 fn show_usage():
-print("usage: snapshot [system|profile|config|security|logs]")
-print("")
-print("commands:")
-print("  system    - print full system snapshot")
-print("  profile   - print profile identity")
-print("  config    - print read-only config values")
-print("  security  - print security policy summary")
-print("  logs      - print session log summary")
+    print("usage: snapshot [system|profile|config|security|logs]")
+    print("")
+    print("commands:")
+    print("  system    - print full system snapshot")
+    print("  profile   - print profile identity")
+    print("  config    - print read-only config values")
+    print("  security  - print security policy summary")
+    print("  logs      - print session log summary")
+
 fn show_profile():
-print("Profile:")
-print("  user:    " + profile.get_user())
-print("  home:    " + profile.get_home())
-print("  shell:   " + profile.get_shell())
-print("  mode:    " + profile.get_mode())
-print("  theme:   " + profile.get_theme())
-print("  prompt:  " + profile.get_prompt())
+    print("Profile:")
+    print("  user:    " + profile.get_user())
+    print("  home:    " + profile.get_home())
+    print("  shell:   " + profile.get_shell())
+    print("  mode:    " + profile.get_mode())
+    print("  theme:   " + profile.get_theme())
+    print("  prompt:  " + profile.get_prompt())
+
 fn show_config():
-print("Config:")
-for key in config.keys():
-let val: str = config.get(key)
-let base_val: str = config.get_base(key)
-if base_val != val:
-print("  " + key + " = " + val + " (overridden)")
-else:
-print("  " + key + " = " + val)
+    print("Config:")
+    for key in config.keys():
+        let val: str = config.get(key)
+        let base_val: str = config.get_base(key)
+        if base_val != val:
+            print("  " + key + " = " + val + " (overridden)")
+        else:
+            print("  " + key + " = " + val)
+
 fn show_security():
-print("Security:")
-print("  mode:          " + config.get("security.mode"))
-print("  tmp/:          read/write")
-print("  home/deadbyte/: read/write")
-print("  etc/:          read-only")
-print("  sys/:          read-only")
-print("  bin/:          read-only")
-print("  ../:           denied")
-print("  absolute path: denied")
+    print("Security:")
+    print("  mode:          " + config.get("security.mode"))
+    print("  tmp/:          read/write")
+    print("  home/deadbyte/: read/write")
+    print("  etc/:          read-only")
+    print("  sys/:          read-only")
+    print("  bin/:          read-only")
+    print("  ../:           denied")
+    print("  absolute path: denied")
+
 fn show_log_state(label: str, rel: str):
-let path: str = profile.resolve_path(rel)
-if fs.exists(path) == 1:
-print("  " + label + ": present")
-else:
-print("  " + label + ": missing")
+    let path: str = profile.resolve_path(rel)
+    if fs.exists(path) == 1:
+        print("  " + label + ": present")
+    else:
+        print("  " + label + ": missing")
+
 fn show_logs():
-print("Logs:")
-show_log_state("boot.log", "tmp/boot.log")
-show_log_state("services.log", "tmp/services.log")
-show_log_state("security.log", "tmp/security.log")
+    print("Logs:")
+    show_log_state("boot.log", "tmp/boot.log")
+    show_log_state("services.log", "tmp/services.log")
+    show_log_state("security.log", "tmp/security.log")
+
 fn show_system():
-print("--- DByteOS System Snapshot ---")
-print("System:")
-print("  version: DByte " + system.os_version)
-print("  codename: " + system.os_codename)
-print("  host:    " + system.hostname)
-print("  kernel:  " + system.kernel_mode)
-print("")
-show_profile()
-print("")
-show_config()
-print("")
-show_security()
-print("")
-show_logs()
-print("")
-print("Next: snapshot profile | snapshot config | snapshot security | snapshot logs")
+    print("--- DByteOS System Snapshot ---")
+    print("System:")
+    print("  version: DByte " + system.os_version)
+    print("  codename: " + system.os_codename)
+    print("  host:    " + system.hostname)
+    print("  kernel:  " + system.kernel_mode)
+    print("")
+    show_profile()
+    print("")
+    show_config()
+    print("")
+    show_security()
+    print("")
+    show_logs()
+    print("")
+    print("Next: snapshot profile | snapshot config | snapshot security | snapshot logs")
+
 if len(args) < 1:
-show_system()
+    show_system()
 else:
-let cmd: str = args[0]
-if cmd == "system":
-show_system()
-else:
-if cmd == "profile":
-show_profile()
-else:
-if cmd == "config":
-show_config()
-else:
-if cmd == "security":
-show_security()
-else:
-if cmd == "logs":
-show_logs()
-else:
-print("error: unknown snapshot command: " + cmd)
-show_usage()
+    let cmd: str = args[0]
+    if cmd == "system":
+        show_system()
+    else:
+        if cmd == "profile":
+            show_profile()
+        else:
+            if cmd == "config":
+                show_config()
+            else:
+                if cmd == "security":
+                    show_security()
+                else:
+                    if cmd == "logs":
+                        show_logs()
+                    else:
+                        print("error: unknown snapshot command: " + cmd)
+                        show_usage()

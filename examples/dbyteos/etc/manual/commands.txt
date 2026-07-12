@@ -1,0 +1,12 @@
+DByteOS Commands
+
+The commands command prints the DByteOS command catalog grouped by category.
+It is a quick reference for system, discovery, file, security, workspace, service, and log commands.
+
+Usage:
+  commands
+
+See also:
+  help
+  man-index
+  which <command>

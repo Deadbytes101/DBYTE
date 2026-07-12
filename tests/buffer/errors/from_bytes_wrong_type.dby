@@ -1,0 +1,4 @@
+import std.buffer as buf
+
+let data = [1, 2, 3]
+let b = buf.from_bytes(data)

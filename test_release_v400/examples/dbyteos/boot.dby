@@ -1,0 +1,47 @@
+import "./sys/profile.dby" as profile
+import "./etc/system.dby" as system
+import "./sys/init.dby" as init
+import "./sys/logger.dby" as logger
+import std.fs as fs
+
+print("--------------------------------------------------")
+logger.reset_boot_session_logs()
+logger.write_boot_event("Boot sequence started.")
+print("  ____  ____        _             ___  ____  ")
+print(" |  _ \\| __ ) _   _| |_ ___      / _ \\/ ___| ")
+print(" | | | |  _ \\| | | | __/ _ \\    | | | \\___ \\ ")
+print(" | |_| | |_) | |_| | ||  __/    | |_| |___) |")
+print(" |____/|____/ \\__, |\\__\\___|     \\___/|____/ ")
+print("              |___/                          ")
+print("        D B Y T E O S   U S E R L A N D")
+print("--------------------------------------------------")
+print("OS Version:  ", system.os_version, "(", system.os_codename, ")")
+print("Hostname:    ", system.hostname)
+print("Kernel:      ", system.kernel_mode)
+print("User:        ", profile.get_user())
+print("Home:        ", profile.get_home())
+print("--------------------------------------------------")
+
+# Boot checks
+print("Checking system integrity...")
+logger.write_boot_event("Integrity check initiated.")
+let dirs: list[str] = ["bin", "etc", "sys", "home", "tmp"]
+for d in dirs:
+    let path: str = profile.resolve_path(d)
+    if fs.exists(path) == 1:
+        print("  [OK] /" + d)
+    else:
+        print("  [!!] /" + d + " MISSING")
+
+print("")
+logger.write_boot_event("Handing over to init system.")
+init.run()
+
+print("System initialization complete.")
+logger.write_boot_event("Boot sequence completed successfully.")
+let touch_path: str = profile.resolve_path("tmp") + "/.dbyteos_boot_touch"
+fs.write_text(touch_path, "dbyteos boot ok\n")
+print("  [OK] /tmp/.dbyteos_boot_touch (session marker)")
+print("DByteOS is ready for interaction.")
+print("Type 'status' for system info or 'help' for commands.")
+print("--------------------------------------------------")

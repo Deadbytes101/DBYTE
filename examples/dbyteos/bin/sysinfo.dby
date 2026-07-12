@@ -1,5 +1,6 @@
 import "../etc/system.dby" as system
 import "../sys/profile.dby" as profile
+
 print("DByteOS Alpha Userland")
 print("version: DByte " + system.os_version)
 print("codename: " + system.os_codename)

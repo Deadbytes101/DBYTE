@@ -1,0 +1,27 @@
+DByteOS Timeline Command
+
+The timeline command provides a consolidated, chronological, read-only view of workspace data, including projects, tasks, global/project notes, and journals.
+
+Usage:
+  timeline today            - print today's agenda and pending tasks
+  timeline projects         - print historical timeline of workspace projects
+  timeline tasks            - print combined list of all project tasks
+  timeline journal          - print combined list of all journal entries
+  timeline search <text>    - search derived timeline events
+  timeline snapshot         - print timeline status and event counts
+  timeline reset-demo       - reset timeline workspace to default seed state
+  timeline help             - show this help
+
+Timeline Modes:
+  The timeline automatically detects the presence of the search index cache:
+  - cached                  - reads pre-indexed events from search_index.txt
+  - fallback                - parses live files dynamically when cache is missing
+
+Examples:
+  timeline today
+  timeline projects
+  timeline tasks
+  timeline journal
+  timeline search demo
+  timeline snapshot
+  timeline reset-demo

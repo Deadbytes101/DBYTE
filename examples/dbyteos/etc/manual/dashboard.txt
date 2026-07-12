@@ -1,0 +1,16 @@
+DByteOS Dashboard Command
+
+The dashboard command provides a consolidated, read-only "home screen" overview of DByteOS system status and all workspace projects, tasks, timeline summaries, and health metrics.
+
+Usage:
+  dashboard                 - print default Workspace Home Dashboard
+  dashboard projects        - print summary status of all projects
+  dashboard tasks           - print consolidated overview of all tasks
+  dashboard search <query>  - search dashboard entities (projects, tasks)
+  dashboard timeline        - print timeline metadata summary
+  dashboard health          - print workspace diagnostic health status
+  dashboard snapshot        - print consolidated dashboard snapshot
+  dashboard help            - show this command manual
+
+Search Validation:
+  The search query accepts alphanumeric terms and filters matching entities. For security, characters like '.', '/', '\', ':', '*' and '?' are rejected deterministic.

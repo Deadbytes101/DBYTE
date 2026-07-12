@@ -1,12 +1,18 @@
 # DByteOS Shell Configuration
 # Command lookup uses @shell dbyteos_autopath (see examples/dbyteos/sys/session.dby).
+
 @shell dbyteos_autopath on
 @shell dbyteos_prompt on
+
 @shell alias help = run bin/help.dby
+
 @shell alias boot = run boot.dby
+
+
 # Navigation/Info (simulated)
 @shell alias dir = ls
 @shell alias whereami = pwd
+
 # Tools from previous releases (mappable to OS bin)
 @shell alias patch-demo = run ../sanctum/patch_demo.dby
 @shell alias u32-demo = run ../sanctum/u32_demo.dby

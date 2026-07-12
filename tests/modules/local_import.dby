@@ -1,0 +1,4 @@
+import "./math.dby" as math
+
+print(math.add(10, 20))
+print(math.mul(3, 4))

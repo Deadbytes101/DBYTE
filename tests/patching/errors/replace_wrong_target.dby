@@ -1,0 +1,3 @@
+import std.buffer as buf
+let data = b"\x01\x02"
+buf.replace(data, 0, b"\x00")

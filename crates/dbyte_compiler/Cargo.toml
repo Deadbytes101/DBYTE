@@ -1,0 +1,10 @@
+[package]
+name = "dbyte_compiler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+dbyte_ast.workspace = true
+dbyte_bytecode.workspace = true

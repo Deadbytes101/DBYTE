@@ -1,6 +1,146 @@
-# DByteOS QEMU Boot Smoke (v10.4.1)
+# DByteOS QEMU Boot Smoke (v10.62.1)
 
-`v10.4.1` is a Controlled IRQ Runtime Readiness Final Gate Hardening release. It keeps the `v10.4.0` final gate command output and runtime state unchanged while tightening verification for exact output, read-only surfaces, stale version metadata, disabled `sti`, disabled PIC unmask, disabled EOI dispatch, disabled live IRQ0/IRQ1, disabled live IDT runtime binding, and polling-only keyboard fallback. Runtime IRQ readiness remains blocked (ready: no). It does not enable interrupts, unmask PIC IRQ lines, dispatch EOI, bind live IDT handlers, or execute `sti`.
+`v10.62.1` is a DByte Kernel Uptime Tick Projection Hardening release. It adds no Rust behavior or command. `kernel-uptime-status` still reads one `kernel_clock_status_snapshot()`, reports unit `ticks` only with minimum width four, inherits pre-runtime stopped `0008`, advances while runtime is active, and remains stable after stop. It does not convert to seconds/milliseconds, claim PIT frequency, start or stop runtime, create readiness, unmask IRQ0, write PIC ports, execute STI/CLI, mutate IDT/IRQ state, add a graphics command, KCALL, app, opcode, scheduler, or sleep API. QEMU proof artifact: `tmp\qemu_kernel_uptime_hardening_v10.62.1.serial.log`.
+
+`v10.62.0` is a DByte Kernel Uptime Tick Projection Foundation release. It adds exactly one read-only text-shell command, `kernel-uptime-status`, which reads `kernel_clock_status_snapshot()` once and prints `KERNEL UPTIME`, source `IRQ0 runtime`, unit `ticks`, runtime state, and minimum-width-four ticks without truncation. Before runtime starts it inherits stopped `0008`; while running ticks advance, and after stop they remain fixed. No graphics command, KCALL 10, app, opcode, time conversion, PIT frequency claim, sleep API, scheduler, runtime control, readiness creation, or PIC/IDT/IRQ mutation is added. QEMU proof artifact: `tmp\qemu_kernel_uptime_v10.62.0.serial.log`. Known limitation: uptime remains an uncalibrated tick projection.
+
+`v10.61.1` is a DByte Kernel Clock Value Service Hardening release. It adds no Rust behavior, command, opcode, service id, or app. KCALL `9 KERNEL_CLOCK_TICKS_VALUE` still reads one kernel clock snapshot, pushes only values at most `i32::MAX - 1`, and returns `HostValueOutOfRange(9)` without a stack push or fake result on overflow. `clockmath` keeps its KCALL 9 plus ADD bytecode, omits visual `APP OK`, records successful `last` as `APP OK`, and records overflow as `VM ERROR`. Hardware boundaries remain unchanged. QEMU proof artifacts: `tmp\qemu_gfx_console_clockmath_hardening_v10.61.1.serial.log`, `tmp\qemu_gfx_console_clockmath_hardening_v10.61.1.ppm`, and `tmp\qemu_gfx_console_clockmath_hardening_v10.61.1.png`. Known limitation: overflow is unit/verifier-proven, the registry remains static, and graphics mode remains one-way.
+
+`v10.61.0` is a DByte Kernel Clock Value Service Foundation release. It adds no command or VM opcode; it adds KCALL `9 KERNEL_CLOCK_TICKS_VALUE` and static app `clockmath`. The service reads one kernel clock snapshot, pushes an app-safe `i32` tick value, and returns `HostValueOutOfRange(9)` without a stack push when ticks exceed `i32::MAX - 1`. `run clockmath` renders `APP CLOCKMATH`, `CLOCK PLUS ONE`, and the unpadded decimal clock value plus one; `last` records `APP OK`. Hardware boundaries remain unchanged. QEMU proof artifacts: `tmp\qemu_gfx_console_clockmath_v10.61.0.serial.log`, `tmp\qemu_gfx_console_clockmath_v10.61.0.ppm`, and `tmp\qemu_gfx_console_clockmath_v10.61.0.png`. Known limitation: the app registry remains static and graphics mode remains one-way.
+
+`v10.60.1` is a DByte Kernel Clock Service Hardening release. It preserves `KERNEL_CLOCK_STATUS = 8`, `clockinfo`, six VM opcodes, twelve static apps, the seven-command graphics session limit, and all IRQ/PIC/IDT behavior. The clock projection intentionally omits visible `APP OK`; a following `last` command must report `LAST APP clockinfo` and `LAST RESULT APP OK`. QEMU proof artifacts: `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.serial.log`, `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.ppm`, and `tmp\qemu_gfx_console_clockinfo_hardening_v10.60.1.png`. Known limitation: the registry remains static and graphics mode remains one-way.
+
+`v10.60.0` is a DByte Kernel Clock Service Foundation release. It adds read-only `KERNEL_CLOCK_STATUS = 8` and static app `clockinfo` without adding a shell command or VM opcode. `run clockinfo` renders `APP CLOCKINFO`, `KERNEL CLOCK`, current runtime state, and zero-padded ticks captured from one `kernel_clock_status_snapshot()` service output. The service cannot start or stop runtime, mutate PIC/IDT/IRQ state, execute STI/CLI, or create readiness. QEMU proof artifacts: `tmp\qemu_gfx_console_clockinfo_v10.60.0.serial.log`, `tmp\qemu_gfx_console_clockinfo_v10.60.0.ppm`, and `tmp\qemu_gfx_console_clockinfo_v10.60.0.png`. Known limitation: the app registry remains static and graphics mode remains one-way.
+
+`v10.59.0` is a DByte Graphics Shell Kernel Clock Bridge release. It keeps the existing text-shell `kernel-clock-status` command unchanged and adds one graphics-shell command, `clock status`, inside `gfx-console-shell`. The graphics command reads only the existing `kernel_clock_status_snapshot()` projection and renders `KERNEL CLOCK`, source `IRQ0 runtime`, runtime state, zero-padded ticks, IRQ0 mask state, and STI state through bounded clipped log rows. It does not add a kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, IRQ1 path, slave PIC path, VGA allowlist change, serial path change, direct PIC write, direct STI/CLI, PIC remap, IDT bind, handler install, or IRQ0 runtime semantic change. QEMU proof artifacts: `tmp\qemu_gfx_console_kernel_clock_v10.59.0.serial.log`, `tmp\qemu_gfx_console_kernel_clock_v10.59.0.ppm`, and `tmp\qemu_gfx_console_kernel_clock_v10.59.0.png`.
+
+`v10.58.0` is a DByte Kernel Runtime Clock Foundation release. It adds exactly one text-shell command, `kernel-clock-status`, as a read-only kernel clock projection backed only by the existing IRQ0 runtime status snapshot. The clock reports source `IRQ0 runtime`, runtime state, tick count, IRQ0 mask state, and STI state; before runtime has ever started, it reports the deterministic bounded proof tick contract `0008`. It does not start or stop runtime, create readiness, unmask IRQ0, write PIC ports, execute STI/CLI, bind IDT, install handlers, touch IRQ1, touch the slave PIC, or change IRQ0 runtime semantics. It adds no graphics-shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, sleep API, filesystem/process/parser/compiler path, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, VGA allowlist change, or serial path change. QEMU proof artifact: `tmp\qemu_kernel_clock_v10.58.0.serial.log`.
+
+`v10.57.1` is a DByte Graphics Runtime Header Live Refresh Hardening release. It adds no runtime behavior and preserves the existing live IRQ0 header refresh as a read-only graphics-shell polling path. `gfx-console-shell` still uses the live-refresh reader, `gfx-console-input` still uses the non-refresh reader, and refresh still occurs only when no PS/2 key is pending. The helper reads only `irq0_runtime_status_snapshot()` and redraws only through `draw_irq0_runtime_header()`. It adds no scheduler, multitasking, timer callback, keyboard IRQ, kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, PIC/IDT/runtime setup duplication, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_hardening_v10.57.1.png`.
+
+`v10.57.0` is a DByte Graphics Runtime Header Live Refresh Foundation release. It keeps every existing command surface unchanged while adding a bounded graphics-shell polling refresh for the IRQ0 header. During `gfx-console-shell`, when no PS/2 key is pending, the shell periodically reads only `irq0_runtime_status_snapshot()` and redraws the existing `draw_irq0_runtime_header()` row, so `timer start` can visibly advance from `IRQ0 TIMER    RUNNING 0001` to a later `IRQ0 TIMER    RUNNING <ticks>` before the next submitted command. `timer stop` still renders `IRQ0 TIMER    STOPPED <ticks> / MASKED`, and the log output remains unchanged. The live refresh does not add a scheduler, multitasking, timer callback, keyboard IRQ, kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, direct PIC write, direct STI/CLI, IRQ1 path, slave PIC path, PIC/IDT/runtime setup duplication, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.serial.log`, `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.ppm`, and `tmp\qemu_gfx_console_runtime_live_header_v10.57.0.png`.
+
+`v10.56.0` is a DByte Graphics Console Runtime Header Sync release. It keeps the existing graphics-shell `timer status`, `timer start`, and `timer stop` commands unchanged while redrawing the Mode 13h status header from the same IRQ0 runtime snapshots used by the timer log renderers. The initial console may still show `IRQ0 TIMER    TICKS 0008 / MASKED`; after timer commands, the header reflects `IRQ0 TIMER    RUNNING <ticks>` or `IRQ0 TIMER    STOPPED <ticks> / MASKED`. The graphics shell does not create readiness, remap PIC, bind IDT, install handlers, touch IRQ1, touch the slave PIC, execute STI/CLI directly, write PIC ports directly, or mutate app last-result state. It adds no kernel shell command, graphics shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_runtime_header_v10.56.0.serial.log`, `tmp\qemu_gfx_console_runtime_header_v10.56.0.ppm`, and `tmp\qemu_gfx_console_runtime_header_v10.56.0.png`.
+
+`v10.55.1` is a DByte Graphics Shell IRQ0 Runtime Bridge Hardening release. It adds no runtime behavior and preserves the existing graphics-shell `timer status`, `timer start`, and `timer stop` commands as a remote-control surface over the existing IRQ0 runtime snapshot helpers only. The hardening verifier locks that the graphics shell cannot create readiness, remap PIC, bind IDT, install handlers, touch IRQ1, touch the slave PIC, execute STI/CLI directly, write PIC ports directly, or mutate app last-result state. It adds no kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.serial.log`, `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.ppm`, and `tmp\qemu_gfx_console_irq0_runtime_hardening_v10.55.1.png`.
+
+`v10.55.0` is a DByte Graphics Shell IRQ0 Runtime Bridge Foundation release. It keeps the existing text-shell `irq0-runtime-status`, `irq0-runtime-start`, and `irq0-runtime-stop` commands unchanged while adding graphics-shell timer controls inside the existing `gfx-console-shell`: `timer status`, `timer start`, and `timer stop`. The graphics shell calls only the existing IRQ0 runtime snapshot helpers, so it does not create readiness, remap PIC, bind IDT, install handlers, touch IRQ1, touch the slave PIC, or duplicate masked-exact restore logic. It adds no kernel shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, BYTEDECK/audio path, keyboard IRQ path, or serial path change. QEMU proof artifacts: `tmp\qemu_gfx_console_irq0_runtime_v10.55.0.serial.log`, `tmp\qemu_gfx_console_irq0_runtime_v10.55.0.ppm`, and `tmp\qemu_gfx_console_irq0_runtime_v10.55.0.png`.
+
+`v10.54.1` is a DByte IRQ0 Runtime Start Stop Hardening release. It adds no runtime behavior and preserves exactly the existing text-shell `irq0-runtime-status`, `irq0-runtime-start`, and `irq0-runtime-stop` commands. The hardening verifier locks repeated-start and repeated-stop idempotence, masked-exact restore, inactive bounded 8-tick self-mask behavior, active continuous ticking, and master EOI delivery. It adds no graphics-shell command, VM opcode, KCALL service id, app registry entry, scheduler, multitasking, loader, heap allocation, dynamic registry, process bridge, IRQ1 path, slave PIC mutation, or serial path change. QEMU proof artifact: `tmp\qemu_irq0_runtime_start_stop_hardening_v10.54.1.serial.log`.
+
+`v10.52.1` is a DByte Graphics Shell Last Result Hardening release. It keeps the existing `gfx-console-shell` kernel command, generic `run <app_name>` runner, and bounded graphics-shell `last` command unchanged while locking the fixed in-session last-result contract. The session still stores the requested app name in a fixed `[u8; 32]` buffer and stores the result as a fixed enum: `none`, `APP OK`, `APP NOT FOUND`, or `VM ERROR UnsupportedService(99)`. VM-error last-result rendering remains split across bounded clipped rows for `LAST RESULT VM ERROR` and `UnsupportedService(99)`. It adds no VM opcode, KCALL service id, app registry entry, shell command, loader, heap allocation, dynamic registry, process bridge, or IRQ/PIC/IDT behavior change. QEMU monitor automation may use keypad Enter for `last` submissions if the host `ret` reset quirk appears; this is proof-harness behavior only. QEMU proof artifacts: `tmp\qemu_gfx_console_last_result_hardening_v10.52.1.serial.log`, `tmp\qemu_gfx_console_last_result_hardening_v10.52.1.ppm`, and `tmp\qemu_gfx_console_last_result_hardening_v10.52.1.png`.
+
+`v10.52.0` is a DByte Graphics Shell Last Result Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding one bounded graphics-shell command, `last`, for in-session app-result status. The session stores the requested app name in a fixed `[u8; 32]` buffer and stores the result as a fixed enum: `none`, `APP OK`, `APP NOT FOUND`, or `VM ERROR UnsupportedService(99)`. VM-error last-result rendering uses bounded clipped rows for `LAST RESULT VM ERROR` and `UnsupportedService(99)` so the payload is not silently clipped. It adds no VM opcode, KCALL service id, app registry entry, loader, heap allocation, dynamic registry, process bridge, or IRQ/PIC/IDT behavior change. QEMU proof artifacts: `tmp\qemu_gfx_console_last_result_v10.52.0.serial.log`, `tmp\qemu_gfx_console_last_result_v10.52.0.ppm`, and `tmp\qemu_gfx_console_last_result_v10.52.0.png`.
+
+`v10.51.0` is a DByte App Result Status Foundation release. It keeps the existing `gfx-console-shell` command and generic `run <app_name>` runner while adding a deterministic app-run result contract: successful apps render their bounded `display_lines` projection plus `APP OK`, VM-error apps render the verified captured prefix plus `VM ERROR UnsupportedService(99)`, and unknown apps render `APP NOT FOUND`. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, `uidemo`, and `errtest`; service ids remain exactly `1` through `7`, and the six-opcode VM set is unchanged. QEMU proof artifacts: `tmp\qemu_gfx_console_app_result_v10.51.0.serial.log`, `tmp\qemu_gfx_console_app_result_v10.51.0.ppm`, and `tmp\qemu_gfx_console_app_result_v10.51.0.png`.
+
+`v10.50.1` is a DByte App Display Contract Hardening release. It adds no app, KCALL service, VM opcode, shell command, loader, heap allocation, dynamic registry, or hardware mutation. It locks the contract that embedded app `output_lines` are the full captured execution contract and `display_lines` are only a bounded graphics UI projection rendered after successful app capture. The existing `uidemo` proof remains unchanged and continues to use only `KERNEL_GRAPHICS_LOG_CLEAR = 7`, `KERNEL_GRAPHICS_LOG = 6`, `KERNEL_STATUS = 1`, and `KERNEL_TICKS = 2`. QEMU proof artifacts: `tmp\qemu_gfx_console_uidemo_v10.50.1.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.1.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.1.png`.
+
+`v10.50.0` is a DByte App UI Service Pack Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding the static `uidemo` app. `uidemo` combines existing services only: `KERNEL_GRAPHICS_LOG_CLEAR = 7`, `KERNEL_GRAPHICS_LOG = 6`, `KERNEL_STATUS = 1`, and `KERNEL_TICKS = 2`. It clears the graphics log adapter, writes `GRAPHICS LOG READY`, reads kernel status, and reads controlled IRQ0 tick-window telemetry without adding a VM opcode, service id, shell command, loader, heap allocation, dynamic registry, or hardware mutation. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, `logclear`, and `uidemo`; `apps` renders as four bounded lines: `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, `apps: strtest logtest logclear`, and `apps: uidemo`. QEMU proof artifacts: `tmp\qemu_gfx_console_uidemo_v10.50.0.serial.log`, `tmp\qemu_gfx_console_uidemo_v10.50.0.ppm`, and `tmp\qemu_gfx_console_uidemo_v10.50.0.png`.
+
+`v10.49.0` is a DByte Graphics Log Clear Service Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding `KERNEL_GRAPHICS_LOG_CLEAR = 7`, a no-allocation KCALL service that consumes no VM stack arguments, calls the `VmOutput::clear_log()` adapter event, writes `LOG CLEARED`, and returns no stack value for the static `logclear` proof app. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, `logtest`, and `logclear`; `apps` renders as three bounded lines: `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, and `apps: strtest logtest logclear`. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, VM framebuffer access, PIC/IDT/IRQ changes, IRQ0 behavior changes, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_logclear_v10.49.0.serial.log`, `tmp\qemu_gfx_console_logclear_v10.49.0.ppm`, and `tmp\qemu_gfx_console_logclear_v10.49.0.png`.
+
+`v10.48.0` is a DByte Graphics Log Service Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding `KERNEL_GRAPHICS_LOG = 6`, a no-allocation KCALL service that consumes one VM stack string constant and writes that borrowed text through `VmOutput` for the static `logtest` proof app. The VM owns argument pop, type checks, and const-table bounds checks; the kernel host receives borrowed `VmHostArgs::StrConst(&str)` and returns no stack value for service 6. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, `strtest`, and `logtest`; `apps` renders as three bounded lines: `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, and `apps: strtest logtest`. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 behavior changes, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_logtest_v10.48.0.serial.log`, `tmp\qemu_gfx_console_logtest_v10.48.0.ppm`, and `tmp\qemu_gfx_console_logtest_v10.48.0.png`. `v10.47.1` is a DByte Graphics Console X Glyph Polish release. It keeps the existing `gfx-console-shell` command, generic `run <app_name>` runner, `strtest`, KCALL behavior, service ids, app registry, VM opcode set, and graphics clipping unchanged while adding the missing uppercase `X` glyph so the proof line renders as `ARG TEXT DBYTE SERVICE ARG`. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 behavior changes, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.serial.log`, `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.ppm`, and `tmp\qemu_gfx_console_strtest_xglyph_v10.47.1.png`. `v10.47.0` is a DByte Kernel Service String Argument Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding `KERNEL_ECHO_STR = 5`, a no-allocation KCALL service that consumes one VM stack string constant and writes `ARG TEXT DBYTE SERVICE ARG` for the static `strtest` proof app. The VM owns argument pop, type checks, and const-table bounds checks; the kernel host receives borrowed `VmHostArgs::StrConst(&str)` and returns no stack value for service 5. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, `argtest`, and `strtest`; `apps` renders as three bounded lines: `apps: hello math sysinfo`, `apps: ticks tickmath argtest`, and `apps: strtest`. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 behavior changes, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_strtest_v10.47.0.serial.log`, `tmp\qemu_gfx_console_strtest_v10.47.0.ppm`, and `tmp\qemu_gfx_console_strtest_v10.47.0.png`. `v10.46.0` is a DByte Kernel Service Argument Foundation release. It keeps the existing `gfx-console-shell` kernel command and generic `run <app_name>` runner while adding `KERNEL_ECHO_I32 = 4`, a read-only KCALL service that consumes one VM stack i32 and writes `ARG VALUE 7` for the static `argtest` proof app. The VM owns argument pop and stack underflow checks; the kernel host receives fixed `VmHostArgs` and returns no stack value for service 4. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, `tickmath`, and `argtest`; `apps` renders as two bounded lines: `apps: hello math sysinfo` and `apps: ticks tickmath argtest`. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 behavior changes, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_argtest_v10.46.0.serial.log`, `tmp\qemu_gfx_console_argtest_v10.46.0.ppm`, and `tmp\qemu_gfx_console_argtest_v10.46.0.png`. `v10.45.1` is a DByte Graphics Log Clipping Polish release. It keeps the existing `gfx-console-shell` kernel command, the existing generic `run <app_name>` runner, the exact static app registry, and the `tickmath` KCALL return-value behavior. Graphics log rows are cleared before redraw and variable log text is clipped to the console content edge, so QEMU proof captures should not show stale right-edge glyphs after `run tickmath`. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 fire, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.serial.log`, `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.ppm`, and `tmp\qemu_gfx_console_tickmath_clip_v10.45.1.png`. `v10.45.0` is a DByte Kernel Service Return Value Foundation release. It keeps the existing `gfx-console-shell` kernel command and adds read-only `KERNEL_TICK_VALUE = 3` service return access through the existing `KCALL` boundary. The static app registry now contains exactly `hello`, `math`, `sysinfo`, `ticks`, and `tickmath`; `run tickmath` prints `APP TICKMATH`, receives the controlled IRQ0 tick target as an i32 on the VM stack, adds `1`, and prints `9`. This is not a persistent runtime clock. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 fire, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_tickmath_v10.45.0.serial.log`, `tmp\qemu_gfx_console_tickmath_v10.45.0.ppm`, and `tmp\qemu_gfx_console_tickmath_v10.45.0.png`. `v10.44.0` is a DByte Kernel Tick Service Foundation release. It keeps the existing `gfx-console-shell` kernel command and adds read-only `KERNEL_TICKS = 2` service access through the existing `KCALL` boundary. The static app registry now contains exactly `hello`, `math`, `sysinfo`, and `ticks`; `run ticks` prints `APP TICKS` and reports controlled IRQ0 tick-window telemetry as `IRQ0 TICKS 0008` and `IRQ0 MASKED`. This is not a persistent runtime clock. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ0 fire, IRQ1 unmask, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_ticks_v10.44.0.serial.log`, `tmp\qemu_gfx_console_ticks_v10.44.0.ppm`, and `tmp\qemu_gfx_console_ticks_v10.44.0.png`. `v10.43.0` is a DByte Kernel Service Call Foundation release. It keeps the existing `gfx-console-shell` kernel command and adds a narrow `KCALL <service_id>` host-call boundary for embedded DByte apps. The static app registry now contains exactly `hello`, `math`, and `sysinfo`; `run sysinfo` prints `APP SYSINFO` and calls service id `1` for deterministic kernel status lines while preserving generic `run <app_name>` dispatch. It avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, PIC/IDT/IRQ changes, IRQ1, or STI. QEMU proof artifacts: `tmp\qemu_gfx_console_kcall_v10.43.0.serial.log`, `tmp\qemu_gfx_console_kcall_v10.43.0.ppm`, and `tmp\qemu_gfx_console_kcall_v10.43.0.png`. `v10.42.0` is a DByte Generic Embedded App Runner Foundation release. It keeps the existing `gfx-console-shell` kernel command and upgrades static graphics-shell app execution from separate `run hello` / `run math` branches to generic `run <app_name>` lookup through the embedded registry. It preserves exactly two apps, `hello` and `math`, keeps deterministic `run nope` app-not-found behavior, and avoids filesystem loaders, parser/compiler paths, dynamic registry, text-shell dispatch, BYTEDECK paths, heap allocation, process bridges, IRQ changes, or VM opcode changes. QEMU proof artifacts: `tmp\qemu_gfx_console_generic_apps_v10.42.0.serial.log`, `tmp\qemu_gfx_console_generic_apps_v10.42.0.ppm`, and `tmp\qemu_gfx_console_generic_apps_v10.42.0.png`. `v10.41.0` is a DByte Embedded App Registry Foundation release. It keeps the existing `gfx-console-shell` kernel command and adds static graphics-shell app commands `apps`, `run hello`, and `run math` to the bounded session without adding a filesystem loader, parser/compiler, dynamic registry, text-shell dispatch, BYTEDECK path, or VM opcode. QEMU proof artifacts: `tmp\qemu_gfx_console_apps_v10.41.0.serial.log`, `tmp\qemu_gfx_console_apps_v10.41.0.ppm`, and `tmp\qemu_gfx_console_apps_v10.41.0.png`. `v10.40.0` is a DByte Graphics Shell VM Command Foundation release. It keeps the existing `gfx-console-shell` kernel command and adds one graphics-shell command, `vm`, to the bounded session alongside `help`, `status`, `clear`, and `exit`. The `vm` command runs only the existing embedded VM probe through a no-heap capture adapter, renders `command: vm`, `DBYTE VM ONLINE`, and `42` in the graphics SYSTEM LOG, and prints `gfx-console-shell: command dispatched: vm` for the QEMU proof without adding a filesystem loader, parser/compiler, app registry, text-shell dispatch, or VM opcode. QEMU proof artifacts: `tmp\qemu_gfx_console_vm_v10.40.0.serial.log`, `tmp\qemu_gfx_console_vm_v10.40.0.ppm`, and `tmp\qemu_gfx_console_vm_v10.40.0.png`. `v10.39.0` is a DByte Graphics Console Session Loop Foundation release. It keeps the existing `gfx-console-shell` command surface and upgrades it from one-shot dispatch to a bounded four-command graphics session loop with `help`, `status`, `clear`, `exit`, deterministic unknown-command handling, fixed 32-byte input buffering, and no text-shell or VM execution. QEMU proof artifacts: `tmp\qemu_gfx_console_session_v10.39.0.serial.log`, `tmp\qemu_gfx_console_session_v10.39.0.ppm`, and `tmp\qemu_gfx_console_session_v10.39.0.png`. `v10.38.0` is a DByte Graphics Console Command Dispatch Foundation release. It adds exactly one `gfx-console-shell` command that enters one-way Mode 13h, redraws the existing graphics console, accepts one bounded PS/2-polled command line, dispatches the graphics-only `status` command, renders deterministic unknown-command output, and prints `gfx-console-shell: command dispatched: status` for the QEMU proof without executing text-shell commands or VM code. QEMU proof artifacts: `tmp\qemu_gfx_console_shell_v10.38.0.serial.log`, `tmp\qemu_gfx_console_shell_v10.38.0.ppm`, and `tmp\qemu_gfx_console_shell_v10.38.0.png`. `v10.37.0` is a DByte Graphics Console Input Echo Foundation release. It adds exactly one `gfx-console-input` command that enters one-way Mode 13h, redraws the existing graphics console, echoes a bounded PS/2-polled input line on the pixel prompt, and prints `gfx-console-input: captured line: hello` for the QEMU proof without parsing or executing the typed text. QEMU proof artifacts: `tmp\qemu_gfx_console_input_v10.37.0.serial.log`, `tmp\qemu_gfx_console_input_v10.37.0.ppm`, and `tmp\qemu_gfx_console_input_v10.37.0.png`. `v10.36.0` is a DByte Graphics Console Cursor Foundation release. It adds no commands, keeps `gfx-console` one-way in Mode 13h, draws a static pixel cursor after `dbyte-kernel>`, preserves hardware boundaries, and locks derived cursor placement with no blink, timer, or input loop. QEMU proof artifacts: `tmp\qemu_gfx_console_cursor_v10.36.0.serial.log`, `tmp\qemu_gfx_console_cursor_v10.36.0.ppm`, and `tmp\qemu_gfx_console_cursor_v10.36.0.png`. `v10.35.1` is a DByte Graphics Console Glyph Polish release. It adds no commands, keeps `gfx-console` one-way in Mode 13h, preserves hardware boundaries, and locks the glyph coverage needed for the current graphics console. QEMU proof artifacts: `tmp\qemu_gfx_console_v10.35.1.serial.log`, `tmp\qemu_gfx_console_v10.35.1.ppm`, and `tmp\qemu_gfx_console_v10.35.1.png`. `v10.35.0` is a DByte Graphics Console Foundation release. It adds exactly one manual `gfx-console` command that enters VGA Mode 13h, renders a structured pixel console through the existing `vga_gfx` drawing primitives, and keeps `gfx-show`, text boot, embedded DByte boot script, VM command surface, keyboard polling, and IRQ boundaries unchanged. `v10.34.1` is a DByte VGA Graphics Surface Hardening release. It adds no commands and preserves the `v10.34.0` one-way `gfx-show` Mode 13h surface while tightening verifier guards around exact output, framebuffer and resolution constants, the explicit VGA port allowlist, forbidden PIC/IDT/IRQ paths, VM command surface, keyboard polling, and unchanged hardware primitive boundaries. `v10.34.0` is a DByte VGA Graphics Surface Foundation release. It adds exactly one manual `gfx-show` command that enters VGA Mode 13h, clears the `0xA0000` framebuffer, draws a static 320x200 pixel DByteOS surface, and leaves the default text boot, embedded DByte boot script, VM command surface, keyboard polling, and IRQ boundaries unchanged. `v10.33.1` is a DByte Embedded Boot Script Hardening release. It adds no commands and preserves the `v10.33.0` embedded boot script, VM command outputs, VGA VM status row, static bytecode architecture, adapter isolation, deterministic boot-script error handling, and IRQ boundaries while tightening verifier guards around boot order, command surface, static bytecode, and forbidden loader/parser/compiler/heap/process paths. `v10.33.0` is a DByte Embedded Boot Script Foundation release. It runs one static embedded DByte bytecode boot script automatically before the shell prompt, prints `DBYTE BOOT SCRIPT` and `2`, adds boot-script status fields to `dbyte-vm-status`, keeps `dbyte-vm-run-probe` unchanged, keeps the VM isolated through the existing adapter, adds no commands, and preserves IRQ boundaries. `v10.32.1` is a DByte Kernel VM Probe Hardening release. It adds no commands and preserves the `v10.32.0` rendered DByte kernel VM probe outputs while tightening verifier guards around the exact opcode set, fixed stack, deterministic VM errors, no host std/heap/filesystem/process paths, adapter isolation, and unchanged IRQ boundaries. `v10.32.0` is a DByte Kernel VM Probe Foundation release. It adds exactly two `dbyte-vm-*` commands that run one embedded `no_std` DByte bytecode probe inside the kernel while keeping host parser/compiler/std modules, filesystem loading, process spawning, BYTEDECK, and IRQ runtime behavior out of the kernel. `v10.31.1` is a Controlled IRQ0 Tick Counter Window Hardening release. It adds no commands and preserves the `v10.31.0` rendered IRQ0 tick counter window outputs while tightening verifier guards around the fixed target, software-only arm, bounded fire transaction, safe return state, handler order, VGA status classifications, denied IRQ1/runtime paths, keyboard polling, and existing hardware primitive boundaries. `v10.31.0` is a Controlled IRQ0 Tick Counter Window Foundation release. It adds exactly four manual `irq0-ticks-*` commands that extend the proven one-shot window into a bounded 8-tick transaction, keeps IF disabled before return, restores the original PIC master mask, leaves IRQ0 masked, redraws the VGA IRQ0 status after the window closes, and does not enable persistent STI, IRQ1, scheduler loops, background redraw, or keyboard IRQ mode. `v10.30.1` is a Controlled IRQ0 Delivery One-Shot Window Hardening release. It adds no commands and preserves the `v10.30.0` rendered IRQ0 window outputs while tightening verifier guards around the arm precondition chain, bounded `sti`/`cli` transaction order, handler self-mask and EOI order, VGA status classifications, no persistent IRQ0 delivery state, no IRQ1 path, no scheduler/timer loop/background redraw, keyboard polling, and existing PIC_EOI, IDT `0x81`, `int 0x81`, and IRQ0 descriptor bind boundaries. `v10.30.0` is a Controlled IRQ0 Delivery One-Shot Window Foundation release. It adds exactly four manual `irq0-window-*` commands that require the existing PIC remap, manual PIC_EOI, IRQ0 descriptor bind, and transactional IRQ0 unmask proofs before opening one bounded `sti` window, then executes `cli`, restores the original PIC master mask, returns with IF disabled and IRQ0 masked, reports the IRQ0 delivery count, and redraws the VGA IRQ0 status line without enabling runtime IRQ activation, IRQ1, scheduler loops, background redraw, or keyboard IRQ mode. `v10.29.3` is a VGA Text Window Cleanup release. It keeps the direct VGA text window visual-only, clears the full 80x25 text screen before each draw, centers the panel, preserves the single `ui-redraw` command and serial prompt behavior, keeps keyboard polling, and does not advance IRQ activation. `v10.29.2` is a First VGA Text Window Smoke release. It renders a static DByteOS window directly into VGA text memory, adds the `ui-redraw` command, preserves serial boot output, keeps keyboard polling, and does not advance IRQ activation. `v10.29.1` is a Controlled IRQ0 Timer Handler Stub Hardening release. It adds no commands and preserves the `v10.29.0` rendered IRQ0 handler stub outputs while tightening verifier guards around exact output, IRQ0 wrapper structure, master PIC_EOI helper callsites, IRQ0 self-mask read-modify-write behavior, denied activation paths, no IRQ1 path, keyboard polling, and scoped formatter gating. `v10.29.0` is a Controlled IRQ0 Timer Handler Stub Foundation release. It prepares an unreachable IRQ0 timer handler stub body with software counter increment, IRQ0 self-mask, and master PIC_EOI helper paths while keeping STI disabled, IRQ0 masked outside transactional smoke, hardware IRQ delivery disabled, runtime irq inactive, and keyboard polling unchanged. `v10.28.1` is an IRQ0 Activation Preflight Hardening release.
+
+Pinned graphics-session serial proofs remain: `gfx-console-shell: command dispatched: help`, `gfx-console-shell: command dispatched: status`, `gfx-console-shell: command dispatched: clear`, `gfx-console-shell: command dispatched: vm`, and `gfx-console-shell: exit`.
+
+Pinned `v10.56.0` graphics IRQ0 runtime header serial proofs are: `gfx-console-shell: command dispatched: timer status`, `gfx-console-shell: command dispatched: timer start`, `gfx-console-shell: command dispatched: timer stop`, and `gfx-console-shell: exit`.
+
+Pinned `v10.56.0` graphics IRQ0 runtime header proof strings are: `command: timer status`, `command: timer start`, `command: timer stop`, `IRQ0 TIMER RUNNING`, `IRQ0 TIMER STOPPED`, `IRQ0 TICKS`, `IRQ0 MASKED yes`, `IRQ0 MASKED no`, `STI ENABLED yes`, `STI ENABLED no`, `IRQ0 FORCED MASKED yes`, and refreshed header states `RUNNING <ticks>` plus `STOPPED <ticks> / MASKED`.
+
+Pinned `v10.56.0` QEMU command flow: run the existing prepared IRQ0 setup proof commands, enter `gfx-console-shell`, run `timer start`, visually confirm the header shows `IRQ0 TIMER    RUNNING <ticks>`, run `timer stop`, visually confirm the header shows `IRQ0 TIMER    STOPPED <ticks> / MASKED`, and run `exit`.
+
+Pinned `v10.54.1` IRQ0 runtime serial proof strings are: `irq0-runtime-status`, `IRQ0 TIMER STOPPED`, `irq0-runtime-start`, `irq0 runtime: already running`, `IRQ0 TIMER RUNNING`, `irq0-runtime-stop`, `irq0 runtime: not running`, `runtime stopped: yes`, `non-IRQ0 PIC mask restored: yes`, `IRQ0 forced masked: yes`, and `IRQ0 currently masked: yes`.
+
+Pinned `v10.54.1` QEMU command flow: run `irq0-runtime-status`, run the existing prepared IRQ0 setup proof commands, run `irq0-runtime-status`, run `irq0-runtime-start`, run `irq0-runtime-start` again for the already-running guard, wait briefly, run `irq0-runtime-status`, run `irq0-runtime-stop`, run `irq0-runtime-stop` again for the not-running guard, and run `irq0-runtime-status`.
+
+Pinned `v10.52.1` graphics last-result serial proofs are: `gfx-console-shell: app dispatched: uidemo`, `gfx-console-shell: command dispatched: last`, `gfx-console-shell: app dispatched: errtest`, `gfx-console-shell: app error: errtest`, `gfx-console-shell: app not found: nope`, and `gfx-console-shell: exit`.
+
+Pinned `v10.52.1` graphics last-result proof strings are: `command: run uidemo`, `APP OK`, `command: last`, `LAST APP uidemo`, `LAST RESULT APP OK`, `command: run errtest`, `APP ERRTEST`, `VM ERROR UnsupportedService(99)`, `LAST APP errtest`, `LAST RESULT VM ERROR`, `UnsupportedService(99)`, `command: run nope`, `APP NOT FOUND`, `LAST APP nope`, and `LAST RESULT APP NOT FOUND`. Initial `last` state remains deterministic as `LAST APP none` and `LAST RESULT none`.
+
+`v10.28.0` is an IRQ0 Activation Preflight release. It adds three read-only preflight commands that read the existing sticky IRQ0 descriptor-bind, transactional IRQ0 unmask, and manual PIC_EOI smoke proofs while keeping STI disabled, IRQ0 currently masked, runtime IRQ inactive, and activation denied.
+
+`v10.27.1` is a Controlled PIC IRQ0 Unmask One-Shot Smoke Hardening release. It adds no commands and preserves the `v10.27.0` rendered IRQ0 unmask smoke outputs while tightening verifier guards around exact output, transactional source ordering, IRQ0-only mask transformation, restore-before-return, sticky proof behavior, forbidden IRQ1/slave-PIC/STI/delivery paths, keyboard polling, and the single manual PIC_EOI, vector `0x81` bind, and `int 0x81` callsites.
+
+`v10.27.0` is a Controlled PIC IRQ0 Unmask One-Shot Smoke Foundation release. It adds a manual-only transactional IRQ0 PIC mask smoke that reads the master mask, temporarily clears only the IRQ0 mask bit, records proof telemetry, restores the original master mask before returning, and keeps `sti`, hardware IRQ delivery, IRQ0 handler invocation, handler-triggered EOI, IRQ1 unmask, slave PIC mask writes, keyboard IRQ mode, and runtime IRQ activation disabled. `v10.26.1` is a Controlled IRQ0 Timer Bind One-Shot Smoke Hardening release. It adds no commands and preserves the `v10.26.0` rendered IRQ0 bind smoke outputs while tightening verifier guards around exact output, one-shot sequencing, PIC-derived IRQ0 vector selection, inert stub isolation, forbidden PIC unmask/STI/hardware delivery, keyboard polling, and the single manual PIC_EOI, vector `0x81` bind, and `int 0x81` callsites. `v10.26.0` is a Controlled IRQ0 Timer Bind One-Shot Smoke Foundation release. It adds a manual-only one-shot IRQ0 timer IDT descriptor bind derived from the PIC master remap offset while keeping PIC IRQ0/IRQ1 unmask disabled, `sti` disabled, hardware IRQ delivery denied, handler-triggered EOI denied, keyboard polling unchanged, runtime IRQ inactive, and existing PIC_EOI, vector `0x81` bind, and `int 0x81` callsites unchanged. `v10.25.1` is a Controlled Hardware IRQ Delivery Candidate Hardening release. It adds no commands and preserves the `v10.25.0` rendered candidate outputs while tightening verifier guards around candidate read-only isolation, existing proof/bridge telemetry sources, denied delivery fields, forbidden hardware mutation, keyboard polling, and the single manual PIC_EOI, IDT bind, and `int 0x81` callsites. `v10.25.0` is a Controlled Hardware IRQ Delivery Candidate Foundation release. It adds a read-only hardware IRQ delivery candidate above the proven manual PIC_EOI, IDT bind, and IDT invocation chain while keeping candidate readiness denied, IRQ0/IRQ1 delivery denied, live IRQ handler bind denied, handler-triggered EOI denied, `sti` disabled, PIC lines masked, keyboard polling unchanged, runtime IRQ inactive, and the single manual PIC_EOI, IDT bind, and `int 0x81` callsites unchanged. `v10.24.1` is a Controlled IDT Invocation Runtime Bridge Hardening release. It adds no commands and preserves the `v10.24.0` rendered invocation-bridge outputs while tightening verifier guards around sticky proof sources, read-only bridge isolation, denied runtime delivery, forbidden hardware mutation, and the single manual PIC_EOI, IDT bind, and `int 0x81` callsites. `v10.24.0` is a Controlled IDT Invocation Runtime Bridge Foundation release. It adds a read-only bridge above the manual `0x81` IDT invocation smoke, reports sticky bind/invocation proof for the current boot, and keeps live IRQ delivery denied, IRQ handler hardware reachability denied, handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, keyboard polling unchanged, and the single manual PIC_EOI, IDT bind, and `int 0x81` callsites unchanged. `v10.23.1` is a Controlled IDT Vector Invocation One-Shot Smoke Hardening release. It adds no commands and preserves the `v10.23.0` manual invocation outputs while tightening verifier guards around the exact state sequence, the single manual `int 0x81` callsite, inert-stub telemetry, sticky proof, forbidden IRQ0/IRQ1 binding, forbidden runtime activation, keyboard polling, and the single manual PIC_EOI callsite. `v10.23.0` is a Controlled IDT Vector Invocation One-Shot Smoke Foundation release. It adds a manual one-shot command path that may invoke dedicated software interrupt vector `0x81` exactly once after the current boot has proven the manual `0x81` IDT bind, records inert-stub reach telemetry, consumes the invocation latch, and keeps IRQ0/IRQ1 binding denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, keyboard polling unchanged, handler-triggered EOI denied, and the single manual PIC_EOI callsite unchanged. `v10.22.1` is a Controlled IDT Bind Runtime Bridge Hardening release. It adds no commands and preserves the `v10.22.0` bridge outputs while tightening verifier guards around sticky proof source, read-only bridge isolation, forbidden interrupt invocation, forbidden IRQ0/IRQ1 binding, and the single manual PIC_EOI callsite. `v10.22.0` is a Controlled IDT Bind Runtime Bridge Foundation release. It adds a read-only bridge above the manual IDT bind smoke proof while keeping interrupt invocation denied, live IRQ bind denied, IRQ handler reachability denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, keyboard polling unchanged, and the single manual PIC_EOI callsite unchanged. `v10.21.1` is a Controlled IDT Bind One-Shot Smoke Hardening release. It adds no commands and preserves `v10.21.0` IDT bind smoke outputs while tightening verifier guards around exact output, the one-shot state sequence, vector `0x81`, forbidden vector `0x80`, forbidden IRQ0/IRQ1 binds, forbidden interrupt invocation, and the single manual PIC_EOI callsite. `v10.21.0` is a Controlled IDT Bind One-Shot Smoke Foundation release. It adds a manual one-shot command path that may perform exactly one IDT descriptor bind to dedicated non-IRQ vector `0x81` after explicit arming while keeping IRQ0/IRQ1 binding denied, interrupt invocation denied, handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, keyboard polling unchanged, and the single manual PIC_EOI callsite unchanged. `v10.20.1` is a Controlled IRQ Handler Bind Candidate Hardening release. It adds no commands and preserves `v10.20.0` bind-candidate outputs while tightening verifier guards around exact output, read-only isolation, forbidden IDT mutation, forbidden IRQ-path invocation, and the single manual PIC_EOI callsite. `v10.5.0` is a Controlled Activation Decision Freeze release. `v10.6.0` is a Controlled Hardware Mutation Readiness Checklist release. `v10.6.1` is a Controlled Hardware Mutation Readiness Checklist Hardening release. `v10.7.0` is a Controlled Mutation Smoke Sequencer Foundation release. `v10.7.1` is a Controlled Mutation Smoke Sequencer Hardening release. `v10.8.0` is a Controlled EOI Write Smoke Preflight release. `v10.8.1` is a Controlled EOI Write Smoke Preflight Hardening release. `v10.9.0` is a First Controlled EOI Write Smoke Candidate release. `v10.9.1` is a First Controlled EOI Write Smoke Candidate Hardening release. `v10.10.0` is a Controlled EOI Write Permit Model Foundation release. `v10.10.1` is a Controlled EOI Write Permit Model Hardening release. `v10.11.0` is a Controlled EOI Write One-Shot Command Path Foundation release. `v10.11.1` is a Controlled EOI Write One-Shot Command Path Hardening release. `v10.12.0` is a Controlled EOI Write One-Shot Latch Foundation release. `v10.12.1` is a Controlled EOI Write One-Shot Latch Hardening release. `v10.13.0` is a Controlled EOI Write One-Shot Permit Bridge Foundation release. `v10.13.1` is a Controlled EOI Write One-Shot Permit Bridge Hardening release. `v10.14.0` is a Controlled EOI Write Permit Transition Model Foundation release. `v10.14.1` is a Controlled EOI Write Permit Transition Model Hardening release. `v10.15.0` is a Controlled EOI Write Permit Evaluation Foundation release. `v10.15.1` is a Controlled EOI Write Permit Evaluation Hardening release. `v10.20.0` is a Controlled IRQ Handler Bind Candidate Foundation release. It adds a read-only bind candidate above the unbound handler EOI stub while keeping live IDT bind denied, IRQ handler reachability denied, handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, and the single manual PIC_EOI callsite unchanged. `v10.19.1` is a Controlled IRQ Handler EOI Stub Hardening release. It adds no commands and preserves `v10.19.0` stub behavior while tightening verifier guards around exact output, read-only isolation, forbidden IRQ-path invocation, and the single manual PIC_EOI callsite. `v10.19.0` is a Controlled IRQ Handler EOI Stub Foundation release. It adds an unbound read-only handler EOI stub placeholder while keeping stub invocation denied, handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, live IRQ handlers unbound, and the single manual PIC_EOI callsite unchanged. `v10.18.1` is a Controlled IRQ Handler EOI Path Candidate Hardening release. It adds no commands and preserves `v10.18.0` candidate behavior while tightening verifier guards around exact output, read-only isolation, forbidden handler invocation, and the single manual PIC_EOI callsite. `v10.18.0` is a Controlled IRQ Handler EOI Path Candidate Foundation release. It adds an unreachable read-only candidate layer for future handler-side EOI while keeping handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, live IRQ handlers unbound, and the single manual PIC_EOI callsite unchanged. `v10.17.2` is a Controlled PIC_EOI Runtime Bridge Readiness Hardening release. It adds no commands and preserves `v10.17.1` sticky proof behavior while tightening verifier guards around bridge output, proof source, read-only isolation, and the single manual PIC_EOI callsite. `v10.17.1` is a Controlled PIC_EOI Runtime Bridge Session Proof Repair release. It splits sticky session proof from transient hardware-smoke performed telemetry while keeping the single manual PIC_EOI callsite unchanged. `v10.17.0` is a Controlled PIC_EOI Runtime Bridge Readiness Foundation release. It adds a read-only bridge from the manual PIC_EOI smoke proof toward future handler readiness while keeping handler-triggered EOI denied, runtime IRQ inactive, `sti` disabled, PIC lines masked, live IRQ handlers unbound, and keyboard polling unchanged. `v10.16.1` is a First Controlled PIC_EOI Write Smoke Hardening release. It preserves the `v10.16.0` manual one-shot hardware smoke outputs while tightening verifier guards around the exact sequence, single allowlisted callsite, forbidden runtime activation paths, and keyboard polling. `v10.16.0` is a First Controlled PIC_EOI Write Smoke Foundation release. It adds a manual one-shot shell command path that may perform exactly one `write_pic_port(PIC_MASTER_COMMAND, PIC_EOI)` after explicit arming while keeping slave EOI writes, IRQ runtime activation, `sti`, PIC unmask, live IDT binding, and keyboard IRQ mode disabled.
+
+`v10.7.1` is not a mutation release. It adds verification guards for exact sequencer command output, read-only helper and dispatcher isolation, stale `v10.7.0` metadata, and no live IRQ0/IRQ1 or keyboard IRQ mode.
+
+`v10.8.0` is not a PIC EOI write release. It adds command and verification preflight for the first-write decision point without writing `PIC_EOI`.
+
+`v10.8.1` is not a PIC EOI write release. It hardens the existing `v10.8.0` first-write preflight contract without writing `PIC_EOI`.
+
+`v10.9.0` is not an EOI write activation release. `eoi-write-smoke-candidate-fire` reports dry-run blocked and does not write `PIC_EOI`.
+
+`v10.9.1` is not an EOI write release. It hardens the existing candidate command/output guards while `eoi-write-smoke-candidate-fire` still reports dry-run blocked and does not write `PIC_EOI`.
+
+`v10.10.1` is not an EOI write release. It hardens the existing permit model only. `eoi-write-permit-status` reports `permit granted: no` and `first PIC_EOI write allowed: no`.
+
+`v10.11.0` is not an EOI write release. `eoi-write-oneshot-arm` reports `one-shot armed: no`, and `eoi-write-oneshot-fire` reports `error: EOI one-shot fire blocked by permit model`.
+
+`v10.11.1` is not a latch or EOI write release. It hardens the existing one-shot command path only; `eoi-write-oneshot-arm` still reports `one-shot armed: no`, and `eoi-write-oneshot-fire` still reports `error: EOI one-shot fire blocked by permit model`.
+
+`v10.12.0` permits a software latch only. `eoi-write-oneshot-latch-arm` reports `one-shot armed: yes`, blocked `eoi-write-oneshot-latch-fire` reports `blocked fire cleared latch: no`, and `eoi-write-oneshot-latch-clear` returns `one-shot armed: no`. No `PIC_EOI` write is performed.
+
+`v10.12.1` keeps the same QEMU command surface and hardens the expected sequence: initial one-shot armed: no, unarmed fire blocked by latch state before hardware write, arm reports `one-shot armed: yes`, armed fire remains blocked by the permit model and does not clear the latch, status remains armed, clear reports `one-shot armed: no`, and status remains unarmed.
+
+`v10.13.0` adds `eoi-write-bridge-note`, `eoi-write-bridge-status`, `eoi-write-bridge-check`, and `eoi-write-bridge-blockers`. The bridge reports `bridge ready: no`, `permit granted: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no`.
+
+`v10.13.1` is hardening-only. It keeps the same QEMU bridge snapshots while verifying that bridge code reads permit and latch telemetry, derives readiness, reports blockers, and never mutates the latch or writes hardware.
+
+`v10.14.0` adds `eoi-write-permit-transition-note`, `eoi-write-permit-transition-status`, `eoi-write-permit-transition-arm`, `eoi-write-permit-transition-clear`, `eoi-write-permit-transition-check`, and `eoi-write-permit-transition-blockers`. The transition reports `permit transition armed: yes/no` while `permit granted: no`, `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no` remain unchanged.
+
+`v10.14.1` is hardening-only. It keeps the same QEMU transition snapshots while verifying the denied/unarmed sequence, single `arm`/`clear` store paths, read-only status/check/blockers paths, no latch or permit mutation, no positive permit state, and no hardware write path.
+
+`v10.15.0` adds `eoi-write-eval-note`, `eoi-write-eval-status`, `eoi-write-eval-check`, and `eoi-write-eval-blockers`. The evaluator reads the permit model, one-shot latch, bridge, transition state, final gate, mutation checklist, preflight, and candidate telemetry while reporting `evaluation ready: no`, `permit granted: no`, `bridge ready: no`, `first PIC_EOI write allowed: no`, `hardware mutation: no`, and `runtime irq active: no`.
+
+`v10.15.1` is hardening-only. It keeps the same evaluator command surface and rendered output while verifying reader ordering, helper and dispatcher isolation, no evaluator latch/transition/permit/bridge mutation, no positive evaluator state, no `PIC_EOI` write, no `sti`, no PIC unmask, no live IRQ0/IRQ1, no live IDT bind, and unchanged keyboard polling.
+
+`v10.16.0` adds `eoi-write-hw-smoke-note`, `eoi-write-hw-smoke-status`, `eoi-write-hw-smoke-arm`, `eoi-write-hw-smoke-fire`, `eoi-write-hw-smoke-clear`, and `eoi-write-hw-smoke-blockers`. The `fire` command is the only manual path allowed to write `PIC_EOI`, and only after `arm`; a successful fire consumes the latch and a repeated fire is blocked.
+
+`v10.16.1` is hardening-only. It keeps the same hw-smoke command surface and rendered outputs while verifying the unarmed-fire, arm, successful-fire, repeated-fire, and clear sequence, the single manual `PIC_EOI` write callsite, no runtime IRQ activation, no `sti`, no PIC unmask, no live IRQ0/IRQ1 bind, and unchanged keyboard polling.
+
+`v10.17.0` adds `eoi-runtime-bridge-note`, `eoi-runtime-bridge-status`, `eoi-runtime-bridge-check`, and `eoi-runtime-bridge-blockers`. The bridge is read-only: it reports session-local manual PIC_EOI smoke proof while keeping runtime bridge readiness denied and handler-triggered EOI disabled.
+
+`v10.17.1` repairs the bridge proof source. The bridge now reads sticky boot-session proof set only by a successful manual `eoi-write-hw-smoke-fire`, not the transient `first PIC_EOI write performed` field that `eoi-write-hw-smoke-clear` resets.
+
+`v10.17.2` is hardening-only. It keeps the rendered bridge and hardware-smoke outputs unchanged while verifying sticky proof source isolation, read-only runtime bridge surfaces, no handler-triggered EOI, and the single manual `PIC_EOI` write boundary.
+
+`v10.18.0` adds `irq-handler-eoi-candidate-note`, `irq-handler-eoi-candidate-status`, `irq-handler-eoi-candidate-check`, and `irq-handler-eoi-candidate-blockers`. The candidate reads runtime bridge readiness but remains unreachable from interrupt handlers and never writes `PIC_EOI`.
+
+`v10.18.1` is hardening-only. It keeps the rendered handler EOI candidate outputs unchanged while verifying candidate helper/dispatcher isolation, read-only runtime bridge input, no handler invocation, and the single manual `PIC_EOI` write boundary.
+
+`v10.19.0` adds `irq-handler-eoi-stub-note`, `irq-handler-eoi-stub-status`, `irq-handler-eoi-stub-check`, and `irq-handler-eoi-stub-blockers`. The stub reads the handler EOI candidate but remains unbound, unreachable from IRQ runtime, and unable to write `PIC_EOI`.
+
+`v10.19.1` is hardening-only. It keeps the rendered handler EOI stub outputs unchanged while verifying stub helper/dispatcher isolation, read-only candidate input, no IRQ-path invocation, and the single manual PIC_EOI write boundary.
+
+`v10.20.1` is hardening-only. It keeps the rendered handler bind candidate outputs unchanged from `v10.20.0` while verifying the bind-candidate input boundary, read-only helper/dispatcher isolation, no live IDT bind, no IRQ-path invocation, and the single manual PIC_EOI write boundary.
+
+`v10.20.0` adds `irq-handler-bind-candidate-note`, `irq-handler-bind-candidate-status`, `irq-handler-bind-candidate-check`, and `irq-handler-bind-candidate-blockers`. The bind candidate reads the unbound handler EOI stub but remains telemetry-only: no live IDT bind, no IRQ0/IRQ1 registration, no interrupt-path reachability, and no handler-triggered `PIC_EOI`.
+
+`v10.21.0` adds `idt-bind-hw-smoke-note`, `idt-bind-hw-smoke-status`, `idt-bind-hw-smoke-arm`, `idt-bind-hw-smoke-fire`, `idt-bind-hw-smoke-clear`, and `idt-bind-hw-smoke-blockers`. The IDT bind hardware smoke is manual-only: `fire` binds dedicated non-IRQ vector `0x81` to an inert test stub only after `arm`, consumes the latch after a successful bind, blocks repeated fire without re-arm, never invokes the interrupt, and never binds IRQ0/IRQ1.
+
+`v10.21.1` is hardening-only. It keeps the rendered IDT bind smoke outputs unchanged from `v10.21.0` while verifying the exact one-shot sequence, the single `0x81` bind callsite, no `0x80`, no IRQ0/IRQ1 bind, no interrupt invocation, no `sti`, no PIC unmask, unchanged keyboard polling, and the single manual PIC_EOI write boundary.
+
+`v10.22.0` adds `idt-bind-runtime-bridge-note`, `idt-bind-runtime-bridge-status`, `idt-bind-runtime-bridge-check`, and `idt-bind-runtime-bridge-blockers`. The bridge reads sticky boot-session proof from the manual IDT bind smoke, not transient `performed`/`consumed`/`armed` telemetry, and keeps runtime IDT bridge readiness denied.
+
+`v10.22.1` is hardening-only. The IDT bind runtime bridge command outputs remain unchanged from `v10.22.0`; verifier guards now lock exact output, sticky proof source, read-only bridge helper/dispatcher isolation, no `int 0x81`, no IRQ0/IRQ1 bind, no `sti`, no PIC unmask, keyboard polling, and the single manual PIC_EOI write boundary.
+
+Hardened transition sequence:
+
+```txt
+initial: permit transition armed: no
+initial: permit granted: no
+check: transition check remains denied
+arm: permit transition armed: yes
+check: permit granted: no
+check: bridge ready: no
+status: permit transition armed: yes
+clear: permit transition armed: no
+status: permit transition armed: no
+```
+
+The existing activation decision freeze layer remains in force underneath the mutation checklist, sequencer, and EOI write smoke preflight surfaces.
 
 This carries forward the IRQ Runtime Activation Preconditions 2 release contract as a stricter final gate.
 
@@ -65,6 +205,11 @@ DByteOS Kernel Lab
 version: 9.0.2
 status: booted
 target: i686 multiboot
+DByteOS Keyboard Lab
+status: listening
+DBYTE BOOT SCRIPT
+2
+dbyte-kernel>
 ```
 
 ## Architecture Fallback Matrix
@@ -91,7 +236,7 @@ In version `9.0.2`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 
 | Command Input          | Parameter Handling            | Output Response / Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | :--------------------- | :---------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `help`                 | None                          | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers` |
+| `help`                 | None                          | Prints: `commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt ui-redraw gfx-show gfx-console gfx-console-input gfx-console-shell int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers eoi-write-oneshot-note eoi-write-oneshot-status eoi-write-oneshot-arm eoi-write-oneshot-fire eoi-write-oneshot-blockers eoi-write-oneshot-latch-note eoi-write-oneshot-latch-status eoi-write-oneshot-latch-arm eoi-write-oneshot-latch-clear eoi-write-oneshot-latch-fire eoi-write-oneshot-latch-blockers eoi-write-bridge-note eoi-write-bridge-status eoi-write-bridge-check eoi-write-bridge-blockers eoi-write-permit-transition-note eoi-write-permit-transition-status eoi-write-permit-transition-arm eoi-write-permit-transition-clear eoi-write-permit-transition-check eoi-write-permit-transition-blockers eoi-write-eval-note eoi-write-eval-status eoi-write-eval-check eoi-write-eval-blockers eoi-write-hw-smoke-note eoi-write-hw-smoke-status eoi-write-hw-smoke-arm eoi-write-hw-smoke-fire eoi-write-hw-smoke-clear eoi-write-hw-smoke-blockers eoi-runtime-bridge-note eoi-runtime-bridge-status eoi-runtime-bridge-check eoi-runtime-bridge-blockers irq-handler-eoi-candidate-note irq-handler-eoi-candidate-status irq-handler-eoi-candidate-check irq-handler-eoi-candidate-blockers irq-handler-eoi-stub-note irq-handler-eoi-stub-status irq-handler-eoi-stub-check irq-handler-eoi-stub-blockers irq-handler-bind-candidate-note irq-handler-bind-candidate-status irq-handler-bind-candidate-check irq-handler-bind-candidate-blockers idt-bind-hw-smoke-note idt-bind-hw-smoke-status idt-bind-hw-smoke-arm idt-bind-hw-smoke-fire idt-bind-hw-smoke-clear idt-bind-hw-smoke-blockers idt-bind-runtime-bridge-note idt-bind-runtime-bridge-status idt-bind-runtime-bridge-check idt-bind-runtime-bridge-blockers idt-invoke-hw-smoke-note idt-invoke-hw-smoke-status idt-invoke-hw-smoke-arm idt-invoke-hw-smoke-fire idt-invoke-hw-smoke-clear idt-invoke-hw-smoke-blockers idt-invoke-runtime-bridge-note idt-invoke-runtime-bridge-status idt-invoke-runtime-bridge-check idt-invoke-runtime-bridge-blockers irq-delivery-candidate-note irq-delivery-candidate-status irq-delivery-candidate-check irq-delivery-candidate-blockers irq0-bind-hw-smoke-note irq0-bind-hw-smoke-status irq0-bind-hw-smoke-arm irq0-bind-hw-smoke-fire irq0-bind-hw-smoke-clear irq0-bind-hw-smoke-blockers irq0-unmask-hw-smoke-note irq0-unmask-hw-smoke-status irq0-unmask-hw-smoke-arm irq0-unmask-hw-smoke-fire irq0-unmask-hw-smoke-clear irq0-unmask-hw-smoke-blockers irq0-preflight-status irq0-preflight-check irq0-preflight-blockers irq0-handler-stub-status irq0-handler-stub-check irq0-handler-stub-blockers irq0-window-status irq0-window-arm irq0-window-fire irq0-window-clear irq0-ticks-status irq0-ticks-arm irq0-ticks-fire irq0-ticks-clear irq0-runtime-status irq0-runtime-start irq0-runtime-stop kernel-clock-status kernel-uptime-status dbyte-vm-status dbyte-vm-run-probe pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers` |
 | `about`                | None                          | Prints: `DByteOS Kernel Lab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `version`              | None                          | Prints: `DByteOS Kernel Lab 9.0.2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `clear`                | None                          | Clears the entire VGA console and resets prompt location to top-left.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -145,6 +290,140 @@ In version `9.0.2`, a polling-based PS/2 keyboard listener and stateful ASCII mo
 | `irq-runtime-final-gate-status` | None                          | Prints the aggregated read-only final gate status across all IRQ runtime readiness inputs. |
 | `irq-runtime-final-gate-check` | None                          | Prints the final gate invariant check without enabling runtime IRQ. |
 | `irq-runtime-final-gate-blockers` | None                          | Prints final activation blockers keeping IRQ runtime inactive. |
+| `irq-runtime-decision-note` | None                          | Prints the controlled activation decision freeze scope and no-mutation invariant. |
+| `irq-runtime-decision-status` | None                          | Prints the frozen blocked activation decision contract. |
+| `irq-runtime-decision-freeze` | None                          | Prints the same frozen blocked decision contract as the release-proof freeze output. |
+| `irq-runtime-decision-blockers` | None                          | Prints blockers keeping the activation decision frozen blocked. |
+| `irq-runtime-mutation-note` | None                          | Prints the controlled hardware mutation checklist scope and no-mutation invariant. |
+| `irq-runtime-mutation-status` | None                          | Prints the blocked hardware mutation readiness checklist. |
+| `irq-runtime-mutation-check` | None                          | Prints the same blocked hardware mutation readiness checklist as the release-proof check output. |
+| `irq-runtime-mutation-blockers` | None                          | Prints blockers keeping hardware mutation not ready. |
+| `irq-runtime-mutation-sequence-note` | None                          | Prints the controlled mutation smoke sequencer scope and no-mutation invariant. |
+| `irq-runtime-mutation-sequence-status` | None                          | Prints the blocked mutation smoke sequence contract. |
+| `irq-runtime-mutation-sequence-plan` | None                          | Prints the same blocked mutation smoke sequence as the release-proof plan output. |
+| `irq-runtime-mutation-sequence-blockers` | None                          | Prints blockers keeping the mutation smoke sequence not ready. |
+| `eoi-write-smoke-preflight-note` | None                          | Prints the controlled first PIC EOI write preflight scope and no-first-write invariant. |
+| `eoi-write-smoke-preflight-status` | None                          | Prints the blocked first PIC EOI write preflight contract. |
+| `eoi-write-smoke-preflight-check` | None                          | Prints the same blocked first PIC EOI write preflight as the release-proof check output. |
+| `eoi-write-smoke-preflight-blockers` | None                          | Prints blockers keeping the first PIC EOI write disallowed. |
+| `eoi-write-smoke-candidate-note` | None                          | Prints the first controlled PIC EOI write candidate scope and no-write invariant. |
+| `eoi-write-smoke-candidate-status` | None                          | Prints the blocked first controlled EOI write candidate contract. |
+| `eoi-write-smoke-candidate-arm` | None                          | Prints the same blocked candidate status without setting any latch. |
+| `eoi-write-smoke-candidate-fire` | None                          | Prints dry-run blocked fire output without writing `PIC_EOI`. |
+| `eoi-write-smoke-candidate-blockers` | None                          | Prints blockers keeping the first controlled EOI write candidate blocked. |
+| `eoi-write-permit-note` | None                          | Prints the controlled EOI write permit model scope and no-permit invariant. |
+| `eoi-write-permit-status` | None                          | Prints the denied first controlled EOI write permit contract. |
+| `eoi-write-permit-check` | None                          | Prints the same denied permit contract as status. |
+| `eoi-write-permit-blockers` | None                          | Prints blockers keeping the first controlled EOI write permit denied. |
+| `eoi-write-oneshot-note` | None                          | Prints the controlled EOI write one-shot command path scope and no-fire invariant. |
+| `eoi-write-oneshot-status` | None                          | Prints the denied one-shot command path contract. |
+| `eoi-write-oneshot-arm` | None                          | Prints the same denied one-shot status without setting any latch. |
+| `eoi-write-oneshot-fire` | None                          | Prints permit-blocked one-shot fire output without writing `PIC_EOI`. |
+| `eoi-write-oneshot-blockers` | None                          | Prints blockers keeping the one-shot command path denied. |
+| `eoi-write-oneshot-latch-note` | None                          | Prints the software-only latch scope and no-write invariant. |
+| `eoi-write-oneshot-latch-status` | None                          | Reads the software-only one-shot latch status. |
+| `eoi-write-oneshot-latch-arm` | None                          | Sets the software-only latch to armed without enabling fire. |
+| `eoi-write-oneshot-latch-clear` | None                          | Clears the software-only latch without touching hardware. |
+| `eoi-write-oneshot-latch-fire` | None                          | Reads the latch and remains blocked without writing `PIC_EOI` or clearing the latch. |
+| `eoi-write-oneshot-latch-blockers` | None                          | Prints blockers proving the latch is software-only and fire remains denied. |
+| `eoi-write-bridge-note` | None                          | Prints the read-only permit/latch bridge scope and no-write invariant. |
+| `eoi-write-bridge-status` | None                          | Reads permit and latch telemetry and reports bridge readiness denied. |
+| `eoi-write-bridge-check` | None                          | Prints the same read-only bridge readiness contract as a check. |
+| `eoi-write-bridge-blockers` | None                          | Prints blockers keeping the bridge denied without mutating latch state. |
+| `eoi-write-permit-transition-note` | None                          | Prints the software-only permit transition scope and denied invariant. |
+| `eoi-write-permit-transition-status` | None                          | Prints the current software transition state while permit remains denied. |
+| `eoi-write-permit-transition-arm` | None                          | Arms only the software transition state. |
+| `eoi-write-permit-transition-clear` | None                          | Clears only the software transition state. |
+| `eoi-write-permit-transition-check` | None                          | Checks transition state while permit and bridge remain denied. |
+| `eoi-write-permit-transition-blockers` | None                          | Prints blockers keeping transition from becoming a real permit. |
+| `eoi-write-eval-note` | None                          | Prints the read-only evaluator scope and denied readiness fields. |
+| `eoi-write-eval-status` | None                          | Reads the evaluator state without mutating latch, transition, permit, or bridge. |
+| `eoi-write-eval-check` | None                          | Prints the same read-only evaluator contract as a check. |
+| `eoi-write-eval-blockers` | None                          | Prints blockers keeping the first PIC EOI write path disabled. |
+| `eoi-write-hw-smoke-note` | None                          | Prints the manual one-shot hardware smoke scope without touching hardware. |
+| `eoi-write-hw-smoke-status` | None                          | Reads the hardware smoke latch and performed state without touching hardware. |
+| `eoi-write-hw-smoke-arm` | None                          | Arms the manual one-shot hardware smoke latch without touching hardware. |
+| `eoi-write-hw-smoke-fire` | None                          | If armed, performs exactly one `write_pic_port(PIC_MASTER_COMMAND, PIC_EOI)` and consumes the latch. |
+| `eoi-write-hw-smoke-clear` | None                          | Clears the manual one-shot hardware smoke latch without touching hardware. |
+| `eoi-write-hw-smoke-blockers` | None                          | Prints blockers proving this is not IRQ runtime activation. |
+| `eoi-runtime-bridge-note` | None                          | Prints the read-only runtime bridge scope without touching hardware. |
+| `eoi-runtime-bridge-status` | None                          | Reports whether the current session has proven manual PIC_EOI smoke and keeps runtime bridge readiness denied. |
+| `eoi-runtime-bridge-check` | None                          | Prints the same read-only runtime bridge readiness contract as status. |
+| `eoi-runtime-bridge-blockers` | None                          | Prints blockers keeping handler-triggered EOI disabled. |
+| `irq-handler-eoi-candidate-note` | None                          | Prints the read-only handler EOI candidate scope without touching hardware. |
+| `irq-handler-eoi-candidate-status` | None                          | Reports the unreachable handler EOI candidate with runtime bridge readiness denied. |
+| `irq-handler-eoi-candidate-check` | None                          | Prints the same read-only candidate contract as status. |
+| `irq-handler-eoi-candidate-blockers` | None                          | Prints blockers keeping handler-triggered EOI disabled and manual-only. |
+| `irq-handler-eoi-stub-note` | None                          | Prints the read-only handler EOI stub scope without touching hardware. |
+| `irq-handler-eoi-stub-status` | None                          | Reports the unbound handler EOI stub with invocation and PIC_EOI writes denied. |
+| `irq-handler-eoi-stub-check` | None                          | Prints the same read-only stub contract as status. |
+| `irq-handler-eoi-stub-blockers` | None                          | Prints blockers keeping the stub unbound, unreachable, and manual-only. |
+| `irq-handler-bind-candidate-note` | None                          | Prints the read-only handler bind candidate scope without touching hardware. |
+| `irq-handler-bind-candidate-status` | None                          | Reports the telemetry-only bind candidate with live IDT bind and IRQ reachability denied. |
+| `irq-handler-bind-candidate-check` | None                          | Prints the same read-only bind candidate contract as status. |
+| `irq-handler-bind-candidate-blockers` | None                          | Prints blockers keeping live handler bind and IRQ reachability disabled. |
+| `idt-bind-hw-smoke-note` | None                          | Prints the manual one-shot IDT bind smoke scope without touching the IDT. |
+| `idt-bind-hw-smoke-status` | None                          | Reads the IDT bind smoke latch and performed state without touching the IDT. |
+| `idt-bind-hw-smoke-arm` | None                          | Arms the manual one-shot IDT bind smoke latch without touching the IDT. |
+| `idt-bind-hw-smoke-fire` | None                          | If armed, performs exactly one `IDT.entries[0x81].set_handler(...)` bind and consumes the latch. |
+| `idt-bind-hw-smoke-clear` | None                          | Clears the manual one-shot IDT bind smoke latch without unbinding the descriptor. |
+| `idt-bind-hw-smoke-blockers` | None                          | Prints blockers proving this is not IRQ runtime activation or interrupt invocation. |
+| `idt-bind-runtime-bridge-note` | None                          | Prints the read-only IDT bind runtime bridge scope without invoking interrupts. |
+| `idt-bind-runtime-bridge-status` | None                          | Reports sticky boot-session IDT bind proof while keeping runtime bridge readiness denied. |
+| `idt-bind-runtime-bridge-check` | None                          | Prints the same read-only IDT bind runtime bridge contract as status. |
+| `idt-bind-runtime-bridge-blockers` | None                          | Prints blockers keeping live IRQ bind and interrupt invocation disabled. |
+| `idt-invoke-hw-smoke-note` | None                          | Prints the manual one-shot IDT vector invocation smoke scope without invoking the vector. |
+| `idt-invoke-hw-smoke-status` | None                          | Reads the IDT invocation smoke latch, transient telemetry, and sticky invocation proof. |
+| `idt-invoke-hw-smoke-arm` | None                          | Arms the invocation smoke only after this boot has proven the manual vector `0x81` bind. |
+| `idt-invoke-hw-smoke-fire` | None                          | If armed, invokes exactly one `int 0x81`, records inert-stub reach telemetry, and consumes the latch. |
+| `idt-invoke-hw-smoke-clear` | None                          | Clears transient invocation smoke telemetry without resetting sticky proof. |
+| `idt-invoke-hw-smoke-blockers` | None                          | Prints blockers proving this is not IRQ runtime activation or PIC EOI dispatch. |
+| `idt-invoke-runtime-bridge-note` | None                          | Prints the read-only IDT invocation runtime bridge scope without invoking the vector. |
+| `idt-invoke-runtime-bridge-status` | None                          | Reports sticky bind/invocation proof while keeping live IRQ delivery denied. |
+| `idt-invoke-runtime-bridge-check` | None                          | Prints the same read-only IDT invocation runtime bridge contract as status. |
+| `idt-invoke-runtime-bridge-blockers` | None                          | Prints blockers keeping live IRQ delivery and handler hardware reachability disabled. |
+| `irq-delivery-candidate-note` | None                          | Prints the read-only hardware IRQ delivery candidate scope without enabling delivery. |
+| `irq-delivery-candidate-status` | None                          | Reports sticky manual proof inputs while keeping IRQ0/IRQ1 delivery denied. |
+| `irq-delivery-candidate-check` | None                          | Prints the same read-only hardware IRQ delivery candidate contract as status. |
+| `irq-delivery-candidate-blockers` | None                          | Prints blockers keeping hardware IRQ delivery, live handler bind, STI, and PIC unmask disabled. |
+| `irq0-bind-hw-smoke-note` | None                          | Prints the manual-only IRQ0 timer bind smoke scope and denied delivery fields. |
+| `irq0-bind-hw-smoke-status` | None                          | Prints the IRQ0 timer bind latch, sticky proof, descriptor, and denied runtime fields. |
+| `irq0-bind-hw-smoke-arm` | None                          | Arms the manual-only IRQ0 timer bind one-shot smoke path. |
+| `irq0-bind-hw-smoke-fire` | None                          | Performs one IRQ0 timer IDT descriptor bind only when armed; otherwise reports blocked. |
+| `irq0-bind-hw-smoke-clear` | None                          | Clears transient IRQ0 timer bind smoke latch state without clearing the sticky proof. |
+| `irq0-bind-hw-smoke-blockers` | None                          | Prints blockers keeping IRQ0 delivery, PIC unmask, STI, handler EOI, and runtime IRQ disabled. |
+| `irq0-unmask-hw-smoke-note` | None                          | Prints the manual-only transactional PIC IRQ0 unmask smoke scope and denied delivery fields. |
+| `irq0-unmask-hw-smoke-status` | None                          | Prints the IRQ0 unmask latch, restore telemetry, sticky proof, and denied runtime fields. |
+| `irq0-unmask-hw-smoke-arm` | None                          | Arms the manual-only transactional IRQ0 unmask one-shot smoke path. |
+| `irq0-unmask-hw-smoke-fire` | None                          | Temporarily clears the master PIC IRQ0 mask bit and immediately restores the original mask when armed; otherwise reports blocked. |
+| `irq0-unmask-hw-smoke-clear` | None                          | Clears transient IRQ0 unmask smoke latch state without clearing the sticky proof or touching PIC ports. |
+| `irq0-unmask-hw-smoke-blockers` | None                          | Prints blockers keeping IRQ0 masked after fire, IRQ1 masked, STI disabled, and runtime IRQ disabled. |
+| `irq0-preflight-status` | None                          | Prints read-only IRQ0 activation preflight proof inputs and denied activation fields. |
+| `irq0-preflight-check` | None                          | Prints the same read-only IRQ0 activation preflight contract as status. |
+| `irq0-preflight-blockers` | None                          | Prints concise blockers for future bounded STI activation smoke. |
+| `irq0-handler-stub-status` | None                          | Prints the prepared IRQ0 timer handler stub paths while keeping hardware reachability denied. |
+| `irq0-handler-stub-check` | None                          | Prints the same read-only IRQ0 timer handler stub contract as status. |
+| `irq0-handler-stub-blockers` | None                          | Prints blockers keeping the prepared IRQ0 timer handler stub unreachable from hardware. |
+| `irq0-window-status` | None                          | Prints the controlled IRQ0 delivery window state, delivery count, restore state, and proof preconditions. |
+| `irq0-window-arm` | None                          | Arms the bounded IRQ0 delivery one-shot window only after PIC remap, manual EOI, IRQ0 bind, and transactional unmask proofs exist. |
+| `irq0-window-fire` | None                          | Temporarily unmasks IRQ0, opens a bounded `sti` window, executes `cli`, restores the original PIC mask, records deliveries, and redraws the VGA IRQ0 line. |
+| `irq0-window-clear` | None                          | Clears transient IRQ0 window telemetry without PIC I/O, STI, or sticky proof mutation. |
+| `irq0-ticks-status` | None                          | Prints the controlled IRQ0 8-tick window state, target, observed ticks, restore state, and proof preconditions. |
+| `irq0-ticks-arm` | None                          | Arms the bounded IRQ0 8-tick window only after PIC remap, manual EOI, IRQ0 bind, and transactional unmask proofs exist. |
+| `irq0-ticks-fire` | None                          | Temporarily unmasks IRQ0, opens a bounded `sti` window until 8 ticks or timeout, executes `cli`, restores the original PIC mask, records ticks, and redraws the VGA IRQ0 line. |
+| `irq0-ticks-clear` | None                          | Clears transient IRQ0 tick-window telemetry without PIC I/O, STI, or sticky proof mutation. |
+| `irq0-runtime-status` | None                          | Reads the controlled IRQ0 runtime readiness, running state, tick count, IRQ0 mask, and STI state without mutation. |
+| `irq0-runtime-start` | None                          | Starts continuous IRQ0 ticking only after existing setup proofs are ready; saves the original master PIC mask, unmasks IRQ0 only, and enables STI. |
+| `irq0-runtime-stop` | None                          | Executes CLI, records final ticks, writes the masked-exact master PIC mask, forces IRQ0 masked, and reports restore checks. |
+| `kernel-clock-status` | None                          | Reads the kernel clock projection from the existing IRQ0 runtime snapshot without starting, stopping, or mutating timer hardware. |
+| `kernel-uptime-status` | None                         | Reads one kernel clock snapshot and reports read-only uptime in uncalibrated ticks. |
+| `dbyte-vm-status` | None                          | Prints the embedded DByte kernel VM readiness contract. |
+| `dbyte-vm-run-probe` | None                       | Runs the embedded DByte bytecode probe and prints `DBYTE VM ONLINE` plus `42`. |
+| `ui-redraw`            | None                          | Redraws the first static VGA text window and reports the redraw over serial. |
+| `gfx-show`             | None                          | Enters VGA Mode 13h, draws the first static pixel graphics surface, and reports the render over serial. |
+| `gfx-console`          | None                          | Enters VGA Mode 13h, draws the structured DByte graphics console surface, and reports the render over serial. |
+| `gfx-console-input`    | One bounded line via PS/2 polling | Enters VGA Mode 13h, echoes typed input on the graphics prompt row, and prints `gfx-console-input: captured line: <text>` after Enter. |
+| `gfx-console-shell`    | Up to seven bounded commands via PS/2 polling | Enters VGA Mode 13h, runs a bounded graphics-only session for `help`, `status`, `clear`, `vm`, `apps`, `run <app_name>`, `last`, `info <app_name>`, `timer status`, `timer start`, `timer stop`, `clock status`, `exit`, app-not-found, or deterministic unknown-command results, and prints dispatch proof over serial. |
 | `pic-note`             | None                          | Prints the planned / disabled PIC remap code foundation note.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `pic-status`           | None                          | Prints PIC remap function, offset, IRQ handler, and interrupt status.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `pic-plan`             | None                          | Prints the PIC remap dry-run plan and ICW values without hardware writes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -198,7 +477,19 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
 3. Type commands and press Enter to execute them. For example:
    ```txt
     dbyte-kernel> help
-    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers
+    commands: help about version clear echo mem uptime banner keyboard reboot-note system cls status mods keys prompt ui-redraw gfx-show gfx-console gfx-console-input gfx-console-shell int3 div0 exception exception-reset handlers handlers --active exception-status exceptions exceptions --verbose exception-help exception-about fault-status fault-reset pf-note pf-status pf-smoke irq-note irq-status irq-handlers eoi-note eoi-status irq-gates irq-gate-status irq-gate-plan irq-gate-arm irq-gate-bind-smoke irq-gate-bind-status irq-gate-state irq-gate-history irq-gate-preflight irq-bind-note irq-bind-status irq-readiness irq-risk irq-preflight irq-runtime-arm irq-runtime-commit irq-runtime-preflight irq-runtime-status irq-runtime-blockers irq-runtime-matrix irq-runtime-readiness irq-runtime-next irq-runtime-activation-plan irq-runtime-token-note irq-runtime-token-status irq-runtime-token-arm irq-runtime-token-clear irq-runtime-gate-note irq-runtime-gate-status irq-runtime-gate-check irq-runtime-gate-blockers irq-runtime-sim-note irq-runtime-sim-status irq-runtime-sim-run irq-runtime-sim-blockers sti-plan sti-status sti-preflight sti-blockers irq-runtime-activation-smoke irq-runtime-activation-smoke-status irq-runtime-activation-smoke-blockers eoi-dispatch-smoke-note eoi-dispatch-smoke-status eoi-dispatch-smoke-plan eoi-dispatch-smoke-blockers pic-unmask-smoke-note pic-unmask-smoke-status pic-unmask-smoke-plan pic-unmask-smoke-blockers idt-runtime-bind-smoke-note idt-runtime-bind-smoke-status idt-runtime-bind-smoke-plan idt-runtime-bind-smoke-blockers irq-runtime-final-gate-note irq-runtime-final-gate-status irq-runtime-final-gate-check irq-runtime-final-gate-blockers irq-runtime-decision-note irq-runtime-decision-status irq-runtime-decision-freeze irq-runtime-decision-blockers irq-runtime-mutation-note irq-runtime-mutation-status irq-runtime-mutation-check irq-runtime-mutation-blockers irq-runtime-mutation-sequence-note irq-runtime-mutation-sequence-status irq-runtime-mutation-sequence-plan irq-runtime-mutation-sequence-blockers eoi-write-smoke-preflight-note eoi-write-smoke-preflight-status eoi-write-smoke-preflight-check eoi-write-smoke-preflight-blockers eoi-write-smoke-candidate-note eoi-write-smoke-candidate-status eoi-write-smoke-candidate-arm eoi-write-smoke-candidate-fire eoi-write-smoke-candidate-blockers eoi-write-permit-note eoi-write-permit-status eoi-write-permit-check eoi-write-permit-blockers eoi-write-oneshot-note eoi-write-oneshot-status eoi-write-oneshot-arm eoi-write-oneshot-fire eoi-write-oneshot-blockers eoi-write-oneshot-latch-note eoi-write-oneshot-latch-status eoi-write-oneshot-latch-arm eoi-write-oneshot-latch-clear eoi-write-oneshot-latch-fire eoi-write-oneshot-latch-blockers eoi-write-bridge-note eoi-write-bridge-status eoi-write-bridge-check eoi-write-bridge-blockers eoi-write-permit-transition-note eoi-write-permit-transition-status eoi-write-permit-transition-arm eoi-write-permit-transition-clear eoi-write-permit-transition-check eoi-write-permit-transition-blockers eoi-write-eval-note eoi-write-eval-status eoi-write-eval-check eoi-write-eval-blockers eoi-write-hw-smoke-note eoi-write-hw-smoke-status eoi-write-hw-smoke-arm eoi-write-hw-smoke-fire eoi-write-hw-smoke-clear eoi-write-hw-smoke-blockers eoi-runtime-bridge-note eoi-runtime-bridge-status eoi-runtime-bridge-check eoi-runtime-bridge-blockers irq-handler-eoi-candidate-note irq-handler-eoi-candidate-status irq-handler-eoi-candidate-check irq-handler-eoi-candidate-blockers irq-handler-eoi-stub-note irq-handler-eoi-stub-status irq-handler-eoi-stub-check irq-handler-eoi-stub-blockers irq-handler-bind-candidate-note irq-handler-bind-candidate-status irq-handler-bind-candidate-check irq-handler-bind-candidate-blockers idt-bind-hw-smoke-note idt-bind-hw-smoke-status idt-bind-hw-smoke-arm idt-bind-hw-smoke-fire idt-bind-hw-smoke-clear idt-bind-hw-smoke-blockers idt-bind-runtime-bridge-note idt-bind-runtime-bridge-status idt-bind-runtime-bridge-check idt-bind-runtime-bridge-blockers idt-invoke-hw-smoke-note idt-invoke-hw-smoke-status idt-invoke-hw-smoke-arm idt-invoke-hw-smoke-fire idt-invoke-hw-smoke-clear idt-invoke-hw-smoke-blockers idt-invoke-runtime-bridge-note idt-invoke-runtime-bridge-status idt-invoke-runtime-bridge-check idt-invoke-runtime-bridge-blockers irq-delivery-candidate-note irq-delivery-candidate-status irq-delivery-candidate-check irq-delivery-candidate-blockers irq0-bind-hw-smoke-note irq0-bind-hw-smoke-status irq0-bind-hw-smoke-arm irq0-bind-hw-smoke-fire irq0-bind-hw-smoke-clear irq0-bind-hw-smoke-blockers irq0-unmask-hw-smoke-note irq0-unmask-hw-smoke-status irq0-unmask-hw-smoke-arm irq0-unmask-hw-smoke-fire irq0-unmask-hw-smoke-clear irq0-unmask-hw-smoke-blockers irq0-preflight-status irq0-preflight-check irq0-preflight-blockers irq0-handler-stub-status irq0-handler-stub-check irq0-handler-stub-blockers irq0-window-status irq0-window-arm irq0-window-fire irq0-window-clear irq0-ticks-status irq0-ticks-arm irq0-ticks-fire irq0-ticks-clear irq0-runtime-status irq0-runtime-start irq0-runtime-stop kernel-clock-status kernel-uptime-status dbyte-vm-status dbyte-vm-run-probe pic-note pic-status pic-plan pic-remap-arm pic-remap-smoke pic-remap-status pic-remap-state pic-remap-history pic-remap-preflight irq-map pic-status --verbose pic-mask-plan pic-mask-status irq-mask-blockers
+    dbyte-kernel> ui-redraw
+    ui-redraw: first VGA window rendered
+    dbyte-kernel> gfx-show
+    gfx-show: VGA graphics surface rendered
+    dbyte-kernel> gfx-console
+    gfx-console: DByte graphics console rendered
+    dbyte-kernel> gfx-console-input
+    gfx-console-input: captured line: hello
+    dbyte-kernel> gfx-console-shell
+    gfx-console-shell: command dispatched: apps
+    gfx-console-shell: app dispatched: tickmath
+    gfx-console-shell: exit
     dbyte-kernel> version
     DByteOS Kernel Lab 9.0.2
    dbyte-kernel> system
@@ -1084,6 +1375,1839 @@ powershell -ExecutionPolicy Bypass -File .\kernel-lab\scripts\run.ps1
     - IDT runtime bind smoke: blocked
     - keyboard mode: polling
     final activation allowed: no
+    dbyte-kernel> irq-runtime-decision-note
+    IRQ runtime activation decision note
+    scope: controlled activation decision freeze
+    activation inputs: final-gate/activation-smoke/simulation/sti/eoi/pic-unmask/idt-bind/token/gate/matrix/keyboard
+    activation decision: frozen blocked
+    final activation allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> irq-runtime-decision-status
+    IRQ runtime activation decision
+    activation decision: frozen blocked
+    final activation allowed: no
+    runtime irq active: no
+    hardware mutation: no
+    sti: disabled
+    pic unmask: disabled
+    eoi dispatch: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-decision-freeze
+    IRQ runtime activation decision
+    activation decision: frozen blocked
+    final activation allowed: no
+    runtime irq active: no
+    hardware mutation: no
+    sti: disabled
+    pic unmask: disabled
+    eoi dispatch: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-decision-blockers
+    IRQ runtime activation decision blockers
+    - STI instruction disabled
+    - PIC unmask disabled
+    - EOI dispatch disabled
+    - live IDT bind disabled
+    - keyboard IRQ path disabled
+    - runtime IRQ active state disabled
+    activation decision: frozen blocked
+    dbyte-kernel> irq-runtime-mutation-note
+    IRQ runtime hardware mutation note
+    scope: controlled hardware mutation readiness checklist
+    mutation inputs: decision/final-gate/activation-smoke/sti/eoi/pic-unmask/idt-bind/token/gate/matrix/keyboard
+    hardware mutation ready: no
+    activation decision: frozen blocked
+    runtime irq active: no
+    dbyte-kernel> irq-runtime-mutation-status
+    IRQ runtime hardware mutation readiness
+    hardware mutation ready: no
+    activation decision: frozen blocked
+    final activation allowed: no
+    runtime irq active: no
+    sti mutation: disabled
+    pic unmask mutation: disabled
+    eoi dispatch mutation: disabled
+    idt live bind mutation: disabled
+    keyboard irq mutation: disabled
+    dbyte-kernel> irq-runtime-mutation-check
+    IRQ runtime hardware mutation readiness
+    hardware mutation ready: no
+    activation decision: frozen blocked
+    final activation allowed: no
+    runtime irq active: no
+    sti mutation: disabled
+    pic unmask mutation: disabled
+    eoi dispatch mutation: disabled
+    idt live bind mutation: disabled
+    keyboard irq mutation: disabled
+    dbyte-kernel> irq-runtime-mutation-blockers
+    IRQ runtime hardware mutation blockers
+    - activation decision frozen blocked
+    - final activation disallowed
+    - runtime IRQ active state disabled
+    - STI mutation disabled
+    - PIC unmask mutation disabled
+    - EOI dispatch mutation disabled
+    - IDT live bind mutation disabled
+    - keyboard IRQ mutation disabled
+    hardware mutation ready: no
+    dbyte-kernel> irq-runtime-mutation-sequence-note
+    IRQ runtime mutation smoke sequence note
+    scope: controlled mutation smoke sequencer
+    sequence inputs: mutation-checklist/decision/final-gate/activation-smoke/sti/eoi/pic-unmask/idt-bind/token/gate/matrix/keyboard
+    mutation sequence ready: no
+    next mutation step: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> irq-runtime-mutation-sequence-status
+    IRQ runtime mutation smoke sequence
+    mutation sequence ready: no
+    hardware mutation: no
+    runtime irq active: no
+    next mutation step: none
+    allowed mutation steps: none
+    sti: disabled
+    pic unmask: disabled
+    eoi dispatch: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-mutation-sequence-plan
+    IRQ runtime mutation smoke sequence
+    mutation sequence ready: no
+    hardware mutation: no
+    runtime irq active: no
+    next mutation step: none
+    allowed mutation steps: none
+    sti: disabled
+    pic unmask: disabled
+    eoi dispatch: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> irq-runtime-mutation-sequence-blockers
+    IRQ runtime mutation smoke sequence blockers
+    - activation decision frozen blocked
+    - final activation disallowed
+    - hardware mutation checklist not ready
+    - runtime IRQ active state disabled
+    - STI disabled
+    - PIC unmask disabled
+    - EOI dispatch disabled
+    - live IDT bind disabled
+    - keyboard mode polling
+    mutation sequence ready: no
+    dbyte-kernel> eoi-write-smoke-preflight-note
+    EOI write smoke preflight note
+    scope: controlled first PIC_EOI write preflight
+    preflight inputs: mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard
+    eoi write smoke preflight: blocked
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-smoke-preflight-status
+    EOI write smoke preflight
+    eoi write smoke preflight: blocked
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    target command port: none
+    target irq line: none
+    eoi dispatch: disabled
+    sti: disabled
+    pic unmask: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> eoi-write-smoke-preflight-check
+    EOI write smoke preflight
+    eoi write smoke preflight: blocked
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    target command port: none
+    target irq line: none
+    eoi dispatch: disabled
+    sti: disabled
+    pic unmask: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> eoi-write-smoke-preflight-blockers
+    EOI write smoke preflight blockers
+    - mutation sequence ready: no
+    - hardware mutation checklist ready: no
+    - activation decision frozen blocked
+    - final activation disallowed
+    - EOI dispatch disabled
+    - PIC unmask disabled
+    - IDT live bind disabled
+    - STI disabled
+    - keyboard mode polling
+    first PIC_EOI write allowed: no
+    dbyte-kernel> eoi-write-smoke-candidate-note
+    EOI write smoke candidate note
+    scope: first controlled PIC_EOI write smoke candidate
+    candidate inputs: eoi-write-preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard
+    eoi write smoke candidate: blocked
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-smoke-candidate-status
+    EOI write smoke candidate
+    eoi write smoke candidate: blocked
+    candidate armed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    target command port: none
+    target irq line: none
+    eoi dispatch: disabled
+    sti: disabled
+    pic unmask: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> eoi-write-smoke-candidate-arm
+    EOI write smoke candidate
+    eoi write smoke candidate: blocked
+    candidate armed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    target command port: none
+    target irq line: none
+    eoi dispatch: disabled
+    sti: disabled
+    pic unmask: disabled
+    live idt bind: no
+    keyboard mode: polling
+    dbyte-kernel> eoi-write-smoke-candidate-fire
+    EOI write smoke candidate fire
+    fire result: dry-run blocked
+    first PIC_EOI write performed: no
+    target command port: none
+    target irq line: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-smoke-candidate-blockers
+    EOI write smoke candidate blockers
+    - eoi write preflight blocked
+    - first PIC_EOI write allowed: no
+    - mutation sequence ready: no
+    - hardware mutation checklist ready: no
+    - activation decision frozen blocked
+    - final activation disallowed
+    - EOI dispatch disabled
+    - PIC unmask disabled
+    - IDT live bind disabled
+    - STI disabled
+    - keyboard mode polling
+    first PIC_EOI write performed: no
+    dbyte-kernel> eoi-write-permit-note
+    EOI write permit note
+    scope: controlled first PIC_EOI write permit model
+    permit inputs: candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard
+    permit granted: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-permit-status
+    EOI write permit model
+    permit granted: no
+    first PIC_EOI write allowed: no
+    target command port: none
+    target value: none
+    target irq line: none
+    hardware mutation: no
+    runtime irq active: no
+    fire command: dry-run blocked
+    dbyte-kernel> eoi-write-permit-check
+    EOI write permit model
+    permit granted: no
+    first PIC_EOI write allowed: no
+    target command port: none
+    target value: none
+    target irq line: none
+    hardware mutation: no
+    runtime irq active: no
+    fire command: dry-run blocked
+    dbyte-kernel> eoi-write-permit-blockers
+    EOI write permit blockers
+    - activation decision frozen blocked
+    - final gate denied
+    - mutation checklist denied
+    - mutation sequencer denied
+    - EOI write candidate fire blocked
+    - STI disabled
+    - PIC unmask disabled
+    - live IRQ runtime disabled
+    permit granted: no
+    dbyte-kernel> eoi-write-oneshot-note
+    EOI write one-shot note
+    scope: controlled first PIC_EOI write one-shot command path
+    inputs: permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate/eoi-dispatch/pic-unmask/idt-bind/sti/keyboard
+    one-shot armed: no
+    fire allowed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-status
+    EOI write one-shot command path
+    one-shot armed: no
+    fire allowed: no
+    first PIC_EOI write performed: no
+    target command port: none
+    target value: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-arm
+    EOI write one-shot command path
+    one-shot armed: no
+    fire allowed: no
+    first PIC_EOI write performed: no
+    target command port: none
+    target value: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-fire
+    EOI write one-shot fire
+    error: EOI one-shot fire blocked by permit model
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    dbyte-kernel> eoi-write-oneshot-blockers
+    EOI write one-shot blockers
+    - permit granted: no
+    - first PIC_EOI write allowed: no
+    - hardware mutation: no
+    - runtime irq active: no
+    - STI disabled
+    - PIC unmask disabled
+    - live IRQ runtime disabled
+    first PIC_EOI write performed: no
+    dbyte-kernel> eoi-write-oneshot-latch-note
+    EOI write one-shot latch note
+    scope: controlled first PIC_EOI write one-shot software latch
+    inputs: software-latch/permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate
+    latch: software telemetry only
+    one-shot armed: no
+    fire allowed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-latch-status
+    EOI write one-shot latch status
+    latch: software telemetry only
+    one-shot armed: no
+    fire allowed: no
+    first PIC_EOI write performed: no
+    target command port: none
+    target value: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-latch-arm
+    EOI write one-shot latch arm
+    result: software latch armed
+    latch: software telemetry only
+    one-shot armed: yes
+    fire allowed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-latch-fire
+    EOI write one-shot latch fire
+    error: EOI one-shot latch fire blocked by permit model
+    one-shot armed: yes
+    fire allowed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    blocked fire cleared latch: no
+    dbyte-kernel> eoi-write-oneshot-latch-clear
+    EOI write one-shot latch clear
+    result: software latch cleared
+    latch: software telemetry only
+    one-shot armed: no
+    fire allowed: no
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-oneshot-latch-blockers
+    EOI write one-shot latch blockers
+    - latch scope: software telemetry only
+    - permit granted: no
+    - first PIC_EOI write allowed: no
+    - hardware mutation: no
+    - runtime irq active: no
+    - STI disabled
+    - PIC unmask disabled
+    - live IRQ runtime disabled
+    first PIC_EOI write performed: no
+    dbyte-kernel> eoi-write-bridge-note
+    EOI write bridge note
+    scope: controlled first PIC_EOI write one-shot permit bridge
+    inputs: software-latch/permit-model/candidate/preflight/mutation-sequence/mutation-checklist/decision/final-gate
+    bridge: read-only telemetry bridge
+    permit granted: no
+    one-shot armed: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-bridge-status
+    EOI write bridge status
+    latch: software telemetry only
+    one-shot armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    target command port: none
+    target value: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-bridge-check
+    EOI write bridge check
+    latch: software telemetry only
+    one-shot armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    target command port: none
+    target value: none
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-bridge-blockers
+    EOI write bridge blockers
+    - latch not armed
+    - permit denied
+    - first PIC_EOI write allowed: no
+    - hardware mutation: no
+    - runtime irq active: no
+    - STI disabled
+    - PIC unmask disabled
+    - live IRQ runtime disabled
+    bridge ready: no
+    dbyte-kernel> eoi-write-permit-transition-note
+    EOI write permit transition note
+    scope: controlled first PIC_EOI write permit transition model
+    transition: software-only permit transition
+    permit transition armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-permit-transition-status
+    EOI write permit transition status
+    permit transition armed: no
+    permit granted: no
+    bridge ready: no
+    target command port: none
+    target value: none
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-permit-transition-arm
+    EOI write permit transition arm
+    result: software transition armed
+    permit transition armed: yes
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-permit-transition-check
+    EOI write permit transition check
+    transition check remains denied
+    permit transition armed: yes
+    permit granted: no
+    bridge ready: no
+    target command port: none
+    target value: none
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-permit-transition-clear
+    EOI write permit transition clear
+    result: software transition cleared
+    permit transition armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-permit-transition-blockers
+    EOI write permit transition blockers
+    - transition state is software-only
+    - permit granted: no
+    - bridge ready: no
+    - first PIC_EOI write allowed: no
+    - hardware mutation: no
+    - runtime irq active: no
+    - STI disabled
+    - PIC unmask disabled
+    - live IRQ runtime disabled
+    permit granted: no
+    bridge ready: no
+    dbyte-kernel> eoi-write-eval-note
+    EOI write permit evaluation note
+    scope: controlled first PIC_EOI write permit evaluation
+    evaluation: read-only permit evaluation
+    evaluation ready: no
+    one-shot armed: no
+    permit transition armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-eval-status
+    EOI write permit evaluation status
+    evaluation ready: no
+    one-shot armed: no
+    permit transition armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-eval-check
+    EOI write permit evaluation check
+    EOI write permit evaluation
+    evaluation ready: no
+    one-shot armed: no
+    permit transition armed: no
+    permit granted: no
+    bridge ready: no
+    first PIC_EOI write allowed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-eval-blockers
+    EOI write permit evaluation blockers
+    - permit model remains denied
+    - bridge remains denied
+    - transition state is telemetry-only
+    - first PIC_EOI write path is not enabled
+    - hardware mutation remains disabled
+    - runtime IRQ remains inactive
+    evaluation ready: no
+    permit granted: no
+    bridge ready: no
+    dbyte-kernel> eoi-write-hw-smoke-note
+    EOI write hardware smoke note
+    scope: first controlled PIC_EOI hardware smoke
+    mode: manual one-shot command path only
+    armed: no
+    consumed: no
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-status
+    EOI write hardware smoke status
+    armed: no
+    consumed: no
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-fire
+    EOI write hardware smoke fire
+    blocked: hardware smoke is not armed
+    armed: no
+    consumed: no
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-arm
+    EOI write hardware smoke arm
+    armed: ready for one PIC_EOI write
+    armed: yes
+    consumed: no
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-fire
+    EOI write hardware smoke fire
+    performed: one PIC_EOI write to master command port
+    armed: no
+    consumed: yes
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 1
+    first PIC_EOI write performed: yes
+    hardware mutation: yes
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-fire
+    EOI write hardware smoke fire
+    blocked: hardware smoke is not armed
+    armed: no
+    consumed: yes
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: yes
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-clear
+    EOI write hardware smoke clear
+    cleared: arm required before fire
+    armed: no
+    consumed: no
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-blockers
+    EOI write hardware smoke blockers
+    - manual shell command path only
+    - slave PIC command write forbidden
+    - one write requires a fresh arm
+    - STI disabled
+    - PIC unmask disabled
+    - live IRQ runtime disabled
+    - runtime irq active: no
+    armed: no
+    consumed: no
+    first PIC_EOI write performed: no
+    runtime irq active: no
+    dbyte-kernel> eoi-runtime-bridge-note
+    Controlled PIC_EOI runtime bridge note
+    scope: controlled PIC_EOI runtime bridge readiness
+    inputs: manual-hw-smoke/permit-evaluator/runtime-gate/keyboard
+    manual PIC_EOI smoke proven: no
+    runtime bridge ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> eoi-runtime-bridge-status
+    Controlled PIC_EOI runtime bridge readiness
+    manual PIC_EOI smoke proven: no
+    runtime bridge ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    live irq handlers: no
+    keyboard mode: polling
+    dbyte-kernel> eoi-runtime-bridge-check
+    Controlled PIC_EOI runtime bridge readiness
+    manual PIC_EOI smoke proven: no
+    runtime bridge ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    live irq handlers: no
+    keyboard mode: polling
+    dbyte-kernel> eoi-runtime-bridge-blockers
+    Controlled PIC_EOI runtime bridge blockers
+    - runtime IRQ dispatch remains disabled
+    - STI remains disabled
+    - PIC lines remain masked
+    - live IRQ0/IRQ1 handlers remain unbound
+    - handler-triggered EOI path is not enabled
+    runtime bridge ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> irq-handler-eoi-candidate-note
+    Controlled IRQ handler EOI path candidate note
+    scope: controlled IRQ handler EOI path candidate
+    inputs: runtime-bridge-readiness
+    runtime bridge ready: no
+    handler EOI candidate ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> irq-handler-eoi-candidate-status
+    Controlled IRQ handler EOI path candidate
+    runtime bridge ready: no
+    handler EOI candidate ready: no
+    handler-triggered EOI allowed: no
+    live handler bind: no
+    PIC_EOI callsites: 1 manual-only
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-handler-eoi-candidate-check
+    Controlled IRQ handler EOI path candidate
+    runtime bridge ready: no
+    handler EOI candidate ready: no
+    handler-triggered EOI allowed: no
+    live handler bind: no
+    PIC_EOI callsites: 1 manual-only
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-handler-eoi-candidate-blockers
+    Controlled IRQ handler EOI path candidate blockers
+    - runtime bridge readiness remains denied
+    - handler-triggered EOI remains disabled
+    - live IRQ0/IRQ1 handlers remain unbound
+    - PIC_EOI write remains manual-only
+    - runtime IRQ dispatch remains disabled
+    handler EOI candidate ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> irq-handler-eoi-stub-note
+    Controlled IRQ handler EOI stub note
+    scope: controlled IRQ handler EOI stub
+    inputs: handler-eoi-candidate
+    stub exists: yes
+    stub bound to live IRQ path: no
+    stub performs PIC_EOI write: no
+    runtime irq active: no
+    dbyte-kernel> irq-handler-eoi-stub-status
+    Controlled IRQ handler EOI stub
+    stub exists: yes
+    stub bound to live IRQ path: no
+    stub invocation allowed: no
+    stub performs PIC_EOI write: no
+    handler-triggered EOI allowed: no
+    PIC_EOI callsites: 1 manual-only
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-handler-eoi-stub-check
+    Controlled IRQ handler EOI stub
+    stub exists: yes
+    stub bound to live IRQ path: no
+    stub invocation allowed: no
+    stub performs PIC_EOI write: no
+    handler-triggered EOI allowed: no
+    PIC_EOI callsites: 1 manual-only
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-handler-eoi-stub-blockers
+    Controlled IRQ handler EOI stub blockers
+    - stub remains unbound from live IRQ path
+    - stub invocation remains disabled
+    - handler-triggered EOI remains disabled
+    - PIC_EOI write remains manual-only
+    - runtime IRQ dispatch remains disabled
+    stub invocation allowed: no
+    stub performs PIC_EOI write: no
+    runtime irq active: no
+    dbyte-kernel> irq-handler-bind-candidate-note
+    Controlled IRQ handler bind candidate note
+    scope: controlled IRQ handler bind candidate
+    inputs: handler-eoi-stub
+    stub exists: yes
+    bind candidate exists: yes
+    live IDT bind performed: no
+    runtime irq active: no
+    dbyte-kernel> irq-handler-bind-candidate-status
+    Controlled IRQ handler bind candidate
+    stub exists: yes
+    bind candidate exists: yes
+    bind candidate ready: no
+    live IDT bind performed: no
+    IRQ handler reachable: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-handler-bind-candidate-check
+    Controlled IRQ handler bind candidate
+    stub exists: yes
+    bind candidate exists: yes
+    bind candidate ready: no
+    live IDT bind performed: no
+    IRQ handler reachable: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-handler-bind-candidate-blockers
+    Controlled IRQ handler bind candidate blockers
+    - live IDT bind remains disabled
+    - IRQ0/IRQ1 handler registration remains disabled
+    - stub invocation remains disabled
+    - handler-triggered EOI remains disabled
+    - runtime IRQ dispatch remains disabled
+    bind candidate ready: no
+    live IDT bind performed: no
+    IRQ handler reachable: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-note
+    Controlled IDT bind one-shot hardware smoke note
+    scope: controlled IDT bind one-shot hardware smoke
+    mode: manual shell command only
+    target vector: 0x81
+    target handler: inert test stub
+    live IRQ bind: no
+    interrupt invocation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-status
+    Controlled IDT bind one-shot hardware smoke
+    armed: no
+    consumed: no
+    target vector: 0x81
+    target handler: inert test stub
+    live IRQ bind: no
+    IRQ0 bind: no
+    IRQ1 bind: no
+    interrupt invocation: no
+    hardware mutation allowed: one IDT descriptor bind only
+    IDT descriptor binds this command: 0
+    first IDT bind performed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-bind-runtime-bridge-note
+    Controlled IDT bind runtime bridge note
+    scope: controlled IDT bind runtime bridge readiness
+    inputs: idt-bind-hw-smoke/handler-bind-candidate
+    manual IDT bind smoke proven this boot: no
+    runtime IDT bridge ready: no
+    live IRQ bind allowed: no
+    interrupt invocation allowed: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-runtime-bridge-status
+    Controlled IDT bind runtime bridge readiness
+    manual IDT bind smoke proven this boot: no
+    runtime IDT bridge ready: no
+    live IRQ bind allowed: no
+    IRQ handler reachable: no
+    interrupt invocation allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-bind-runtime-bridge-check
+    Controlled IDT bind runtime bridge readiness
+    manual IDT bind smoke proven this boot: no
+    runtime IDT bridge ready: no
+    live IRQ bind allowed: no
+    IRQ handler reachable: no
+    interrupt invocation allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-bind-runtime-bridge-blockers
+    Controlled IDT bind runtime bridge blockers
+    - manual IDT bind proof is required before runtime bridge consideration
+    - live IRQ bind remains disabled
+    - IRQ handler reachability remains disabled
+    - interrupt invocation remains disabled
+    - runtime IRQ dispatch remains disabled
+    runtime IDT bridge ready: no
+    live IRQ bind allowed: no
+    IRQ handler reachable: no
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-hw-smoke-note
+    Controlled IDT vector invocation one-shot hardware smoke note
+    scope: controlled IDT vector invocation one-shot hardware smoke
+    bind proven this boot: no
+    target vector: 0x81
+    target handler: inert test stub
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-hw-smoke-status
+    Controlled IDT vector invocation one-shot hardware smoke
+    bind proven this boot: no
+    armed: no
+    consumed: no
+    target vector: 0x81
+    target handler: inert test stub
+    interrupt invocations this command: 0
+    inert stub reached: no
+    first IDT invocation performed: no
+    manual IDT invocation smoke proven this boot: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-runtime-bridge-note
+    Controlled IDT invocation runtime bridge note
+    scope: controlled IDT invocation runtime bridge readiness
+    inputs: idt-bind-hw-smoke/idt-invoke-hw-smoke/bind-runtime-bridge/handler-bind-candidate/stub
+    manual IDT bind smoke proven this boot: no
+    manual IDT invocation smoke proven this boot: no
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-runtime-bridge-status
+    Controlled IDT invocation runtime bridge readiness
+    manual IDT bind smoke proven this boot: no
+    manual IDT invocation smoke proven this boot: no
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    IRQ handler reachable from hardware: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-runtime-bridge-check
+    Controlled IDT invocation runtime bridge readiness
+    manual IDT bind smoke proven this boot: no
+    manual IDT invocation smoke proven this boot: no
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    IRQ handler reachable from hardware: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-runtime-bridge-blockers
+    Controlled IDT invocation runtime bridge blockers
+    - manual IDT bind proof remains required
+    - manual IDT invocation proof remains required
+    - live IRQ delivery remains disabled
+    - IRQ handler hardware reachability remains disabled
+    - runtime IRQ dispatch remains disabled
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    IRQ handler reachable from hardware: no
+    runtime irq active: no
+    dbyte-kernel> irq-delivery-candidate-note
+    Controlled hardware IRQ delivery candidate note
+    scope: controlled hardware IRQ delivery candidate
+    inputs: pic-eoi-proof/idt-bind-proof/idt-invoke-proof/invocation-bridge/handler-bind-candidate/stub
+    manual PIC_EOI smoke proven this boot: no
+    manual IDT bind smoke proven this boot: no
+    manual IDT invocation smoke proven this boot: no
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    runtime irq active: no
+    dbyte-kernel> irq-delivery-candidate-status
+    Controlled hardware IRQ delivery candidate status
+    manual PIC_EOI smoke proven this boot: no
+    manual IDT bind smoke proven this boot: no
+    manual IDT invocation smoke proven this boot: no
+    runtime invocation bridge ready: no
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    IRQ0 delivery allowed: no
+    IRQ1 delivery allowed: no
+    live IRQ handler bind: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-delivery-candidate-check
+    Controlled hardware IRQ delivery candidate status
+    manual PIC_EOI smoke proven this boot: no
+    manual IDT bind smoke proven this boot: no
+    manual IDT invocation smoke proven this boot: no
+    runtime invocation bridge ready: no
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    IRQ0 delivery allowed: no
+    IRQ1 delivery allowed: no
+    live IRQ handler bind: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-delivery-candidate-blockers
+    Controlled hardware IRQ delivery candidate blockers
+    - hardware IRQ delivery readiness remains denied
+    - IRQ0 delivery remains disabled
+    - IRQ1 delivery remains disabled
+    - live IRQ handler bind remains disabled
+    - handler-triggered EOI remains disabled
+    - STI remains disabled
+    - PIC unmask remains disabled
+    - runtime IRQ dispatch remains disabled
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    IRQ0 delivery allowed: no
+    IRQ1 delivery allowed: no
+    live IRQ handler bind: no
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-note
+    Controlled IRQ0 timer bind one-shot hardware smoke note
+    scope: controlled IRQ0 timer bind one-shot hardware smoke
+    mode: manual shell command only
+    IRQ0 bind smoke vector: 0x20
+    target handler: inert IRQ0 timer stub
+    IRQ0 hardware delivery allowed: no
+    PIC IRQ0 unmask: disabled
+    STI: disabled
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-status
+    Controlled IRQ0 timer bind one-shot hardware smoke
+    armed: no
+    consumed: no
+    IRQ0 bind smoke vector: 0x20
+    target handler: inert IRQ0 timer stub
+    IRQ0 descriptor bound: no
+    IRQ0 bind proven this boot: no
+    IRQ0 handler reached: no
+    IRQ0 hardware delivery allowed: no
+    PIC IRQ0 unmask: disabled
+    STI: disabled
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-bind-hw-smoke-blockers
+    Controlled IRQ0 timer bind one-shot hardware smoke blockers
+    - manual shell command path only
+    - IRQ0 timer vector bind only
+    - PIC IRQ0 unmask remains disabled
+    - STI remains disabled
+    - timer interrupt delivery remains disabled
+    - handler-triggered EOI remains disabled
+    - runtime IRQ dispatch remains disabled
+    armed: no
+    consumed: no
+    IRQ0 descriptor bound: no
+    IRQ0 bind proven this boot: no
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-fire
+    Controlled IRQ0 timer bind one-shot hardware smoke fire
+    blocked: IRQ0 bind smoke is not armed
+    armed: no
+    consumed: no
+    IRQ0 bind smoke vector: 0x20
+    target handler: inert IRQ0 timer stub
+    IRQ0 descriptor binds this command: 0
+    IRQ0 descriptor bound: no
+    IRQ0 bind proven this boot: no
+    IRQ0 handler reached: no
+    IRQ0 hardware delivery allowed: no
+    PIC IRQ0 unmask: disabled
+    STI: disabled
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> irq0-unmask-hw-smoke-note
+    Controlled PIC IRQ0 unmask one-shot hardware smoke note
+    scope: controlled PIC IRQ0 unmask one-shot hardware smoke
+    mode: manual transactional command only
+    IRQ0 currently unmasked: no
+    STI: disabled
+    hardware IRQ delivery allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-unmask-hw-smoke-status
+    Controlled PIC IRQ0 unmask one-shot hardware smoke
+    armed: no
+    consumed: no
+    IRQ0 temporary unmask performed: no
+    IRQ0 restore performed: no
+    IRQ0 currently unmasked: no
+    PIC master mask restored: no
+    IRQ0 unmask proven this boot: no
+    STI: disabled
+    hardware IRQ delivery allowed: no
+    IRQ0 handler reached: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-unmask-hw-smoke-blockers
+    Controlled PIC IRQ0 unmask one-shot hardware smoke blockers
+    - manual shell command path only
+    - IRQ0 unmask is transactional and restored before return
+    - IRQ1 remains masked
+    - slave PIC mask remains untouched
+    - STI remains disabled
+    - hardware IRQ delivery remains disabled
+    - handler-triggered EOI remains disabled
+    - runtime IRQ dispatch remains disabled
+    armed: no
+    consumed: no
+    IRQ0 currently unmasked: no
+    PIC master mask restored: no
+    IRQ0 unmask proven this boot: no
+    runtime irq active: no
+    dbyte-kernel> irq0-unmask-hw-smoke-fire
+    Controlled PIC IRQ0 unmask one-shot hardware smoke fire
+    blocked: IRQ0 unmask smoke is not armed
+    armed: no
+    consumed: no
+    IRQ0 temporary unmask performed: no
+    IRQ0 restore performed: no
+    IRQ0 currently unmasked: no
+    PIC master mask restored: no
+    IRQ0 unmask proven this boot: no
+    STI: disabled
+    hardware IRQ delivery allowed: no
+    IRQ0 handler reached: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-preflight-status
+    IRQ0 activation preflight
+    descriptor bind proof: no
+    transactional unmask proof: no
+    manual EOI proof: no
+    sti: disabled
+    irq0 currently masked: yes
+    runtime irq active: no
+    activation allowed: no
+    dbyte-kernel> irq0-preflight-check
+    IRQ0 activation preflight
+    descriptor bind proof: no
+    transactional unmask proof: no
+    manual EOI proof: no
+    sti: disabled
+    irq0 currently masked: yes
+    runtime irq active: no
+    activation allowed: no
+    dbyte-kernel> irq0-preflight-blockers
+    IRQ0 activation preflight blockers
+    - descriptor bind proof required
+    - transactional IRQ0 unmask proof required
+    - manual PIC_EOI proof required
+    - bounded STI recovery path missing
+    sti: disabled
+    irq0 currently masked: yes
+    runtime irq active: no
+    activation allowed: no
+    dbyte-kernel> irq0-handler-stub-status
+    IRQ0 timer handler stub
+    IRQ0 timer handler stub exists: yes
+    stub reachable from hardware: no
+    counter increment path: prepared
+    IRQ0 self-mask path: prepared
+    master PIC_EOI path: prepared
+    STI: disabled
+    IRQ0 currently masked: yes
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-handler-stub-check
+    IRQ0 timer handler stub
+    IRQ0 timer handler stub exists: yes
+    stub reachable from hardware: no
+    counter increment path: prepared
+    IRQ0 self-mask path: prepared
+    master PIC_EOI path: prepared
+    STI: disabled
+    IRQ0 currently masked: yes
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-handler-stub-blockers
+    IRQ0 timer handler stub blockers
+    - STI remains disabled
+    - IRQ0 remains masked outside transactional smoke
+    - hardware IRQ delivery remains disabled
+    - activation window missing
+    stub reachable from hardware: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-window-status
+    IRQ0 delivery one-shot window
+    state: idle
+    IRQ0 deliveries: 0
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    runtime irq active: no
+    preconditions:
+    - PIC remap proof: no
+    - manual PIC_EOI proof: no
+    - IRQ0 descriptor bind proof: no
+    - transactional IRQ0 unmask proof: no
+    unmet preconditions: PIC remap proof required
+    dbyte-kernel> irq0-window-arm
+    IRQ0 delivery one-shot window arm
+    blocked: preconditions missing
+    state: idle
+    armed: no
+    IRQ0 deliveries: 0
+    hardware mutation: no
+    runtime irq active: no
+    unmet preconditions: PIC remap proof required
+    dbyte-kernel> irq0-window-fire
+    IRQ0 delivery one-shot window fire
+    blocked: IRQ0 delivery window is not armed
+    state: idle
+    IRQ0 deliveries: 0
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    hardware mutation: no
+    runtime irq active: no
+    VGA IRQ0 status: PREPARED / MASKED
+    dbyte-kernel> irq0-window-clear
+    IRQ0 delivery one-shot window clear
+    cleared: IRQ0 delivery window idle
+    state: idle
+    armed: no
+    IRQ0 deliveries: 0
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> irq0-ticks-status
+    IRQ0 tick counter window
+    state: idle
+    target ticks: 8
+    observed ticks: 0
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    runtime irq active: no
+    preconditions:
+    - PIC remap proof: no
+    - manual PIC_EOI proof: no
+    - IRQ0 descriptor bind proof: no
+    - transactional IRQ0 unmask proof: no
+    unmet preconditions: PIC remap proof required
+    dbyte-kernel> irq0-ticks-arm
+    IRQ0 tick counter window arm
+    blocked: preconditions missing
+    state: idle
+    armed: no
+    target ticks: 8
+    observed ticks: 0
+    hardware mutation: no
+    runtime irq active: no
+    unmet preconditions: PIC remap proof required
+    dbyte-kernel> irq0-ticks-fire
+    IRQ0 tick counter window fire
+    blocked: IRQ0 tick counter window is not armed
+    state: idle
+    target ticks: 8
+    observed ticks: 0
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    hardware mutation: no
+    runtime irq active: no
+    VGA IRQ0 status: PREPARED / MASKED
+    dbyte-kernel> irq0-ticks-clear
+    IRQ0 tick counter window clear
+    cleared: IRQ0 tick counter window idle
+    state: idle
+    armed: no
+    target ticks: 8
+    observed ticks: 0
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> dbyte-vm-status
+    DByte kernel VM
+    state: ready
+    mode: embedded bytecode
+    heap: none
+    filesystem: none
+    boot script: executed
+    boot script result: ok
+    dbyte-kernel> dbyte-vm-run-probe
+    DBYTE VM ONLINE
+    42
+    dbyte-kernel> idt-invoke-hw-smoke-arm
+    Controlled IDT vector invocation one-shot hardware smoke arm
+    blocked: manual IDT bind proof is required
+    bind proven this boot: no
+    armed: no
+    consumed: no
+    interrupt invocations this command: 0
+    inert stub reached: no
+    first IDT invocation performed: no
+    manual IDT invocation smoke proven this boot: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-fire
+    Controlled IDT bind one-shot hardware smoke fire
+    blocked: hardware smoke is not armed
+    armed: no
+    consumed: no
+    target vector: 0x81
+    target handler: inert test stub
+    IDT descriptor binds this command: 0
+    first IDT bind performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-arm
+    Controlled IDT bind one-shot hardware smoke arm
+    armed: IDT bind hardware smoke armed
+    armed: yes
+    consumed: no
+    IDT descriptor binds this command: 0
+    first IDT bind performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-status
+    Controlled IDT bind one-shot hardware smoke
+    armed: yes
+    consumed: no
+    target vector: 0x81
+    target handler: inert test stub
+    live IRQ bind: no
+    IRQ0 bind: no
+    IRQ1 bind: no
+    interrupt invocation: no
+    hardware mutation allowed: one IDT descriptor bind only
+    IDT descriptor binds this command: 0
+    first IDT bind performed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-bind-hw-smoke-fire
+    Controlled IDT bind one-shot hardware smoke fire
+    performed: one IDT descriptor bind to vector 0x81
+    armed: no
+    consumed: yes
+    target vector: 0x81
+    target handler: inert test stub
+    IDT descriptor binds this command: 1
+    first IDT bind performed: yes
+    hardware mutation: yes
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-fire
+    Controlled IDT bind one-shot hardware smoke fire
+    blocked: hardware smoke is not armed
+    armed: no
+    consumed: yes
+    target vector: 0x81
+    target handler: inert test stub
+    IDT descriptor binds this command: 0
+    first IDT bind performed: yes
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-clear
+    Controlled IDT bind one-shot hardware smoke clear
+    cleared: IDT bind hardware smoke unarmed
+    armed: no
+    consumed: no
+    IDT descriptor binds this command: 0
+    first IDT bind performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-status
+    Controlled IDT bind one-shot hardware smoke
+    armed: no
+    consumed: no
+    target vector: 0x81
+    target handler: inert test stub
+    live IRQ bind: no
+    IRQ0 bind: no
+    IRQ1 bind: no
+    interrupt invocation: no
+    hardware mutation allowed: one IDT descriptor bind only
+    IDT descriptor binds this command: 0
+    first IDT bind performed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-bind-runtime-bridge-status
+    Controlled IDT bind runtime bridge readiness
+    manual IDT bind smoke proven this boot: yes
+    runtime IDT bridge ready: no
+    live IRQ bind allowed: no
+    IRQ handler reachable: no
+    interrupt invocation allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-hw-smoke-arm
+    Controlled IDT vector invocation one-shot hardware smoke arm
+    armed: IDT vector invocation smoke armed
+    bind proven this boot: yes
+    armed: yes
+    consumed: no
+    interrupt invocations this command: 0
+    inert stub reached: no
+    first IDT invocation performed: no
+    manual IDT invocation smoke proven this boot: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-hw-smoke-fire
+    Controlled IDT vector invocation one-shot hardware smoke fire
+    performed: one int 0x81 invocation
+    bind proven this boot: yes
+    armed: no
+    consumed: yes
+    target vector: 0x81
+    target handler: inert test stub
+    interrupt invocations this command: 1
+    inert stub reached: yes
+    first IDT invocation performed: yes
+    manual IDT invocation smoke proven this boot: yes
+    hardware mutation: yes
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-hw-smoke-status
+    Controlled IDT vector invocation one-shot hardware smoke
+    bind proven this boot: yes
+    armed: no
+    consumed: yes
+    target vector: 0x81
+    target handler: inert test stub
+    interrupt invocations this command: 0
+    inert stub reached: yes
+    first IDT invocation performed: yes
+    manual IDT invocation smoke proven this boot: yes
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-hw-smoke-fire
+    Controlled IDT vector invocation one-shot hardware smoke fire
+    blocked: invocation smoke is not armed
+    bind proven this boot: yes
+    armed: no
+    consumed: yes
+    target vector: 0x81
+    target handler: inert test stub
+    interrupt invocations this command: 0
+    inert stub reached: yes
+    first IDT invocation performed: yes
+    manual IDT invocation smoke proven this boot: yes
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-hw-smoke-clear
+    Controlled IDT vector invocation one-shot hardware smoke clear
+    cleared: IDT vector invocation smoke unarmed
+    bind proven this boot: yes
+    armed: no
+    consumed: no
+    interrupt invocations this command: 0
+    inert stub reached: no
+    first IDT invocation performed: no
+    manual IDT invocation smoke proven this boot: yes
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-hw-smoke-status
+    Controlled IDT vector invocation one-shot hardware smoke
+    bind proven this boot: yes
+    armed: no
+    consumed: no
+    target vector: 0x81
+    target handler: inert test stub
+    interrupt invocations this command: 0
+    inert stub reached: no
+    first IDT invocation performed: no
+    manual IDT invocation smoke proven this boot: yes
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-hw-smoke-blockers
+    Controlled IDT vector invocation one-shot hardware smoke blockers
+    - manual IDT bind proof is required
+    - manual shell command path only
+    - dedicated vector 0x81 only
+    - IRQ0/IRQ1 binding remains disabled
+    - runtime IRQ dispatch remains disabled
+    bind proven this boot: yes
+    armed: no
+    consumed: no
+    inert stub reached: no
+    manual IDT invocation smoke proven this boot: yes
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-runtime-bridge-note
+    Controlled IDT invocation runtime bridge note
+    scope: controlled IDT invocation runtime bridge readiness
+    inputs: idt-bind-hw-smoke/idt-invoke-hw-smoke/bind-runtime-bridge/handler-bind-candidate/stub
+    manual IDT bind smoke proven this boot: yes
+    manual IDT invocation smoke proven this boot: yes
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    runtime irq active: no
+    dbyte-kernel> idt-invoke-runtime-bridge-status
+    Controlled IDT invocation runtime bridge readiness
+    manual IDT bind smoke proven this boot: yes
+    manual IDT invocation smoke proven this boot: yes
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    IRQ handler reachable from hardware: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-runtime-bridge-check
+    Controlled IDT invocation runtime bridge readiness
+    manual IDT bind smoke proven this boot: yes
+    manual IDT invocation smoke proven this boot: yes
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    IRQ handler reachable from hardware: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> idt-invoke-runtime-bridge-blockers
+    Controlled IDT invocation runtime bridge blockers
+    - manual IDT bind proof remains required
+    - manual IDT invocation proof remains required
+    - live IRQ delivery remains disabled
+    - IRQ handler hardware reachability remains disabled
+    - runtime IRQ dispatch remains disabled
+    runtime invocation bridge ready: no
+    live IRQ delivery allowed: no
+    IRQ handler reachable from hardware: no
+    runtime irq active: no
+    dbyte-kernel> irq-delivery-candidate-note
+    Controlled hardware IRQ delivery candidate note
+    scope: controlled hardware IRQ delivery candidate
+    inputs: pic-eoi-proof/idt-bind-proof/idt-invoke-proof/invocation-bridge/handler-bind-candidate/stub
+    manual PIC_EOI smoke proven this boot: yes
+    manual IDT bind smoke proven this boot: yes
+    manual IDT invocation smoke proven this boot: yes
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    runtime irq active: no
+    dbyte-kernel> irq-delivery-candidate-status
+    Controlled hardware IRQ delivery candidate status
+    manual PIC_EOI smoke proven this boot: yes
+    manual IDT bind smoke proven this boot: yes
+    manual IDT invocation smoke proven this boot: yes
+    runtime invocation bridge ready: no
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    IRQ0 delivery allowed: no
+    IRQ1 delivery allowed: no
+    live IRQ handler bind: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-delivery-candidate-check
+    Controlled hardware IRQ delivery candidate status
+    manual PIC_EOI smoke proven this boot: yes
+    manual IDT bind smoke proven this boot: yes
+    manual IDT invocation smoke proven this boot: yes
+    runtime invocation bridge ready: no
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    IRQ0 delivery allowed: no
+    IRQ1 delivery allowed: no
+    live IRQ handler bind: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    keyboard mode: polling
+    dbyte-kernel> irq-delivery-candidate-blockers
+    Controlled hardware IRQ delivery candidate blockers
+    - hardware IRQ delivery readiness remains denied
+    - IRQ0 delivery remains disabled
+    - IRQ1 delivery remains disabled
+    - live IRQ handler bind remains disabled
+    - handler-triggered EOI remains disabled
+    - STI remains disabled
+    - PIC unmask remains disabled
+    - runtime IRQ dispatch remains disabled
+    hardware IRQ delivery candidate exists: yes
+    candidate ready: no
+    IRQ0 delivery allowed: no
+    IRQ1 delivery allowed: no
+    live IRQ handler bind: no
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-arm
+    Controlled IRQ0 timer bind one-shot hardware smoke arm
+    armed: IRQ0 timer bind smoke armed
+    armed: yes
+    consumed: no
+    IRQ0 descriptor binds this command: 0
+    IRQ0 descriptor bound: no
+    IRQ0 bind proven this boot: no
+    hardware mutation: one IRQ0 IDT descriptor bind only
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-fire
+    Controlled IRQ0 timer bind one-shot hardware smoke fire
+    performed: one IRQ0 IDT descriptor bind
+    armed: no
+    consumed: yes
+    IRQ0 bind smoke vector: 0x20
+    target handler: inert IRQ0 timer stub
+    IRQ0 descriptor binds this command: 1
+    IRQ0 descriptor bound: yes
+    IRQ0 bind proven this boot: yes
+    IRQ0 handler reached: no
+    IRQ0 hardware delivery allowed: no
+    PIC IRQ0 unmask: disabled
+    STI: disabled
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-fire
+    Controlled IRQ0 timer bind one-shot hardware smoke fire
+    blocked: IRQ0 bind smoke is not armed
+    armed: no
+    consumed: yes
+    IRQ0 bind smoke vector: 0x20
+    target handler: inert IRQ0 timer stub
+    IRQ0 descriptor binds this command: 0
+    IRQ0 descriptor bound: yes
+    IRQ0 bind proven this boot: yes
+    IRQ0 handler reached: no
+    IRQ0 hardware delivery allowed: no
+    PIC IRQ0 unmask: disabled
+    STI: disabled
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-clear
+    Controlled IRQ0 timer bind one-shot hardware smoke clear
+    cleared: IRQ0 timer bind smoke unarmed
+    armed: no
+    consumed: no
+    IRQ0 descriptor binds this command: 0
+    IRQ0 descriptor bound: yes
+    IRQ0 bind proven this boot: yes
+    hardware mutation: one IRQ0 IDT descriptor bind only
+    runtime irq active: no
+    dbyte-kernel> irq0-bind-hw-smoke-status
+    Controlled IRQ0 timer bind one-shot hardware smoke
+    armed: no
+    consumed: no
+    IRQ0 bind smoke vector: 0x20
+    target handler: inert IRQ0 timer stub
+    IRQ0 descriptor bound: yes
+    IRQ0 bind proven this boot: yes
+    IRQ0 handler reached: no
+    IRQ0 hardware delivery allowed: no
+    PIC IRQ0 unmask: disabled
+    STI: disabled
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-unmask-hw-smoke-arm
+    Controlled PIC IRQ0 unmask one-shot hardware smoke arm
+    armed: IRQ0 unmask smoke armed
+    armed: yes
+    consumed: no
+    IRQ0 temporary unmask performed: no
+    IRQ0 restore performed: no
+    PIC master mask restored: no
+    IRQ0 unmask proven this boot: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> irq0-unmask-hw-smoke-fire
+    Controlled PIC IRQ0 unmask one-shot hardware smoke fire
+    performed: temporary IRQ0 unmask restored
+    armed: no
+    consumed: yes
+    IRQ0 temporary unmask performed: yes
+    IRQ0 restore performed: yes
+    IRQ0 currently unmasked: no
+    PIC master mask restored: yes
+    IRQ0 unmask proven this boot: yes
+    STI: disabled
+    hardware IRQ delivery allowed: no
+    IRQ0 handler reached: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-unmask-hw-smoke-fire
+    Controlled PIC IRQ0 unmask one-shot hardware smoke fire
+    blocked: IRQ0 unmask smoke is not armed
+    armed: no
+    consumed: yes
+    IRQ0 temporary unmask performed: yes
+    IRQ0 restore performed: yes
+    IRQ0 currently unmasked: no
+    PIC master mask restored: yes
+    IRQ0 unmask proven this boot: yes
+    STI: disabled
+    hardware IRQ delivery allowed: no
+    IRQ0 handler reached: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-unmask-hw-smoke-clear
+    Controlled PIC IRQ0 unmask one-shot hardware smoke clear
+    cleared: IRQ0 unmask smoke unarmed
+    armed: no
+    consumed: no
+    IRQ0 temporary unmask performed: no
+    IRQ0 restore performed: no
+    PIC master mask restored: no
+    IRQ0 unmask proven this boot: yes
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> irq0-unmask-hw-smoke-status
+    Controlled PIC IRQ0 unmask one-shot hardware smoke
+    armed: no
+    consumed: no
+    IRQ0 temporary unmask performed: no
+    IRQ0 restore performed: no
+    IRQ0 currently unmasked: no
+    PIC master mask restored: no
+    IRQ0 unmask proven this boot: yes
+    STI: disabled
+    hardware IRQ delivery allowed: no
+    IRQ0 handler reached: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-window-status
+    IRQ0 delivery one-shot window
+    state: idle
+    IRQ0 deliveries: 0
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    runtime irq active: no
+    preconditions:
+    - PIC remap proof: yes
+    - manual PIC_EOI proof: yes
+    - IRQ0 descriptor bind proof: yes
+    - transactional IRQ0 unmask proof: yes
+    unmet preconditions: none
+    dbyte-kernel> irq0-window-arm
+    IRQ0 delivery one-shot window arm
+    armed: IRQ0 delivery window ready
+    state: armed
+    armed: yes
+    IRQ0 deliveries: 0
+    hardware mutation: no
+    runtime irq active: no
+    unmet preconditions: none
+    dbyte-kernel> irq0-window-fire
+    IRQ0 delivery one-shot window fire
+    finished: one IRQ0 delivery observed
+    state: finished
+    IRQ0 deliveries: 1
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    hardware mutation: yes
+    runtime irq active: no
+    VGA IRQ0 status: FIRED ONCE / MASKED
+    # A bounded window with no PIT delivery reports:
+    finished: no IRQ0 delivery observed
+    VGA IRQ0 status: NO DELIVERY / MASKED
+    # A bounded window with more than one delivery reports:
+    fault: multiple IRQ0 deliveries observed
+    VGA IRQ0 status: FAULT MULTI-FIRE
+    dbyte-kernel> irq0-window-clear
+    IRQ0 delivery one-shot window clear
+    cleared: IRQ0 delivery window idle
+    state: idle
+    armed: no
+    IRQ0 deliveries: 0
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> irq0-ticks-arm
+    IRQ0 tick counter window arm
+    armed: IRQ0 tick counter window ready
+    state: armed
+    armed: yes
+    target ticks: 8
+    observed ticks: 0
+    hardware mutation: no
+    runtime irq active: no
+    unmet preconditions: none
+    dbyte-kernel> irq0-ticks-fire
+    IRQ0 tick counter window fire
+    finished: eight IRQ0 ticks observed
+    state: finished
+    target ticks: 8
+    observed ticks: 8
+    IRQ0 currently masked: yes
+    STI currently enabled: no
+    original PIC mask restored: yes
+    IF disabled before return: yes
+    hardware mutation: yes
+    runtime irq active: no
+    VGA IRQ0 status: TICKS 0008 / MASKED
+    # A bounded 8-tick window with too few PIT deliveries reports:
+    timeout: fewer than eight IRQ0 ticks observed
+    VGA IRQ0 status: TIMEOUT / MASKED
+    # A bounded 8-tick window with more than eight deliveries reports:
+    fault: IRQ0 tick counter overflow
+    VGA IRQ0 status: FAULT OVERFLOW
+    dbyte-kernel> irq0-ticks-clear
+    IRQ0 tick counter window clear
+    cleared: IRQ0 tick counter window idle
+    state: idle
+    armed: no
+    target ticks: 8
+    observed ticks: 0
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> idt-bind-hw-smoke-blockers
+    Controlled IDT bind one-shot hardware smoke blockers
+    - manual shell command path only
+    - dedicated non-IRQ test vector only
+    - inert test stub only
+    - interrupt invocation remains disabled
+    - live IRQ0/IRQ1 binding remains disabled
+    - runtime IRQ dispatch remains disabled
+    armed: no
+    consumed: no
+    first IDT bind performed: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-arm
+    EOI write hardware smoke arm
+    armed: ready for one PIC_EOI write
+    armed: yes
+    consumed: no
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-fire
+    EOI write hardware smoke fire
+    performed: one PIC_EOI write to master command port
+    armed: no
+    consumed: yes
+    target command port: PIC_MASTER_COMMAND
+    target value: PIC_EOI
+    PIC_EOI writes this command: 1
+    first PIC_EOI write performed: yes
+    hardware mutation: yes
+    runtime irq active: no
+    dbyte-kernel> eoi-write-hw-smoke-clear
+    EOI write hardware smoke clear
+    cleared: arm required before fire
+    armed: no
+    consumed: no
+    PIC_EOI writes this command: 0
+    first PIC_EOI write performed: no
+    hardware mutation: no
+    runtime irq active: no
+    dbyte-kernel> eoi-runtime-bridge-status
+    Controlled PIC_EOI runtime bridge readiness
+    manual PIC_EOI smoke proven: yes
+    runtime bridge ready: no
+    handler-triggered EOI allowed: no
+    runtime irq active: no
+    sti: disabled
+    pic unmask: disabled
+    live irq handlers: no
+    keyboard mode: polling
+    dbyte-kernel> irq0-preflight-status
+    IRQ0 activation preflight
+    descriptor bind proof: yes
+    transactional unmask proof: yes
+    manual EOI proof: yes
+    sti: disabled
+    irq0 currently masked: yes
+    runtime irq active: no
+    activation allowed: no
+    dbyte-kernel> irq0-handler-stub-status
+    IRQ0 timer handler stub
+    IRQ0 timer handler stub exists: yes
+    stub reachable from hardware: no
+    counter increment path: prepared
+    IRQ0 self-mask path: prepared
+    master PIC_EOI path: prepared
+    STI: disabled
+    IRQ0 currently masked: yes
+    runtime irq active: no
+    keyboard mode: polling
     dbyte-kernel> irq-runtime-status
     IRQ runtime readiness status
     pic remap: not ready

@@ -1,0 +1,5 @@
+fn value() -> int:
+    return 42
+
+let x: int = value()
+print(x)

@@ -1,0 +1,2 @@
+pub fn load(path: str) -> int:
+    return 7

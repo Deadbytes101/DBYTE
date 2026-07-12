@@ -1,0 +1,21 @@
+DByteOS Permission Command
+==========================
+
+The 'perm' command reports deterministic permission policy decisions.
+
+Usage:
+  perm policy        - Show the policy summary
+  perm read <path>   - Simulate read permission for a path
+  perm write <path>  - Simulate write permission for a path
+  perm help          - Show command help
+
+Examples:
+  perm read etc/system.dby
+  perm write etc/system.dby
+  perm read tmp/../etc/system.dby
+
+The command reports ALLOW or DENY without changing file contents.
+
+The following commands are enforced by the system security policy:
+- read, write, append
+- cat, touch, inspect

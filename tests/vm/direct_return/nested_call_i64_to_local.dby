@@ -1,0 +1,9 @@
+fn inc(n: int) -> int:
+    return n + 1
+
+fn add_two(n: int) -> int:
+    return inc(n) + 1
+
+let total: int = 0
+total = add_two(total)
+print(total)

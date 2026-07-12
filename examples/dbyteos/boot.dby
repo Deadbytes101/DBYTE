@@ -3,6 +3,7 @@ import "./etc/system.dby" as system
 import "./sys/init.dby" as init
 import "./sys/logger.dby" as logger
 import std.fs as fs
+
 print("==================================================")
 logger.reset_boot_session_logs()
 logger.write_boot_event("Boot sequence started.")
@@ -22,6 +23,7 @@ print("  Kernel:     ", system.kernel_mode)
 print("  User:       ", profile.get_user())
 print("  Home:       ", profile.get_home())
 print("--------------------------------------------------")
+
 # Boot checks
 print("Checking system integrity...")
 logger.write_boot_event("Integrity check initiated.")
@@ -36,6 +38,7 @@ for d in dirs:
 print("")
 logger.write_boot_event("Handing over to init system.")
 init.run()
+
 print("System initialization complete.")
 logger.write_boot_event("Boot sequence completed successfully.")
 let touch_path: str = profile.resolve_path("tmp") + "/.dbyteos_boot_touch"

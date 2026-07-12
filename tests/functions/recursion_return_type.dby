@@ -1,0 +1,4 @@
+fn bad(n: int) -> int:
+    return "bad"
+
+print(bad(1))

@@ -1,0 +1,378 @@
+import std.buffer as pbuf
+import std.encoding as penc
+import std.env as penv
+import std.fs as pfs
+
+let args: list[str] = penv.args()
+let input_path: str = "personal_tools_scratch_patch.bin"
+let output_path: str = "personal_tools_scratch_patch.patched.bin"
+let find_hex: str = "DEADBEEF"
+let replace_hex: str = "90909090"
+let find_bytes: bytes = b"\xDE\xAD\xBE\xEF"
+let replace_bytes: bytes = b"\x90\x90\x90\x90"
+let mode: str = "demo"
+let should_run: bool = true
+let valid_patch: bool = true
+let data: buffer = pbuf.from_bytes(b"")
+let pos: int = -1
+let patched: bytes = b""
+let patched_count: int = 0
+let scan_offset: int = 0
+let match_index: int = 0
+let match_ok: bool = true
+let direct_offset: int = 0
+let decimal_text: str = ""
+let decimal_value: int = 0
+let decimal_valid: bool = true
+let digit: int = -1
+let ch: str = ""
+let hex_text: str = ""
+let hex_valid: bool = true
+let first_char: bool = true
+let offset_minus_err: bool = false
+
+if len(args) == 0:
+    pfs.write_bytes(input_path, b"\x00\xDE\xAD\xBE\xEF\x00")
+else:
+    if args[0] == "--help":
+        print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+        print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+        print("       patch_bytes --offset <offset> <file> <replace_hex>")
+        print("")
+        print("       Any mode accepts --out <outfile> as the last two arguments")
+        print("       to write the result to an explicit path instead of")
+        print("       <file>.patched")
+        print("")
+        print("options:")
+        print("  -h, --help        show this help")
+        print("  --out <outfile>   write output to <outfile> instead of <input>.patched")
+        print("")
+        print("example: dbyte run personal_tools/patch_bytes.dby sample.bin DEADBEEF CAFEBABE")
+        should_run = false
+    else:
+        if args[0] == "-h":
+            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+            print("")
+            print("       Any mode accepts --out <outfile> as the last two arguments")
+            print("       to write the result to an explicit path instead of")
+            print("       <file>.patched")
+            print("")
+            print("options:")
+            print("  -h, --help        show this help")
+            print("  --out <outfile>   write output to <outfile> instead of <input>.patched")
+            print("")
+            print("example: dbyte run personal_tools/patch_bytes.dby sample.bin DEADBEEF CAFEBABE")
+            should_run = false
+        else:
+            if len(args) == 3:
+                mode = "first"
+                input_path = args[0]
+                output_path = args[0] + ".patched"
+                find_hex = args[1]
+                replace_hex = args[2]
+            else:
+                if len(args) == 4:
+                    if args[0] == "--all":
+                        mode = "all"
+                        input_path = args[1]
+                        output_path = args[1] + ".patched"
+                        find_hex = args[2]
+                        replace_hex = args[3]
+                    else:
+                        if args[0] == "--offset":
+                            mode = "offset"
+                            decimal_text = args[1]
+                            input_path = args[2]
+                            output_path = args[2] + ".patched"
+                            replace_hex = args[3]
+                        else:
+                            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                            should_run = false
+                else:
+                    if len(args) == 5:
+                        if args[3] == "--out":
+                            mode = "first"
+                            input_path = args[0]
+                            output_path = args[4]
+                            find_hex = args[1]
+                            replace_hex = args[2]
+                        else:
+                            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                            should_run = false
+                    else:
+                        if len(args) == 6:
+                            if args[0] == "--all":
+                                if args[4] == "--out":
+                                    mode = "all"
+                                    input_path = args[1]
+                                    output_path = args[5]
+                                    find_hex = args[2]
+                                    replace_hex = args[3]
+                                else:
+                                    print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                                    should_run = false
+                            else:
+                                if args[0] == "--offset":
+                                    if args[4] == "--out":
+                                        mode = "offset"
+                                        decimal_text = args[1]
+                                        input_path = args[2]
+                                        output_path = args[5]
+                                        replace_hex = args[3]
+                                    else:
+                                        print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                                        print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                                        print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                                        should_run = false
+                                else:
+                                    print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                                    print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                                    should_run = false
+                        else:
+                            print("usage: patch_bytes <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --all <file> <find_hex> <replace_hex>")
+                            print("       patch_bytes --offset <offset> <file> <replace_hex>")
+                            should_run = false
+
+if should_run:
+    if mode == "offset":
+        decimal_valid = true
+        decimal_value = 0
+        offset_minus_err = false
+        if len(decimal_text) == 0:
+            decimal_valid = false
+        first_char = true
+        for ch in decimal_text:
+            if first_char:
+                first_char = false
+                if ch == "-":
+                    print("error: offset must be a non-negative decimal integer")
+                    decimal_valid = false
+                    offset_minus_err = true
+            if decimal_valid:
+                digit = -1
+                if ch == "0":
+                    digit = 0
+                if ch == "1":
+                    digit = 1
+                if ch == "2":
+                    digit = 2
+                if ch == "3":
+                    digit = 3
+                if ch == "4":
+                    digit = 4
+                if ch == "5":
+                    digit = 5
+                if ch == "6":
+                    digit = 6
+                if ch == "7":
+                    digit = 7
+                if ch == "8":
+                    digit = 8
+                if ch == "9":
+                    digit = 9
+                if digit < 0:
+                    decimal_valid = false
+                else:
+                    decimal_value = decimal_value * 10 + digit
+        if decimal_valid:
+            direct_offset = decimal_value
+        else:
+            if offset_minus_err == false:
+                print("error: offset must be a decimal integer")
+            should_run = false
+
+if should_run:
+    if mode != "offset":
+        hex_text = find_hex
+        hex_valid = true
+        if len(hex_text) == 0:
+            hex_valid = false
+        if (len(hex_text) / 2) * 2 != len(hex_text):
+            hex_valid = false
+        for ch in hex_text:
+            digit = -1
+            if ch == "0":
+                digit = 0
+            if ch == "1":
+                digit = 1
+            if ch == "2":
+                digit = 2
+            if ch == "3":
+                digit = 3
+            if ch == "4":
+                digit = 4
+            if ch == "5":
+                digit = 5
+            if ch == "6":
+                digit = 6
+            if ch == "7":
+                digit = 7
+            if ch == "8":
+                digit = 8
+            if ch == "9":
+                digit = 9
+            if ch == "a":
+                digit = 10
+            if ch == "A":
+                digit = 10
+            if ch == "b":
+                digit = 11
+            if ch == "B":
+                digit = 11
+            if ch == "c":
+                digit = 12
+            if ch == "C":
+                digit = 12
+            if ch == "d":
+                digit = 13
+            if ch == "D":
+                digit = 13
+            if ch == "e":
+                digit = 14
+            if ch == "E":
+                digit = 14
+            if ch == "f":
+                digit = 15
+            if ch == "F":
+                digit = 15
+            if digit < 0:
+                hex_valid = false
+        if hex_valid:
+            find_bytes = penc.hex_decode(find_hex)
+        else:
+            print("error: invalid find_hex")
+            should_run = false
+
+if should_run:
+    hex_text = replace_hex
+    hex_valid = true
+    if len(hex_text) == 0:
+        hex_valid = false
+    if (len(hex_text) / 2) * 2 != len(hex_text):
+        hex_valid = false
+    for ch in hex_text:
+        digit = -1
+        if ch == "0":
+            digit = 0
+        if ch == "1":
+            digit = 1
+        if ch == "2":
+            digit = 2
+        if ch == "3":
+            digit = 3
+        if ch == "4":
+            digit = 4
+        if ch == "5":
+            digit = 5
+        if ch == "6":
+            digit = 6
+        if ch == "7":
+            digit = 7
+        if ch == "8":
+            digit = 8
+        if ch == "9":
+            digit = 9
+        if ch == "a":
+            digit = 10
+        if ch == "A":
+            digit = 10
+        if ch == "b":
+            digit = 11
+        if ch == "B":
+            digit = 11
+        if ch == "c":
+            digit = 12
+        if ch == "C":
+            digit = 12
+        if ch == "d":
+            digit = 13
+        if ch == "D":
+            digit = 13
+        if ch == "e":
+            digit = 14
+        if ch == "E":
+            digit = 14
+        if ch == "f":
+            digit = 15
+        if ch == "F":
+            digit = 15
+        if digit < 0:
+            hex_valid = false
+    if hex_valid:
+        replace_bytes = penc.hex_decode(replace_hex)
+    else:
+        print("error: invalid replace_hex")
+        should_run = false
+
+if should_run:
+    valid_patch = true
+    if mode != "offset":
+        if len(find_bytes) != len(replace_bytes):
+            print("error: find_hex and replace_hex must have the same byte length")
+            valid_patch = false
+    if valid_patch:
+        data = pbuf.load(input_path)
+        if mode == "offset":
+            if direct_offset + len(replace_bytes) > pbuf.len(data):
+                print("error: offset out of bounds")
+                valid_patch = false
+    if valid_patch:
+        if mode == "offset":
+            pbuf.replace(data, direct_offset, replace_bytes)
+            pbuf.save(output_path, data)
+            print("patched offset", direct_offset)
+            print("wrote", output_path)
+            patched = pfs.read_bytes(output_path)
+            print("patched_hex:", penc.hex_encode(patched))
+        else:
+            if mode == "all":
+                scan_offset = 0
+                patched_count = 0
+                while scan_offset + len(find_bytes) <= pbuf.len(data):
+                    match_ok = true
+                    match_index = 0
+                    while match_index < len(find_bytes):
+                        if pbuf.get(data, scan_offset + match_index) != find_bytes[match_index]:
+                            match_ok = false
+                        match_index = match_index + 1
+                    if match_ok:
+                        pbuf.replace(data, scan_offset, replace_bytes)
+                        patched_count = patched_count + 1
+                        scan_offset = scan_offset + len(find_bytes)
+                    else:
+                        scan_offset = scan_offset + 1
+                if patched_count > 0:
+                    pbuf.save(output_path, data)
+                    print("patched count:", patched_count)
+                    print("wrote", output_path)
+                    patched = pfs.read_bytes(output_path)
+                    print("patched_hex:", penc.hex_encode(patched))
+                else:
+                    print("pattern not found")
+            else:
+                pos = pbuf.find(data, find_bytes)
+                if pos >= 0:
+                    pbuf.replace(data, pos, replace_bytes)
+                    pbuf.save(output_path, data)
+                    if len(args) == 0:
+                        print("patched:", pos)
+                    else:
+                        print("patched first match at offset", pos)
+                        print("wrote", output_path)
+                    patched = pfs.read_bytes(output_path)
+                    print("patched_hex:", penc.hex_encode(patched))
+                else:
+                    if len(args) == 0:
+                        print("patched: no")
+                    else:
+                        print("pattern not found")

@@ -1,0 +1,22 @@
+import std.fs as fs
+import std.encoding as enc
+import std.hash as hash
+
+# 1. Byte Literal & Indexing
+let b: bytes = b"DByte\x00\xff"
+print("Bytes:", b)
+print("Len:", len(b))
+print("Byte at 0:", b[0])
+print("Byte at -1:", b[-1])
+
+# 2. Files & Encoding
+let data = b"Sensitive Data"
+fs.write_bytes("secret.bin", data)
+let read_back = fs.read_bytes("secret.bin")
+
+let hex_str = enc.hex_encode(read_back)
+print("Hex:", hex_str)
+
+# 3. Hashing
+let h = hash.sha256(read_back)
+print("SHA256:", enc.hex_encode(h))

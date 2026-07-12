@@ -1,0 +1,15 @@
+[package]
+name = "dbyte_kernel"
+version = "10.62.1"
+edition = "2021"
+
+[dependencies]
+dbyte_kernel_vm = { path = "../crates/dbyte_kernel_vm" }
+
+[workspace]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

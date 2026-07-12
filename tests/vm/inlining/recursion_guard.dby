@@ -1,0 +1,7 @@
+fn recurse(n: int) -> int:
+    if n <= 0:
+        return 0
+    return n + recurse(n - 1)
+
+let x = recurse(5)
+print(x)

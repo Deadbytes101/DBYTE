@@ -1,0 +1,2 @@
+print("Len(str):", len("hello"))
+print("Len(list):", len([1, 2, 3, 4]))

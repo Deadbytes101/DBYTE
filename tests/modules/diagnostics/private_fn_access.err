@@ -1,0 +1,1 @@
+TypeError: module 'helper' has no public member 'secret'

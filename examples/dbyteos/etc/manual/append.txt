@@ -1,0 +1,12 @@
+NAME
+    append - append text to a file
+
+SYNOPSIS
+    append <file> <text> [text...]
+
+DESCRIPTION
+    Appends the provided text arguments to the specified file,
+    adding a newline if the file exists. Enforces path isolation.
+
+AUTHOR
+    DEADBYTE

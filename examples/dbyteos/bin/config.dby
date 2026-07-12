@@ -1,45 +1,50 @@
 import "../sys/config.dby" as config
 import std.env as env
+
 let args: list[str] = env.args()
+
 fn show_usage():
-print("usage: config [show|keys|get <key>]")
-print("")
-print("commands:")
-print("  show       - print read-only config values")
-print("  keys       - list config keys")
-print("  get <key>  - print one config value")
+    print("usage: config [show|keys|get <key>]")
+    print("")
+    print("commands:")
+    print("  show       - print read-only config values")
+    print("  keys       - list config keys")
+    print("  get <key>  - print one config value")
+
 fn show_config():
-print("--- DByteOS Config ---")
-for key in config.keys():
-let val: str = config.get(key)
-let base_val: str = config.get_base(key)
-if base_val != val:
-print(key + " = " + val + " (overridden)")
-else:
-print(key + " = " + val)
+    print("--- DByteOS Config ---")
+    for key in config.keys():
+        let val: str = config.get(key)
+        let base_val: str = config.get_base(key)
+        if base_val != val:
+            print(key + " = " + val + " (overridden)")
+        else:
+            print(key + " = " + val)
+
 fn show_keys():
-for key in config.keys():
-print(key)
+    for key in config.keys():
+        print(key)
+
 if len(args) < 1:
-show_config()
+    show_config()
 else:
-let cmd: str = args[0]
-if cmd == "show":
-show_config()
-else:
-if cmd == "keys":
-show_keys()
-else:
-if cmd == "get":
-if len(args) < 2:
-print("error: config get requires a key")
-show_usage()
-else:
-let key: str = args[1]
-if config.has_key(key) == 1:
-print(config.get(key))
-else:
-print("error: unknown config key: " + key)
-else:
-print("error: unknown config command: " + cmd)
-show_usage()
+    let cmd: str = args[0]
+    if cmd == "show":
+        show_config()
+    else:
+        if cmd == "keys":
+            show_keys()
+        else:
+            if cmd == "get":
+                if len(args) < 2:
+                    print("error: config get requires a key")
+                    show_usage()
+                else:
+                    let key: str = args[1]
+                    if config.has_key(key) == 1:
+                        print(config.get(key))
+                    else:
+                        print("error: unknown config key: " + key)
+            else:
+                print("error: unknown config command: " + cmd)
+                show_usage()

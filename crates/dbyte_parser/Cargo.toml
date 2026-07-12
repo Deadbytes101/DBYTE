@@ -1,0 +1,8 @@
+[package]
+name = "dbyte_parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dbyte_ast.workspace = true
+dbyte_lexer.workspace = true

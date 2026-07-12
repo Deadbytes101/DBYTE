@@ -1,0 +1,6 @@
+let max: int = 9223372036854775807
+let step: int = 1
+
+max = max + step
+
+print(max)

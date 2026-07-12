@@ -1,24 +1,28 @@
 import "../sys/profile.dby" as profile
 import std.fs as fs
+
 print("DByteOS: Cleaning /tmp and artifacts...")
 print("Known tmp artifacts only (deterministic sweep list).")
 # Note: journal, preferences, and projects are intentionally preserved as user data.
+
 let tmp_path: str = profile.resolve_path("tmp")
 if fs.exists(tmp_path) == 1:
-print("Cleaning /tmp directory...")
-let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin", "write_demo.txt", "path with spaces.txt", "verify_v32.txt", "append_test.txt", "mkdir_demo/.mkdir_demo_ok", "touched.txt", "shell_chain.txt", "cwd_write.txt", "boot.log", "services.log", "security.log", "../home/deadbyte/notes.txt"]
-for n in sweep:
-let p: str = tmp_path + "/" + n
-if fs.exists(p) == 1:
-fs.remove(p)
-print("  [REMOVED]", p)
-print("  [OK] /tmp sweep complete (deterministic list).")
+    print("Cleaning /tmp directory...")
+    let sweep: list[str] = [".dbyteos_boot_touch", ".dbyteos_smoke.bin", "write_demo.txt", "path with spaces.txt", "verify_v32.txt", "append_test.txt", "mkdir_demo/.mkdir_demo_ok", "touched.txt", "shell_chain.txt", "cwd_write.txt", "boot.log", "services.log", "security.log", "../home/deadbyte/notes.txt"]
+    for n in sweep:
+        let p: str = tmp_path + "/" + n
+        if fs.exists(p) == 1:
+            fs.remove(p)
+            print("  [REMOVED]", p)
+    print("  [OK] /tmp sweep complete (deterministic list).")
 else:
-print("  [SKIP] /tmp missing")
+    print("  [SKIP] /tmp missing")
+
 print("Cleaning workspace artifacts...")
 let cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
 if fs.exists(cache_path) == 1:
-fs.remove(cache_path)
-print("  [REMOVED] home/deadbyte/search_index.txt")
+    fs.remove(cache_path)
+    print("  [REMOVED] home/deadbyte/search_index.txt")
 print("  [OK] Artifacts removed.")
+
 print("workspace sweep complete")

@@ -1,1036 +1,1059 @@
 import "../sys/profile.dby" as profile
 import std.env as env
 import std.fs as fs
+
 let args: list[str] = env.args()
+
 fn show_help():
-print("usage: search <command> [args...]")
-print("")
-print("commands:")
-print("  workspace search <text>          - search all workspace files")
-print("  project search <project> <text>  - search notes and tasks of a project")
-print("  task search <project> <text>     - search tasks of a project")
-print("  daily search <text>              - search daily notes, journal, and tasks")
-print("  projects <text>                  - search notes and tasks of all projects")
-print("  tasks <text>                     - search tasks of all projects")
-print("  notes <text>                     - search all global and project notes")
-print("  journal <text>                   - search global journal entries")
-print("  index <text>                     - search workspace index cache")
-print("  summary                          - show detailed search overview")
-print("  recent                           - show recently indexed records")
-print("  status                           - show search index status")
-print("  rebuild                          - rebuild workspace index cache")
-print("  doctor                           - verify search index integrity")
-print("  clear-cache                      - clear workspace index cache")
-print("  reset-demo                       - reset demo project and workspace seed data")
-print("  help                             - show this help")
+    print("usage: search <command> [args...]")
+    print("")
+    print("commands:")
+    print("  workspace search <text>          - search all workspace files")
+    print("  project search <project> <text>  - search notes and tasks of a project")
+    print("  task search <project> <text>     - search tasks of a project")
+    print("  daily search <text>              - search daily notes, journal, and tasks")
+    print("  projects <text>                  - search notes and tasks of all projects")
+    print("  tasks <text>                     - search tasks of all projects")
+    print("  notes <text>                     - search all global and project notes")
+    print("  journal <text>                   - search global journal entries")
+    print("  index <text>                     - search workspace index cache")
+    print("  summary                          - show detailed search overview")
+    print("  recent                           - show recently indexed records")
+    print("  status                           - show search index status")
+    print("  rebuild                          - rebuild workspace index cache")
+    print("  doctor                           - verify search index integrity")
+    print("  clear-cache                      - clear workspace index cache")
+    print("  reset-demo                       - reset demo project and workspace seed data")
+    print("  help                             - show this help")
+
 fn substring(s_sub: str, start_sub: int, length_sub: int) -> str:
-let out_sub: str = ""
-let idx_sub: int = 0
-let count_sub: int = 0
-for c_sub in s_sub:
-if count_sub == length_sub:
-return out_sub
-if idx_sub >= start_sub:
-out_sub = out_sub + c_sub
-count_sub = count_sub + 1
-idx_sub = idx_sub + 1
-return out_sub
+    let out_sub: str = ""
+    let idx_sub: int = 0
+    let count_sub: int = 0
+    for c_sub in s_sub:
+        if count_sub == length_sub:
+            return out_sub
+        if idx_sub >= start_sub:
+            out_sub = out_sub + c_sub
+            count_sub = count_sub + 1
+        idx_sub = idx_sub + 1
+    return out_sub
+
 fn string_contains(haystack_cnt: str, needle_cnt: str) -> int:
-if needle_cnt == "":
-return 1
-let h_len: int = len(haystack_cnt)
-let n_len: int = len(needle_cnt)
-if n_len > h_len:
-return 0
-let max_start: int = h_len - n_len
-let i_cnt: int = 0
-while i_cnt <= max_start:
-let sub_cnt: str = substring(haystack_cnt, i_cnt, n_len)
-if sub_cnt == needle_cnt:
-return 1
-i_cnt = i_cnt + 1
-return 0
+    if needle_cnt == "":
+        return 1
+    let h_len: int = len(haystack_cnt)
+    let n_len: int = len(needle_cnt)
+    if n_len > h_len:
+        return 0
+    
+    let max_start: int = h_len - n_len
+    let i_cnt: int = 0
+    while i_cnt <= max_start:
+        let sub_cnt: str = substring(haystack_cnt, i_cnt, n_len)
+        if sub_cnt == needle_cnt:
+            return 1
+        i_cnt = i_cnt + 1
+    return 0
+
 fn valid_search_text(text_val: str) -> int:
-if text_val == "":
-return 0
-for c_val in text_val:
-if c_val == ".":
-return 0
-if c_val == "/":
-return 0
-if c_val == "\\":
-return 0
-if c_val == ":":
-return 0
-if c_val == "*":
-return 0
-if c_val == "?":
-return 0
-return 1
+    if text_val == "":
+        return 0
+    for c_val in text_val:
+        if c_val == ".":
+            return 0
+        if c_val == "/":
+            return 0
+        if c_val == "\\":
+            return 0
+        if c_val == ":":
+            return 0
+        if c_val == "*":
+            return 0
+        if c_val == "?":
+            return 0
+    return 1
+
 fn has_bad_char(name_bad: str) -> int:
-for c_bad in name_bad:
-if c_bad == ".":
-return 1
-if c_bad == "/":
-return 1
-if c_bad == "\\":
-return 1
-if c_bad == ":":
-return 1
-if c_bad == " ":
-return 1
-if c_bad == "\t":
-return 1
-return 0
+    for c_bad in name_bad:
+        if c_bad == ".":
+            return 1
+        if c_bad == "/":
+            return 1
+        if c_bad == "\\":
+            return 1
+        if c_bad == ":":
+            return 1
+        if c_bad == " ":
+            return 1
+        if c_bad == "\t":
+            return 1
+    return 0
+
 fn valid_name(name_v: str) -> int:
-if name_v == "":
-return 0
-if name_v == ".":
-return 0
-if name_v == "..":
-return 0
-if has_bad_char(name_v) == 1:
-return 0
-return 1
+    if name_v == "":
+        return 0
+    if name_v == ".":
+        return 0
+    if name_v == "..":
+        return 0
+    if has_bad_char(name_v) == 1:
+        return 0
+    return 1
+
 fn int_to_str(n_val: int) -> str:
-if n_val == 0:
-return "0"
-let out_v: str = ""
-let value_v: int = n_val
-while value_v > 0:
-let digit_v: int = value_v - ((value_v / 10) * 10)
-if digit_v == 0:
-out_v = "0" + out_v
-if digit_v == 1:
-out_v = "1" + out_v
-if digit_v == 2:
-out_v = "2" + out_v
-if digit_v == 3:
-out_v = "3" + out_v
-if digit_v == 4:
-out_v = "4" + out_v
-if digit_v == 5:
-out_v = "5" + out_v
-if digit_v == 6:
-out_v = "6" + out_v
-if digit_v == 7:
-out_v = "7" + out_v
-if digit_v == 8:
-out_v = "8" + out_v
-if digit_v == 9:
-out_v = "9" + out_v
-value_v = value_v / 10
-return out_v
+    if n_val == 0:
+        return "0"
+    let out_v: str = ""
+    let value_v: int = n_val
+    while value_v > 0:
+        let digit_v: int = value_v - ((value_v / 10) * 10)
+        if digit_v == 0:
+            out_v = "0" + out_v
+        if digit_v == 1:
+            out_v = "1" + out_v
+        if digit_v == 2:
+            out_v = "2" + out_v
+        if digit_v == 3:
+            out_v = "3" + out_v
+        if digit_v == 4:
+            out_v = "4" + out_v
+        if digit_v == 5:
+            out_v = "5" + out_v
+        if digit_v == 6:
+            out_v = "6" + out_v
+        if digit_v == 7:
+            out_v = "7" + out_v
+        if digit_v == 8:
+            out_v = "8" + out_v
+        if digit_v == 9:
+            out_v = "9" + out_v
+        value_v = value_v / 10
+    return out_v
+
 fn line_status(scanned_item: str) -> str:
-let status: str = ""
-for c in scanned_item:
-if c == "|":
-return status
-status = status + c
-return status
+    let status: str = ""
+    for c in scanned_item:
+        if c == "|":
+            return status
+        status = status + c
+    return status
+
 fn line_text(scanned_item: str) -> str:
-let text: str = ""
-let seen_sep: int = 0
-for c in scanned_item:
-if seen_sep == 0:
-if c == "|":
-seen_sep = 1
-else:
-text = text + c
-return text
+    let text: str = ""
+    let seen_sep: int = 0
+    for c in scanned_item:
+        if seen_sep == 0:
+            if c == "|":
+                seen_sep = 1
+        else:
+            text = text + c
+    return text
+
 fn project_exists_in_index(p_name_idx: str) -> int:
-let index_rel: str = "home/deadbyte/projects/index.txt"
-let index_path: str = profile.resolve_user_data_path(index_rel)
-if fs.exists(index_path) == 1:
-let content_idx: str = fs.read_text(index_path)
-let index_line: str = ""
-for c_idx in content_idx:
-if c_idx == "\n":
-if index_line == p_name_idx:
-return 1
-index_line = ""
-else:
-if c_idx != "\r":
-index_line = index_line + c_idx
-if index_line == p_name_idx:
-return 1
-return 0
+    let index_rel: str = "home/deadbyte/projects/index.txt"
+    let index_path: str = profile.resolve_user_data_path(index_rel)
+    if fs.exists(index_path) == 1:
+        let content_idx: str = fs.read_text(index_path)
+        let index_line: str = ""
+        for c_idx in content_idx:
+            if c_idx == "\n":
+                if index_line == p_name_idx:
+                    return 1
+                index_line = ""
+            else:
+                if c_idx != "\r":
+                    index_line = index_line + c_idx
+        if index_line == p_name_idx:
+            return 1
+    return 0
+
 fn search_notes(query_notes: str):
-let rel_notes_path: str = "home/deadbyte/notes.txt"
-let full_notes_path: str = profile.resolve_user_data_path(rel_notes_path)
-if fs.exists(full_notes_path) == 1:
-let content_notes: str = fs.read_text(full_notes_path)
-let notes_line: str = ""
-for c_notes in content_notes:
-if c_notes == "\n":
-if string_contains(notes_line, query_notes) == 1:
-print("notes: " + notes_line)
-notes_line = ""
-else:
-if c_notes != "\r":
-notes_line = notes_line + c_notes
-if notes_line != "":
-if string_contains(notes_line, query_notes) == 1:
-print("notes: " + notes_line)
+    let rel_notes_path: str = "home/deadbyte/notes.txt"
+    let full_notes_path: str = profile.resolve_user_data_path(rel_notes_path)
+    if fs.exists(full_notes_path) == 1:
+        let content_notes: str = fs.read_text(full_notes_path)
+        let notes_line: str = ""
+        for c_notes in content_notes:
+            if c_notes == "\n":
+                if string_contains(notes_line, query_notes) == 1:
+                    print("notes: " + notes_line)
+                notes_line = ""
+            else:
+                if c_notes != "\r":
+                    notes_line = notes_line + c_notes
+        if notes_line != "":
+            if string_contains(notes_line, query_notes) == 1:
+                print("notes: " + notes_line)
+
 fn search_journal(query_journal: str):
-let rel_journal_path: str = "home/deadbyte/journal.txt"
-let full_journal_path: str = profile.resolve_user_data_path(rel_journal_path)
-if fs.exists(full_journal_path) == 1:
-let content_journal: str = fs.read_text(full_journal_path)
-let journal_line: str = ""
-for c_journal in content_journal:
-if c_journal == "\n":
-if string_contains(journal_line, query_journal) == 1:
-print("journal: " + journal_line)
-journal_line = ""
-else:
-if c_journal != "\r":
-journal_line = journal_line + c_journal
-if journal_line != "":
-if string_contains(journal_line, query_journal) == 1:
-print("journal: " + journal_line)
+    let rel_journal_path: str = "home/deadbyte/journal.txt"
+    let full_journal_path: str = profile.resolve_user_data_path(rel_journal_path)
+    if fs.exists(full_journal_path) == 1:
+        let content_journal: str = fs.read_text(full_journal_path)
+        let journal_line: str = ""
+        for c_journal in content_journal:
+            if c_journal == "\n":
+                if string_contains(journal_line, query_journal) == 1:
+                    print("journal: " + journal_line)
+                journal_line = ""
+            else:
+                if c_journal != "\r":
+                    journal_line = journal_line + c_journal
+        if journal_line != "":
+            if string_contains(journal_line, query_journal) == 1:
+                print("journal: " + journal_line)
+
 fn search_project_notes(p_name_pn: str, query_pn: str):
-let rel_pn_path: str = "home/deadbyte/projects/" + p_name_pn + "/notes.txt"
-let full_pn_path: str = profile.resolve_user_data_path(rel_pn_path)
-if fs.exists(full_pn_path) == 1:
-let content_pn: str = fs.read_text(full_pn_path)
-let pn_line: str = ""
-for c_pn in content_pn:
-if c_pn == "\n":
-if string_contains(pn_line, query_pn) == 1:
-print("project " + p_name_pn + " note: " + pn_line)
-pn_line = ""
-else:
-if c_pn != "\r":
-pn_line = pn_line + c_pn
-if pn_line != "":
-if string_contains(pn_line, query_pn) == 1:
-print("project " + p_name_pn + " note: " + pn_line)
+    let rel_pn_path: str = "home/deadbyte/projects/" + p_name_pn + "/notes.txt"
+    let full_pn_path: str = profile.resolve_user_data_path(rel_pn_path)
+    if fs.exists(full_pn_path) == 1:
+        let content_pn: str = fs.read_text(full_pn_path)
+        let pn_line: str = ""
+        for c_pn in content_pn:
+            if c_pn == "\n":
+                if string_contains(pn_line, query_pn) == 1:
+                    print("project " + p_name_pn + " note: " + pn_line)
+                pn_line = ""
+            else:
+                if c_pn != "\r":
+                    pn_line = pn_line + c_pn
+        if pn_line != "":
+            if string_contains(pn_line, query_pn) == 1:
+                print("project " + p_name_pn + " note: " + pn_line)
+
 fn search_project_tasks(p_name_pt: str, query_pt: str):
-let rel_pt_path: str = "home/deadbyte/projects/" + p_name_pt + "/tasks.txt"
-let full_pt_path: str = profile.resolve_user_data_path(rel_pt_path)
-if fs.exists(full_pt_path) == 1:
-let content_pt: str = fs.read_text(full_pt_path)
-let pt_line: str = ""
-let task_id_pt: int = 1
-for c_pt in content_pt:
-if c_pt == "\n":
-if pt_line != "":
-let status_pt: str = line_status(pt_line)
-let text_pt: str = line_text(pt_line)
-if string_contains(text_pt, query_pt) == 1:
-if status_pt == "1":
-print("project " + p_name_pt + " task: [x] " + int_to_str(task_id_pt) + ": " + text_pt)
-else:
-print("project " + p_name_pt + " task: [ ] " + int_to_str(task_id_pt) + ": " + text_pt)
-pt_line = ""
-task_id_pt = task_id_pt + 1
-else:
-if c_pt != "\r":
-pt_line = pt_line + c_pt
-if pt_line != "":
-let status_pt_eof: str = line_status(pt_line)
-let text_pt_eof: str = line_text(pt_line)
-if string_contains(text_pt_eof, query_pt) == 1:
-if status_pt_eof == "1":
-print("project " + p_name_pt + " task: [x] " + int_to_str(task_id_pt) + ": " + text_pt_eof)
-else:
-print("project " + p_name_pt + " task: [ ] " + int_to_str(task_id_pt) + ": " + text_pt_eof)
+    let rel_pt_path: str = "home/deadbyte/projects/" + p_name_pt + "/tasks.txt"
+    let full_pt_path: str = profile.resolve_user_data_path(rel_pt_path)
+    if fs.exists(full_pt_path) == 1:
+        let content_pt: str = fs.read_text(full_pt_path)
+        let pt_line: str = ""
+        let task_id_pt: int = 1
+        for c_pt in content_pt:
+            if c_pt == "\n":
+                if pt_line != "":
+                    let status_pt: str = line_status(pt_line)
+                    let text_pt: str = line_text(pt_line)
+                    if string_contains(text_pt, query_pt) == 1:
+                        if status_pt == "1":
+                            print("project " + p_name_pt + " task: [x] " + int_to_str(task_id_pt) + ": " + text_pt)
+                        else:
+                            print("project " + p_name_pt + " task: [ ] " + int_to_str(task_id_pt) + ": " + text_pt)
+                pt_line = ""
+                task_id_pt = task_id_pt + 1
+            else:
+                if c_pt != "\r":
+                    pt_line = pt_line + c_pt
+        if pt_line != "":
+            let status_pt_eof: str = line_status(pt_line)
+            let text_pt_eof: str = line_text(pt_line)
+            if string_contains(text_pt_eof, query_pt) == 1:
+                if status_pt_eof == "1":
+                    print("project " + p_name_pt + " task: [x] " + int_to_str(task_id_pt) + ": " + text_pt_eof)
+                else:
+                    print("project " + p_name_pt + " task: [ ] " + int_to_str(task_id_pt) + ": " + text_pt_eof)
+
 fn workspace_search(query_ws: str):
-print("DByteOS workspace search: " + query_ws)
-search_notes(query_ws)
-search_journal(query_ws)
-let index_rel_ws: str = "home/deadbyte/projects/index.txt"
-let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
-if fs.exists(index_path_ws) == 1:
-let content_ws: str = fs.read_text(index_path_ws)
-let ws_line: str = ""
-for c_ws in content_ws:
-if c_ws == "\n":
-if ws_line != "":
-search_project_notes(ws_line, query_ws)
-search_project_tasks(ws_line, query_ws)
-ws_line = ""
-else:
-if c_ws != "\r":
-ws_line = ws_line + c_ws
-if ws_line != "":
-search_project_notes(ws_line, query_ws)
-search_project_tasks(ws_line, query_ws)
+    print("DByteOS workspace search: " + query_ws)
+    search_notes(query_ws)
+    search_journal(query_ws)
+    
+    let index_rel_ws: str = "home/deadbyte/projects/index.txt"
+    let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
+    if fs.exists(index_path_ws) == 1:
+        let content_ws: str = fs.read_text(index_path_ws)
+        let ws_line: str = ""
+        for c_ws in content_ws:
+            if c_ws == "\n":
+                if ws_line != "":
+                    search_project_notes(ws_line, query_ws)
+                    search_project_tasks(ws_line, query_ws)
+                ws_line = ""
+            else:
+                if c_ws != "\r":
+                    ws_line = ws_line + c_ws
+        if ws_line != "":
+            search_project_notes(ws_line, query_ws)
+            search_project_tasks(ws_line, query_ws)
+
 fn daily_search(query_dl: str):
-print("DByteOS daily search: " + query_dl)
-search_notes(query_dl)
-search_journal(query_dl)
-let index_rel_dl: str = "home/deadbyte/projects/index.txt"
-let index_path_dl: str = profile.resolve_user_data_path(index_rel_dl)
-if fs.exists(index_path_dl) == 1:
-let content_dl: str = fs.read_text(index_path_dl)
-let dl_line: str = ""
-for c_dl in content_dl:
-if c_dl == "\n":
-if dl_line != "":
-search_project_tasks(dl_line, query_dl)
-dl_line = ""
-else:
-if c_dl != "\r":
-dl_line = dl_line + c_dl
-if dl_line != "":
-search_project_tasks(dl_line, query_dl)
+    print("DByteOS daily search: " + query_dl)
+    search_notes(query_dl)
+    search_journal(query_dl)
+    
+    let index_rel_dl: str = "home/deadbyte/projects/index.txt"
+    let index_path_dl: str = profile.resolve_user_data_path(index_rel_dl)
+    if fs.exists(index_path_dl) == 1:
+        let content_dl: str = fs.read_text(index_path_dl)
+        let dl_line: str = ""
+        for c_dl in content_dl:
+            if c_dl == "\n":
+                if dl_line != "":
+                    search_project_tasks(dl_line, query_dl)
+                dl_line = ""
+            else:
+                if c_dl != "\r":
+                    dl_line = dl_line + c_dl
+        if dl_line != "":
+            search_project_tasks(dl_line, query_dl)
+
 fn append_file_records(rebuild_file_type: str, rebuild_proj: str, rebuild_rel_path: str) -> str:
-let out_records: str = ""
-let rebuild_full_path: str = profile.resolve_user_data_path(rebuild_rel_path)
-if fs.exists(rebuild_full_path) == 1:
-let rebuild_content: str = fs.read_text(rebuild_full_path)
-let rebuild_line: str = ""
-let rebuild_line_no: int = 1
-for rebuild_c in rebuild_content:
-if rebuild_c == "\n":
-if rebuild_line != "":
-out_records = out_records + rebuild_file_type + "|" + rebuild_proj + "|" + rebuild_rel_path + "|" + int_to_str(rebuild_line_no) + "|" + rebuild_line + "\n"
-rebuild_line = ""
-rebuild_line_no = rebuild_line_no + 1
-else:
-if rebuild_c != "\r":
-rebuild_line = rebuild_line + rebuild_c
-if rebuild_line != "":
-out_records = out_records + rebuild_file_type + "|" + rebuild_proj + "|" + rebuild_rel_path + "|" + int_to_str(rebuild_line_no) + "|" + rebuild_line + "\n"
-return out_records
+    let out_records: str = ""
+    let rebuild_full_path: str = profile.resolve_user_data_path(rebuild_rel_path)
+    if fs.exists(rebuild_full_path) == 1:
+        let rebuild_content: str = fs.read_text(rebuild_full_path)
+        let rebuild_line: str = ""
+        let rebuild_line_no: int = 1
+        for rebuild_c in rebuild_content:
+            if rebuild_c == "\n":
+                if rebuild_line != "":
+                    out_records = out_records + rebuild_file_type + "|" + rebuild_proj + "|" + rebuild_rel_path + "|" + int_to_str(rebuild_line_no) + "|" + rebuild_line + "\n"
+                rebuild_line = ""
+                rebuild_line_no = rebuild_line_no + 1
+            else:
+                if rebuild_c != "\r":
+                    rebuild_line = rebuild_line + rebuild_c
+        if rebuild_line != "":
+            out_records = out_records + rebuild_file_type + "|" + rebuild_proj + "|" + rebuild_rel_path + "|" + int_to_str(rebuild_line_no) + "|" + rebuild_line + "\n"
+    return out_records
+
 fn rebuild_index():
-let accum: str = ""
-let notes_rec: str = append_file_records("notes", "", "home/deadbyte/notes.txt")
-accum = accum + notes_rec
-let journal_rec: str = append_file_records("journal", "", "home/deadbyte/journal.txt")
-accum = accum + journal_rec
-let index_rel_rb: str = "home/deadbyte/projects/index.txt"
-let index_path_rb: str = profile.resolve_user_data_path(index_rel_rb)
-if fs.exists(index_path_rb) == 1:
-let content_rb: str = fs.read_text(index_path_rb)
-let rb_line: str = ""
-for c_rb in content_rb:
-if c_rb == "\n":
-if rb_line != "":
-let p_notes: str = append_file_records("proj_note", rb_line, "home/deadbyte/projects/" + rb_line + "/notes.txt")
-let p_tasks: str = append_file_records("proj_task", rb_line, "home/deadbyte/projects/" + rb_line + "/tasks.txt")
-accum = accum + p_notes + p_tasks
-rb_line = ""
-else:
-if c_rb != "\r":
-rb_line = rb_line + c_rb
-if rb_line != "":
-let p_notes: str = append_file_records("proj_note", rb_line, "home/deadbyte/projects/" + rb_line + "/notes.txt")
-let p_tasks: str = append_file_records("proj_task", rb_line, "home/deadbyte/projects/" + rb_line + "/tasks.txt")
-accum = accum + p_notes + p_tasks
+    let accum: str = ""
+    let notes_rec: str = append_file_records("notes", "", "home/deadbyte/notes.txt")
+    accum = accum + notes_rec
+    let journal_rec: str = append_file_records("journal", "", "home/deadbyte/journal.txt")
+    accum = accum + journal_rec
+    
+    let index_rel_rb: str = "home/deadbyte/projects/index.txt"
+    let index_path_rb: str = profile.resolve_user_data_path(index_rel_rb)
+    if fs.exists(index_path_rb) == 1:
+        let content_rb: str = fs.read_text(index_path_rb)
+        let rb_line: str = ""
+        for c_rb in content_rb:
+            if c_rb == "\n":
+                if rb_line != "":
+                    let p_notes: str = append_file_records("proj_note", rb_line, "home/deadbyte/projects/" + rb_line + "/notes.txt")
+                    let p_tasks: str = append_file_records("proj_task", rb_line, "home/deadbyte/projects/" + rb_line + "/tasks.txt")
+                    accum = accum + p_notes + p_tasks
+                rb_line = ""
+            else:
+                if c_rb != "\r":
+                    rb_line = rb_line + c_rb
+        if rb_line != "":
+            let p_notes: str = append_file_records("proj_note", rb_line, "home/deadbyte/projects/" + rb_line + "/notes.txt")
+            let p_tasks: str = append_file_records("proj_task", rb_line, "home/deadbyte/projects/" + rb_line + "/tasks.txt")
+            accum = accum + p_notes + p_tasks
 
-let rec_count: int = 0
-for char_rb in accum:
-if char_rb == "\n":
-rec_count = rec_count + 1
-
-let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-fs.write_text(index_cache_path, accum)
-print("search: index rebuilt successfully (" + int_to_str(rec_count) + " records indexed)")
+    let rec_count: int = 0
+    for char_rb in accum:
+        if char_rb == "\n":
+            rec_count = rec_count + 1
+            
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    fs.write_text(index_cache_path, accum)
+    print("search: index rebuilt successfully (" + int_to_str(rec_count) + " records indexed)")
 
 fn clear_cache():
-let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path) == 1:
-fs.remove(index_cache_path)
-print("search: index cache cleared successfully")
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 1:
+        fs.remove(index_cache_path)
+    print("search: index cache cleared successfully")
 
 fn show_status():
-let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path) == 0:
-print("index: missing (use 'search rebuild' to generate)")
-else:
-let index_content: str = fs.read_text(index_cache_path)
-let rec_count: int = 0
-let bytes_size: int = len(index_content)
-for c in index_content:
-if c == "\n":
-rec_count = rec_count + 1
-print("index: active (" + int_to_str(rec_count) + " records, " + int_to_str(bytes_size) + " bytes)")
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        print("index: missing (use 'search rebuild' to generate)")
+    else:
+        let index_content: str = fs.read_text(index_cache_path)
+        let rec_count: int = 0
+        let bytes_size: int = len(index_content)
+        for c in index_content:
+            if c == "\n":
+                rec_count = rec_count + 1
+        print("index: active (" + int_to_str(rec_count) + " records, " + int_to_str(bytes_size) + " bytes)")
 
 fn is_record_valid(rec_line: str) -> int:
-let pipe_count: int = 0
-for c in rec_line:
-if c == "|":
-pipe_count = pipe_count + 1
-if pipe_count < 4:
-return 0
-return 1
+    let pipe_count: int = 0
+    for c in rec_line:
+        if c == "|":
+            pipe_count = pipe_count + 1
+    if pipe_count < 4:
+        return 0
+    return 1
 
 fn run_doctor():
-let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path) == 0:
-print("error: index: missing (use 'search rebuild' to generate)")
-else:
-let index_content: str = fs.read_text(index_cache_path)
-let doc_line: str = ""
-let is_healthy: int = 1
-let rec_count: int = 0
-for c in index_content:
-if c == "\n":
-if doc_line != "":
-if is_record_valid(doc_line) == 0:
-is_healthy = 0
-rec_count = rec_count + 1
-doc_line = ""
-else:
-if c != "\r":
-doc_line = doc_line + c
-if doc_line != "":
-if is_record_valid(doc_line) == 0:
-is_healthy = 0
-rec_count = rec_count + 1
-
-if is_healthy == 1:
-print("index: healthy (all " + int_to_str(rec_count) + " records valid)")
-else:
-print("error: index structurally invalid")
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        print("error: index: missing (use 'search rebuild' to generate)")
+    else:
+        let index_content: str = fs.read_text(index_cache_path)
+        let doc_line: str = ""
+        let is_healthy: int = 1
+        let rec_count: int = 0
+        for c in index_content:
+            if c == "\n":
+                if doc_line != "":
+                    if is_record_valid(doc_line) == 0:
+                        is_healthy = 0
+                    rec_count = rec_count + 1
+                doc_line = ""
+            else:
+                if c != "\r":
+                    doc_line = doc_line + c
+        if doc_line != "":
+            if is_record_valid(doc_line) == 0:
+                is_healthy = 0
+            rec_count = rec_count + 1
+            
+        if is_healthy == 1:
+            print("index: healthy (all " + int_to_str(rec_count) + " records valid)")
+        else:
+            print("error: index structurally invalid")
 
 fn search_cache_index(query_str: str):
-let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path) == 0:
-print("error: index: missing (use 'search rebuild' to generate)")
-else:
-print("DByteOS index search: " + query_str)
-let index_content: str = fs.read_text(index_cache_path)
-let rec_line: str = ""
-for c in index_content:
-if c == "\n":
-if rec_line != "":
-let pipe_idx: int = 0
-let f_type: str = ""
-let f_proj: str = ""
-let f_file: str = ""
-let f_line_no: str = ""
-let f_content: str = ""
-for rc in rec_line:
-if rc == "|":
-if pipe_idx < 4:
-pipe_idx = pipe_idx + 1
-else:
-f_content = f_content + rc
-else:
-if pipe_idx == 0:
-f_type = f_type + rc
-if pipe_idx == 1:
-f_proj = f_proj + rc
-if pipe_idx == 2:
-f_file = f_file + rc
-if pipe_idx == 3:
-f_line_no = f_line_no + rc
-if pipe_idx >= 4:
-f_content = f_content + rc
-
-if f_type == "proj_task":
-let status_val: str = line_status(f_content)
-let text_val: str = line_text(f_content)
-if string_contains(text_val, query_str) == 1:
-if status_val == "1":
-print("project " + f_proj + " task: [x] " + f_line_no + ": " + text_val)
-else:
-print("project " + f_proj + " task: [ ] " + f_line_no + ": " + text_val)
-else:
-if string_contains(f_content, query_str) == 1:
-if f_type == "notes":
-print("notes: " + f_content)
-if f_type == "journal":
-print("journal: " + f_content)
-if f_type == "proj_note":
-print("project " + f_proj + " note: " + f_content)
-rec_line = ""
-else:
-if c != "\r":
-rec_line = rec_line + c
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        print("error: index: missing (use 'search rebuild' to generate)")
+    else:
+        print("DByteOS index search: " + query_str)
+        let index_content: str = fs.read_text(index_cache_path)
+        let rec_line: str = ""
+        for c in index_content:
+            if c == "\n":
+                if rec_line != "":
+                    let pipe_idx: int = 0
+                    let f_type: str = ""
+                    let f_proj: str = ""
+                    let f_file: str = ""
+                    let f_line_no: str = ""
+                    let f_content: str = ""
+                    for rc in rec_line:
+                        if rc == "|":
+                            if pipe_idx < 4:
+                                pipe_idx = pipe_idx + 1
+                            else:
+                                f_content = f_content + rc
+                        else:
+                            if pipe_idx == 0:
+                                f_type = f_type + rc
+                            if pipe_idx == 1:
+                                f_proj = f_proj + rc
+                            if pipe_idx == 2:
+                                f_file = f_file + rc
+                            if pipe_idx == 3:
+                                f_line_no = f_line_no + rc
+                            if pipe_idx >= 4:
+                                f_content = f_content + rc
+                    
+                    if f_type == "proj_task":
+                        let status_val: str = line_status(f_content)
+                        let text_val: str = line_text(f_content)
+                        if string_contains(text_val, query_str) == 1:
+                            if status_val == "1":
+                                print("project " + f_proj + " task: [x] " + f_line_no + ": " + text_val)
+                            else:
+                                print("project " + f_proj + " task: [ ] " + f_line_no + ": " + text_val)
+                    else:
+                        if string_contains(f_content, query_str) == 1:
+                            if f_type == "notes":
+                                print("notes: " + f_content)
+                            if f_type == "journal":
+                                print("journal: " + f_content)
+                            if f_type == "proj_note":
+                                print("project " + f_proj + " note: " + f_content)
+                rec_line = ""
+            else:
+                if c != "\r":
+                    rec_line = rec_line + c
 
 fn print_recent_record(print_idx_pr: int, rec_line_pr: str):
-let pipe_idx_pr: int = 0
-let f_type_pr: str = ""
-let f_proj_pr: str = ""
-let f_file_pr: str = ""
-let f_line_no_pr: str = ""
-let f_content_pr: str = ""
-for rc_pr in rec_line_pr:
-if rc_pr == "|":
-if pipe_idx_pr < 4:
-pipe_idx_pr = pipe_idx_pr + 1
-else:
-f_content_pr = f_content_pr + rc_pr
-else:
-if pipe_idx_pr == 0:
-f_type_pr = f_type_pr + rc_pr
-if pipe_idx_pr == 1:
-f_proj_pr = f_proj_pr + rc_pr
-if pipe_idx_pr == 2:
-f_file_pr = f_file_pr + rc_pr
-if pipe_idx_pr == 3:
-f_line_no_pr = f_line_no_pr + rc_pr
-if pipe_idx_pr >= 4:
-f_content_pr = f_content_pr + rc_pr
-
-let prefix_pr: str = "[" + int_to_str(print_idx_pr) + "] "
-let suffix_pr: str = " (" + f_file_pr + ":" + f_line_no_pr + ")"
-
-if f_type_pr == "proj_task":
-let status_val_pr: str = line_status(f_content_pr)
-let text_val_pr: str = line_text(f_content_pr)
-if status_val_pr == "1":
-print(prefix_pr + "project " + f_proj_pr + " task: [x] " + f_line_no_pr + ": " + text_val_pr + suffix_pr)
-else:
-print(prefix_pr + "project " + f_proj_pr + " task: [ ] " + f_line_no_pr + ": " + text_val_pr + suffix_pr)
-else:
-if f_type_pr == "notes":
-print(prefix_pr + "notes: " + f_content_pr + suffix_pr)
-if f_type_pr == "journal":
-print(prefix_pr + "journal: " + f_content_pr + suffix_pr)
-if f_type_pr == "proj_note":
-print(prefix_pr + "project " + f_proj_pr + " note: " + f_content_pr + suffix_pr)
+    let pipe_idx_pr: int = 0
+    let f_type_pr: str = ""
+    let f_proj_pr: str = ""
+    let f_file_pr: str = ""
+    let f_line_no_pr: str = ""
+    let f_content_pr: str = ""
+    for rc_pr in rec_line_pr:
+        if rc_pr == "|":
+            if pipe_idx_pr < 4:
+                pipe_idx_pr = pipe_idx_pr + 1
+            else:
+                f_content_pr = f_content_pr + rc_pr
+        else:
+            if pipe_idx_pr == 0:
+                f_type_pr = f_type_pr + rc_pr
+            if pipe_idx_pr == 1:
+                f_proj_pr = f_proj_pr + rc_pr
+            if pipe_idx_pr == 2:
+                f_file_pr = f_file_pr + rc_pr
+            if pipe_idx_pr == 3:
+                f_line_no_pr = f_line_no_pr + rc_pr
+            if pipe_idx_pr >= 4:
+                f_content_pr = f_content_pr + rc_pr
+    
+    let prefix_pr: str = "[" + int_to_str(print_idx_pr) + "] "
+    let suffix_pr: str = " (" + f_file_pr + ":" + f_line_no_pr + ")"
+    
+    if f_type_pr == "proj_task":
+        let status_val_pr: str = line_status(f_content_pr)
+        let text_val_pr: str = line_text(f_content_pr)
+        if status_val_pr == "1":
+            print(prefix_pr + "project " + f_proj_pr + " task: [x] " + f_line_no_pr + ": " + text_val_pr + suffix_pr)
+        else:
+            print(prefix_pr + "project " + f_proj_pr + " task: [ ] " + f_line_no_pr + ": " + text_val_pr + suffix_pr)
+    else:
+        if f_type_pr == "notes":
+            print(prefix_pr + "notes: " + f_content_pr + suffix_pr)
+        if f_type_pr == "journal":
+            print(prefix_pr + "journal: " + f_content_pr + suffix_pr)
+        if f_type_pr == "proj_note":
+            print(prefix_pr + "project " + f_proj_pr + " note: " + f_content_pr + suffix_pr)
 
 fn is_index_healthy() -> int:
-let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path) == 0:
-return 0
-let index_content: str = fs.read_text(index_cache_path)
-let doc_line: str = ""
-let is_healthy: int = 1
-for c in index_content:
-if c == "\n":
-if doc_line != "":
-if is_record_valid(doc_line) == 0:
-is_healthy = 0
-doc_line = ""
-else:
-if c != "\r":
-doc_line = doc_line + c
-if doc_line != "":
-if is_record_valid(doc_line) == 0:
-is_healthy = 0
-return is_healthy
+    let index_cache_path: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path) == 0:
+        return 0
+    let index_content: str = fs.read_text(index_cache_path)
+    let doc_line: str = ""
+    let is_healthy: int = 1
+    for c in index_content:
+        if c == "\n":
+            if doc_line != "":
+                if is_record_valid(doc_line) == 0:
+                    is_healthy = 0
+            doc_line = ""
+        else:
+            if c != "\r":
+                doc_line = doc_line + c
+    if doc_line != "":
+        if is_record_valid(doc_line) == 0:
+            is_healthy = 0
+    return is_healthy
 
 fn show_recent():
-let index_cache_path_rc: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path_rc) == 0:
-print("error: index: missing (use 'search rebuild' to generate)")
-else:
-let index_content_rc: str = fs.read_text(index_cache_path_rc)
-
-let total_lines_rc: int = 0
-let temp_line_rc: str = ""
-for c_rc in index_content_rc:
-if c_rc == "\n":
-if temp_line_rc != "":
-total_lines_rc = total_lines_rc + 1
-temp_line_rc = ""
-else:
-if c_rc != "\r":
-temp_line_rc = temp_line_rc + c_rc
-if temp_line_rc != "":
-total_lines_rc = total_lines_rc + 1
-
-print("--- Recent Indexed Records ---")
-
-let current_line_no_rc: int = 1
-let print_count_rc: int = 1
-let start_threshold_rc: int = total_lines_rc - 4
-if start_threshold_rc < 1:
-start_threshold_rc = 1
-
-let rec_line_rc: str = ""
-for c_rc in index_content_rc:
-if c_rc == "\n":
-if rec_line_rc != "":
-if current_line_no_rc >= start_threshold_rc:
-print_recent_record(print_count_rc, rec_line_rc)
-print_count_rc = print_count_rc + 1
-current_line_no_rc = current_line_no_rc + 1
-rec_line_rc = ""
-else:
-if c_rc != "\r":
-rec_line_rc = rec_line_rc + c_rc
-if rec_line_rc != "":
-if current_line_no_rc >= start_threshold_rc:
-print_recent_record(print_count_rc, rec_line_rc)
-print_count_rc = print_count_rc + 1
+    let index_cache_path_rc: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path_rc) == 0:
+        print("error: index: missing (use 'search rebuild' to generate)")
+    else:
+        let index_content_rc: str = fs.read_text(index_cache_path_rc)
+        
+        let total_lines_rc: int = 0
+        let temp_line_rc: str = ""
+        for c_rc in index_content_rc:
+            if c_rc == "\n":
+                if temp_line_rc != "":
+                    total_lines_rc = total_lines_rc + 1
+                temp_line_rc = ""
+            else:
+                if c_rc != "\r":
+                    temp_line_rc = temp_line_rc + c_rc
+        if temp_line_rc != "":
+            total_lines_rc = total_lines_rc + 1
+            
+        print("--- Recent Indexed Records ---")
+        
+        let current_line_no_rc: int = 1
+        let print_count_rc: int = 1
+        let start_threshold_rc: int = total_lines_rc - 4
+        if start_threshold_rc < 1:
+            start_threshold_rc = 1
+            
+        let rec_line_rc: str = ""
+        for c_rc in index_content_rc:
+            if c_rc == "\n":
+                if rec_line_rc != "":
+                    if current_line_no_rc >= start_threshold_rc:
+                        print_recent_record(print_count_rc, rec_line_rc)
+                        print_count_rc = print_count_rc + 1
+                    current_line_no_rc = current_line_no_rc + 1
+                rec_line_rc = ""
+            else:
+                if c_rc != "\r":
+                    rec_line_rc = rec_line_rc + c_rc
+        if rec_line_rc != "":
+            if current_line_no_rc >= start_threshold_rc:
+                print_recent_record(print_count_rc, rec_line_rc)
+                print_count_rc = print_count_rc + 1
 
 fn show_summary():
-print("--- DByteOS Search Summary ---")
-
-let index_cache_path_sm: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if fs.exists(index_cache_path_sm) == 0:
-print("Index Status: missing")
-print("Integrity:    missing")
-else:
-let index_content_sm: str = fs.read_text(index_cache_path_sm)
-let rec_count_sm: int = 0
-let bytes_size_sm: int = len(index_content_sm)
-let doc_line_sm: str = ""
-let is_healthy_sm: int = 1
-for c_sm in index_content_sm:
-if c_sm == "\n":
-if doc_line_sm != "":
-if is_record_valid(doc_line_sm) == 0:
-is_healthy_sm = 0
-rec_count_sm = rec_count_sm + 1
-doc_line_sm = ""
-else:
-if c_sm != "\r":
-doc_line_sm = doc_line_sm + c_sm
-if doc_line_sm != "":
-if is_record_valid(doc_line_sm) == 0:
-is_healthy_sm = 0
-rec_count_sm = rec_count_sm + 1
-
-print("Index Status: active (" + int_to_str(rec_count_sm) + " records, " + int_to_str(bytes_size_sm) + " bytes)")
-if is_healthy_sm == 1:
-print("Integrity:    healthy")
-else:
-print("Integrity:    unhealthy")
-
-print("Daily Sources:")
-let notes_path_sm: str = profile.resolve_user_data_path("home/deadbyte/notes.txt")
-if fs.exists(notes_path_sm) == 1:
-print("  notes:   home/deadbyte/notes.txt (exists)")
-else:
-print("  notes:   home/deadbyte/notes.txt (not found)")
-
-let journal_path_sm: str = profile.resolve_user_data_path("home/deadbyte/journal.txt")
-if fs.exists(journal_path_sm) == 1:
-print("  journal: home/deadbyte/journal.txt (exists)")
-else:
-print("  journal: home/deadbyte/journal.txt (not found)")
-
-print("Projects:")
-let index_rel_sm: str = "home/deadbyte/projects/index.txt"
-let index_path_sm: str = profile.resolve_user_data_path(index_rel_sm)
-if fs.exists(index_path_sm) == 1:
-let content_idx_sm: str = fs.read_text(index_path_sm)
-let index_line_sm: str = ""
-for c_idx_sm in content_idx_sm:
-if c_idx_sm == "\n":
-if index_line_sm != "":
-print("  - " + index_line_sm)
-index_line_sm = ""
-else:
-if c_idx_sm != "\r":
-index_line_sm = index_line_sm + c_idx_sm
-if index_line_sm != "":
-print("  - " + index_line_sm)
-else:
-print("  (none)")
+    print("--- DByteOS Search Summary ---")
+    
+    let index_cache_path_sm: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if fs.exists(index_cache_path_sm) == 0:
+        print("Index Status: missing")
+        print("Integrity:    missing")
+    else:
+        let index_content_sm: str = fs.read_text(index_cache_path_sm)
+        let rec_count_sm: int = 0
+        let bytes_size_sm: int = len(index_content_sm)
+        let doc_line_sm: str = ""
+        let is_healthy_sm: int = 1
+        for c_sm in index_content_sm:
+            if c_sm == "\n":
+                if doc_line_sm != "":
+                    if is_record_valid(doc_line_sm) == 0:
+                        is_healthy_sm = 0
+                    rec_count_sm = rec_count_sm + 1
+                doc_line_sm = ""
+            else:
+                if c_sm != "\r":
+                    doc_line_sm = doc_line_sm + c_sm
+        if doc_line_sm != "":
+            if is_record_valid(doc_line_sm) == 0:
+                is_healthy_sm = 0
+            rec_count_sm = rec_count_sm + 1
+        
+        print("Index Status: active (" + int_to_str(rec_count_sm) + " records, " + int_to_str(bytes_size_sm) + " bytes)")
+        if is_healthy_sm == 1:
+            print("Integrity:    healthy")
+        else:
+            print("Integrity:    unhealthy")
+            
+    print("Daily Sources:")
+    let notes_path_sm: str = profile.resolve_user_data_path("home/deadbyte/notes.txt")
+    if fs.exists(notes_path_sm) == 1:
+        print("  notes:   home/deadbyte/notes.txt (exists)")
+    else:
+        print("  notes:   home/deadbyte/notes.txt (not found)")
+        
+    let journal_path_sm: str = profile.resolve_user_data_path("home/deadbyte/journal.txt")
+    if fs.exists(journal_path_sm) == 1:
+        print("  journal: home/deadbyte/journal.txt (exists)")
+    else:
+        print("  journal: home/deadbyte/journal.txt (not found)")
+        
+    print("Projects:")
+    let index_rel_sm: str = "home/deadbyte/projects/index.txt"
+    let index_path_sm: str = profile.resolve_user_data_path(index_rel_sm)
+    if fs.exists(index_path_sm) == 1:
+        let content_idx_sm: str = fs.read_text(index_path_sm)
+        let index_line_sm: str = ""
+        for c_idx_sm in content_idx_sm:
+            if c_idx_sm == "\n":
+                if index_line_sm != "":
+                    print("  - " + index_line_sm)
+                index_line_sm = ""
+            else:
+                if c_idx_sm != "\r":
+                    index_line_sm = index_line_sm + c_idx_sm
+        if index_line_sm != "":
+            print("  - " + index_line_sm)
+    else:
+        print("  (none)")
 
 fn search_projects_ux(query_str_ux: str):
-let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if is_index_healthy() == 1:
-print("DByteOS projects search (cached): " + query_str_ux)
-let index_content_ux: str = fs.read_text(index_cache_path_ux)
-let rec_line_ux: str = ""
-for c_ux in index_content_ux:
-if c_ux == "\n":
-if rec_line_ux != "":
-let pipe_idx_ux: int = 0
-let f_type_ux: str = ""
-let f_proj_ux: str = ""
-let f_file_ux: str = ""
-let f_line_no_ux: str = ""
-let f_content_ux: str = ""
-for rc_ux in rec_line_ux:
-if rc_ux == "|":
-if pipe_idx_ux < 4:
-pipe_idx_ux = pipe_idx_ux + 1
-else:
-f_content_ux = f_content_ux + rc_ux
-else:
-if pipe_idx_ux == 0:
-f_type_ux = f_type_ux + rc_ux
-if pipe_idx_ux == 1:
-f_proj_ux = f_proj_ux + rc_ux
-if pipe_idx_ux == 2:
-f_file_ux = f_file_ux + rc_ux
-if pipe_idx_ux == 3:
-f_line_no_ux = f_line_no_ux + rc_ux
-if pipe_idx_ux >= 4:
-f_content_ux = f_content_ux + rc_ux
-
-if f_type_ux == "proj_note":
-if string_contains(f_content_ux, query_str_ux) == 1:
-print("project " + f_proj_ux + " note: " + f_content_ux)
-if f_type_ux == "proj_task":
-let status_val_ux: str = line_status(f_content_ux)
-let text_val_ux: str = line_text(f_content_ux)
-if string_contains(text_val_ux, query_str_ux) == 1:
-if status_val_ux == "1":
-print("project " + f_proj_ux + " task: [x] " + f_line_no_ux + ": " + text_val_ux)
-else:
-print("project " + f_proj_ux + " task: [ ] " + f_line_no_ux + ": " + text_val_ux)
-rec_line_ux = ""
-else:
-if c_ux != "\r":
-rec_line_ux = rec_line_ux + c_ux
-else:
-print("DByteOS projects search (scanned): " + query_str_ux)
-let index_rel_ws: str = "home/deadbyte/projects/index.txt"
-let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
-if fs.exists(index_path_ws) == 1:
-let content_ws: str = fs.read_text(index_path_ws)
-let ws_line: str = ""
-for c_ws in content_ws:
-if c_ws == "\n":
-if ws_line != "":
-search_project_notes(ws_line, query_str_ux)
-search_project_tasks(ws_line, query_str_ux)
-ws_line = ""
-else:
-if c_ws != "\r":
-ws_line = ws_line + c_ws
-if ws_line != "":
-search_project_notes(ws_line, query_str_ux)
-search_project_tasks(ws_line, query_str_ux)
+    let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if is_index_healthy() == 1:
+        print("DByteOS projects search (cached): " + query_str_ux)
+        let index_content_ux: str = fs.read_text(index_cache_path_ux)
+        let rec_line_ux: str = ""
+        for c_ux in index_content_ux:
+            if c_ux == "\n":
+                if rec_line_ux != "":
+                    let pipe_idx_ux: int = 0
+                    let f_type_ux: str = ""
+                    let f_proj_ux: str = ""
+                    let f_file_ux: str = ""
+                    let f_line_no_ux: str = ""
+                    let f_content_ux: str = ""
+                    for rc_ux in rec_line_ux:
+                        if rc_ux == "|":
+                            if pipe_idx_ux < 4:
+                                pipe_idx_ux = pipe_idx_ux + 1
+                            else:
+                                f_content_ux = f_content_ux + rc_ux
+                        else:
+                            if pipe_idx_ux == 0:
+                                f_type_ux = f_type_ux + rc_ux
+                            if pipe_idx_ux == 1:
+                                f_proj_ux = f_proj_ux + rc_ux
+                            if pipe_idx_ux == 2:
+                                f_file_ux = f_file_ux + rc_ux
+                            if pipe_idx_ux == 3:
+                                f_line_no_ux = f_line_no_ux + rc_ux
+                            if pipe_idx_ux >= 4:
+                                f_content_ux = f_content_ux + rc_ux
+                    
+                    if f_type_ux == "proj_note":
+                        if string_contains(f_content_ux, query_str_ux) == 1:
+                            print("project " + f_proj_ux + " note: " + f_content_ux)
+                    if f_type_ux == "proj_task":
+                        let status_val_ux: str = line_status(f_content_ux)
+                        let text_val_ux: str = line_text(f_content_ux)
+                        if string_contains(text_val_ux, query_str_ux) == 1:
+                            if status_val_ux == "1":
+                                print("project " + f_proj_ux + " task: [x] " + f_line_no_ux + ": " + text_val_ux)
+                            else:
+                                print("project " + f_proj_ux + " task: [ ] " + f_line_no_ux + ": " + text_val_ux)
+                rec_line_ux = ""
+            else:
+                if c_ux != "\r":
+                    rec_line_ux = rec_line_ux + c_ux
+    else:
+        print("DByteOS projects search (scanned): " + query_str_ux)
+        let index_rel_ws: str = "home/deadbyte/projects/index.txt"
+        let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
+        if fs.exists(index_path_ws) == 1:
+            let content_ws: str = fs.read_text(index_path_ws)
+            let ws_line: str = ""
+            for c_ws in content_ws:
+                if c_ws == "\n":
+                    if ws_line != "":
+                        search_project_notes(ws_line, query_str_ux)
+                        search_project_tasks(ws_line, query_str_ux)
+                    ws_line = ""
+                else:
+                    if c_ws != "\r":
+                        ws_line = ws_line + c_ws
+            if ws_line != "":
+                search_project_notes(ws_line, query_str_ux)
+                search_project_tasks(ws_line, query_str_ux)
 
 fn search_tasks_ux(query_str_ux: str):
-let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if is_index_healthy() == 1:
-print("DByteOS tasks search (cached): " + query_str_ux)
-let index_content_ux: str = fs.read_text(index_cache_path_ux)
-let rec_line_ux: str = ""
-for c_ux in index_content_ux:
-if c_ux == "\n":
-if rec_line_ux != "":
-let pipe_idx_ux: int = 0
-let f_type_ux: str = ""
-let f_proj_ux: str = ""
-let f_file_ux: str = ""
-let f_line_no_ux: str = ""
-let f_content_ux: str = ""
-for rc_ux in rec_line_ux:
-if rc_ux == "|":
-if pipe_idx_ux < 4:
-pipe_idx_ux = pipe_idx_ux + 1
-else:
-f_content_ux = f_content_ux + rc_ux
-else:
-if pipe_idx_ux == 0:
-f_type_ux = f_type_ux + rc_ux
-if pipe_idx_ux == 1:
-f_proj_ux = f_proj_ux + rc_ux
-if pipe_idx_ux == 2:
-f_file_ux = f_file_ux + rc_ux
-if pipe_idx_ux == 3:
-f_line_no_ux = f_line_no_ux + rc_ux
-if pipe_idx_ux >= 4:
-f_content_ux = f_content_ux + rc_ux
-
-if f_type_ux == "proj_task":
-let status_val_ux: str = line_status(f_content_ux)
-let text_val_ux: str = line_text(f_content_ux)
-if string_contains(text_val_ux, query_str_ux) == 1:
-if status_val_ux == "1":
-print("project " + f_proj_ux + " task: [x] " + f_line_no_ux + ": " + text_val_ux)
-else:
-print("project " + f_proj_ux + " task: [ ] " + f_line_no_ux + ": " + text_val_ux)
-rec_line_ux = ""
-else:
-if c_ux != "\r":
-rec_line_ux = rec_line_ux + c_ux
-else:
-print("DByteOS tasks search (scanned): " + query_str_ux)
-let index_rel_ws: str = "home/deadbyte/projects/index.txt"
-let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
-if fs.exists(index_path_ws) == 1:
-let content_ws: str = fs.read_text(index_path_ws)
-let ws_line: str = ""
-for c_ws in content_ws:
-if c_ws == "\n":
-if ws_line != "":
-search_project_tasks(ws_line, query_str_ux)
-ws_line = ""
-else:
-if c_ws != "\r":
-ws_line = ws_line + c_ws
-if ws_line != "":
-search_project_tasks(ws_line, query_str_ux)
+    let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if is_index_healthy() == 1:
+        print("DByteOS tasks search (cached): " + query_str_ux)
+        let index_content_ux: str = fs.read_text(index_cache_path_ux)
+        let rec_line_ux: str = ""
+        for c_ux in index_content_ux:
+            if c_ux == "\n":
+                if rec_line_ux != "":
+                    let pipe_idx_ux: int = 0
+                    let f_type_ux: str = ""
+                    let f_proj_ux: str = ""
+                    let f_file_ux: str = ""
+                    let f_line_no_ux: str = ""
+                    let f_content_ux: str = ""
+                    for rc_ux in rec_line_ux:
+                        if rc_ux == "|":
+                            if pipe_idx_ux < 4:
+                                pipe_idx_ux = pipe_idx_ux + 1
+                            else:
+                                f_content_ux = f_content_ux + rc_ux
+                        else:
+                            if pipe_idx_ux == 0:
+                                f_type_ux = f_type_ux + rc_ux
+                            if pipe_idx_ux == 1:
+                                f_proj_ux = f_proj_ux + rc_ux
+                            if pipe_idx_ux == 2:
+                                f_file_ux = f_file_ux + rc_ux
+                            if pipe_idx_ux == 3:
+                                f_line_no_ux = f_line_no_ux + rc_ux
+                            if pipe_idx_ux >= 4:
+                                f_content_ux = f_content_ux + rc_ux
+                    
+                    if f_type_ux == "proj_task":
+                        let status_val_ux: str = line_status(f_content_ux)
+                        let text_val_ux: str = line_text(f_content_ux)
+                        if string_contains(text_val_ux, query_str_ux) == 1:
+                            if status_val_ux == "1":
+                                print("project " + f_proj_ux + " task: [x] " + f_line_no_ux + ": " + text_val_ux)
+                            else:
+                                print("project " + f_proj_ux + " task: [ ] " + f_line_no_ux + ": " + text_val_ux)
+                rec_line_ux = ""
+            else:
+                if c_ux != "\r":
+                    rec_line_ux = rec_line_ux + c_ux
+    else:
+        print("DByteOS tasks search (scanned): " + query_str_ux)
+        let index_rel_ws: str = "home/deadbyte/projects/index.txt"
+        let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
+        if fs.exists(index_path_ws) == 1:
+            let content_ws: str = fs.read_text(index_path_ws)
+            let ws_line: str = ""
+            for c_ws in content_ws:
+                if c_ws == "\n":
+                    if ws_line != "":
+                        search_project_tasks(ws_line, query_str_ux)
+                    ws_line = ""
+                else:
+                    if c_ws != "\r":
+                        ws_line = ws_line + c_ws
+            if ws_line != "":
+                search_project_tasks(ws_line, query_str_ux)
 
 fn search_notes_ux(query_str_ux: str):
-let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if is_index_healthy() == 1:
-print("DByteOS notes search (cached): " + query_str_ux)
-let index_content_ux: str = fs.read_text(index_cache_path_ux)
-let rec_line_ux: str = ""
-for c_ux in index_content_ux:
-if c_ux == "\n":
-if rec_line_ux != "":
-let pipe_idx_ux: int = 0
-let f_type_ux: str = ""
-let f_proj_ux: str = ""
-let f_file_ux: str = ""
-let f_line_no_ux: str = ""
-let f_content_ux: str = ""
-for rc_ux in rec_line_ux:
-if rc_ux == "|":
-if pipe_idx_ux < 4:
-pipe_idx_ux = pipe_idx_ux + 1
-else:
-f_content_ux = f_content_ux + rc_ux
-else:
-if pipe_idx_ux == 0:
-f_type_ux = f_type_ux + rc_ux
-if pipe_idx_ux == 1:
-f_proj_ux = f_proj_ux + rc_ux
-if pipe_idx_ux == 2:
-f_file_ux = f_file_ux + rc_ux
-if pipe_idx_ux == 3:
-f_line_no_ux = f_line_no_ux + rc_ux
-if pipe_idx_ux >= 4:
-f_content_ux = f_content_ux + rc_ux
-
-if f_type_ux == "notes":
-if string_contains(f_content_ux, query_str_ux) == 1:
-print("notes: " + f_content_ux)
-if f_type_ux == "proj_note":
-if string_contains(f_content_ux, query_str_ux) == 1:
-print("project " + f_proj_ux + " note: " + f_content_ux)
-rec_line_ux = ""
-else:
-if c_ux != "\r":
-rec_line_ux = rec_line_ux + c_ux
-else:
-print("DByteOS notes search (scanned): " + query_str_ux)
-search_notes(query_str_ux)
-let index_rel_ws: str = "home/deadbyte/projects/index.txt"
-let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
-if fs.exists(index_path_ws) == 1:
-let content_ws: str = fs.read_text(index_path_ws)
-let ws_line: str = ""
-for c_ws in content_ws:
-if c_ws == "\n":
-if ws_line != "":
-search_project_notes(ws_line, query_str_ux)
-ws_line = ""
-else:
-if c_ws != "\r":
-ws_line = ws_line + c_ws
-if ws_line != "":
-search_project_notes(ws_line, query_str_ux)
+    let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if is_index_healthy() == 1:
+        print("DByteOS notes search (cached): " + query_str_ux)
+        let index_content_ux: str = fs.read_text(index_cache_path_ux)
+        let rec_line_ux: str = ""
+        for c_ux in index_content_ux:
+            if c_ux == "\n":
+                if rec_line_ux != "":
+                    let pipe_idx_ux: int = 0
+                    let f_type_ux: str = ""
+                    let f_proj_ux: str = ""
+                    let f_file_ux: str = ""
+                    let f_line_no_ux: str = ""
+                    let f_content_ux: str = ""
+                    for rc_ux in rec_line_ux:
+                        if rc_ux == "|":
+                            if pipe_idx_ux < 4:
+                                pipe_idx_ux = pipe_idx_ux + 1
+                            else:
+                                f_content_ux = f_content_ux + rc_ux
+                        else:
+                            if pipe_idx_ux == 0:
+                                f_type_ux = f_type_ux + rc_ux
+                            if pipe_idx_ux == 1:
+                                f_proj_ux = f_proj_ux + rc_ux
+                            if pipe_idx_ux == 2:
+                                f_file_ux = f_file_ux + rc_ux
+                            if pipe_idx_ux == 3:
+                                f_line_no_ux = f_line_no_ux + rc_ux
+                            if pipe_idx_ux >= 4:
+                                f_content_ux = f_content_ux + rc_ux
+                    
+                    if f_type_ux == "notes":
+                        if string_contains(f_content_ux, query_str_ux) == 1:
+                            print("notes: " + f_content_ux)
+                    if f_type_ux == "proj_note":
+                        if string_contains(f_content_ux, query_str_ux) == 1:
+                            print("project " + f_proj_ux + " note: " + f_content_ux)
+                rec_line_ux = ""
+            else:
+                if c_ux != "\r":
+                    rec_line_ux = rec_line_ux + c_ux
+    else:
+        print("DByteOS notes search (scanned): " + query_str_ux)
+        search_notes(query_str_ux)
+        let index_rel_ws: str = "home/deadbyte/projects/index.txt"
+        let index_path_ws: str = profile.resolve_user_data_path(index_rel_ws)
+        if fs.exists(index_path_ws) == 1:
+            let content_ws: str = fs.read_text(index_path_ws)
+            let ws_line: str = ""
+            for c_ws in content_ws:
+                if c_ws == "\n":
+                    if ws_line != "":
+                        search_project_notes(ws_line, query_str_ux)
+                    ws_line = ""
+                else:
+                    if c_ws != "\r":
+                        ws_line = ws_line + c_ws
+            if ws_line != "":
+                search_project_notes(ws_line, query_str_ux)
 
 fn search_journal_ux(query_str_ux: str):
-let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
-if is_index_healthy() == 1:
-print("DByteOS journal search (cached): " + query_str_ux)
-let index_content_ux: str = fs.read_text(index_cache_path_ux)
-let rec_line_ux: str = ""
-for c_ux in index_content_ux:
-if c_ux == "\n":
-if rec_line_ux != "":
-let pipe_idx_ux: int = 0
-let f_type_ux: str = ""
-let f_proj_ux: str = ""
-let f_file_ux: str = ""
-let f_line_no_ux: str = ""
-let f_content_ux: str = ""
-for rc_ux in rec_line_ux:
-if rc_ux == "|":
-if pipe_idx_ux < 4:
-pipe_idx_ux = pipe_idx_ux + 1
-else:
-f_content_ux = f_content_ux + rc_ux
-else:
-if pipe_idx_ux == 0:
-f_type_ux = f_type_ux + rc_ux
-if pipe_idx_ux == 1:
-f_proj_ux = f_proj_ux + rc_ux
-if pipe_idx_ux == 2:
-f_file_ux = f_file_ux + rc_ux
-if pipe_idx_ux == 3:
-f_line_no_ux = f_line_no_ux + rc_ux
-if pipe_idx_ux >= 4:
-f_content_ux = f_content_ux + rc_ux
-
-if f_type_ux == "journal":
-if string_contains(f_content_ux, query_str_ux) == 1:
-print("journal: " + f_content_ux)
-rec_line_ux = ""
-else:
-if c_ux != "\r":
-rec_line_ux = rec_line_ux + c_ux
-else:
-print("DByteOS journal search (scanned): " + query_str_ux)
-search_journal(query_str_ux)
+    let index_cache_path_ux: str = profile.resolve_user_data_path("home/deadbyte/search_index.txt")
+    if is_index_healthy() == 1:
+        print("DByteOS journal search (cached): " + query_str_ux)
+        let index_content_ux: str = fs.read_text(index_cache_path_ux)
+        let rec_line_ux: str = ""
+        for c_ux in index_content_ux:
+            if c_ux == "\n":
+                if rec_line_ux != "":
+                    let pipe_idx_ux: int = 0
+                    let f_type_ux: str = ""
+                    let f_proj_ux: str = ""
+                    let f_file_ux: str = ""
+                    let f_line_no_ux: str = ""
+                    let f_content_ux: str = ""
+                    for rc_ux in rec_line_ux:
+                        if rc_ux == "|":
+                            if pipe_idx_ux < 4:
+                                pipe_idx_ux = pipe_idx_ux + 1
+                            else:
+                                f_content_ux = f_content_ux + rc_ux
+                        else:
+                            if pipe_idx_ux == 0:
+                                f_type_ux = f_type_ux + rc_ux
+                            if pipe_idx_ux == 1:
+                                f_proj_ux = f_proj_ux + rc_ux
+                            if pipe_idx_ux == 2:
+                                f_file_ux = f_file_ux + rc_ux
+                            if pipe_idx_ux == 3:
+                                f_line_no_ux = f_line_no_ux + rc_ux
+                            if pipe_idx_ux >= 4:
+                                f_content_ux = f_content_ux + rc_ux
+                    
+                    if f_type_ux == "journal":
+                        if string_contains(f_content_ux, query_str_ux) == 1:
+                            print("journal: " + f_content_ux)
+                rec_line_ux = ""
+            else:
+                if c_ux != "\r":
+                    rec_line_ux = rec_line_ux + c_ux
+    else:
+        print("DByteOS journal search (scanned): " + query_str_ux)
+        search_journal(query_str_ux)
 
 fn reset_demo():
-let projects_path: str = profile.resolve_user_data_path("home/deadbyte/projects")
-if fs.exists(projects_path) == 0:
-fs.mkdir(projects_path)
-let demo_path: str = profile.resolve_user_data_path("home/deadbyte/projects/demo")
-if fs.exists(demo_path) == 0:
-fs.mkdir(demo_path)
-
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/index.txt"), "demo\n")
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/project.txt"), "name: demo\nowner: deadbyte\nhome: home/deadbyte\nmode: workspace-project\nstatus: active\n")
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/notes.txt"), "project demo notes\n")
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/snapshot.txt"), "--- DByteOS Project Snapshot ---\nname: demo\nowner: deadbyte\nstatus: active\nfiles: project.txt, notes.txt, snapshot.txt\n")
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/tasks.txt"), "0|write project note\n0|write tests\n")
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/journal.txt"), "[JOURNAL] dbyteos journal seed\n")
-fs.write_text(profile.resolve_user_data_path("home/deadbyte/notes.txt"), "dbyteos notes seed\n")
-print("search: reset demo project and workspace seed data")
+    let projects_path: str = profile.resolve_user_data_path("home/deadbyte/projects")
+    if fs.exists(projects_path) == 0:
+        fs.mkdir(projects_path)
+    let demo_path: str = profile.resolve_user_data_path("home/deadbyte/projects/demo")
+    if fs.exists(demo_path) == 0:
+        fs.mkdir(demo_path)
+    
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/index.txt"), "demo\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/project.txt"), "name: demo\nowner: deadbyte\nhome: home/deadbyte\nmode: workspace-project\nstatus: active\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/notes.txt"), "project demo notes\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/snapshot.txt"), "--- DByteOS Project Snapshot ---\nname: demo\nowner: deadbyte\nstatus: active\nfiles: project.txt, notes.txt, snapshot.txt\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/projects/demo/tasks.txt"), "0|write project note\n0|write tests\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/journal.txt"), "[JOURNAL] dbyteos journal seed\n")
+    fs.write_text(profile.resolve_user_data_path("home/deadbyte/notes.txt"), "dbyteos notes seed\n")
+    print("search: reset demo project and workspace seed data")
 
 if len(args) < 1:
-show_help()
+    show_help()
 else:
-let cmd: str = args[0]
-let handled: int = 0
-if cmd == "help":
-show_help()
-handled = 1
-if cmd == "reset-demo":
-reset_demo()
-handled = 1
-if cmd == "summary":
-show_summary()
-handled = 1
-if cmd == "recent":
-show_recent()
-handled = 1
-if cmd == "projects":
-if len(args) < 2:
-print("usage: search projects <text>")
-else:
-let q: str = args[1]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_projects_ux(q)
-handled = 1
-if cmd == "tasks":
-if len(args) < 2:
-print("usage: search tasks <text>")
-else:
-let q: str = args[1]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_tasks_ux(q)
-handled = 1
-if cmd == "notes":
-if len(args) < 2:
-print("usage: search notes <text>")
-else:
-let q: str = args[1]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_notes_ux(q)
-handled = 1
-if cmd == "journal":
-if len(args) < 2:
-print("usage: search journal <text>")
-else:
-let q: str = args[1]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_journal_ux(q)
-handled = 1
-if cmd == "rebuild":
-rebuild_index()
-handled = 1
-if cmd == "clear-cache":
-clear_cache()
-handled = 1
-if cmd == "status":
-show_status()
-handled = 1
-if cmd == "doctor":
-run_doctor()
-handled = 1
-if cmd == "index":
-if len(args) < 2:
-print("usage: search index <text>")
-else:
-let q: str = args[1]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_cache_index(q)
-handled = 1
-if cmd == "workspace":
-if len(args) < 2:
-show_help()
-else:
-if args[1] != "search":
-print("error: unknown workspace command: " + args[1])
-else:
-if len(args) < 3:
-print("usage: workspace search <text>")
-else:
-let q: str = args[2]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-workspace_search(q)
-handled = 1
-if cmd == "daily":
-if len(args) < 2:
-show_help()
-else:
-if args[1] != "search":
-print("error: unknown daily command: " + args[1])
-else:
-if len(args) < 3:
-print("usage: daily search <text>")
-else:
-let q: str = args[2]
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-daily_search(q)
-handled = 1
-if cmd == "project":
-if len(args) < 2:
-show_help()
-else:
-if args[1] != "search":
-print("error: unknown project command: " + args[1])
-else:
-if len(args) < 4:
-print("usage: project search <project> <text>")
-else:
-let p_name: str = args[2]
-let q: str = args[3]
-if valid_name(p_name) == 0:
-print("error: invalid project name: " + p_name)
-else:
-if project_exists_in_index(p_name) == 0:
-print("error: project '" + p_name + "' not found in index")
-else:
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_project_notes(p_name, q)
-search_project_tasks(p_name, q)
-handled = 1
-if cmd == "task":
-if len(args) < 2:
-show_help()
-else:
-if args[1] != "search":
-print("error: unknown task command: " + args[1])
-else:
-if len(args) < 4:
-print("usage: task search <project> <text>")
-else:
-let p_name: str = args[2]
-let q: str = args[3]
-if valid_name(p_name) == 0:
-print("error: invalid project name: " + p_name)
-else:
-if project_exists_in_index(p_name) == 0:
-print("error: project '" + p_name + "' not found in index")
-else:
-if valid_search_text(q) == 0:
-print("error: search: invalid query")
-else:
-search_project_tasks(p_name, q)
-handled = 1
+    let cmd: str = args[0]
+    let handled: int = 0
+    if cmd == "help":
+        show_help()
+        handled = 1
+    if cmd == "reset-demo":
+        reset_demo()
+        handled = 1
+    if cmd == "summary":
+        show_summary()
+        handled = 1
+    if cmd == "recent":
+        show_recent()
+        handled = 1
+    if cmd == "projects":
+        if len(args) < 2:
+            print("usage: search projects <text>")
+        else:
+            let q: str = args[1]
+            if valid_search_text(q) == 0:
+                print("error: search: invalid query")
+            else:
+                search_projects_ux(q)
+        handled = 1
+    if cmd == "tasks":
+        if len(args) < 2:
+            print("usage: search tasks <text>")
+        else:
+            let q: str = args[1]
+            if valid_search_text(q) == 0:
+                print("error: search: invalid query")
+            else:
+                search_tasks_ux(q)
+        handled = 1
+    if cmd == "notes":
+        if len(args) < 2:
+            print("usage: search notes <text>")
+        else:
+            let q: str = args[1]
+            if valid_search_text(q) == 0:
+                print("error: search: invalid query")
+            else:
+                search_notes_ux(q)
+        handled = 1
+    if cmd == "journal":
+        if len(args) < 2:
+            print("usage: search journal <text>")
+        else:
+            let q: str = args[1]
+            if valid_search_text(q) == 0:
+                print("error: search: invalid query")
+            else:
+                search_journal_ux(q)
+        handled = 1
+    if cmd == "rebuild":
+        rebuild_index()
+        handled = 1
+    if cmd == "clear-cache":
+        clear_cache()
+        handled = 1
+    if cmd == "status":
+        show_status()
+        handled = 1
+    if cmd == "doctor":
+        run_doctor()
+        handled = 1
+    if cmd == "index":
+        if len(args) < 2:
+            print("usage: search index <text>")
+        else:
+            let q: str = args[1]
+            if valid_search_text(q) == 0:
+                print("error: search: invalid query")
+            else:
+                search_cache_index(q)
+        handled = 1
+    if cmd == "workspace":
+        if len(args) < 2:
+            show_help()
+        else:
+            if args[1] != "search":
+                print("error: unknown workspace command: " + args[1])
+            else:
+                if len(args) < 3:
+                    print("usage: workspace search <text>")
+                else:
+                    let q: str = args[2]
+                    if valid_search_text(q) == 0:
+                        print("error: search: invalid query")
+                    else:
+                        workspace_search(q)
+        handled = 1
+    if cmd == "daily":
+        if len(args) < 2:
+            show_help()
+        else:
+            if args[1] != "search":
+                print("error: unknown daily command: " + args[1])
+            else:
+                if len(args) < 3:
+                    print("usage: daily search <text>")
+                else:
+                    let q: str = args[2]
+                    if valid_search_text(q) == 0:
+                        print("error: search: invalid query")
+                    else:
+                        daily_search(q)
+        handled = 1
+    if cmd == "project":
+        if len(args) < 2:
+            show_help()
+        else:
+            if args[1] != "search":
+                print("error: unknown project command: " + args[1])
+            else:
+                if len(args) < 4:
+                    print("usage: project search <project> <text>")
+                else:
+                    let p_name: str = args[2]
+                    let q: str = args[3]
+                    if valid_name(p_name) == 0:
+                        print("error: invalid project name: " + p_name)
+                    else:
+                        if project_exists_in_index(p_name) == 0:
+                            print("error: project '" + p_name + "' not found in index")
+                        else:
+                            if valid_search_text(q) == 0:
+                                print("error: search: invalid query")
+                            else:
+                                search_project_notes(p_name, q)
+                                search_project_tasks(p_name, q)
+        handled = 1
+    if cmd == "task":
+        if len(args) < 2:
+            show_help()
+        else:
+            if args[1] != "search":
+                print("error: unknown task command: " + args[1])
+            else:
+                if len(args) < 4:
+                    print("usage: task search <project> <text>")
+                else:
+                    let p_name: str = args[2]
+                    let q: str = args[3]
+                    if valid_name(p_name) == 0:
+                        print("error: invalid project name: " + p_name)
+                    else:
+                        if project_exists_in_index(p_name) == 0:
+                            print("error: project '" + p_name + "' not found in index")
+                        else:
+                            if valid_search_text(q) == 0:
+                                print("error: search: invalid query")
+                            else:
+                                search_project_tasks(p_name, q)
+        handled = 1
 
-if handled == 0:
-print("error: unknown search command: " + cmd)
-show_help()
+    if handled == 0:
+        print("error: unknown search command: " + cmd)
+        show_help()

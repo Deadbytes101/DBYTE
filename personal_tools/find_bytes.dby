@@ -1,0 +1,135 @@
+import std.buffer as fbuf
+import std.encoding as fenc
+import std.env as fenv
+import std.fs as ffs
+
+let args: list[str] = fenv.args()
+let data: buffer = fbuf.from_bytes(b"\x00\xDE\xAD\xBE\xEF\x00\xDE\xAD\x01")
+let pattern: bytes = b"\xDE\xAD"
+let label: str = "de_ad"
+let should_run: bool = true
+let hex_text: str = ""
+let hex_valid: bool = true
+let digit: int = -1
+let ch: str = ""
+let pos: int = -1
+let hex_digits: list[str] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"]
+let hex_offset: str = "0"
+let hex_work: int = 0
+let nibble: int = 0
+
+if len(args) == 0:
+    print("find_bytes")
+else:
+    if args[0] == "--help":
+        print("usage: find_bytes <file> <hex_pattern>")
+        print("")
+        print("options:")
+        print("  -h, --help    show this help")
+        print("")
+        print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
+        should_run = false
+    else:
+        if args[0] == "-h":
+            print("usage: find_bytes <file> <hex_pattern>")
+            print("")
+            print("options:")
+            print("  -h, --help    show this help")
+            print("")
+            print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
+            should_run = false
+        else:
+            if len(args) != 2:
+                print("usage: find_bytes <file> <hex_pattern>")
+                print("")
+                print("options:")
+                print("  -h, --help    show this help")
+                print("")
+                print("example: dbyte run personal_tools/find_bytes.dby sample.bin DEADBEEF")
+                should_run = false
+            else:
+                hex_text = args[1]
+                hex_valid = true
+                if len(hex_text) == 0:
+                    hex_valid = false
+                if (len(hex_text) / 2) * 2 != len(hex_text):
+                    hex_valid = false
+                for ch in hex_text:
+                    digit = -1
+                    if ch == "0":
+                        digit = 0
+                    if ch == "1":
+                        digit = 1
+                    if ch == "2":
+                        digit = 2
+                    if ch == "3":
+                        digit = 3
+                    if ch == "4":
+                        digit = 4
+                    if ch == "5":
+                        digit = 5
+                    if ch == "6":
+                        digit = 6
+                    if ch == "7":
+                        digit = 7
+                    if ch == "8":
+                        digit = 8
+                    if ch == "9":
+                        digit = 9
+                    if ch == "a":
+                        digit = 10
+                    if ch == "A":
+                        digit = 10
+                    if ch == "b":
+                        digit = 11
+                    if ch == "B":
+                        digit = 11
+                    if ch == "c":
+                        digit = 12
+                    if ch == "C":
+                        digit = 12
+                    if ch == "d":
+                        digit = 13
+                    if ch == "D":
+                        digit = 13
+                    if ch == "e":
+                        digit = 14
+                    if ch == "E":
+                        digit = 14
+                    if ch == "f":
+                        digit = 15
+                    if ch == "F":
+                        digit = 15
+                    if digit < 0:
+                        hex_valid = false
+                if hex_valid:
+                    data = fbuf.from_bytes(ffs.read_bytes(args[0]))
+                    pattern = fenc.hex_decode(args[1])
+                    label = "pattern"
+                else:
+                    print("error: invalid hex_pattern")
+                    should_run = false
+
+if should_run:
+    print("data:", fenc.hex_encode(fbuf.to_bytes(data)))
+
+if should_run:
+    if len(args) == 0:
+        print("de_ad:", fbuf.find(data, b"\xDE\xAD"))
+        print("be_ef:", fbuf.find(data, b"\xBE\xEF"))
+        print("one_byte:", fbuf.find(data, b"\x01"))
+        print("missing:", fbuf.find(data, b"\xAA\xBB"))
+    else:
+        pos = fbuf.find(data, pattern)
+        if pos >= 0:
+            hex_work = pos
+            hex_offset = ""
+            if hex_work == 0:
+                hex_offset = "0"
+            while hex_work > 0:
+                nibble = hex_work - (hex_work / 16) * 16
+                hex_offset = hex_digits[nibble] + hex_offset
+                hex_work = hex_work / 16
+            print(label + ":", pos, "0x" + hex_offset)
+        else:
+            print(label + ": not found")

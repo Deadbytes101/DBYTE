@@ -1,0 +1,15 @@
+NAME
+    path - display path configuration or resolve commands
+
+SYNOPSIS
+    path
+    path which <name>
+
+DESCRIPTION
+    Without arguments, displays the PATH environment variable
+    and the resolved command roots. With the 'which' argument,
+    it resolves a command name to its script path within the
+    DByteOS userland according to autopath rules.
+
+AUTHOR
+    DEADBYTE

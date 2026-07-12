@@ -1,0 +1,18 @@
+[package]
+name = "dbyte_vm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+byteorder = "1.5.0"
+dbyte_ast.workspace = true
+dbyte_bytecode.workspace = true
+dbyte_compiler.workspace = true
+dbyte_lexer.workspace = true
+dbyte_module.workspace = true
+dbyte_parser.workspace = true
+hex.workspace = true
+sha2.workspace = true
+memchr.workspace = true

@@ -1,0 +1,14 @@
+import std.buffer as buf
+import std.fs as fs
+
+let data = b"hello world"
+fs.write_bytes("test_io.bin", data)
+
+let b = buf.load("test_io.bin")
+print(buf.len(b))
+
+buf.set(b, 0, 72)
+buf.save("test_io_patched.bin", b)
+
+let patched = fs.read_bytes("test_io_patched.bin")
+print(patched)

@@ -1,9 +1,13 @@
 fn inc(n: int) -> int:
-return n + 1
+    return n + 1
+
 fn work(n: int) -> int:
-return inc(n)
+    return inc(n)
+
 let total: int = 0
 let i: int = 0
+
 while i < 500000:
-total = work(total)
-i = i + 1
+    total = work(total)
+    i = i + 1
+

@@ -1,0 +1,10 @@
+[package]
+name = "dbyte_typeck"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dbyte_ast.workspace = true
+dbyte_lexer.workspace = true
+dbyte_module.workspace = true
+dbyte_parser.workspace = true

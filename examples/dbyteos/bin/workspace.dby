@@ -2,319 +2,344 @@ import "../sys/profile.dby" as profile
 import "../etc/system.dby" as system
 import std.env as env
 import std.fs as fs
+
 let args: list[str] = env.args()
 let projects_rel: str = "home/deadbyte/projects"
 let projects_path: str = profile.resolve_user_data_path(projects_rel)
 let index_rel: str = projects_rel + "/index.txt"
 let index_path: str = profile.resolve_user_data_path(index_rel)
-fn show_usage():
-print("usage: workspace <command>")
-print("")
-print("commands:")
-print("  report    - print a unified workspace overview dashboard")
-print("  doctor    - check the integrity of the project index and all projects")
-print("  snapshot  - print an aggregated snapshot of all workspace projects and tasks")
-print("  daily     - print a daily agenda summary")
-fn has_bad_char(name: str) -> int:
-for c in name:
-if c == ".":
-return 1
-if c == "/":
-return 1
-if c == "\\":
-return 1
-if c == ":":
-return 1
-if c == " ":
-return 1
-if c == "\t":
-return 1
-return 0
-fn valid_name(name: str) -> int:
-if name == "":
-return 0
-if name == ".":
-return 0
-if name == "..":
-return 0
-if has_bad_char(name) == 1:
-return 0
-return 1
-fn project_rel(name: str) -> str:
-return projects_rel + "/" + name
-fn project_path(name: str) -> str:
-return profile.resolve_user_data_path(project_rel(name))
-fn project_file(name: str, file_name: str) -> str:
-return profile.resolve_user_data_path(project_rel(name) + "/" + file_name)
-fn task_path(name: str) -> str:
-return profile.resolve_user_data_path(project_rel(name) + "/tasks.txt")
-fn line_status(line: str) -> str:
-let status: str = ""
-for c in line:
-if c == "|":
-return status
-status = status + c
-return status
-fn digit_to_int(c: str) -> int:
-if c == "0":
-return 0
-if c == "1":
-return 1
-if c == "2":
-return 2
-if c == "3":
-return 3
-if c == "4":
-return 4
-if c == "5":
-return 5
-if c == "6":
-return 6
-if c == "7":
-return 7
-if c == "8":
-return 8
-if c == "9":
-return 9
-return -1
-fn int_to_str(n: int) -> str:
-if n == 0:
-return "0"
-let out: str = ""
-let value: int = n
-while value > 0:
-let digit: int = value - ((value / 10) * 10)
-if digit == 0:
-out = "0" + out
-if digit == 1:
-out = "1" + out
-if digit == 2:
-out = "2" + out
-if digit == 3:
-out = "3" + out
-if digit == 4:
-out = "4" + out
-if digit == 5:
-out = "5" + out
-if digit == 6:
-out = "6" + out
-if digit == 7:
-out = "7" + out
-if digit == 8:
-out = "8" + out
-if digit == 9:
-out = "9" + out
-value = value / 10
-return out
-fn count_tasks(p_name: str, get_done: int) -> int:
-let path: str = task_path(p_name)
-if fs.exists(path) == 0:
-return 0
-let content: str = fs.read_text(path)
-let t_line: str = ""
-let open_count: int = 0
-let done_count: int = 0
-for c in content:
-if c == "\n":
-if t_line != "":
-if line_status(t_line) == "1":
-done_count = done_count + 1
-else:
-open_count = open_count + 1
-t_line = ""
-else:
-if c != "\r":
-t_line = t_line + c
-if t_line != "":
-if line_status(t_line) == "1":
-done_count = done_count + 1
-else:
-open_count = open_count + 1
-if get_done == 1:
-return done_count
-return open_count
-fn print_project_summary(p_name: str):
-if valid_name(p_name) == 1:
-let open_c: int = count_tasks(p_name, 0)
-let done_c: int = count_tasks(p_name, 1)
-print("  " + p_name + ": " + int_to_str(open_c) + " open, " + int_to_str(done_c) + " done (total: " + int_to_str(open_c + done_c) + ")")
-fn workspace_report():
-print("--- DByteOS Workspace Report ---")
-print("User:    " + profile.get_user())
-print("Home:    " + profile.get_home())
-print("Theme:   " + profile.get_theme())
-print("Prompt:  " + profile.get_prompt())
-print("")
-print("Projects:")
-if fs.exists(index_path) == 1:
-let content: str = fs.read_text(index_path)
-if content != "":
-let rep_line: str = ""
-let printed: int = 0
-for c in content:
-if c == "\n":
-if rep_line != "":
-print_project_summary(rep_line)
-printed = 1
-rep_line = ""
-else:
-if c != "\r":
-rep_line = rep_line + c
-if rep_line != "":
-print_project_summary(rep_line)
-printed = 1
-if printed == 0:
-print("  (none)")
-else:
-print("  (none)")
-else:
-print("  (none)")
-fn check_project_health(p_name: str) -> int:
-if valid_name(p_name) == 0:
-print("  " + p_name + ": invalid name")
-return 0
-let healthy: int = 1
-if fs.exists(project_path(p_name)) == 0:
-healthy = 0
-if fs.exists(project_file(p_name, "project.txt")) == 0:
-healthy = 0
-if fs.exists(project_file(p_name, "notes.txt")) == 0:
-healthy = 0
-if fs.exists(project_file(p_name, "snapshot.txt")) == 0:
-healthy = 0
-if healthy == 1:
-print("  " + p_name + ": healthy")
-return 1
-else:
-print("  " + p_name + ": unhealthy")
-return 0
-fn workspace_doctor():
-print("--- DByteOS Workspace Doctor ---")
-let total_healthy: int = 1
-if fs.exists(index_path) == 1:
-print("Index: ok")
-let content: str = fs.read_text(index_path)
-if content != "":
-print("Projects:")
-let doc_line: str = ""
-for c in content:
-if c == "\n":
-if doc_line != "":
-if check_project_health(doc_line) == 0:
-total_healthy = 0
-doc_line = ""
-else:
-if c != "\r":
-doc_line = doc_line + c
-if doc_line != "":
-if check_project_health(doc_line) == 0:
-total_healthy = 0
-else:
-print("Projects: (none)")
-else:
-print("Index: missing")
-total_healthy = 0
 
-if total_healthy == 1:
-print("Result: healthy")
-else:
-print("Result: unhealthy")
+fn show_usage():
+    print("usage: workspace <command>")
+    print("")
+    print("commands:")
+    print("  report    - print a unified workspace overview dashboard")
+    print("  doctor    - check the integrity of the project index and all projects")
+    print("  snapshot  - print an aggregated snapshot of all workspace projects and tasks")
+    print("  daily     - print a daily agenda summary")
+
+fn has_bad_char(name: str) -> int:
+    for c in name:
+        if c == ".":
+            return 1
+        if c == "/":
+            return 1
+        if c == "\\":
+            return 1
+        if c == ":":
+            return 1
+        if c == " ":
+            return 1
+        if c == "\t":
+            return 1
+    return 0
+
+fn valid_name(name: str) -> int:
+    if name == "":
+        return 0
+    if name == ".":
+        return 0
+    if name == "..":
+        return 0
+    if has_bad_char(name) == 1:
+        return 0
+    return 1
+
+fn project_rel(name: str) -> str:
+    return projects_rel + "/" + name
+
+fn project_path(name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name))
+
+fn project_file(name: str, file_name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name) + "/" + file_name)
+
+fn task_path(name: str) -> str:
+    return profile.resolve_user_data_path(project_rel(name) + "/tasks.txt")
+
+fn line_status(line: str) -> str:
+    let status: str = ""
+    for c in line:
+        if c == "|":
+            return status
+        status = status + c
+    return status
+
+fn digit_to_int(c: str) -> int:
+    if c == "0":
+        return 0
+    if c == "1":
+        return 1
+    if c == "2":
+        return 2
+    if c == "3":
+        return 3
+    if c == "4":
+        return 4
+    if c == "5":
+        return 5
+    if c == "6":
+        return 6
+    if c == "7":
+        return 7
+    if c == "8":
+        return 8
+    if c == "9":
+        return 9
+    return -1
+
+fn int_to_str(n: int) -> str:
+    if n == 0:
+        return "0"
+    let out: str = ""
+    let value: int = n
+    while value > 0:
+        let digit: int = value - ((value / 10) * 10)
+        if digit == 0:
+            out = "0" + out
+        if digit == 1:
+            out = "1" + out
+        if digit == 2:
+            out = "2" + out
+        if digit == 3:
+            out = "3" + out
+        if digit == 4:
+            out = "4" + out
+        if digit == 5:
+            out = "5" + out
+        if digit == 6:
+            out = "6" + out
+        if digit == 7:
+            out = "7" + out
+        if digit == 8:
+            out = "8" + out
+        if digit == 9:
+            out = "9" + out
+        value = value / 10
+    return out
+
+fn count_tasks(p_name: str, get_done: int) -> int:
+    let path: str = task_path(p_name)
+    if fs.exists(path) == 0:
+        return 0
+    let content: str = fs.read_text(path)
+    let t_line: str = ""
+    let open_count: int = 0
+    let done_count: int = 0
+    for c in content:
+        if c == "\n":
+            if t_line != "":
+                if line_status(t_line) == "1":
+                    done_count = done_count + 1
+                else:
+                    open_count = open_count + 1
+            t_line = ""
+        else:
+            if c != "\r":
+                t_line = t_line + c
+    if t_line != "":
+        if line_status(t_line) == "1":
+            done_count = done_count + 1
+        else:
+            open_count = open_count + 1
+    if get_done == 1:
+        return done_count
+    return open_count
+
+fn print_project_summary(p_name: str):
+    if valid_name(p_name) == 1:
+        let open_c: int = count_tasks(p_name, 0)
+        let done_c: int = count_tasks(p_name, 1)
+        print("  " + p_name + ": " + int_to_str(open_c) + " open, " + int_to_str(done_c) + " done (total: " + int_to_str(open_c + done_c) + ")")
+
+fn workspace_report():
+    print("--- DByteOS Workspace Report ---")
+    print("User:    " + profile.get_user())
+    print("Home:    " + profile.get_home())
+    print("Theme:   " + profile.get_theme())
+    print("Prompt:  " + profile.get_prompt())
+    print("")
+    print("Projects:")
+    if fs.exists(index_path) == 1:
+        let content: str = fs.read_text(index_path)
+        if content != "":
+            let rep_line: str = ""
+            let printed: int = 0
+            for c in content:
+                if c == "\n":
+                    if rep_line != "":
+                        print_project_summary(rep_line)
+                        printed = 1
+                    rep_line = ""
+                else:
+                    if c != "\r":
+                        rep_line = rep_line + c
+            if rep_line != "":
+                print_project_summary(rep_line)
+                printed = 1
+            if printed == 0:
+                print("  (none)")
+        else:
+            print("  (none)")
+    else:
+        print("  (none)")
+
+fn check_project_health(p_name: str) -> int:
+    if valid_name(p_name) == 0:
+        print("  " + p_name + ": invalid name")
+        return 0
+    let healthy: int = 1
+    if fs.exists(project_path(p_name)) == 0:
+        healthy = 0
+    if fs.exists(project_file(p_name, "project.txt")) == 0:
+        healthy = 0
+    if fs.exists(project_file(p_name, "notes.txt")) == 0:
+        healthy = 0
+    if fs.exists(project_file(p_name, "snapshot.txt")) == 0:
+        healthy = 0
+    
+    if healthy == 1:
+        print("  " + p_name + ": healthy")
+        return 1
+    else:
+        print("  " + p_name + ": unhealthy")
+        return 0
+
+fn workspace_doctor():
+    print("--- DByteOS Workspace Doctor ---")
+    let total_healthy: int = 1
+    if fs.exists(index_path) == 1:
+        print("Index: ok")
+        let content: str = fs.read_text(index_path)
+        if content != "":
+            print("Projects:")
+            let doc_line: str = ""
+            for c in content:
+                if c == "\n":
+                    if doc_line != "":
+                        if check_project_health(doc_line) == 0:
+                            total_healthy = 0
+                    doc_line = ""
+                else:
+                    if c != "\r":
+                        doc_line = doc_line + c
+            if doc_line != "":
+                if check_project_health(doc_line) == 0:
+                    total_healthy = 0
+        else:
+            print("Projects: (none)")
+    else:
+        print("Index: missing")
+        total_healthy = 0
+    
+    if total_healthy == 1:
+        print("Result: healthy")
+    else:
+        print("Result: unhealthy")
+
 fn print_project_snapshot(p_name: str):
-if valid_name(p_name) == 1:
-let open_c: int = count_tasks(p_name, 0)
-let done_c: int = count_tasks(p_name, 1)
-print("  - name: " + p_name)
-print("    tasks: " + int_to_str(open_c) + " open, " + int_to_str(done_c) + " done")
+    if valid_name(p_name) == 1:
+        let open_c: int = count_tasks(p_name, 0)
+        let done_c: int = count_tasks(p_name, 1)
+        print("  - name: " + p_name)
+        print("    tasks: " + int_to_str(open_c) + " open, " + int_to_str(done_c) + " done")
+
 fn workspace_snapshot():
-print("--- DByteOS Workspace Snapshot ---")
-print("User: " + profile.get_user())
-print("Projects:")
-if fs.exists(index_path) == 1:
-let content: str = fs.read_text(index_path)
-if content != "":
-let snap_line: str = ""
-let printed: int = 0
-for c in content:
-if c == "\n":
-if snap_line != "":
-print_project_snapshot(snap_line)
-printed = 1
-snap_line = ""
-else:
-if c != "\r":
-snap_line = snap_line + c
-if snap_line != "":
-print_project_snapshot(snap_line)
-printed = 1
-if printed == 0:
-print("  (none)")
-else:
-print("  (none)")
-else:
-print("  (none)")
+    print("--- DByteOS Workspace Snapshot ---")
+    print("User: " + profile.get_user())
+    print("Projects:")
+    if fs.exists(index_path) == 1:
+        let content: str = fs.read_text(index_path)
+        if content != "":
+            let snap_line: str = ""
+            let printed: int = 0
+            for c in content:
+                if c == "\n":
+                    if snap_line != "":
+                        print_project_snapshot(snap_line)
+                        printed = 1
+                    snap_line = ""
+                else:
+                    if c != "\r":
+                        snap_line = snap_line + c
+            if snap_line != "":
+                print_project_snapshot(snap_line)
+                printed = 1
+            if printed == 0:
+                print("  (none)")
+        else:
+            print("  (none)")
+    else:
+        print("  (none)")
+
 fn workspace_daily():
-# Direct implementation of daily agenda summary in workspace context
-let notes_rel: str = "home/deadbyte/notes.txt"
-let notes_path: str = profile.resolve_user_data_path(notes_rel)
-let journal_rel: str = "home/deadbyte/journal.txt"
-let journal_path: str = profile.resolve_user_data_path(journal_rel)
-print("--- DByteOS Daily Summary ---")
-if fs.exists(notes_path) == 1:
-print("Notes:   " + notes_rel + " (exists)")
-else:
-print("Notes:   " + notes_rel + " (not found)")
-if fs.exists(journal_path) == 1:
-let j_content: str = fs.read_text(journal_path)
-let j_count: int = 0
-for c in j_content:
-if c == "\n":
-j_count = j_count + 1
-print("Journal: " + int_to_str(j_count) + " entries recorded")
-else:
-print("Journal: 0 entries recorded")
-print("")
-print("Open Tasks:")
-let has_any_open: int = 0
-if fs.exists(index_path) == 1:
-let content: str = fs.read_text(index_path)
-if content != "":
-let day_line: str = ""
-for c in content:
-if c == "\n":
-if day_line != "":
-let open_c: int = count_tasks(day_line, 0)
-if open_c > 0:
-print("  " + day_line + ": " + int_to_str(open_c) + " open")
-has_any_open = 1
-day_line = ""
-else:
-if c != "\r":
-day_line = day_line + c
-if day_line != "":
-let open_c: int = count_tasks(day_line, 0)
-if open_c > 0:
-print("  " + day_line + ": " + int_to_str(open_c) + " open")
-has_any_open = 1
-if has_any_open == 0:
-print("  (none)")
+    # Direct implementation of daily agenda summary in workspace context
+    let notes_rel: str = "home/deadbyte/notes.txt"
+    let notes_path: str = profile.resolve_user_data_path(notes_rel)
+    let journal_rel: str = "home/deadbyte/journal.txt"
+    let journal_path: str = profile.resolve_user_data_path(journal_rel)
+
+    print("--- DByteOS Daily Summary ---")
+    if fs.exists(notes_path) == 1:
+        print("Notes:   " + notes_rel + " (exists)")
+    else:
+        print("Notes:   " + notes_rel + " (not found)")
+
+    if fs.exists(journal_path) == 1:
+        let j_content: str = fs.read_text(journal_path)
+        let j_count: int = 0
+        for c in j_content:
+            if c == "\n":
+                j_count = j_count + 1
+        print("Journal: " + int_to_str(j_count) + " entries recorded")
+    else:
+        print("Journal: 0 entries recorded")
+    print("")
+    print("Open Tasks:")
+    
+    let has_any_open: int = 0
+    if fs.exists(index_path) == 1:
+        let content: str = fs.read_text(index_path)
+        if content != "":
+            let day_line: str = ""
+            for c in content:
+                if c == "\n":
+                    if day_line != "":
+                        let open_c: int = count_tasks(day_line, 0)
+                        if open_c > 0:
+                            print("  " + day_line + ": " + int_to_str(open_c) + " open")
+                            has_any_open = 1
+                    day_line = ""
+                else:
+                    if c != "\r":
+                        day_line = day_line + c
+            if day_line != "":
+                let open_c: int = count_tasks(day_line, 0)
+                if open_c > 0:
+                    print("  " + day_line + ": " + int_to_str(open_c) + " open")
+                    has_any_open = 1
+
+    if has_any_open == 0:
+        print("  (none)")
+
 if projects_path == "":
-print("error: workspace: internal path resolution failed")
+    print("error: workspace: internal path resolution failed")
 else:
-if len(args) < 1:
-show_usage()
-else:
-let cmd: str = args[0]
-if cmd == "report":
-workspace_report()
-else:
-if cmd == "doctor":
-workspace_doctor()
-else:
-if cmd == "snapshot":
-workspace_snapshot()
-else:
-if cmd == "daily":
-workspace_daily()
-else:
-print("error: unknown workspace command: " + cmd)
-show_usage()
+    if len(args) < 1:
+        show_usage()
+    else:
+        let cmd: str = args[0]
+        if cmd == "report":
+            workspace_report()
+        else:
+            if cmd == "doctor":
+                workspace_doctor()
+            else:
+                if cmd == "snapshot":
+                    workspace_snapshot()
+                else:
+                    if cmd == "daily":
+                        workspace_daily()
+                    else:
+                        print("error: unknown workspace command: " + cmd)
+                        show_usage()

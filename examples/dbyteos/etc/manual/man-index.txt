@@ -1,0 +1,11 @@
+DByteOS Manual Index Command
+
+The man-index command prints the deterministic list of manual topics.
+Use it when you know you need documentation but do not know the topic name.
+
+Usage:
+  man-index
+
+See also:
+  man index
+  man <topic>

@@ -8,12 +8,12 @@
 <b>[ <a href="https://dbytelang.site">Official Site</a> ]</b> 
 <b>[ <a href="https://dbytelang.site/about">About</a> ]</b> 
 <b>[ <a href="#features">Features</a> ]</b> 
-<b>[ <a href="benchmarks/BENCHMARKS.md#public-alpha-baseline-v192--v200">BENCHMARKS</a> ]</b> 
+<b>[ <a href="benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping">BENCHMARKS</a> ]</b> 
 <b>[ <a href="https://dbytelang.site/docs/">DOCUMENTATION</a> ]</b>
 </p>
 
 <p align="center">
-<a href="https://github.com/Deadbytes101/DByte/releases/ISO">
+<a href="https://github.com/Deadbytes101/DBYTE/releases/ISO">
 <img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyOTMgMzA5Ij4KPHBhdGggZmlsbD0iIzAwMCIgZD0iTTAgMGgyMjB2MjZoMjl2MjdoMjl2MjdoMTV2MTQ1aC0yNXYyNmgtMjh2MjhoLTIwdjMwSDB6Ii8%2BCjxwYXRoIGZpbGw9IiMwMDU3ZDkiIGQ9Ik0xMCAxMGgyMDB2MjdoMjl2MjdoMjl2MjhoMTV2MTIyaC0yNXYyNmgtMjh2MjhoLTIwdjMxSDEweiIvPgo8cGF0aCBmaWxsPSIjMDAwIiBkPSJNMjggNTVoNTF2NTVIMjh6bTAgNzJoNTF2NTVIMjh6bTAgNzNoNTF2NTVIMjh6bTcwLTE0NWg4MXYzMGgyN3Y0MGgtMjd2MjloMjd2NDBoLTI3djU0SDk4eiIvPgo8cGF0aCBmaWxsPSIjZmZlNDVjIiBkPSJNMzcgNjRoMzJ2MzdIMzd6bTAgNzJoMzJ2MzdIMzd6bTAgNzNoMzJ2MzdIMzd6bTcwLTE0NWg2MnYzMWgyN3YyMWgtMjd2NDdoMjd2MjJoLTI3djU0aC02MnoiLz4KPC9zdmc%2B" alt="Try the DByte ISO" />
 </a>
 
@@ -21,12 +21,12 @@
 <img src="https://img.shields.io/discord/1505230512820588746?label=DISCORD&logo=discord&logoColor=white&color=5865F2" alt="Discord" />
 </a>
 
-<a href="https://github.com/Deadbytes101/DByte/stargazers">
-<img src="https://img.shields.io/github/stars/Deadbytes101/DByte?style=flat&color=yellow" alt="⭐ STARS" />
+<a href="https://github.com/Deadbytes101/DBYTE/stargazers">
+<img src="https://img.shields.io/github/stars/Deadbytes101/DBYTE?style=flat&color=yellow" alt="STARS" />
 </a>
 
-<a href="https://github.com/Deadbytes101/DByte/blob/main/LICENSE">
-<img src="https://img.shields.io/github/license/Deadbytes101/DByte?color=green" alt="MIT LICENSE" />
+<a href="https://github.com/Deadbytes101/DBYTE/blob/main/LICENSE">
+<img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="MIT LICENSE" />
 </a>
 </p>
 
@@ -35,10 +35,10 @@
 Built for byte-level jobs.
 Not for hype. Not for framework circus. Just open the data, hit the buffer, patch what needs patching, and ship.
 
+> **Public Alpha** — Expect breaking changes before stable release.
+
 > [!CAUTION]
 > **Warning:** This OS is experimental. Run it in a VM if you value your data.
-> 
-> **Public Alpha** — Expect breaking changes before stable release.
 
 ## Features
 
@@ -57,11 +57,30 @@ Not for hype. Not for framework circus. Just open the data, hit the buffer, patc
 - Interactive REPL + real DByte-native shell
 - Personal tools for hexdump, patching, binary inspection
 
+## Project Snapshot
+
+Current tracked snapshot: **v10.62.1**.
+
+DBYTE is three connected pieces:
+
+- **DByte language**: a Rust-built programming language for byte-level scripting, binary parsing, buffer patching, byte search, typed integer work, project workflows, tests, REPL, shell, and embedding.
+- **DByteOS userland**: host-runnable `.dby` scripts and shell workflows under `examples/dbyteos/`; this is the personal operating-environment experiment.
+- **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU experiments. It is experimental and is not a production OS kernel.
+
+Tracked line counts, measured from `git ls-files` so ignored build/release output is excluded:
+
+- Kernel Rust source: **15,530 lines** across `kernel-lab/src/*.rs`.
+- Full Kernel Lab tracked files: **15,642 lines** across `kernel-lab/src`, `kernel-lab/boot`, scripts, manifest, and lab README.
+- Main tracked source/docs set: **63,282 lines** across **475 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, and `*.ld`.
+- Total tracked files in the repository: **794**.
+
+Ignored local artifacts include `target/`, `kernel-lab/target/`, release bundles/zips, unpacked release directories, scratch binaries, temporary VM logs, and `test_release_v*/`.
+
 ## Getting Started
 
-1. **Try the ISO** (VM recommended): [Download Latest ISO](https://github.com/Deadbytes101/DByte/releases/ISO)
+1. **Try the ISO** (VM recommended): [Download Latest ISO](https://github.com/Deadbytes101/DBYTE/releases/ISO)
 2. **Read the docs**: [https://dbytelang.site/docs/](https://dbytelang.site/docs/)
-3. **Try MusicPlayers**: [bytedeck](personaltools/bytedeck/musicplayer.dby)
+3. **Clone & explore**: [github.com/Deadbytes101/DBYTE](https://github.com/Deadbytes101/DBYTE)
 
 ### Quick Start
 
@@ -89,8 +108,8 @@ let b: buffer = buf.load("sample.bin")
 let pos: int = buf.find(b, b"\xDE\xAD\xBE\xEF")
 
 if pos >= 0:
-buf.replace(b, pos, b"\x90\x90\x90\x90")
-buf.save("sample.patched.bin", b)
+    buf.replace(b, pos, b"\x90\x90\x90\x90")
+    buf.save("sample.patched.bin", b)
 ```
 
 ## Personal Tools
@@ -107,22 +126,27 @@ Rust host applications can embed the tree runtime through `dbyte_embed`:
 use dbyte_embed::DByteRuntime;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-let mut rt = DByteRuntime::new();
+    let mut rt = DByteRuntime::new();
 
-rt.run_source("host", "let x: int = 40")?;
-let out = rt.run_source_capture("host", "print(x + 2)")?;
+    rt.run_source("host", "let x: int = 40")?;
+    let out = rt.run_source_capture("host", "print(x + 2)")?;
 
-assert_eq!(out.stdout.trim(), "42");
-Ok(())
+    assert_eq!(out.stdout.trim(), "42");
+    Ok(())
 }
 ```
 
 The embed API uses persistent tree-interpreter state and does not auto-load
 `.dbyterc`; host applications opt into startup scripts with `load_rc()`.
 
+## Repository & Contact
+
+- **Repository**: [Deadbytes101/DBYTE](https://github.com/Deadbytes101/DBYTE)
+- **Creator**: [About DEADBYTE](https://dbytelang.site/about)
+- **Discord**: [Join Community](https://discord.gg/hWuwUbrujb)
+
 ---
 
-*this is alpha software run in vm if you value your data*
-*what people are going to read is its about a pathetic schizophrenic
-who made a crappy operating system my perspective born to build and
-then fade away*
+**License**: MIT. See [LICENSE](LICENSE).
+
+**This is alpha software. Run in VM if you value your data.**

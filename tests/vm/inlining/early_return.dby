@@ -1,0 +1,10 @@
+fn check_early(n: int) -> int:
+    if n > 10:
+        return 1
+    print("not early")
+    return 0
+
+let a = check_early(15)
+let b = check_early(5)
+print(a)
+print(b)

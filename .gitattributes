@@ -1,8 +1,0 @@
-* linguist-vendored
-*.dby   -linguist-vendored linguist-language=DByte linguist-detectable
-*.dbyte -linguist-vendored linguist-language=DByte linguist-detectable
-README*       linguist-documentation
-LICENSE*      linguist-documentation
-CHANGELOG*    linguist-documentation
-CONTRIBUTING* linguist-documentation
-docs/**       linguist-documentation

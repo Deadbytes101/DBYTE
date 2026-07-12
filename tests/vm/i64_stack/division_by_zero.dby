@@ -1,0 +1,2 @@
+let value: int = 10 / 0
+print(value)

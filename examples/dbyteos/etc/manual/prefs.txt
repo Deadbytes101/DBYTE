@@ -1,0 +1,38 @@
+Name
+  prefs - manage mutable user preferences
+
+Usage
+  prefs show
+  prefs get <key>
+  prefs set <key> <value>
+  prefs reset-demo
+
+Description
+  The prefs command allows the user to view and modify a restricted 
+  set of safe configuration keys. Unlike 'config', which is read-only,
+  'prefs' changes persist across DByteOS sessions by writing to
+  'home/deadbyte/preferences.dby'.
+
+Commands
+  show          Display all mutable preferences and their current values.
+  get           Display the value of a specific preference key.
+  set           Update a preference. Keys and values are strictly validated
+                against an allowlist to prevent injection.
+  status        Check the health of the preference subsystem and backup.
+  doctor        Validate the schema of the current preference file.
+  allowed       List all safe mutable keys and their permitted values.
+  backup-demo   Copy the current preferences to a .bak file.
+  restore-demo  Restore preferences from a .bak file if one exists.
+  reset-demo    Restore preferences to their default seed state.
+
+Safe Writable Keys
+  - ui.theme
+    (Allowed: default, dark, light)
+  - system.prompt
+    (Allowed: dbyte-shell>, dbyteos>, deadbyte>)
+    Controls the next DByteOS shell prompt when launched with .dbyterc.
+  - user.display_name
+    (Allowed: deadbyte, guest, operator)
+
+See Also
+  config, profile, system

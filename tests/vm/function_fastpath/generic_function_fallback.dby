@@ -1,0 +1,5 @@
+fn join(a: str, b: str) -> str:
+    return a + b
+
+print(join("D", "Byte"))
+

@@ -1,0 +1,3 @@
+import "./lexical_capture_lib.dby" as lib
+
+print(lib.entry())

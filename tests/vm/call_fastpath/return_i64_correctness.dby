@@ -1,0 +1,8 @@
+fn choose(flag: int) -> int:
+    if flag > 0:
+        return 42
+    return 7
+
+print(choose(1))
+print(choose(0))
+

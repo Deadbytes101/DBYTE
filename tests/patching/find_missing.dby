@@ -1,0 +1,5 @@
+import std.buffer as buf
+
+let b = buf.from_bytes(b"\x01\x02\x03")
+print(buf.find(b, b"\x04"))
+print(buf.find(b, b"\x01\x03"))

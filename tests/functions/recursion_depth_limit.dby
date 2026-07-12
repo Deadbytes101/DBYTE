@@ -1,0 +1,4 @@
+fn forever(n: int) -> int:
+    return forever(n + 1)
+
+print(forever(0))

@@ -1,0 +1,2 @@
+import std.fs as fs
+print(fs.read_bytes("non_existent.bin"))

@@ -1,0 +1,3 @@
+print(len(b""))
+print(len(b"DByte"))
+print(len(b"\x00\x01\x02"))

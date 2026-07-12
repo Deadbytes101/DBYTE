@@ -1,0 +1,6 @@
+import std.buffer as buf
+
+let b = buf.new(4)
+print(buf.len(b))
+print(buf.get(b, 0))
+print(buf.get(b, 3))

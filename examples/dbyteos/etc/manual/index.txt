@@ -1,0 +1,34 @@
+DByteOS Manual Index
+
+Manual topics:
+  welcome
+  getting-started
+  commands
+  index
+  boot
+  status
+  sysinfo
+  whoami
+  profile
+  config
+  snapshot
+  project
+  task
+  env
+  path
+  read
+  write
+  append
+  clean
+  perm
+  security
+  notes
+  journal
+  project
+  task
+  services
+  log
+  search
+
+Use:
+  man <topic>

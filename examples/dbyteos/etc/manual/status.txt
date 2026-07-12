@@ -1,0 +1,13 @@
+NAME
+    status - report the state of the DByteOS directories
+
+SYNOPSIS
+    status
+
+DESCRIPTION
+    Scans the expected root directories of the DByteOS userland
+    (/bin, /etc, /home, /sys, /tmp) and reports whether they are
+    present or missing. Useful for diagnosing system integrity.
+
+AUTHOR
+    DEADBYTE

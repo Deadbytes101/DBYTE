@@ -1,0 +1,2 @@
+import std.encoding as enc
+print(enc.hex_decode("ABC"))

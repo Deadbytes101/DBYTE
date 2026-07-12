@@ -1,8 +1,10 @@
 import std.fs as fs
+
 fn _get_path() -> str:
-if fs.exists("examples/dbyteos") == 1:
-return "examples/dbyteos/home/deadbyte/preferences.dby"
-return "home/deadbyte/preferences.dby"
+    if fs.exists("examples/dbyteos") == 1:
+        return "examples/dbyteos/home/deadbyte/preferences.dby"
+    return "home/deadbyte/preferences.dby"
+
 print("DByteOS Preferences Recovery")
 let content: str = "pub let ui_theme: str = \"default\"\n"
 content = content + "pub let system_prompt: str = \"dbyte-shell>\"\n"

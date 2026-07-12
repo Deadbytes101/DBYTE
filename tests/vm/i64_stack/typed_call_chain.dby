@@ -1,0 +1,7 @@
+fn inc(n: int) -> int:
+    return n + 1
+
+fn add_two(n: int) -> int:
+    return inc(n) + 1
+
+print(add_two(40))

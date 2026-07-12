@@ -1,0 +1,6 @@
+import std.buffer as buf
+
+let data = b"\x01\x02\x03"
+let b = buf.from_bytes(data)
+
+print(buf.slice(b, 1, 3))

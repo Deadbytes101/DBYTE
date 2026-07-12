@@ -1,0 +1,7 @@
+== disasm_smoke.dby ==
+0000 CONST_I64 1
+0001 CONST_I64 2
+0002 ADD_I64
+0003 CALL print 1
+0004 POP
+0005 HALT

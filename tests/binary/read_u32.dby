@@ -1,0 +1,10 @@
+import std.binary as bin
+
+let data: bytes = b"\x01\x02\x03\x04"
+
+print(bin.u32_le(data, 0)) # 0x04030201 = 67305985
+print(bin.u32_be(data, 0)) # 0x01020304 = 16909060
+
+let signed: bytes = b"\xff\xff\xff\xff"
+print(bin.u32_le(signed, 0)) # 4294967295
+print(bin.i32_le(signed, 0)) # -1

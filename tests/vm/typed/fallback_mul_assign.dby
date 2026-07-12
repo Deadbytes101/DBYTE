@@ -1,0 +1,6 @@
+let i: int = 2
+let step: int = 3
+
+i = i * step
+
+print(i)

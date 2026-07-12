@@ -1,0 +1,13 @@
+NAME
+    clean - clean the workspace directory
+
+SYNOPSIS
+    clean
+
+DESCRIPTION
+    Removes all user files within the workspace directory
+    (e.g., home/deadbyte/workspace) to reset the environment.
+    Use with caution as it will delete all files inside the workspace.
+
+AUTHOR
+    DEADBYTE
