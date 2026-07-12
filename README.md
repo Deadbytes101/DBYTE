@@ -20,6 +20,7 @@
 <a href="https://github.com/Deadbytes101/DBYTE/releases/ISO">
 <img src="https://img.shields.io/badge/DBYTE-TRY%20ISO%20NOW-178da5?style=flat" alt="Try the DByte ISO" />
 </a>
+<img src="https://img.shields.io/badge/language-DBYTE-111111?style=flat" alt="Language DBYTE" />
 <a href="https://github.com/Deadbytes101/DBYTE/blob/main/LICENSE">
 <img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="MIT License" />
 </a>
@@ -49,13 +50,14 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 - Default branch: **main**
 - Repository visibility: **public**
 - License: **MIT**
-- GitHub language policy: `.dby` files request the `DBYTE` language label through `.gitattributes`; non-DBYTE implementation and benchmark files are excluded from language statistics.
+- Language identity: **DBYTE**.
+- GitHub Languages policy: implementation and benchmark languages are excluded from the sidebar; `.dby` files request the `DBYTE` label through `.gitattributes`, and the native Languages panel stays hidden until GitHub Linguist supports DBYTE as an official language.
 
 Tracked line counts are measured from `git ls-files`, so ignored build output, release zips, bundles, VM logs, and `target/` directories are excluded:
 
 - Kernel Rust source: **15,530 lines** across `kernel-lab/src/*.rs`.
 - Full Kernel Lab tracked files: **15,642 lines** across kernel sources, linker script, scripts, manifest, and lab README.
-- Main tracked source and docs set: **63,301 lines** across **475 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, and `*.ld`.
+- Main tracked source and docs set: **63,303 lines** across **475 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, and `*.ld`.
 - Total tracked files in the repository: **795**.
 
 ## Language Stack
