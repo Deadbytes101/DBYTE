@@ -193,4 +193,4 @@ DBYTE is alpha software. Interfaces can change. Kernel Lab behavior can break. U
 - Docs: [dbytelang.site/docs](https://dbytelang.site/docs/)
 - Discord: [Join Community](https://discord.gg/hWuwUbrujb)
 
-MIT licensed. See [LICENSE](LICENSE).
+honestly i have a mental illness where i must build everything myselfif i see someone else software and i can not control 100 percent of it i just choose to rewrite the whole damn thing from scratch
