@@ -55,7 +55,6 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 - Snapshot version: **v10.62.1**
 - Default branch: **main**
 - Repository visibility: **public**
-- License: **MIT**
 - Language identity: **DBYTE**.
 - GitHub Languages policy: implementation and benchmark languages are excluded from the sidebar; `.dby` files request the `DBYTE` label through `.gitattributes`, and the native Languages panel stays hidden until GitHub Linguist supports DBYTE as an official language.
 
@@ -167,8 +166,6 @@ This keeps the repository focused on source, docs, scripts, and reproducible pro
 ## Community Files
 
 This repo includes the core GitHub community surface:
-
-- [MIT License](LICENSE)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security Policy](SECURITY.md)
@@ -177,9 +174,7 @@ This repo includes the core GitHub community surface:
 - [Issue Templates](.github/ISSUE_TEMPLATE/)
 
 ## License
-
-DBYTE is released under the [MIT License](LICENSE).
-
+DBYTE is released under the [GNU2](LICENSE).
 The license applies to the tracked source and documentation in this repository. Generated build output, local scratch files, release bundles, VM logs, and ignored artifacts are not part of the source distribution.
 
 ## Project Warning
