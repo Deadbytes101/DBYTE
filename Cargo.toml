@@ -8,6 +8,7 @@ members = [
     "crates/dbyte_cli",
     "crates/dbyte_bytecode",
     "crates/dbyte_compiler",
+    "crates/dbyte_native",
     "crates/dbyte_module",
     "crates/dbyte_project",
     "crates/dbyte_vm",
@@ -17,10 +18,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "10.62.1"
+version = "11.0.0"
 edition = "2021"
 authors = ["Deadbyte"]
-license = "MIT"
+license = "GPL-2.0-only"
 
 [workspace.dependencies]
 dbyte_ast    = { path = "crates/dbyte_ast" }
@@ -30,6 +31,7 @@ dbyte_typeck = { path = "crates/dbyte_typeck" }
 dbyte_interp = { path = "crates/dbyte_interp" }
 dbyte_bytecode = { path = "crates/dbyte_bytecode" }
 dbyte_compiler = { path = "crates/dbyte_compiler" }
+dbyte_native = { path = "crates/dbyte_native" }
 dbyte_module = { path = "crates/dbyte_module" }
 dbyte_project = { path = "crates/dbyte_project" }
 dbyte_vm = { path = "crates/dbyte_vm" }

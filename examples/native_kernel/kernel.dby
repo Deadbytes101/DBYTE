@@ -1,0 +1,59 @@
+fn serial_init() -> int:
+    native.io_out8(1017, 0)
+    native.io_out8(1019, 128)
+    native.io_out8(1016, 3)
+    native.io_out8(1017, 0)
+    native.io_out8(1019, 3)
+    native.io_out8(1018, 199)
+    native.io_out8(1020, 11)
+    return 0
+
+fn serial_putc(value: int) -> int:
+    let ready: int = native.io_in8(1021)
+    while ready < 32:
+        ready = native.io_in8(1021)
+    native.io_out8(1016, value)
+    return value
+
+fn serial_write(text: str, length: int) -> int:
+    let index: int = 0
+    while index < length:
+        serial_putc(text[index])
+        index = index + 1
+    return index
+
+fn serial_newline() -> int:
+    serial_putc(13)
+    serial_putc(10)
+    return 0
+
+fn add(left: int, right: int) -> int:
+    return left + right
+
+fn serial_write_decimal_0_99(value: int) -> int:
+    let tens: int = 0
+    let ones: int = value
+    while ones >= 10:
+        ones = ones - 10
+        tens = tens + 1
+    if tens > 0:
+        serial_putc(48 + tens)
+    serial_putc(48 + ones)
+    return value
+
+fn kernel_main() -> int:
+    serial_init()
+    serial_write("DBYTE NATIVE KERNEL", 19)
+    serial_newline()
+
+    let base: int = 20 * 2
+    let value: int = add(base, 2)
+    if value == 42:
+        serial_write("MACHINE CODE ONLINE", 19)
+        serial_newline()
+        serial_write_decimal_0_99(value)
+        serial_newline()
+    else:
+        serial_write("BAD RESULT", 10)
+        serial_newline()
+    return value

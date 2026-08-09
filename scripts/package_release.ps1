@@ -1,5 +1,6 @@
 param(
-    [string]$Version = "9.0.2"
+    [string]$Version = "11.0.0",
+    [switch]$SkipBundle
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +13,6 @@ $cargo = "$env:USERPROFILE\.cargo\bin\cargo.exe"
 $releaseName = "dbyte-v$Version-windows-x64"
 $releaseDir = Join-Path $repoRoot $releaseName
 $zipPath = Join-Path $repoRoot "$releaseName.zip"
-$bundlePath = Join-Path $repoRoot "dbyte-v$Version.bundle"
 
 & $cargo build --release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -23,15 +23,13 @@ if (Test-Path $releaseDir) {
 if (Test-Path $zipPath) {
     Remove-Item -Force $zipPath
 }
-if (Test-Path $bundlePath) {
-    Remove-Item -Force $bundlePath
-}
 
 New-Item -ItemType Directory -Path $releaseDir | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "scripts") | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $releaseDir "benchmarks") | Out-Null
 
 Copy-Item ".\target\release\dbyte.exe" (Join-Path $releaseDir "dbyte.exe")
+Copy-Item ".\target\release\dbytec.exe" (Join-Path $releaseDir "dbytec.exe")
 Copy-Item ".\README.md" $releaseDir
 Copy-Item ".\INSTALL.md" $releaseDir
 Copy-Item ".\LANGUAGE_SPEC.md" $releaseDir
@@ -70,9 +68,32 @@ if (Test-Path $releaseKernelLabTarget) {
 }
 
 $targetBundlePath = Join-Path $releaseDir "dbyte-v$Version.bundle"
-git bundle create $targetBundlePath --all
+if (-not $SkipBundle) {
+    $tagName = "v$Version"
+    $status = git status --short
+    if ($LASTEXITCODE -ne 0) { throw "git status failed" }
+    if ($status) { throw "release bundle requires a clean working tree" }
+
+    $tagType = git cat-file -t $tagName 2>$null
+    if ($LASTEXITCODE -ne 0 -or $tagType -ne "tag") {
+        throw "release bundle requires annotated tag $tagName"
+    }
+
+    $tagRefs = @(git for-each-ref '--format=%(refname)' refs/tags)
+    if ($LASTEXITCODE -ne 0 -or $tagRefs -notcontains "refs/tags/$tagName") {
+        throw "could not enumerate release tag history"
+    }
+
+    git bundle create $targetBundlePath @tagRefs
+    if ($LASTEXITCODE -ne 0) { throw "git bundle creation failed for $tagName" }
+}
 
 Compress-Archive -Path (Join-Path $releaseDir "*") -DestinationPath $zipPath
 
 Write-Host "release package created: $zipPath"
-Write-Host "bundle backup created: $bundlePath"
+if ($SkipBundle) {
+    Write-Host "bundle backup skipped"
+}
+else {
+    Write-Host "bundle backup created: $targetBundlePath"
+}

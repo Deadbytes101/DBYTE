@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOutput = .\target\debug\dbyte.exe --version
-if ($versionOutput -ne 'DByte 9.0.2') {
-    throw "Version mismatch: expected 'DByte 9.0.2', got '$versionOutput'"
+if ($versionOutput -ne 'DByte 11.0.0') {
+    throw "Version mismatch: expected 'DByte 11.0.0', got '$versionOutput'"
 }
 
 function Normalize-Output($value) {
@@ -14442,7 +14442,7 @@ $expectedReleaseFiles10621 = @(
     'kernel-lab/Cargo.toml',
     'scripts/verify.ps1'
 )
-$releaseChangedFiles10621 = @(& git diff --name-only v10.62.0 --)
+$releaseChangedFiles10621 = @(& git diff --name-only v10.62.0 v10.62.1 --)
 if ($releaseChangedFiles10621.Count -ne $expectedReleaseFiles10621.Count) { throw "v10.62.1 release diff must contain exactly five files" }
 foreach ($expectedReleaseFile10621 in $expectedReleaseFiles10621) {
     if ($releaseChangedFiles10621 -notcontains $expectedReleaseFile10621) { throw "v10.62.1 expected release file missing: $expectedReleaseFile10621" }
@@ -14457,7 +14457,7 @@ Write-Host "[OK] v10.55.1 DByte Graphics Shell IRQ0 Runtime Bridge Hardening ver
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 9.0.2" "shell version"
+Assert-Contains $shellBasic.Text "DByte 11.0.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -16706,7 +16706,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 9.0.2`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 11.0.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -16714,7 +16714,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 9.0.2`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 9.0.2`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 9.0.2`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.0.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.0.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.0.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -17092,25 +17092,28 @@ quit
         if (-not (Test-Path $p)) { throw "DByteOS doc missing: $doc" }
     }
     $mainReadme = Get-Content (Join-Path $repoRoot "README.md") -Raw
-    Assert-Contains $mainReadme "THE DBYTE PROGRAMMING LANGUAGE" "README public title"
+    Assert-Contains $mainReadme '<h1 align="center">DBYTE</h1>' "README public title"
     Assert-Contains $mainReadme "assets/logo/dbyte-logo.png" "README logo asset"
     Assert-Contains $mainReadme "benchmarks/BENCHMARKS.md#perf-pass-11-zero-cost-inlining-argument-remapping" "README benchmarks link"
     Assert-Contains $mainReadme "https://dbytelang.site/docs/" "README docs link"
-    Assert-Contains $mainReadme "https://github.com/Deadbytes101/DByte/releases/ISO" "README ISO release link"
-    Assert-Contains $mainReadme "DByteOS userland experiments (host-runnable, not a full OS)" "README DByteOS userland boundary"
-    Assert-Contains $mainReadme "dbyte shell --rc examples/dbyteos/.dbyterc" "README shell quickstart command"
-    Assert-Contains $mainReadme "dbyte run examples/hello.dby" "README hello example command"
-    Assert-Contains $mainReadme "personal_tools/" "README personal tools path"
-    Assert-Contains $mainReadme "hexdump" "README personal hexdump shortcut"
-    Assert-Contains $mainReadme "patch-bytes" "README personal patch shortcut"
+    Assert-Contains $mainReadme "https://github.com/Deadbytes101/DBYTE/releases/ISO" "README ISO release link"
+    Assert-Contains $mainReadme '**DByteOS userland**: host-runnable' "README DByteOS userland boundary"
+    Assert-Contains $mainReadme "cargo run -p dbyte_cli -- shell --rc examples/dbyteos/.dbyterc" "README shell quickstart command"
+    Assert-Contains $mainReadme "cargo run -p dbyte_cli -- run examples/hello.dby" "README hello example command"
+    Assert-Contains $mainReadme "crates/dbyte_native" "README native compiler crate"
+    Assert-Contains $mainReadme "scripts/verify_native.ps1" "README native verifier command"
+    Assert-Contains $mainReadme "docs/DBYTE_NATIVE.md" "README native compiler docs"
     Assert-Contains $mainReadme "dbyte_embed" "README embed mention"
     Assert-Contains $mainReadme "LICENSE" "README license link"
+    Assert-Contains $mainReadme "https://img.shields.io/" "README badge strip"
     if (-not (Test-Path (Join-Path $repoRoot "assets\logo\dbyte-logo.png"))) { throw "README logo asset target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "benchmarks\BENCHMARKS.md"))) { throw "README benchmarks link target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "LICENSE"))) { throw "README license link target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "docs"))) { throw "README docs directory target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "examples\hello.dby"))) { throw "README hello example target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "examples\dbyteos\.dbyterc"))) { throw "README DByteOS rc target missing" }
+    if (-not (Test-Path (Join-Path $repoRoot "examples\native_kernel\kernel.dby"))) { throw "README native kernel target missing" }
+    if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTE_NATIVE.md"))) { throw "README native compiler docs target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_PERSONAL_ALPHA.md"))) { throw "README Personal Workspace Beta Foundation link target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_ALPHA.md"))) { throw "README alpha link target missing" }
     if (-not (Test-Path (Join-Path $repoRoot "docs\DBYTEOS_ONBOARDING.md"))) { throw "README onboarding link target missing" }
@@ -18134,12 +18137,12 @@ catch {
 
 
 $readme = Get-Content (Join-Path $repoRoot "README.md") -Raw
-Assert-Contains $readme "personal_tools/" "README personal tools directory"
-Assert-Contains $readme "hexdump" "README personal hexdump shortcut"
-Assert-Contains $readme "bininfo" "README personal bininfo mention"
-Assert-Contains $readme "find-bytes" "README personal find mention"
-Assert-Contains $readme "patch-bytes" "README personal patch shortcut"
-Assert-Contains $readme "u32-table" "README personal u32 mention"
+Assert-Contains $readme "## Binary Patch Example" "README binary tooling example"
+Assert-Contains $readme "import std.buffer as buf" "README buffer module example"
+Assert-Contains $readme 'buf.load("firmware.bin")' "README binary load example"
+Assert-Contains $readme "buf.find" "README binary search example"
+Assert-Contains $readme "buf.replace" "README binary patch example"
+Assert-Contains $readme "buf.save" "README binary save example"
 
 Write-Host "Running project workflow tests..."
 
@@ -18242,7 +18245,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "9.0.2"
+$EXPECTED_VERSION = "11.0.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -19611,7 +19614,7 @@ Assert-Contains $kernelBootSmokeDocs "IRQ runtime preflight" "qemu docs irq-pref
 Assert-Contains $kernelBootSmokeDocs "result: blocked" "qemu docs irq-preflight blocked"
 Assert-Contains $kernelBootSmokeDocs "Full Exception Journey Smoke" "qemu docs full exception journey"
 Assert-Contains $mainReadme "https://dbytelang.site/docs/" "README includes public documentation link"
-Assert-Contains $mainReadme "DByteOS userland experiments (host-runnable, not a full OS)" "README includes DByteOS boundary"
+Assert-Contains $mainReadme '**DByteOS userland**: host-runnable' "README includes DByteOS boundary"
 
 # ==============================================================================
 # DByteOS Kernel Lab Hardening Verify Guards (v9.0.2)
@@ -19873,7 +19876,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha (v9.0.2) Package Smoke Tests..."
+Write-Host "Running DByteOS Alpha in the v11.0.0 package smoke tests..."
 if (Test-Path (Join-Path $repoRoot "tmp")) { Remove-Item -Recurse -Force (Join-Path $repoRoot "tmp") }
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -19884,18 +19887,32 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& .\scripts\package_release.ps1 -Version "9.0.2"
-$zipFile = Join-Path $repoRoot "dbyte-v9.0.2-windows-x64.zip"
+& .\scripts\package_release.ps1 -Version "11.0.0" -SkipBundle
+$zipFile = Join-Path $repoRoot "dbyte-v11.0.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
 Expand-Archive -Path $zipFile -DestinationPath $smokeRoot
 $extractedExe = Join-Path $smokeRoot "dbyte.exe"
+$extractedCompiler = Join-Path $smokeRoot "dbytec.exe"
 $extractedOsRoot = Join-Path $smokeRoot "examples\dbyteos"
+$extractedNativeSource = Join-Path $smokeRoot "examples\native_kernel\kernel.dby"
+$extractedNativeDocs = Join-Path $smokeRoot "docs\DBYTE_NATIVE.md"
+
+if (-not (Test-Path $extractedCompiler)) { throw "Packaged native compiler not found: $extractedCompiler" }
+if (-not (Test-Path $extractedNativeSource)) { throw "Packaged native kernel example not found: $extractedNativeSource" }
+if (-not (Test-Path $extractedNativeDocs)) { throw "Packaged native compiler docs not found: $extractedNativeDocs" }
+$packagedNativeElf = Join-Path $smokeRoot "packaged-native-kernel.elf"
+& $extractedCompiler build $extractedNativeSource --target i686-dbyte-none --emit elf -o $packagedNativeElf
+if ($LASTEXITCODE -ne 0) { throw "Packaged dbytec native build failed" }
+[byte[]]$packagedNativeHeader = [System.IO.File]::ReadAllBytes($packagedNativeElf)
+if ($packagedNativeHeader.Length -lt 20 -or $packagedNativeHeader[0] -ne 0x7f -or $packagedNativeHeader[1] -ne 0x45 -or $packagedNativeHeader[2] -ne 0x4c -or $packagedNativeHeader[3] -ne 0x46 -or $packagedNativeHeader[4] -ne 1 -or $packagedNativeHeader[18] -ne 3 -or $packagedNativeHeader[19] -ne 0) {
+    throw "Packaged dbytec did not emit ELF32/i386"
+}
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 9.0.2") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 11.0.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -20291,11 +20308,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 9.0.2`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 11.0.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 9.0.2`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 9.0.2`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 9.0.2`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.0.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.0.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.0.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -20549,7 +20566,7 @@ Journal: 0 entries recorded
 Open Tasks:
   demo: 2 open
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 9.0.2
+dbyte-shell> DByte 11.0.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"
@@ -20557,5 +20574,8 @@ Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Per
 Remove-Item -Recurse -Force $smokeRoot -ErrorAction SilentlyContinue
 Assert-GitStatus-Unchanged $packageSmokeStatus "package smoke cleanliness"
 Write-Host "Package smoke tests passed."
+
+& .\scripts\verify_native.ps1 -MilestoneVersion "11.0.0"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "verify passed"

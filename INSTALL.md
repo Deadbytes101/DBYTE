@@ -1,10 +1,11 @@
 # DByte Installation Guide
 
-DByte public alpha ships as a single Windows executable plus docs and examples.
+DByte public alpha ships with the `dbyte` runtime CLI, the `dbytec` compiler
+entrypoint, docs, and examples.
 
 ## Install From Release Zip
 
-1. Download `dbyte-v7.8.0-windows-x64.zip` from the release page.
+1. Download `dbyte-v11.0.0-windows-x64.zip` from the release page.
 2. Extract it to a stable folder.
 3. Run the installer from the extracted folder:
 
@@ -12,7 +13,7 @@ DByte public alpha ships as a single Windows executable plus docs and examples.
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
-The installer copies `dbyte.exe` to:
+The installer copies `dbyte.exe` and, when present, `dbytec.exe` to:
 
 ```txt
 %USERPROFILE%\.dbyte\bin
@@ -26,17 +27,18 @@ For CI or smoke tests where you do not want to change `PATH`, use:
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -InstallDir .\target\verify-install -NoPathUpdate
 ```
 
-Open a new PowerShell window and verify:
+Open a new PowerShell window, return to the extracted release folder, and verify:
 
 ```powershell
 dbyte --version
+dbytec build examples\native_kernel\kernel.dby --target i686-dbyte-none --emit elf -o kernel.elf
 dbyte run --vm examples\hello.dby
 ```
 
 Expected version for this release:
 
 ```txt
-DByte 7.8.0
+DByte 11.0.0
 ```
 
 ## Install From Source

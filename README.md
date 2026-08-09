@@ -22,7 +22,7 @@
 </a>
 <img src="https://img.shields.io/badge/language-DBYTE-111111?style=flat" alt="Language DBYTE" />
 <a href="https://github.com/Deadbytes101/DBYTE/blob/main/LICENSE">
-<img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="MIT License" />
+<img src="https://img.shields.io/github/license/Deadbytes101/DBYTE?color=green" alt="GPL-2.0-only License" />
 </a>
 <a href="CONTRIBUTING.md">
 <img src="https://img.shields.io/badge/contributing-open-178da5?style=flat" alt="Contributing" />
@@ -42,9 +42,10 @@
 
 DBYTE is a compact systems-oriented project built around a custom language named **DByte**. The language is designed for binary work, low-level automation, typed integer processing, byte search, buffer patching, and tooling that should stay direct and predictable.
 
-The repo currently contains three connected layers:
+The repo currently contains four connected layers:
 
 - **DByte language toolchain**: lexer, parser, type checker, tree interpreter, bytecode compiler, bytecode VM, project loader, test runner, shell, REPL, and embedding API.
+- **DByte native compiler**: an additive freestanding `i686-dbyte-none` path with typed native IR, a bounded in-project x86 encoder, and a direct ELF32/Multiboot writer.
 - **DByteOS userland**: host-runnable `.dby` programs under `examples/dbyteos/` that model a personal operating environment, shell commands, config, diagnostics, security checks, workspace flows, and system tools.
 - **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU boot experiments, VGA output, serial logs, IDT and IRQ research, exception surfaces, PIC planning, and controlled runtime probes.
 
@@ -52,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v10.62.1**
+- Snapshot version: **v11.0.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -60,10 +61,10 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 Tracked line counts are measured from `git ls-files`, so ignored build output, release zips, bundles, VM logs, and `target/` directories are excluded:
 
-- Kernel Rust source: **15,530 lines** across `kernel-lab/src/*.rs`.
-- Full Kernel Lab tracked files: **15,642 lines** across kernel sources, linker script, scripts, manifest, and lab README.
-- Main tracked source and docs set: **63,512 lines** across **483 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
-- Total tracked files in the repository: **803**.
+- Kernel Rust source: **16,448 lines** across `kernel-lab/src/*.rs`.
+- Full Kernel Lab tracked files: **16,584 lines** across kernel sources, linker script, scripts, manifest, and lab README.
+- Main tracked source and docs set: **75,284 lines** across **497 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
+- Total tracked files in the repository: **818**.
 
 ## Language Stack
 
@@ -74,6 +75,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 | Type checker | `crates/dbyte_typeck` | Static checks for DByte programs |
 | Tree runtime | `crates/dbyte_interp` | Direct interpreter runtime |
 | Bytecode path | `crates/dbyte_bytecode`, `crates/dbyte_compiler`, `crates/dbyte_vm` | Compilation and VM execution |
+| Native path | `crates/dbyte_native` | Freestanding validation, typed IR, i686 encoding, and ELF32 output |
 | Modules and projects | `crates/dbyte_module`, `crates/dbyte_project` | Imports, packages, `Dbyte.toml` workflows |
 | CLI | `crates/dbyte_cli` | `dbyte run`, `dbyte test`, REPL, shell, tools |
 | Embedding | `crates/dbyte_embed` | Rust host integration |
@@ -88,6 +90,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Execute tests with `dbyte test`.
 - Launch a DByte REPL or shell.
 - Embed DByte in Rust applications.
+- Compile the freestanding native profile to DByte-owned i686 machine code.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -98,6 +101,17 @@ cargo run -p dbyte_cli -- --version
 cargo run -p dbyte_cli -- run examples/hello.dby
 cargo run -p dbyte_cli -- test
 ```
+
+Build the native DByte kernel proof without an external code generator:
+
+```powershell
+cargo run -p dbyte_cli --bin dbytec -- build examples/native_kernel/kernel.dby `
+    --target i686-dbyte-none --emit elf -o tmp/dbyte_native_kernel_v11.0.0.elf
+powershell -ExecutionPolicy Bypass -File scripts/verify_native.ps1
+```
+
+See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
+DBYTE32 ABI, intrinsic boundary, and binary contract.
 
 Launch the DByte shell with the DByteOS userland profile:
 
@@ -174,7 +188,7 @@ This repo includes the core GitHub community surface:
 - [Issue Templates](.github/ISSUE_TEMPLATE/)
 
 ## License
-DBYTE is released under the [GNU2](LICENSE).
+DBYTE is released under the [GNU General Public License version 2](LICENSE).
 The license applies to the tracked source and documentation in this repository. Generated build output, local scratch files, release bundles, VM logs, and ignored artifacts are not part of the source distribution.
 
 ## Project Warning

@@ -1175,6 +1175,7 @@ fn usage() {
     println!(
         "DByte - low-level scripting language\n\n\
          Usage:\n  \
+         dbyte build <source.dby> --target i686-dbyte-none --emit elf|bin -o <output>\n  \
          dbyte run [--vm] <file> [arg ...]\n  \
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \
@@ -1481,6 +1482,12 @@ fn main() {
                 process::exit(1);
             });
             cmd_new(name);
+        }
+        "build" => {
+            if let Err(error) = dbyte_native::cli::run_build_args(&args[2..]) {
+                eprintln!("{}", error);
+                process::exit(error.exit_code());
+            }
         }
         "run" => {
             let mut type_check = true;

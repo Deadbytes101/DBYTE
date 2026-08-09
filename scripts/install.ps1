@@ -1,6 +1,6 @@
 param(
     [string]$InstallDir = (Join-Path $HOME ".dbyte\bin"),
-    [string]$ReleaseUrl = "https://github.com/deadbyte/dbyte/releases/latest/download/dbyte.exe",
+    [string]$ReleaseUrl = "https://github.com/Deadbytes101/DBYTE/releases/latest/download/dbyte.exe",
     [switch]$NoPathUpdate
 )
 
@@ -30,6 +30,14 @@ foreach ($candidate in $localCandidates) {
     }
 }
 
+$sourceCompilerExe = $null
+if ($sourceExe) {
+    $compilerCandidate = Join-Path (Split-Path -Parent $sourceExe) "dbytec.exe"
+    if (Test-Path -LiteralPath $compilerCandidate) {
+        $sourceCompilerExe = (Resolve-Path -LiteralPath $compilerCandidate).Path
+    }
+}
+
 $tempDir = $null
 if (-not $sourceExe) {
     if ([string]::IsNullOrWhiteSpace($ReleaseUrl)) {
@@ -45,6 +53,9 @@ if (-not $sourceExe) {
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 $targetExe = Join-Path $InstallDir "dbyte.exe"
 Copy-Item -Force $sourceExe $targetExe
+if ($sourceCompilerExe) {
+    Copy-Item -Force $sourceCompilerExe (Join-Path $InstallDir "dbytec.exe")
+}
 
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $pathParts = @()

@@ -282,7 +282,7 @@ impl<'src> Lexer<'src> {
         Ok(Token::new(TokenKind::Str(s), sp))
     }
 
-    fn read_number(&mut self, first: char) -> Token {
+    fn read_number(&mut self, first: char) -> Result<Token, LexError> {
         let sp = self.span();
         let mut s = String::from(first);
         let mut is_float = false;
@@ -299,11 +299,16 @@ impl<'src> Lexer<'src> {
                 }
             }
             if hex_val.is_empty() {
-                // Technically an error or just '0', but for now let's treat it as 0
-                return Token::new(TokenKind::Int(0), sp);
+                return Err(LexError {
+                    msg: "invalid hexadecimal integer literal".into(),
+                    span: sp,
+                });
             }
-            let val = i64::from_str_radix(&hex_val, 16).unwrap_or(0);
-            return Token::new(TokenKind::Int(val), sp);
+            let val = i64::from_str_radix(&hex_val, 16).map_err(|_| LexError {
+                msg: "integer literal is outside the supported i64 range".into(),
+                span: sp,
+            })?;
+            return Ok(Token::new(TokenKind::Int(val), sp));
         }
 
         while let Some(c) = self.peek_char() {
@@ -322,9 +327,17 @@ impl<'src> Lexer<'src> {
             }
         }
         if is_float {
-            Token::new(TokenKind::Float(s.parse().unwrap()), sp)
+            let value = s.parse().map_err(|_| LexError {
+                msg: "invalid floating-point literal".into(),
+                span: sp,
+            })?;
+            Ok(Token::new(TokenKind::Float(value), sp))
         } else {
-            Token::new(TokenKind::Int(s.parse().unwrap()), sp)
+            let value = s.parse().map_err(|_| LexError {
+                msg: "integer literal is outside the supported i64 range".into(),
+                span: sp,
+            })?;
+            Ok(Token::new(TokenKind::Int(value), sp))
         }
     }
 
@@ -425,7 +438,7 @@ impl<'src> Lexer<'src> {
                 }
                 c if c.is_ascii_digit() => {
                     self.advance();
-                    tokens.push(self.read_number(c));
+                    tokens.push(self.read_number(c)?);
                 }
                 c if c.is_alphabetic() || c == '_' => {
                     self.advance();
@@ -540,5 +553,34 @@ impl<'src> Lexer<'src> {
             }
         }
         Ok(tokens)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decimal_integer_overflow_is_a_lex_error() {
+        let error = Lexer::new("9223372036854775808").tokenize().unwrap_err();
+        assert_eq!(
+            error.msg,
+            "integer literal is outside the supported i64 range"
+        );
+    }
+
+    #[test]
+    fn hexadecimal_integer_overflow_is_a_lex_error() {
+        let error = Lexer::new("0xffffffffffffffff").tokenize().unwrap_err();
+        assert_eq!(
+            error.msg,
+            "integer literal is outside the supported i64 range"
+        );
+    }
+
+    #[test]
+    fn empty_hexadecimal_literal_is_rejected() {
+        let error = Lexer::new("0x").tokenize().unwrap_err();
+        assert_eq!(error.msg, "invalid hexadecimal integer literal");
     }
 }

@@ -2,6 +2,7 @@
 name = "dbyte_cli"
 version.workspace = true
 edition.workspace = true
+default-run = "dbyte"
 
 [[bin]]
 name = "dbyte"
@@ -11,6 +12,7 @@ path = "src/main.rs"
 dbyte_ast.workspace = true
 dbyte_bytecode.workspace = true
 dbyte_compiler.workspace = true
+dbyte_native.workspace = true
 dbyte_lexer.workspace = true
 dbyte_parser.workspace = true
 dbyte_typeck.workspace = true
