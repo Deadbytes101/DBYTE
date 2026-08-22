@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.7.0**
+- Snapshot version: **v11.8.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -63,8 +63,8 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 
 - Kernel Rust source: **16,448 lines** across `kernel-lab/src/*.rs`.
 - Full Kernel Lab tracked files: **16,584 lines** across kernel sources, linker script, scripts, manifest, and lab README.
-- Main tracked source and docs set: **98,787 lines** across **592 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
-- Total tracked files in the repository: **913**.
+- Main tracked source and docs set: **105,892 lines** across **635 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
+- Total tracked files in the repository: **956**.
 
 ## Language Stack
 
@@ -94,6 +94,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Boot a preemptive ring-0 DByte scheduler whose non-yielding tasks switch from real IRQ0 resume images and whose page-backed stacks have unmapped guards.
 - Put DByte tasks to sleep without spinning and wake fixed FIFO Event waiters from task or hardware IRQ context while preserving interrupt state.
 - Block a DByte keyboard reader on a counting semaphore, receive raw bytes from real emulated i8042 IRQ1 delivery, and resume through the existing scheduler context image.
+- Identify a QEMU ATA disk, transfer complete LBA28 sectors with 16-bit PIO, and wake blocked DByte tasks from real slave-PIC IRQ14 completion.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -144,6 +145,14 @@ delivery reads port `0x60`, posts the semaphore, and wakes the blocked reader.
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_irq_io_core.ps1
 ```
 
+The `v11.8.0` native block-device proof identifies a disposable primary ATA
+disk, executes bounded 16-bit LBA28 PIO transfers, completes through real IRQ14,
+and verifies deterministic sector read/write data without a filesystem or host runtime.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_block_device_core.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
@@ -156,6 +165,8 @@ See [DByte Native Kernel Blocking](docs/DBYTE_NATIVE_KERNEL_BLOCKING.md) for
 sleep deadlines, the CPL0 blocking trap, FIFO Event semantics, and IRQ-safe wakeups.
 See [DByte Native Kernel IRQ I/O](docs/DBYTE_NATIVE_KERNEL_IRQ_IO.md) for
 counting semaphore semantics, the byte ring, i8042 setup, IRQ1 ownership, and raw-input proof.
+See [DByte Native Kernel Block Device](docs/DBYTE_NATIVE_KERNEL_BLOCK_DEVICE.md) for
+ATA IDENTIFY, LBA28 PIO, slave-PIC IRQ14 ownership, and disposable-disk verification.
 
 Launch the DByte shell with the DByteOS userland profile:
 

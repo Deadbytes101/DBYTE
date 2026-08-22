@@ -1,0 +1,248 @@
+import "scheduler.dby" as scheduler
+import "serial.dby" as serial
+import "proof.dby" as proof
+import "pic.dby" as pic
+import "ata.dby" as ata
+
+static mut WARMUP_BUFFER: array[u16, 256]
+static mut READ_BUFFER: array[u16, 256]
+static mut WRITE_BUFFER: array[u16, 256]
+static mut READBACK_BUFFER: array[u16, 256]
+static mut DISK_DONE: usize
+static mut PROGRESS_DONE: usize
+static mut PROGRESS: usize
+static mut PROGRESS_WHILE_BLOCKED: usize
+static mut PROOF_BLOCK_TICK: u32
+static mut PROOF_WAKE_TICK: u32
+static mut PROBE_SLOT: usize
+static mut PHASE: usize
+static mut FAILURE: i32
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(status: i32) -> int:
+    FAILURE = status
+    proof.value("TASK_FAILURE", 12 as usize, status as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn buffer_address(buffer: ptr[u16]) -> ptr[u8]:
+    return (buffer as usize) as ptr[u8]
+
+fn expected_seed_byte(index: usize) -> u8:
+    return (((index * (37 as usize)) + (0x2b as usize)) & (0xff as usize)) as u8
+
+fn expected_write_byte(index: usize) -> u8:
+    return (((index * (29 as usize)) + (0xa7 as usize)) & (0xff as usize)) as u8
+
+fn validate_seed(buffer: ptr[u8]) -> bool:
+    let header: str = "DBYTE_BLOCK_TEST_V1"
+    let index: usize = 0 as usize
+    while index < (19 as usize):
+        if native.volatile_load8(((buffer as usize) + index) as ptr[u8]) != (header[index] as u8):
+            return false
+        index = index + (1 as usize)
+    while index < (512 as usize):
+        if native.volatile_load8(((buffer as usize) + index) as ptr[u8]) != expected_seed_byte(index):
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn fill_write_pattern(buffer: ptr[u8]) -> int:
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        native.volatile_store8(((buffer as usize) + index) as ptr[u8], expected_write_byte(index))
+        index = index + (1 as usize)
+    return 0
+
+fn validate_write_pattern(buffer: ptr[u8]) -> bool:
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        if native.volatile_load8(((buffer as usize) + index) as ptr[u8]) != expected_write_byte(index):
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn tasks_initialize() -> int:
+    DISK_DONE = 0 as usize
+    PROGRESS_DONE = 0 as usize
+    PROGRESS = 0 as usize
+    PROGRESS_WHILE_BLOCKED = 0 as usize
+    PROOF_BLOCK_TICK = 0 as u32
+    PROOF_WAKE_TICK = 0 as u32
+    PROBE_SLOT = 0xffffffff as usize
+    PHASE = 0 as usize
+    FAILURE = 0
+    return 0
+
+pub fn disk_worker() -> int:
+    let warmup: ptr[u8] = buffer_address(&WARMUP_BUFFER[0])
+    let read_buffer: ptr[u8] = buffer_address(&READ_BUFFER[0])
+    let write_buffer: ptr[u8] = buffer_address(&WRITE_BUFFER[0])
+    let readback: ptr[u8] = buffer_address(&READBACK_BUFFER[0])
+    if ata.ata_read_sector(ata.ata_sector_count(), read_buffer):
+        return fail(11)
+    if ata.ata_last_error() != (1 as u32):
+        return fail(12)
+    if ata.ata_read_sector(8 as u32, (1 as usize) as ptr[u8]):
+        return fail(13)
+    if ata.ata_last_error() != (1 as u32):
+        return fail(14)
+    if ata.ata_read_sector(8 as u32, warmup) == false:
+        return fail(15)
+    PROOF_BLOCK_TICK = scheduler.tick_count()
+    if ata.ata_read_sector(8 as u32, read_buffer) == false:
+        return fail(16)
+    PROOF_WAKE_TICK = scheduler.tick_count()
+    if validate_seed(read_buffer) == false:
+        return fail(17)
+    fill_write_pattern(write_buffer)
+    if ata.ata_write_sector(9 as u32, write_buffer) == false:
+        return fail(18)
+    if ata.ata_read_sector(9 as u32, readback) == false:
+        return fail(19)
+    if validate_write_pattern(readback) == false:
+        return fail(20)
+    DISK_DONE = 1 as usize
+    return 0
+
+pub fn progress_worker() -> int:
+    while DISK_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+        if ata.ata_reader_block_count() != ata.ata_reader_wake_count():
+            PROGRESS_WHILE_BLOCKED = PROGRESS_WHILE_BLOCKED + (1 as usize)
+    PROGRESS_DONE = 1 as usize
+    return 0
+
+pub fn reuse_probe() -> int:
+    PROBE_SLOT = scheduler.current_slot()
+    return 0
+
+fn workers_done() -> bool:
+    if DISK_DONE == (0 as usize):
+        return false
+    return PROGRESS_DONE != (0 as usize)
+
+fn validate() -> int:
+    if FAILURE != 0:
+        return 1
+    if ata.ata_sector_count() != (16384 as u32):
+        return 2
+    if ata.ata_last_error() != (0 as u32):
+        return 3
+    if ata.ata_request_state() != (0 as u32):
+        return 4
+    if ata.ata_irq_count() != (4 as usize):
+        return 5
+    if ata.ata_accepted_count() != (4 as usize):
+        return 6
+    if ata.ata_spurious_count() != (0 as usize):
+        return 7
+    if ata.ata_slave_eoi_count() != ata.ata_irq_count():
+        return 8
+    if ata.ata_master_eoi_count() != ata.ata_irq_count():
+        return 9
+    if ata.ata_completion_post_count() != (4 as usize):
+        return 10
+    if ata.ata_read_word_count() != (768 as usize):
+        return 11
+    if ata.ata_write_word_count() != (256 as usize):
+        return 12
+    if ata.ata_reader_block_count() != (4 as usize):
+        return 13
+    if ata.ata_reader_wake_count() != (4 as usize):
+        return 14
+    if ata.ata_early_completion_count() != (1 as usize):
+        return 15
+    if PROOF_WAKE_TICK <= PROOF_BLOCK_TICK:
+        return 16
+    if PROGRESS == (0 as usize):
+        return 17
+    if PROGRESS_WHILE_BLOCKED == (0 as usize):
+        return 18
+    if pic.master_mask() != (0xf8 as u8):
+        return 19
+    if pic.slave_mask() != (0xbf as u8):
+        return 20
+    if scheduler.semaphore_wait_count() != (4 as usize):
+        return 21
+    if scheduler.semaphore_post_count() != (4 as usize):
+        return 22
+    if scheduler.semaphore_post_success_count() != (4 as usize):
+        return 23
+    if scheduler.semaphore_wake_count() != (3 as usize):
+        return 24
+    if scheduler.trap_count() != (4 as usize):
+        return 25
+    if scheduler.eoi_count() != (scheduler.tick_count() as usize):
+        return 26
+    if PROBE_SLOT != (1 as usize):
+        return 27
+    if scheduler.last_spawn_first_frame() != scheduler.first_reclaimed_frame():
+        return 28
+    return 0
+
+fn emit() -> int:
+    proof.value("SECTORS", 7 as usize, ata.ata_sector_count() as usize)
+    proof.value("ATA_LAST", 8 as usize, ata.ata_last_error() as usize)
+    proof.value("IRQ14", 5 as usize, ata.ata_irq_count())
+    proof.value("IRQ14_ACCEPT", 12 as usize, ata.ata_accepted_count())
+    proof.value("IRQ14_SPURIOUS", 14 as usize, ata.ata_spurious_count())
+    proof.value("IRQ14_SLAVE_EOI", 15 as usize, ata.ata_slave_eoi_count())
+    proof.value("IRQ14_MASTER_EOI", 16 as usize, ata.ata_master_eoi_count())
+    proof.value("ATA_POSTS", 9 as usize, ata.ata_completion_post_count())
+    proof.value("READ_WORDS", 10 as usize, ata.ata_read_word_count())
+    proof.value("WRITE_WORDS", 11 as usize, ata.ata_write_word_count())
+    proof.value("READER_BLOCK", 12 as usize, ata.ata_reader_block_count())
+    proof.value("READER_WAKE", 11 as usize, ata.ata_reader_wake_count())
+    proof.value("EARLY_COMPLETE", 14 as usize, ata.ata_early_completion_count())
+    proof.value("PROOF_BLOCK", 11 as usize, PROOF_BLOCK_TICK as usize)
+    proof.value("PROOF_WAKE", 10 as usize, PROOF_WAKE_TICK as usize)
+    proof.value("PROGRESS", 8 as usize, PROGRESS)
+    proof.value("PROGRESS_BLOCKED", 16 as usize, PROGRESS_WHILE_BLOCKED)
+    proof.value("PIC_MASTER", 10 as usize, pic.master_mask() as usize)
+    proof.value("PIC_SLAVE", 9 as usize, pic.slave_mask() as usize)
+    proof.value("RAW_ERROR", 9 as usize, ata.ata_raw_error())
+    proof.value("REUSE_SLOT", 10 as usize, PROBE_SLOT)
+    scheduler.emit_state()
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        if scheduler.reap_exited() != 0:
+            return fail(31)
+        if PHASE == (0 as usize):
+            if workers_done():
+                if scheduler.live_count() == (1 as usize):
+                    if scheduler.spawn(task_address(reuse_probe)) == (0 as usize):
+                        return fail(32)
+                    PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.live_count() == (1 as usize):
+                    if scheduler.exit_count() >= (3 as usize):
+                        let validation: i32 = validate()
+                        if validation != 0:
+                            proof.value("VALIDATION", 10 as usize, validation as usize)
+                            emit()
+                            return fail(33)
+                        line("BLOCK READ ONLINE", 17 as usize)
+                        line("BLOCK WRITE ONLINE", 18 as usize)
+                        line("IRQ COMPLETION OK", 17 as usize)
+                        line("SECTOR READ OK", 14 as usize)
+                        line("SECTOR WRITE OK", 15 as usize)
+                        line("NO BUSY WAIT OK", 15 as usize)
+                        emit()
+                        line("BLOCK DEVICE CHECK OK", 21 as usize)
+                        native.cpu_cli()
+                        while true:
+                            native.cpu_hlt()
+    return 0

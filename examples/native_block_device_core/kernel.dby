@@ -1,0 +1,64 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt_normal.dby" as idt
+import "boot.dby" as boot
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "heap.dby" as heap
+import "pic.dby" as pic
+import "pit.dby" as pit
+import "scheduler.dby" as scheduler
+import "tasks.dby" as tasks
+import "keyboard.dby" as keyboard
+import "ata.dby" as ata
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail() -> int:
+    line("NATIVE BLOCK DEVICE FAILED", 26 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 1
+
+pub fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int:
+    serial.init()
+    line("DBYTEOS NATIVE BLOCK DEVICE", 27 as usize)
+    gdt.gdt_install()
+    if boot.validate(multiboot_magic, multiboot_info) != 0:
+        return fail()
+    if frames.frames_initialize() != 0:
+        return fail()
+    if paging.paging_initialize() != 0:
+        return fail()
+    if heap.heap_initialize() != 0:
+        return fail()
+    if scheduler.initialize() != 0:
+        return fail()
+    if tasks.tasks_initialize() != 0:
+        return fail()
+    if pic.remap_masked() != 0:
+        return fail()
+    if keyboard.keyboard_initialize() != 0:
+        return fail()
+    if ata.ata_initialize() != 0:
+        return fail()
+    line("ATA IDENTIFY ONLINE", 19 as usize)
+    idt.install()
+    if pic.unmask_irq0_irq1_irq14() != 0:
+        return fail()
+    line("ATA IRQ14 ONLINE", 16 as usize)
+    pit.program_100hz()
+    if scheduler.spawn(task_address(tasks.idle)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.disk_worker)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.progress_worker)) == (0 as usize):
+        return fail()
+    scheduler.start()
+    while true:
+        native.cpu_hlt()
+    return 0
