@@ -1,0 +1,190 @@
+import "arch_x86.dby" as arch
+import "byte_ring.dby" as ring
+import "scheduler.dby" as scheduler
+import "pic.dby" as pic
+
+const DATA_PORT: u16 = 0x60 as u16
+const STATUS_PORT: u16 = 0x64 as u16
+const COMMAND_PORT: u16 = 0x64 as u16
+const STATUS_OUTPUT_FULL: u8 = 0x01 as u8
+const STATUS_INPUT_FULL: u8 = 0x02 as u8
+const STATUS_MOUSE_OUTPUT: u8 = 0x20 as u8
+const COMMAND_READ_CONFIG: u8 = 0x20 as u8
+const COMMAND_WRITE_CONFIG: u8 = 0x60 as u8
+const COMMAND_DISABLE_AUX: u8 = 0xa7 as u8
+const COMMAND_DISABLE_KEYBOARD: u8 = 0xad as u8
+const COMMAND_ENABLE_KEYBOARD: u8 = 0xae as u8
+const COMMAND_WRITE_OUTPUT: u8 = 0xd2 as u8
+const CONFIG_IRQ1: u8 = 0x01 as u8
+const CONFIG_IRQ12: u8 = 0x02 as u8
+const CONFIG_DISABLE_KEYBOARD: u8 = 0x10 as u8
+const CONFIG_DISABLE_AUX: u8 = 0x20 as u8
+const IO_TIMEOUT: usize = 65536 as usize
+const DRAIN_LIMIT: usize = 64 as usize
+
+static mut INPUT_RING: ring.ByteRing
+static mut INPUT_SEMAPHORE: scheduler.Semaphore
+static mut IRQ1_COUNT: usize
+static mut IRQ1_EOI_COUNT: usize
+static mut IRQ1_PUSHES: usize
+static mut IRQ1_POSTS: usize
+static mut READER_BLOCKS: usize
+static mut READER_WAKES: usize
+static mut READER_POPS: usize
+static mut DRIVER_FAULT: usize
+static mut LAST_STATUS: usize
+
+fn wait_input_clear() -> int:
+    let attempt: usize = 0 as usize
+    while attempt < IO_TIMEOUT:
+        if (arch.in8(STATUS_PORT) & STATUS_INPUT_FULL) == (0 as u8):
+            return 0
+        attempt = attempt + (1 as usize)
+    return 1
+
+fn wait_output_full() -> int:
+    let attempt: usize = 0 as usize
+    while attempt < IO_TIMEOUT:
+        if (arch.in8(STATUS_PORT) & STATUS_OUTPUT_FULL) != (0 as u8):
+            return 0
+        attempt = attempt + (1 as usize)
+    return 1
+
+fn command(value: u8) -> int:
+    if wait_input_clear() != 0:
+        return 1
+    arch.out8(COMMAND_PORT, value)
+    return 0
+
+fn write_data(value: u8) -> int:
+    if wait_input_clear() != 0:
+        return 1
+    arch.out8(DATA_PORT, value)
+    return 0
+
+fn drain_output() -> int:
+    let drained: usize = 0 as usize
+    while drained < DRAIN_LIMIT:
+        if (arch.in8(STATUS_PORT) & STATUS_OUTPUT_FULL) == (0 as u8):
+            return 0
+        arch.in8(DATA_PORT)
+        drained = drained + (1 as usize)
+    if (arch.in8(STATUS_PORT) & STATUS_OUTPUT_FULL) != (0 as u8):
+        return 1
+    return 0
+
+pub fn keyboard_initialize() -> int:
+    IRQ1_COUNT = 0 as usize
+    IRQ1_EOI_COUNT = 0 as usize
+    IRQ1_PUSHES = 0 as usize
+    IRQ1_POSTS = 0 as usize
+    READER_BLOCKS = 0 as usize
+    READER_WAKES = 0 as usize
+    READER_POPS = 0 as usize
+    DRIVER_FAULT = 0 as usize
+    LAST_STATUS = 0 as usize
+    if ring.byte_ring_initialize(&INPUT_RING) != 0:
+        return 1
+    if scheduler.semaphore_initialize(&INPUT_SEMAPHORE, 0 as usize, 64 as usize) != 0:
+        return 2
+    if command(COMMAND_DISABLE_KEYBOARD) != 0:
+        return 3
+    if command(COMMAND_DISABLE_AUX) != 0:
+        return 4
+    if drain_output() != 0:
+        return 5
+    if command(COMMAND_READ_CONFIG) != 0:
+        return 6
+    if wait_output_full() != 0:
+        return 7
+    let config: u8 = arch.in8(DATA_PORT)
+    config = config | CONFIG_IRQ1 | CONFIG_DISABLE_AUX
+    config = config & ((CONFIG_IRQ12 | CONFIG_DISABLE_KEYBOARD) ^ (0xff as u8))
+    if command(COMMAND_WRITE_CONFIG) != 0:
+        return 8
+    if write_data(config) != 0:
+        return 9
+    if command(COMMAND_ENABLE_KEYBOARD) != 0:
+        return 10
+    return 0
+
+pub fn keyboard_inject_output_byte(value: u8) -> int:
+    let attempt: usize = 0 as usize
+    while attempt < IO_TIMEOUT:
+        if (arch.in8(STATUS_PORT) & (STATUS_INPUT_FULL | STATUS_OUTPUT_FULL)) == (0 as u8):
+            if command(COMMAND_WRITE_OUTPUT) != 0:
+                return 1
+            if write_data(value) != 0:
+                return 2
+            return 0
+        attempt = attempt + (1 as usize)
+    return 3
+
+pub fn keyboard_read_scancode() -> u8:
+    READER_BLOCKS = READER_BLOCKS + (1 as usize)
+    if scheduler.semaphore_wait(&INPUT_SEMAPHORE) != 0:
+        DRIVER_FAULT = 1 as usize
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    READER_WAKES = READER_WAKES + (1 as usize)
+    let value: u8 = 0 as u8
+    if ring.byte_ring_pop(&INPUT_RING, &value) == false:
+        DRIVER_FAULT = 2 as usize
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    READER_POPS = READER_POPS + (1 as usize)
+    return value
+
+pub interrupt(no_error_code) fn irq1(frame: ptr[arch.InterruptFrame]):
+    IRQ1_COUNT = IRQ1_COUNT + (1 as usize)
+    let status: u8 = arch.in8(STATUS_PORT)
+    LAST_STATUS = status as usize
+    if (status & STATUS_OUTPUT_FULL) != (0 as u8):
+        if (status & STATUS_MOUSE_OUTPUT) == (0 as u8):
+            let value: u8 = arch.in8(DATA_PORT)
+            if ring.byte_ring_push(&INPUT_RING, value):
+                IRQ1_PUSHES = IRQ1_PUSHES + (1 as usize)
+                if scheduler.semaphore_post(&INPUT_SEMAPHORE):
+                    IRQ1_POSTS = IRQ1_POSTS + (1 as usize)
+                else:
+                    DRIVER_FAULT = 3 as usize
+            else:
+                DRIVER_FAULT = 4 as usize
+    pic.eoi_master()
+    IRQ1_EOI_COUNT = IRQ1_EOI_COUNT + (1 as usize)
+    return
+
+pub fn keyboard_irq_count() -> usize:
+    return IRQ1_COUNT
+
+pub fn keyboard_eoi_count() -> usize:
+    return IRQ1_EOI_COUNT
+
+pub fn keyboard_push_count() -> usize:
+    return IRQ1_PUSHES
+
+pub fn keyboard_post_count() -> usize:
+    return IRQ1_POSTS
+
+pub fn keyboard_reader_block_count() -> usize:
+    return READER_BLOCKS
+
+pub fn keyboard_reader_wake_count() -> usize:
+    return READER_WAKES
+
+pub fn keyboard_reader_pop_count() -> usize:
+    return READER_POPS
+
+pub fn keyboard_queued_count() -> usize:
+    return ring.byte_ring_count(&INPUT_RING)
+
+pub fn keyboard_dropped_count() -> usize:
+    return ring.byte_ring_dropped(&INPUT_RING)
+
+pub fn keyboard_fault_code() -> usize:
+    return DRIVER_FAULT
+
+pub fn keyboard_last_status() -> usize:
+    return LAST_STATUS

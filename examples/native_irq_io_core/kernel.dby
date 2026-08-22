@@ -1,0 +1,71 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt_normal.dby" as idt
+import "boot.dby" as boot
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "heap.dby" as heap
+import "pic.dby" as pic
+import "pit.dby" as pit
+import "scheduler.dby" as scheduler
+import "tasks.dby" as tasks
+import "keyboard.dby" as keyboard
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail() -> int:
+    line("NATIVE IRQ IO FAILED", 20 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 1
+
+pub fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int:
+    serial.init()
+    line("DBYTEOS NATIVE IRQ IO", 21 as usize)
+    gdt.gdt_install()
+    if boot.validate(multiboot_magic, multiboot_info) != 0:
+        return fail()
+    if frames.frames_initialize() != 0:
+        return fail()
+    if paging.paging_initialize() != 0:
+        return fail()
+    if heap.heap_initialize() != 0:
+        return fail()
+    if scheduler.initialize() != 0:
+        return fail()
+    if tasks.tasks_initialize() != 0:
+        return fail()
+    line("SEMAPHORE ONLINE", 16 as usize)
+    line("BYTE RING ONLINE", 16 as usize)
+    if pic.remap_masked() != 0:
+        return fail()
+    if keyboard.keyboard_initialize() != 0:
+        return fail()
+    idt.install()
+    line("IRQ1 ONLINE", 11 as usize)
+    pit.program_100hz()
+    if scheduler.spawn(task_address(tasks.idle)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.reader)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.injector)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.semaphore_waiter_b)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.semaphore_waiter_d)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.contract_probe)) == (0 as usize):
+        return fail()
+    if scheduler.spawn(task_address(tasks.progress_worker)) == (0 as usize):
+        return fail()
+    line("BLOCKING INPUT ONLINE", 21 as usize)
+    if pic.unmask_irq0_irq1() != 0:
+        return fail()
+    scheduler.start()
+    while true:
+        native.cpu_hlt()
+    return 0

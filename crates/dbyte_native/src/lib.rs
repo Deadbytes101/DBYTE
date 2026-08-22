@@ -9,6 +9,8 @@ pub mod cli;
 pub mod diagnostics;
 pub mod elf32;
 pub mod ir;
+#[cfg(test)]
+mod irq_io_contract;
 pub mod linker;
 pub mod lower;
 #[cfg(test)]

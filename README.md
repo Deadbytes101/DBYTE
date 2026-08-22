@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.6.0**
+- Snapshot version: **v11.7.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -93,6 +93,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Compile and boot a multi-module DByteOS core that releases physical frames, maps and unmaps kernel pages, grows and decommits a checked heap, and executes memory operations in DByte machine code.
 - Boot a preemptive ring-0 DByte scheduler whose non-yielding tasks switch from real IRQ0 resume images and whose page-backed stacks have unmapped guards.
 - Put DByte tasks to sleep without spinning and wake fixed FIFO Event waiters from task or hardware IRQ context while preserving interrupt state.
+- Block a DByte keyboard reader on a counting semaphore, receive raw bytes from real emulated i8042 IRQ1 delivery, and resume through the existing scheduler context image.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -134,6 +135,15 @@ continued runnable-task progress, and complete stack/frame reclamation.
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_blocking_core.ps1
 ```
 
+The `v11.7.0` native IRQ I/O proof adds a bounded counting semaphore and a
+64-byte FIFO ring without changing the context ABI. A DByte proof task injects
+four raw bytes through the emulated i8042 output-buffer command; real IRQ1
+delivery reads port `0x60`, posts the semaphore, and wakes the blocked reader.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_irq_io_core.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
@@ -144,6 +154,8 @@ See [DByte Native Kernel Scheduler](docs/DBYTE_NATIVE_KERNEL_SCHEDULER.md) for
 the resume-image ABI, IRQ0 scheduler, task lifecycle, stack reclamation, and guard proof.
 See [DByte Native Kernel Blocking](docs/DBYTE_NATIVE_KERNEL_BLOCKING.md) for
 sleep deadlines, the CPL0 blocking trap, FIFO Event semantics, and IRQ-safe wakeups.
+See [DByte Native Kernel IRQ I/O](docs/DBYTE_NATIVE_KERNEL_IRQ_IO.md) for
+counting semaphore semantics, the byte ring, i8042 setup, IRQ1 ownership, and raw-input proof.
 
 Launch the DByte shell with the DByteOS userland profile:
 

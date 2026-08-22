@@ -1,0 +1,324 @@
+import "scheduler.dby" as scheduler
+import "keyboard.dby" as keyboard
+import "byte_ring.dby" as ring
+import "serial.dby" as serial
+import "proof.dby" as proof
+import "pic.dby" as pic
+
+static mut FIFO_SEMAPHORE: scheduler.Semaphore
+static mut PROBE_SEMAPHORE: scheduler.Semaphore
+static mut PROBE_RING: ring.ByteRing
+static mut INPUT_BYTES: array[u8, 4]
+static mut READER_DONE: usize
+static mut INJECTOR_DONE: usize
+static mut B_DONE: usize
+static mut D_DONE: usize
+static mut PROBE_DONE: usize
+static mut PROGRESS_DONE: usize
+static mut PROGRESS: usize
+static mut PROGRESS_WHILE_BLOCKED: usize
+static mut FIFO_ORDER: usize
+static mut B_WAKE_ORDER: usize
+static mut D_WAKE_ORDER: usize
+static mut STICKY_OK: usize
+static mut OVERFLOW_OK: usize
+static mut RING_PROBE_OK: usize
+static mut FIRST_INJECT_TICK: u32
+static mut READER_START_TICK: u32
+static mut PROBE_SLOT: usize
+static mut PHASE: usize
+static mut FAILURE: i32
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(status: i32) -> int:
+    FAILURE = status
+    proof.value("TASK_FAILURE", 12 as usize, status as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+pub fn tasks_initialize() -> int:
+    if scheduler.semaphore_initialize(&FIFO_SEMAPHORE, 0 as usize, 2 as usize) != 0:
+        return 1
+    if scheduler.semaphore_initialize(&PROBE_SEMAPHORE, 0 as usize, 2 as usize) != 0:
+        return 2
+    if ring.byte_ring_initialize(&PROBE_RING) != 0:
+        return 3
+    READER_DONE = 0 as usize
+    INJECTOR_DONE = 0 as usize
+    B_DONE = 0 as usize
+    D_DONE = 0 as usize
+    PROBE_DONE = 0 as usize
+    PROGRESS_DONE = 0 as usize
+    PROGRESS = 0 as usize
+    PROGRESS_WHILE_BLOCKED = 0 as usize
+    FIFO_ORDER = 0 as usize
+    STICKY_OK = 0 as usize
+    OVERFLOW_OK = 0 as usize
+    RING_PROBE_OK = 0 as usize
+    FAILURE = 0
+    PHASE = 0 as usize
+    return 0
+
+pub fn reader() -> int:
+    READER_START_TICK = 0 as u32
+    let index: usize = 0 as usize
+    while index < (4 as usize):
+        INPUT_BYTES[index] = keyboard.keyboard_read_scancode()
+        index = index + (1 as usize)
+    READER_DONE = 1 as usize
+    return 0
+
+pub fn semaphore_waiter_b() -> int:
+    if scheduler.semaphore_wait(&FIFO_SEMAPHORE) != 0:
+        return fail(11)
+    FIFO_ORDER = FIFO_ORDER + (1 as usize)
+    B_WAKE_ORDER = FIFO_ORDER
+    B_DONE = 1 as usize
+    return 0
+
+pub fn semaphore_waiter_d() -> int:
+    if scheduler.semaphore_wait(&FIFO_SEMAPHORE) != 0:
+        return fail(12)
+    FIFO_ORDER = FIFO_ORDER + (1 as usize)
+    D_WAKE_ORDER = FIFO_ORDER
+    D_DONE = 1 as usize
+    return 0
+
+pub fn contract_probe() -> int:
+    if scheduler.semaphore_post(&PROBE_SEMAPHORE) == false:
+        return fail(21)
+    if scheduler.semaphore_wait(&PROBE_SEMAPHORE) != 0:
+        return fail(22)
+    if scheduler.semaphore_count(&PROBE_SEMAPHORE) != (0 as usize):
+        return fail(23)
+    STICKY_OK = 1 as usize
+    if scheduler.semaphore_post(&PROBE_SEMAPHORE) == false:
+        return fail(24)
+    if scheduler.semaphore_post(&PROBE_SEMAPHORE) == false:
+        return fail(25)
+    if scheduler.semaphore_post(&PROBE_SEMAPHORE):
+        return fail(26)
+    if scheduler.semaphore_count(&PROBE_SEMAPHORE) != (2 as usize):
+        return fail(27)
+    OVERFLOW_OK = 1 as usize
+    let value: usize = 0 as usize
+    while value < (64 as usize):
+        if ring.byte_ring_push(&PROBE_RING, value as u8) == false:
+            return fail(28)
+        value = value + (1 as usize)
+    if ring.byte_ring_push(&PROBE_RING, 0xff as u8):
+        return fail(29)
+    if ring.byte_ring_count(&PROBE_RING) != (64 as usize):
+        return fail(30)
+    if ring.byte_ring_dropped(&PROBE_RING) != (1 as usize):
+        return fail(31)
+    let expected: usize = 0 as usize
+    while expected < (64 as usize):
+        let output: u8 = 0 as u8
+        if ring.byte_ring_pop(&PROBE_RING, &output) == false:
+            return fail(32)
+        if output != (expected as u8):
+            return fail(33)
+        expected = expected + (1 as usize)
+    if ring.byte_ring_count(&PROBE_RING) != (0 as usize):
+        return fail(34)
+    RING_PROBE_OK = 1 as usize
+    PROBE_DONE = 1 as usize
+    return 0
+
+pub fn injector() -> int:
+    if scheduler.task_sleep_ticks(3 as u32) != 0:
+        return fail(41)
+    if scheduler.semaphore_waiter_count(&FIFO_SEMAPHORE) != (2 as usize):
+        return fail(42)
+    if keyboard.keyboard_reader_block_count() != (1 as usize):
+        return fail(64)
+    if keyboard.keyboard_reader_wake_count() != (0 as usize):
+        return fail(65)
+    if scheduler.semaphore_post(&FIFO_SEMAPHORE) == false:
+        return fail(43)
+    if scheduler.semaphore_post(&FIFO_SEMAPHORE) == false:
+        return fail(44)
+    FIRST_INJECT_TICK = scheduler.tick_count()
+    if keyboard.keyboard_inject_output_byte(0x1e as u8) != 0:
+        return fail(45)
+    if scheduler.task_sleep_ticks(1 as u32) != 0:
+        return fail(46)
+    if keyboard.keyboard_inject_output_byte(0x30 as u8) != 0:
+        return fail(47)
+    if scheduler.task_sleep_ticks(1 as u32) != 0:
+        return fail(48)
+    if keyboard.keyboard_inject_output_byte(0x2e as u8) != 0:
+        return fail(49)
+    if scheduler.task_sleep_ticks(1 as u32) != 0:
+        return fail(50)
+    if keyboard.keyboard_inject_output_byte(0x20 as u8) != 0:
+        return fail(51)
+    INJECTOR_DONE = 1 as usize
+    return 0
+
+pub fn progress_worker() -> int:
+    while READER_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+        if keyboard.keyboard_reader_block_count() != keyboard.keyboard_reader_wake_count():
+            PROGRESS_WHILE_BLOCKED = PROGRESS_WHILE_BLOCKED + (1 as usize)
+    while B_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+    while D_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+    while INJECTOR_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+    while PROBE_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+    PROGRESS_DONE = 1 as usize
+    return 0
+
+pub fn reuse_probe() -> int:
+    PROBE_SLOT = scheduler.current_slot()
+    return 0
+
+fn workers_done() -> bool:
+    if READER_DONE == (0 as usize):
+        return false
+    if INJECTOR_DONE == (0 as usize):
+        return false
+    if B_DONE == (0 as usize):
+        return false
+    if D_DONE == (0 as usize):
+        return false
+    if PROBE_DONE == (0 as usize):
+        return false
+    return PROGRESS_DONE != (0 as usize)
+
+fn validate() -> int:
+    if FAILURE != 0:
+        return 1
+    if INPUT_BYTES[0] != (0x1e as u8):
+        return 2
+    if INPUT_BYTES[1] != (0x30 as u8):
+        return 3
+    if INPUT_BYTES[2] != (0x2e as u8):
+        return 4
+    if INPUT_BYTES[3] != (0x20 as u8):
+        return 5
+    if B_WAKE_ORDER != (1 as usize):
+        return 6
+    if D_WAKE_ORDER != (2 as usize):
+        return 7
+    if STICKY_OK != (1 as usize):
+        return 8
+    if OVERFLOW_OK != (1 as usize):
+        return 9
+    if RING_PROBE_OK != (1 as usize):
+        return 10
+    if PROGRESS_WHILE_BLOCKED == (0 as usize):
+        return 11
+    if FIRST_INJECT_TICK < (READER_START_TICK + (1 as u32)):
+        return 12
+    if keyboard.keyboard_irq_count() != (4 as usize):
+        return 13
+    if keyboard.keyboard_eoi_count() != keyboard.keyboard_irq_count():
+        return 14
+    if keyboard.keyboard_push_count() != (4 as usize):
+        return 15
+    if keyboard.keyboard_post_count() != (4 as usize):
+        return 16
+    if keyboard.keyboard_reader_block_count() != (4 as usize):
+        return 17
+    if keyboard.keyboard_reader_wake_count() != (4 as usize):
+        return 18
+    if keyboard.keyboard_reader_pop_count() != (4 as usize):
+        return 19
+    if keyboard.keyboard_queued_count() != (0 as usize):
+        return 20
+    if keyboard.keyboard_dropped_count() != (0 as usize):
+        return 21
+    if keyboard.keyboard_fault_code() != (0 as usize):
+        return 22
+    if scheduler.semaphore_wait_count() != (7 as usize):
+        return 23
+    if scheduler.semaphore_post_count() != (10 as usize):
+        return 24
+    if scheduler.semaphore_post_success_count() != (9 as usize):
+        return 25
+    if scheduler.semaphore_wake_count() != (6 as usize):
+        return 26
+    if scheduler.semaphore_overflow_count() != (1 as usize):
+        return 27
+    if scheduler.trap_count() != (11 as usize):
+        return 28
+    if scheduler.eoi_count() != (scheduler.tick_count() as usize):
+        return 29
+    if pic.master_mask() != (0xfc as u8):
+        return 30
+    if pic.slave_mask() != (0xff as u8):
+        return 31
+    if PROBE_SLOT != (1 as usize):
+        return 32
+    if scheduler.last_spawn_first_frame() != scheduler.first_reclaimed_frame():
+        return 33
+    return 0
+
+fn emit() -> int:
+    proof.value("INPUT_0", 7 as usize, INPUT_BYTES[0] as usize)
+    proof.value("INPUT_1", 7 as usize, INPUT_BYTES[1] as usize)
+    proof.value("INPUT_2", 7 as usize, INPUT_BYTES[2] as usize)
+    proof.value("INPUT_3", 7 as usize, INPUT_BYTES[3] as usize)
+    proof.value("IRQ1", 4 as usize, keyboard.keyboard_irq_count())
+    proof.value("IRQ1_EOI", 8 as usize, keyboard.keyboard_eoi_count())
+    proof.value("IRQ1_PUSH", 9 as usize, keyboard.keyboard_push_count())
+    proof.value("IRQ1_POST", 9 as usize, keyboard.keyboard_post_count())
+    proof.value("READER_BLOCK", 12 as usize, keyboard.keyboard_reader_block_count())
+    proof.value("READER_WAKE", 11 as usize, keyboard.keyboard_reader_wake_count())
+    proof.value("READER_POP", 10 as usize, keyboard.keyboard_reader_pop_count())
+    proof.value("RING_DROP", 9 as usize, keyboard.keyboard_dropped_count())
+    proof.value("RING_PROBE_DROP", 15 as usize, ring.byte_ring_dropped(&PROBE_RING))
+    proof.value("B_WAKE_ORDER", 12 as usize, B_WAKE_ORDER)
+    proof.value("D_WAKE_ORDER", 12 as usize, D_WAKE_ORDER)
+    proof.value("PROGRESS", 8 as usize, PROGRESS)
+    proof.value("PROGRESS_BLOCKED", 16 as usize, PROGRESS_WHILE_BLOCKED)
+    proof.value("READER_START", 12 as usize, READER_START_TICK as usize)
+    proof.value("FIRST_INJECT", 12 as usize, FIRST_INJECT_TICK as usize)
+    proof.value("PIC_MASTER", 10 as usize, pic.master_mask() as usize)
+    proof.value("PIC_SLAVE", 9 as usize, pic.slave_mask() as usize)
+    proof.value("REUSE_SLOT", 10 as usize, PROBE_SLOT)
+    scheduler.emit_state()
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        if scheduler.reap_exited() != 0:
+            return fail(61)
+        if PHASE == (0 as usize):
+            if workers_done():
+                if scheduler.live_count() == (1 as usize):
+                    if scheduler.spawn(task_address(reuse_probe)) == (0 as usize):
+                        return fail(62)
+                    PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.live_count() == (1 as usize):
+                    if scheduler.exit_count() >= (7 as usize):
+                        let validation: i32 = validate()
+                        if validation != 0:
+                            proof.value("VALIDATION", 10 as usize, validation as usize)
+                            emit()
+                            return fail(63)
+                        line("WAKE FROM IRQ OK", 16 as usize)
+                        line("FIFO DATA OK", 12 as usize)
+                        line("NO BUSY WAIT OK", 15 as usize)
+                        emit()
+                        line("IRQ IO CHECK OK", 15 as usize)
+                        native.cpu_cli()
+                        while true:
+                            native.cpu_hlt()
+    return 0
