@@ -1,0 +1,7 @@
+import "arch_x86.dby" as arch
+
+pub interrupt(error_code) fn page_fault(frame: ptr[arch.InterruptFrame], error_code: u32):
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return

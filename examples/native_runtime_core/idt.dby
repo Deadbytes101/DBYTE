@@ -1,0 +1,59 @@
+import "arch_x86.dby" as arch
+import "exceptions.dby" as exceptions
+import "page_fault.dby" as page_fault
+
+packed struct IdtEntry:
+    offset_low: u16
+    selector: u16
+    zero: u8
+    flags: u8
+    offset_high: u16
+
+static mut IDT: array[IdtEntry, 256]
+static mut IDTR: arch.DescriptorTablePointer
+
+fn set_gate(vector: usize, address: usize) -> int:
+    IDT[vector].offset_low = (address & (0xffff as usize)) as u16
+    IDT[vector].selector = 0x08 as u16
+    IDT[vector].zero = 0 as u8
+    IDT[vector].flags = 0x8e as u8
+    IDT[vector].offset_high = (address >> (16 as usize)) as u16
+    return 0
+
+pub fn install() -> int:
+    set_gate(0 as usize, interrupt_address(0, exceptions.fatal_no_error))
+    set_gate(1 as usize, interrupt_address(1, exceptions.fatal_no_error))
+    set_gate(2 as usize, interrupt_address(2, exceptions.fatal_no_error))
+    set_gate(3 as usize, interrupt_address(3, exceptions.breakpoint))
+    set_gate(4 as usize, interrupt_address(4, exceptions.fatal_no_error))
+    set_gate(5 as usize, interrupt_address(5, exceptions.fatal_no_error))
+    set_gate(6 as usize, interrupt_address(6, exceptions.fatal_no_error))
+    set_gate(7 as usize, interrupt_address(7, exceptions.fatal_no_error))
+    set_gate(8 as usize, interrupt_address(8, exceptions.fatal_error))
+    set_gate(9 as usize, interrupt_address(9, exceptions.fatal_no_error))
+    set_gate(10 as usize, interrupt_address(10, exceptions.fatal_error))
+    set_gate(11 as usize, interrupt_address(11, exceptions.fatal_error))
+    set_gate(12 as usize, interrupt_address(12, exceptions.fatal_error))
+    set_gate(13 as usize, interrupt_address(13, exceptions.fatal_error))
+    set_gate(14 as usize, interrupt_address(14, page_fault.page_fault))
+    set_gate(15 as usize, interrupt_address(15, exceptions.fatal_no_error))
+    set_gate(16 as usize, interrupt_address(16, exceptions.fatal_no_error))
+    set_gate(17 as usize, interrupt_address(17, exceptions.fatal_error))
+    set_gate(18 as usize, interrupt_address(18, exceptions.fatal_no_error))
+    set_gate(19 as usize, interrupt_address(19, exceptions.fatal_no_error))
+    set_gate(20 as usize, interrupt_address(20, exceptions.fatal_no_error))
+    set_gate(21 as usize, interrupt_address(21, exceptions.fatal_no_error))
+    set_gate(22 as usize, interrupt_address(22, exceptions.fatal_no_error))
+    set_gate(23 as usize, interrupt_address(23, exceptions.fatal_no_error))
+    set_gate(24 as usize, interrupt_address(24, exceptions.fatal_no_error))
+    set_gate(25 as usize, interrupt_address(25, exceptions.fatal_no_error))
+    set_gate(26 as usize, interrupt_address(26, exceptions.fatal_no_error))
+    set_gate(27 as usize, interrupt_address(27, exceptions.fatal_no_error))
+    set_gate(28 as usize, interrupt_address(28, exceptions.fatal_no_error))
+    set_gate(29 as usize, interrupt_address(29, exceptions.fatal_no_error))
+    set_gate(30 as usize, interrupt_address(30, exceptions.fatal_no_error))
+    set_gate(31 as usize, interrupt_address(31, exceptions.fatal_no_error))
+    IDTR.limit = 2047 as u16
+    IDTR.base = (&IDT) as usize as u32
+    native.cpu_lidt((&IDTR) as usize)
+    return 0

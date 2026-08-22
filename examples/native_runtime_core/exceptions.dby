@@ -1,0 +1,16 @@
+import "arch_x86.dby" as arch
+
+pub interrupt(no_error_code) fn breakpoint(frame: ptr[arch.InterruptFrame]):
+    return
+
+pub interrupt(no_error_code) fn fatal_no_error(frame: ptr[arch.InterruptFrame]):
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return
+
+pub interrupt(error_code) fn fatal_error(frame: ptr[arch.InterruptFrame], error_code: u32):
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return

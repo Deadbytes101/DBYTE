@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "11.3.0",
+    [string]$Version = "11.4.0",
     [switch]$SkipBundle
 )
 

@@ -5,7 +5,7 @@ entrypoint, docs, and examples.
 
 ## Install From Release Zip
 
-1. Download `dbyte-v11.3.0-windows-x64.zip` from the release page.
+1. Download `dbyte-v11.4.0-windows-x64.zip` from the release page.
 2. Extract it to a stable folder.
 3. Run the installer from the extracted folder:
 
@@ -38,7 +38,7 @@ dbyte run --vm examples\hello.dby
 Expected version for this release:
 
 ```txt
-DByte 11.3.0
+DByte 11.4.0
 ```
 
 ## Install From Source

@@ -54,13 +54,22 @@ fn parse_map(bytes: &[u8]) -> Result<Vec<Entry>, &'static str> {
 #[derive(Clone, Debug)]
 struct Ownership {
     used: Vec<u8>,
+    owned: Vec<u8>,
     next: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReleaseError {
+    Misaligned,
+    Outside,
+    NotOwned,
 }
 
 impl Ownership {
     fn from_entries(entries: &[Entry]) -> Self {
         let mut ownership = Self {
             used: vec![0xff; BITMAP_BYTES],
+            owned: vec![0; BITMAP_BYTES],
             next: 0x100,
         };
         for entry in entries.iter().filter(|entry| entry.kind == 1) {
@@ -104,6 +113,10 @@ impl Ownership {
         self.used[frame / 8] & (1u8 << (frame % 8)) != 0
     }
 
+    fn is_owned(&self, frame: usize) -> bool {
+        self.owned[frame / 8] & (1u8 << (frame % 8)) != 0
+    }
+
     fn reserve(&mut self, start: u32, end: u32) {
         self.mark_range(u64::from(start), u64::from(end - start), true);
     }
@@ -114,10 +127,175 @@ impl Ownership {
             self.next += 1;
             if !self.is_used(frame) {
                 self.set(frame, true);
+                self.owned[frame / 8] |= 1u8 << (frame % 8);
                 return u32::try_from(frame * PAGE_SIZE as usize).ok();
             }
         }
         None
+    }
+
+    fn release(&mut self, address: u32) -> Result<(), ReleaseError> {
+        if u64::from(address) % PAGE_SIZE != 0 {
+            return Err(ReleaseError::Misaligned);
+        }
+        let frame = address as usize / PAGE_SIZE as usize;
+        if frame >= FRAME_COUNT {
+            return Err(ReleaseError::Outside);
+        }
+        if !self.is_owned(frame) {
+            return Err(ReleaseError::NotOwned);
+        }
+        self.owned[frame / 8] &= !(1u8 << (frame % 8));
+        self.set(frame, false);
+        self.next = self.next.min(frame);
+        Ok(())
+    }
+}
+
+const ARENA_PAGES: usize = 1024;
+
+#[derive(Clone, Debug)]
+struct ArenaMap {
+    pages: Vec<Option<u32>>,
+    invalidations: usize,
+}
+
+impl ArenaMap {
+    fn new() -> Self {
+        Self {
+            pages: vec![None; ARENA_PAGES],
+            invalidations: 0,
+        }
+    }
+
+    fn map(&mut self, index: usize, frame: u32) -> Result<(), &'static str> {
+        if index >= ARENA_PAGES || frame == 0 || u64::from(frame) % PAGE_SIZE != 0 {
+            return Err("invalid page mapping");
+        }
+        if self.pages[index].is_some() {
+            return Err("page mapping collision");
+        }
+        self.pages[index] = Some(frame);
+        self.invalidations += 1;
+        Ok(())
+    }
+
+    fn unmap(&mut self, index: usize) -> Result<u32, &'static str> {
+        let page = self.pages.get_mut(index).ok_or("outside arena")?;
+        let frame = page.take().ok_or("page is not mapped")?;
+        self.invalidations += 1;
+        Ok(frame)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Block {
+    start: usize,
+    size: usize,
+    used: bool,
+    checksum: u32,
+}
+
+impl Block {
+    fn seal(&mut self) {
+        self.checksum =
+            (self.start as u32) ^ (self.size as u32) ^ u32::from(self.used) ^ 0xd8b1_0c42;
+    }
+
+    fn valid(&self) -> bool {
+        self.checksum
+            == (self.start as u32) ^ (self.size as u32) ^ u32::from(self.used) ^ 0xd8b1_0c42
+    }
+}
+
+#[derive(Clone, Debug)]
+struct HeapModel {
+    blocks: Vec<Block>,
+    poisoned: bool,
+}
+
+impl HeapModel {
+    fn new(size: usize) -> Self {
+        let mut block = Block {
+            start: 0,
+            size,
+            used: false,
+            checksum: 0,
+        };
+        block.seal();
+        Self {
+            blocks: vec![block],
+            poisoned: false,
+        }
+    }
+
+    fn allocate(&mut self, size: usize, alignment: usize) -> Result<usize, &'static str> {
+        if self.poisoned {
+            return Err("heap is poisoned");
+        }
+        if alignment == 0 || alignment > 4096 || !alignment.is_power_of_two() {
+            return Err("invalid alignment");
+        }
+        if size == 0 {
+            return Ok(0);
+        }
+        let needed = size.checked_add(63).ok_or("allocation size overflow")? & !15;
+        for index in 0..self.blocks.len() {
+            if !self.blocks[index].valid() {
+                self.poisoned = true;
+                return Err("metadata corruption");
+            }
+            if !self.blocks[index].used && self.blocks[index].size >= needed {
+                let start = self.blocks[index].start;
+                let remainder = self.blocks[index].size - needed;
+                self.blocks[index].size = needed;
+                self.blocks[index].used = true;
+                self.blocks[index].seal();
+                if remainder >= 64 {
+                    let mut tail = Block {
+                        start: start + needed,
+                        size: remainder,
+                        used: false,
+                        checksum: 0,
+                    };
+                    tail.seal();
+                    self.blocks.insert(index + 1, tail);
+                }
+                return Ok(start + 48);
+            }
+        }
+        Err("arena exhausted")
+    }
+
+    fn free(&mut self, pointer: usize) -> Result<(), &'static str> {
+        if pointer == 0 {
+            return Ok(());
+        }
+        let index = self
+            .blocks
+            .iter()
+            .position(|block| block.start.checked_add(48) == Some(pointer))
+            .ok_or("outside or interior pointer")?;
+        if !self.blocks[index].valid() {
+            self.poisoned = true;
+            return Err("metadata corruption");
+        }
+        if !self.blocks[index].used {
+            return Err("double free");
+        }
+        self.blocks[index].used = false;
+        self.blocks[index].seal();
+        if index + 1 < self.blocks.len() && !self.blocks[index + 1].used {
+            let right = self.blocks.remove(index + 1);
+            self.blocks[index].size += right.size;
+            self.blocks[index].seal();
+        }
+        if index > 0 && !self.blocks[index - 1].used {
+            let current = self.blocks.remove(index);
+            self.blocks[index - 1].size += current.size;
+            self.blocks[index - 1].seal();
+        }
+        Ok(())
     }
 }
 
@@ -201,5 +379,70 @@ mod tests {
         assert_ne!(first, second);
         assert!(ownership.is_used((first / 4096) as usize));
         assert!(ownership.is_used((second / 4096) as usize));
+    }
+
+    #[test]
+    fn release_rejects_invalid_ownership_and_rewinds_first_fit() {
+        let mut ownership = Ownership::from_entries(&[Entry {
+            base: 0x10_0000,
+            length: 0x20_000,
+            kind: 1,
+        }]);
+        let first = ownership.allocate().unwrap();
+        let second = ownership.allocate().unwrap();
+        assert_eq!(ownership.release(first + 1), Err(ReleaseError::Misaligned));
+        assert_eq!(ownership.release(0), Err(ReleaseError::NotOwned));
+        ownership.release(first).unwrap();
+        assert_eq!(ownership.release(first), Err(ReleaseError::NotOwned));
+        assert_eq!(ownership.allocate(), Some(first));
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn arena_mapping_is_transactional_and_invalidates_on_change() {
+        let mut arena = ArenaMap::new();
+        arena.map(0, 0x12_0000).unwrap();
+        let before = arena.clone();
+        assert_eq!(arena.map(0, 0x13_0000), Err("page mapping collision"));
+        assert_eq!(arena.pages, before.pages);
+        assert_eq!(arena.invalidations, before.invalidations);
+        assert_eq!(arena.unmap(0), Ok(0x12_0000));
+        assert_eq!(arena.invalidations, 2);
+        assert!(arena.unmap(0).is_err());
+        assert!(arena.map(ARENA_PAGES, 0x14_0000).is_err());
+    }
+
+    #[test]
+    fn heap_model_splits_reuses_coalesces_and_fails_closed() {
+        let mut heap = HeapModel::new(4096);
+        let before = heap.clone();
+        assert_eq!(heap.allocate(0, 16), Ok(0));
+        assert_eq!(heap.blocks.len(), before.blocks.len());
+        heap.free(0).unwrap();
+        let first = heap.allocate(64, 16).unwrap();
+        let second = heap.allocate(128, 16).unwrap();
+        heap.free(first).unwrap();
+        assert_eq!(heap.allocate(32, 16).unwrap(), first);
+        assert!(heap.free(first + 1).is_err());
+        heap.free(second).unwrap();
+        assert_eq!(heap.free(second), Err("double free"));
+        assert!(heap.allocate(usize::MAX, 16).is_err());
+        assert!(heap.allocate(1, 3).is_err());
+        heap.blocks[0].checksum ^= 1;
+        assert_eq!(heap.allocate(1, 1), Err("metadata corruption"));
+        assert!(heap.poisoned);
+        assert_eq!(heap.allocate(1, 1), Err("heap is poisoned"));
+
+        let mut bounded = HeapModel::new(128);
+        assert!(bounded.allocate(4096, 16).is_err());
+    }
+
+    #[test]
+    fn memmove_overlap_direction_preserves_bytes() {
+        let mut bytes: Vec<u8> = (0..32).collect();
+        bytes.copy_within(0..24, 8);
+        assert_eq!(&bytes[8..32], &(0u8..24).collect::<Vec<_>>());
+        bytes.copy_within(8..32, 0);
+        assert_eq!(&bytes[0..24], &(0u8..24).collect::<Vec<_>>());
     }
 }

@@ -1,0 +1,198 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt.dby" as idt
+import "boot.dby" as boot
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "heap.dby" as heap
+import "memory_ops.dby" as memory
+import "proof.dby" as proof
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(code: usize) -> int:
+    proof.value("FAIL", 4 as usize, code)
+    proof.value("HEAP_ERROR", 10 as usize, heap.last_error() as usize)
+    proof.value("PAGES", 5 as usize, heap.committed_pages())
+    proof.value("MAPS", 4 as usize, paging.map_count())
+    line("NATIVE RUNTIME FAILED", 21 as usize)
+    return 1
+
+fn bytes_equal(address: usize, value: u8, count: usize) -> bool:
+    let index: usize = 0 as usize
+    while index < count:
+        if native.volatile_load8((address + index) as ptr[u8]) != value:
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn memory_operations() -> int:
+    let source: ptr[u8] = heap.alloc(96 as usize, 16 as usize)
+    let destination: ptr[u8] = heap.alloc(96 as usize, 16 as usize)
+    if (source as usize) == (0 as usize):
+        return 1
+    if (destination as usize) == (0 as usize):
+        return 2
+    if memory.memset(source, 0x5a as u8, 64 as usize) != 0:
+        return 3
+    if bytes_equal(source as usize, 0x5a as u8, 64 as usize) == false:
+        return 4
+    if memory.memcpy(destination, source, 64 as usize) != 0:
+        return 5
+    if bytes_equal(destination as usize, 0x5a as u8, 64 as usize) == false:
+        return 6
+    let index: usize = 0 as usize
+    while index < (32 as usize):
+        native.volatile_store8(((destination as usize) + index) as ptr[u8], index as u8)
+        index = index + (1 as usize)
+    if memory.memmove(((destination as usize) + (8 as usize)) as ptr[u8], destination, 32 as usize) != 0:
+        return 7
+    index = 0 as usize
+    while index < (32 as usize):
+        if native.volatile_load8(((destination as usize) + (8 as usize) + index) as ptr[u8]) != (index as u8):
+            return 8
+        index = index + (1 as usize)
+    if memory.memset(0 as usize as ptr[u8], 0 as u8, 0 as usize) != 0:
+        return 9
+    if heap.free(source) != 0:
+        return 10
+    if heap.free(destination) != 0:
+        return 11
+    return 0
+
+fn adversarial_checks(reused: ptr[u8]) -> int:
+    if (heap.alloc(1 as usize, 0 as usize) as usize) != (0 as usize):
+        return 1
+    if heap.last_error() != (1 as u32):
+        return 2
+    if (heap.alloc(0xffffffff as usize, 16 as usize) as usize) != (0 as usize):
+        return 3
+    if heap.last_error() != (2 as u32):
+        return 4
+    if heap.free(0x1000 as usize as ptr[u8]) != 4:
+        return 5
+    if heap.free(((reused as usize) + (1 as usize)) as ptr[u8]) != 5:
+        return 6
+    let double_target: ptr[u8] = heap.alloc(48 as usize, 16 as usize)
+    let guard: ptr[u8] = heap.alloc(48 as usize, 16 as usize)
+    if (double_target as usize) == (0 as usize):
+        return 7
+    if (guard as usize) == (0 as usize):
+        return 8
+    if heap.free(double_target) != 0:
+        return 9
+    if heap.free(double_target) != 6:
+        return 10
+    if heap.free(guard) != 0:
+        return 11
+    let collision_virtual: usize = paging.arena_end() - (4096 as usize)
+    let collision_frame: usize = frames.allocate()
+    if collision_frame == (0 as usize):
+        return 12
+    if paging.map_kernel_page(collision_virtual, collision_frame) != 0:
+        return 13
+    if paging.map_kernel_page(collision_virtual, collision_frame) != 3:
+        return 14
+    let released: usize = paging.unmap_kernel_page(collision_virtual)
+    if released != collision_frame:
+        return 15
+    if frames.release(released) != 0:
+        return 16
+    if heap.is_poisoned():
+        return 17
+    return 0
+
+fn emit_telemetry(first: usize, second: usize, reused: usize, aligned: usize, large: usize, pages_before: usize, pages_large: usize) -> int:
+    proof.value("ARENA_START", 11 as usize, paging.arena_start())
+    proof.value("ARENA_END", 9 as usize, paging.arena_end())
+    proof.value("ALLOC_ONE", 9 as usize, first)
+    proof.value("ALLOC_TWO", 9 as usize, second)
+    proof.value("REUSE", 5 as usize, reused)
+    proof.value("ALIGNED_4096", 12 as usize, aligned)
+    proof.value("LARGE", 5 as usize, large)
+    proof.value("PAGES_BEFORE", 12 as usize, pages_before)
+    proof.value("PAGES_LARGE", 11 as usize, pages_large)
+    proof.value("PAGES_FINAL", 11 as usize, heap.committed_pages())
+    proof.value("HIGH_WATER", 10 as usize, heap.high_water_pages())
+    proof.value("MAP_COUNT", 9 as usize, paging.map_count())
+    proof.value("UNMAP_COUNT", 11 as usize, paging.unmap_count())
+    proof.value("INVLPG_COUNT", 12 as usize, paging.invlpg_count())
+    proof.value("FRAME_ALLOCS", 12 as usize, frames.allocation_count())
+    proof.value("FRAME_RELEASES", 14 as usize, frames.release_count())
+    proof.value("FRAME_1", 7 as usize, paging.mapped_frame(0 as usize))
+    proof.value("FRAME_2", 7 as usize, paging.mapped_frame(1 as usize))
+    proof.value("FRAME_3", 7 as usize, paging.mapped_frame(2 as usize))
+    proof.value("FRAME_4", 7 as usize, paging.mapped_frame(3 as usize))
+    proof.value("FRAME_5", 7 as usize, paging.mapped_frame(4 as usize))
+    proof.value("FRAME_6", 7 as usize, paging.mapped_frame(5 as usize))
+    proof.value("FRAME_7", 7 as usize, paging.mapped_frame(6 as usize))
+    proof.value("COALESCE", 8 as usize, heap.coalesce_count())
+    proof.value("LAST_ERROR", 10 as usize, heap.last_error() as usize)
+    proof.value("CR3", 3 as usize, paging.cr3_value())
+    proof.value("CR0", 3 as usize, paging.cr0_value() as usize)
+    return 0
+
+pub fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int:
+    serial.init()
+    line("DBYTEOS NATIVE RUNTIME", 22 as usize)
+    gdt.gdt_install()
+    idt.install()
+    if boot.validate(multiboot_magic, multiboot_info) != 0:
+        return fail(1 as usize)
+    if frames.frames_initialize() != 0:
+        return fail(2 as usize)
+    if paging.paging_initialize() != 0:
+        return fail(3 as usize)
+    line("VIRTUAL ARENA ONLINE", 20 as usize)
+    if heap.heap_initialize() != 0:
+        return fail(4 as usize)
+    line("KERNEL HEAP ONLINE", 18 as usize)
+
+    let first: ptr[u8] = heap.alloc(64 as usize, 8 as usize)
+    let second: ptr[u8] = heap.alloc(128 as usize, 8 as usize)
+    if (first as usize) == (0 as usize):
+        return fail(5 as usize)
+    line("ALLOC 001 OK", 12 as usize)
+    if (second as usize) == (0 as usize):
+        return fail(6 as usize)
+    line("ALLOC 002 OK", 12 as usize)
+    if heap.free(first) != 0:
+        return fail(7 as usize)
+    let reused: ptr[u8] = heap.alloc(32 as usize, 8 as usize)
+    if (reused as usize) != (first as usize):
+        return fail(8 as usize)
+    line("FREE REUSE OK", 13 as usize)
+
+    let aligned16: ptr[u8] = heap.alloc(33 as usize, 16 as usize)
+    let aligned4096: ptr[u8] = heap.alloc(64 as usize, 4096 as usize)
+    if ((aligned16 as usize) & (15 as usize)) != (0 as usize):
+        return fail(9 as usize)
+    if ((aligned4096 as usize) & (4095 as usize)) != (0 as usize):
+        return fail(10 as usize)
+    line("ALIGNMENT OK", 12 as usize)
+
+    let pages_before: usize = heap.committed_pages()
+    let large: ptr[u8] = heap.alloc(12288 as usize, 16 as usize)
+    let pages_large: usize = heap.committed_pages()
+    if (large as usize) == (0 as usize):
+        return fail(11 as usize)
+    if pages_large <= pages_before:
+        return fail(12 as usize)
+    if heap.free(large) != 0:
+        return fail(13 as usize)
+    if heap.free(aligned4096) != 0:
+        return fail(14 as usize)
+    if heap.committed_pages() >= pages_large:
+        return fail(15 as usize)
+    if memory_operations() != 0:
+        return fail(16 as usize)
+    line("MEMORY OPS OK", 13 as usize)
+    let adversarial_status: int = adversarial_checks(reused)
+    if adversarial_status != 0:
+        return fail((0x100 as usize) + (adversarial_status as usize))
+    emit_telemetry(first as usize, second as usize, reused as usize, aligned4096 as usize, large as usize, pages_before, pages_large)
+    line("RUNTIME CHECK OK", 16 as usize)
+    return 0
