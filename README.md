@@ -45,7 +45,7 @@ DBYTE is a compact systems-oriented project built around a custom language named
 The repo currently contains four connected layers:
 
 - **DByte language toolchain**: lexer, parser, type checker, tree interpreter, bytecode compiler, bytecode VM, project loader, test runner, shell, REPL, and embedding API.
-- **DByte native kernel core**: a freestanding `i686-dbyte-none` path with systems types, deterministic modules, typed IR, real ELF32 objects, a static linker, Multiboot output, GDT/IDT ownership, exceptions, PIC remap, and hardware IRQ0 timer delivery.
+- **DByte native memory core**: a freestanding `i686-dbyte-none` path that carries Multiboot memory information through a typed entry ABI, owns physical frames, enables non-PAE paging, and recovers from a real page fault in DByte machine code.
 - **DByteOS userland**: host-runnable `.dby` programs under `examples/dbyteos/` that model a personal operating environment, shell commands, config, diagnostics, security checks, workspace flows, and system tools.
 - **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU boot experiments, VGA output, serial logs, IDT and IRQ research, exception surfaces, PIC planning, and controlled runtime probes.
 
@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.2.0**
+- Snapshot version: **v11.3.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -90,7 +90,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Execute tests with `dbyte test`.
 - Launch a DByte REPL or shell.
 - Embed DByte in Rust applications.
-- Compile and boot a multi-module DByteOS core whose DByte-generated interrupt stubs handle INT3 and hardware IRQ0 through its own GDT, IDT, PIC, PIT, and EOI path.
+- Compile and boot a multi-module DByteOS core that validates Multiboot memory, allocates physical frames, enables paging, and resolves a real supervisor page fault through a DByte interrupt handler.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -102,17 +102,20 @@ cargo run -p dbyte_cli -- run examples/hello.dby
 cargo run -p dbyte_cli -- test
 ```
 
-Build the multi-module DByte native kernel core without an external code generator, assembler, runtime shim, or linker:
+Build the multi-module DByte native memory core without an external code generator, assembler, runtime shim, or linker:
 
 ```powershell
-cargo run -p dbyte_cli --bin dbytec -- build examples/native_kernel_core/kernel.dby `
-    --target i686-dbyte-none --emit elf -o tmp/dbyte_native_core_v11.2.0.elf
+cargo run -p dbyte_cli --bin dbytec -- build examples/native_memory_core/kernel.dby `
+    --target i686-dbyte-none --emit elf -o tmp/dbyte_native_memory_v11.3.0.elf
 powershell -ExecutionPolicy Bypass -File scripts/verify_native.ps1
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_kernel_core.ps1
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_memory_core.ps1
 ```
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
+See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
+Multiboot entry metadata, physical ownership, paging, and page-fault proof.
 
 Launch the DByte shell with the DByteOS userland profile:
 

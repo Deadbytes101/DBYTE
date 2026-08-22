@@ -190,3 +190,31 @@ SYSTEM TYPES ONLINE
 There is no heap, dynamic array, 64-bit arithmetic, division, dynamic linking,
 weak symbol, runtime module loading, scheduler, filesystem, driver framework,
 or self-hosted compiler in this foundation release.
+
+## v11.3 memory entry and paging boundary
+
+The linked entry remains backward compatible with `fn kernel_main() -> int` and
+also accepts `fn kernel_main(multiboot_magic: u32, multiboot_info: usize) ->
+int`. Each new relocatable object carries canonical non-loadable
+`.dbyte.entry` metadata; objects created before this metadata existed are
+treated as the legacy zero-argument form. The linker validates conflicts and
+synthesizes the matching Multiboot register adapter.
+
+The paging surface is deliberately typed and bounded:
+
+```dbyte
+native.cpu_read_cr0() -> u32
+native.cpu_write_cr0(value: u32)
+native.cpu_read_cr2() -> usize
+native.cpu_read_cr3() -> usize
+native.cpu_write_cr3(value: usize)
+native.cpu_invlpg(address: ptr[T])
+native.kernel_image_start() -> usize
+native.kernel_image_end() -> usize
+native.bootstrap_stack_start() -> usize
+native.bootstrap_stack_end() -> usize
+```
+
+The encoder emits control-register moves and `invlpg` directly. The four
+boundary queries resolve only linker-owned symbols with checked `R_386_32`
+relocations; there is no generic linker-symbol or textual assembly escape.

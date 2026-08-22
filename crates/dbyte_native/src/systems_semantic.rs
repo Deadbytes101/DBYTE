@@ -638,12 +638,16 @@ fn validate_entry(graph: &NativeModuleGraph, symbols: &[ModuleSymbols]) -> Nativ
                 Span::zero(),
             )
         })?;
-    if !entry.params.is_empty() || entry.return_type != SystemType::I32 {
+    let legacy = entry.params.is_empty();
+    let multiboot_v1 = entry.params.len() == 2
+        && entry.params[0] == SystemType::U32
+        && entry.params[1] == SystemType::Usize;
+    if (!legacy && !multiboot_v1) || entry.return_type != SystemType::I32 {
         return Err(module_diagnostic(
             root,
             DiagnosticCategory::InvalidEntryPoint,
             format!(
-                "native entry 'kernel_main' must have signature fn kernel_main() -> int/i32, found {} parameter(s) and return type {}",
+                "native entry 'kernel_main' must have signature fn kernel_main() -> int/i32 or fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int/i32, found {} parameter(s) and return type {}",
                 entry.params.len(), entry.return_type
             ),
             entry.span,
@@ -2910,6 +2914,26 @@ impl<'a> FunctionAnalyzer<'a> {
         args: &[Expr],
         span: Span,
     ) -> NativeResult<ExprResult> {
+        let linker_symbol = match property {
+            "kernel_image_start" => Some("__dbyte_image_start"),
+            "kernel_image_end" => Some("__dbyte_image_end"),
+            "bootstrap_stack_start" => Some("__dbyte_stack_bottom"),
+            "bootstrap_stack_end" => Some("__dbyte_stack_top"),
+            _ => None,
+        };
+        if let Some(symbol) = linker_symbol {
+            if !args.is_empty() {
+                return Err(self.error(
+                    DiagnosticCategory::WrongArity,
+                    format!("native.{property} expects 0 arguments, got {}", args.len()),
+                    span,
+                ));
+            }
+            self.instructions.push(SystemsInst::LinkerAddress {
+                symbol: symbol.to_owned(),
+            });
+            return Ok(ExprResult::Value(SystemType::Usize));
+        }
         if property == "cpu_reload_segments" {
             if args.len() != 2 {
                 return Err(self.error(
@@ -4032,6 +4056,28 @@ mod tests {
         let error = analyze_systems_project(&invalid_id).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidModuleImport);
         assert!(error.message.contains("expected deterministic index"));
+    }
+
+    #[test]
+    fn multiboot_entry_and_memory_intrinsics_are_typed_without_host_fallback() {
+        let source = "fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int:\n    let cr0: u32 = native.cpu_read_cr0()\n    let cr2: usize = native.cpu_read_cr2()\n    let cr3: usize = native.cpu_read_cr3()\n    native.cpu_write_cr3(cr3)\n    native.cpu_write_cr0(cr0)\n    native.cpu_invlpg(cr2 as ptr[u8])\n    let start: usize = native.kernel_image_start()\n    let end: usize = native.kernel_image_end()\n    let stack_start: usize = native.bootstrap_stack_start()\n    let stack_end: usize = native.bootstrap_stack_end()\n    return (multiboot_magic as i32) + (multiboot_info as i32) + (start as i32) + (end as i32) + (stack_start as i32) + (stack_end as i32)\n";
+        let project = analyze_systems_project(&one_module(source)).unwrap();
+        let kernel = project.modules[0].function("kernel_main").unwrap();
+        assert_eq!(
+            kernel.parameter_types,
+            vec![SystemType::U32, SystemType::Usize]
+        );
+        assert!(kernel.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::LinkerAddress { symbol } if symbol == "__dbyte_image_start"
+        )));
+        assert!(kernel.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::CpuInvlpg,
+                ..
+            }
+        )));
     }
 
     #[test]

@@ -13,7 +13,7 @@ use std::fmt::Write;
 pub const IMAGE_BASE: u32 = 0x0010_0000;
 pub const LOAD_FILE_OFFSET: u32 = 0x0000_1000;
 pub const MULTIBOOT_MAGIC: u32 = 0x1bad_b002;
-pub const MULTIBOOT_FLAGS: u32 = 0;
+pub const MULTIBOOT_FLAGS: u32 = 0x2;
 pub const MULTIBOOT_CHECKSUM: u32 =
     0u32.wrapping_sub(MULTIBOOT_MAGIC.wrapping_add(MULTIBOOT_FLAGS));
 pub const BOOTSTRAP_STACK_SIZE: u32 = 16 * 1024;
@@ -1432,7 +1432,7 @@ mod tests {
         assert_eq!(offset, 0x1000);
         assert!(offset < 8192 && offset.is_multiple_of(4));
         assert_eq!(read_u32(&artifact.elf, offset).unwrap(), MULTIBOOT_MAGIC);
-        assert_eq!(read_u32(&artifact.elf, offset + 4).unwrap(), 0);
+        assert_eq!(read_u32(&artifact.elf, offset + 4).unwrap(), 0x2);
         assert_eq!(
             read_u32(&artifact.elf, offset + 8).unwrap(),
             MULTIBOOT_CHECKSUM

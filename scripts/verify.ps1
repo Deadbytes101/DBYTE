@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOutput = .\target\debug\dbyte.exe --version
-if ($versionOutput -ne 'DByte 11.2.0') {
-    throw "Version mismatch: expected 'DByte 11.2.0', got '$versionOutput'"
+if ($versionOutput -ne 'DByte 11.3.0') {
+    throw "Version mismatch: expected 'DByte 11.3.0', got '$versionOutput'"
 }
 
 function Normalize-Output($value) {
@@ -14463,7 +14463,7 @@ Write-Host "[OK] v10.55.1 DByte Graphics Shell IRQ0 Runtime Bridge Hardening ver
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 11.2.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 11.3.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -16712,7 +16712,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 11.2.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 11.3.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -16720,7 +16720,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.2.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.2.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.2.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.3.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.3.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.3.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -18251,7 +18251,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "11.2.0"
+$EXPECTED_VERSION = "11.3.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -18373,6 +18373,13 @@ $kernelIrqDocs = Get-Content (Join-Path $repoRoot "docs\KERNEL_IRQ.md") -Raw
 $kernelInterruptDocs = Get-Content (Join-Path $repoRoot "docs\KERNEL_INTERRUPTS.md") -Raw
 $kernelBootSmokeDocs = Get-Content (Join-Path $repoRoot "docs\QEMU_BOOT_SMOKE.md") -Raw
 $kernelMainSource = $kernelMainSource -replace "`r`n", "`n"
+
+function Find-KernelDispatch([string]$Source, [string]$Command) {
+    $pattern = 'line_str\s*==\s*"' + [regex]::Escape($Command) + '"'
+    $match = [regex]::Match($Source, $pattern)
+    if ($match.Success) { return $match.Index }
+    return -1
+}
 $kernelIdtSource = $kernelIdtSource -replace "`r`n", "`n"
 $kernelInterruptSource = $kernelInterruptSource -replace "`r`n", "`n"
 $kernelPageFaultSource = $kernelPageFaultSource -replace "`r`n", "`n"
@@ -18673,16 +18680,16 @@ if ($kernelMainEntryIndex -lt 0) { throw "Kernel boot path guard failed: kernel_
 $kernelMainLoopIndex = $kernelMainSource.IndexOf('loop {', $kernelMainEntryIndex)
 if ($kernelMainLoopIndex -lt 0) { throw "Kernel boot path guard failed: kernel_main shell loop not found" }
 $kernelBootPath = $kernelMainSource.Substring($kernelMainEntryIndex, $kernelMainLoopIndex - $kernelMainEntryIndex)
-$irqGateSmokeDispatch = $kernelMainSource.IndexOf('line_str == "irq-gate-bind-smoke"')
-$irqGateStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-gate-bind-status"')
-$irqGateArmDispatch = $kernelMainSource.IndexOf('line_str == "irq-gate-arm"')
+$irqGateSmokeDispatch = (Find-KernelDispatch $kernelMainSource 'irq-gate-bind-smoke')
+$irqGateStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-gate-bind-status')
+$irqGateArmDispatch = (Find-KernelDispatch $kernelMainSource 'irq-gate-arm')
 if ($irqGateArmDispatch -lt 0 -or $irqGateSmokeDispatch -lt 0 -or $irqGateStatusDispatch -lt 0) {
     throw "Kernel IRQ gate bind smoke guard failed: irq-gate arm/smoke/status dispatch not found"
 }
 Assert-NotContains $kernelBootPath "entries[32].set_handler" "kernel boot path does not bind IRQ0 vector 32"
 Assert-NotContains $kernelBootPath "entries[33].set_handler" "kernel boot path does not bind IRQ1 vector 33"
 Assert-NotContains $kernelBootPath "write_pic_port(" "kernel boot path does not perform PIC port writes"
-$irqGateSmokeBlockEnd = $kernelMainSource.IndexOf('line_str == "irq-gate-bind-status"')
+$irqGateSmokeBlockEnd = (Find-KernelDispatch $kernelMainSource 'irq-gate-bind-status')
 $irqGateSmokeBlock = $kernelMainSource.Substring($irqGateSmokeDispatch, $irqGateSmokeBlockEnd - $irqGateSmokeDispatch)
 Assert-Contains $irqGateSmokeBlock "if irq::irq_gate_bind_smoke_is_armed()" "irq gate smoke requires armed guard"
 $irqGateArmedIfStart = $kernelMainSource.IndexOf('if irq::irq_gate_bind_smoke_is_armed() {', $irqGateSmokeDispatch)
@@ -18733,8 +18740,8 @@ if ($irqBindDisabledCalls -ne 2) {
     throw "Kernel IRQ disabled bind path guard failed: expected exactly two command-path irq::bind_irq_gates_disabled() calls; found $irqBindDisabledCalls"
 }
 Assert-NotContains $kernelBootPath "irq::bind_irq_gates_disabled()" "kernel boot path does not call disabled bind helper"
-$irqBindNoteDispatch = $kernelMainSource.IndexOf('line_str == "irq-bind-note"')
-$irqBindStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-bind-status"')
+$irqBindNoteDispatch = (Find-KernelDispatch $kernelMainSource 'irq-bind-note')
+$irqBindStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-bind-status')
 $irqBindHelperCallMatches = [regex]::Matches($kernelMainSource, 'irq::bind_irq_gates_disabled\(\)')
 if ($irqBindNoteDispatch -lt 0 -or $irqBindStatusDispatch -lt 0) {
     throw "Kernel IRQ disabled bind path guard failed: irq-bind-note/status dispatch not found"
@@ -18756,9 +18763,9 @@ if ($irqReadinessCalls -ne 1 -or $irqRiskCalls -ne 1 -or $irqPreflightCalls -ne 
 Assert-NotContains $kernelBootPath "irq::irq_runtime_readiness()" "kernel boot path does not call irq readiness helper"
 Assert-NotContains $kernelBootPath "irq::irq_runtime_risk()" "kernel boot path does not call irq risk helper"
 Assert-NotContains $kernelBootPath "irq::irq_runtime_preflight()" "kernel boot path does not call irq preflight helper"
-$irqReadinessDispatch = $kernelMainSource.IndexOf('line_str == "irq-readiness"')
-$irqRiskDispatch = $kernelMainSource.IndexOf('line_str == "irq-risk"')
-$irqPreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-preflight"')
+$irqReadinessDispatch = (Find-KernelDispatch $kernelMainSource 'irq-readiness')
+$irqRiskDispatch = (Find-KernelDispatch $kernelMainSource 'irq-risk')
+$irqPreflightDispatch = (Find-KernelDispatch $kernelMainSource 'irq-preflight')
 if ($irqReadinessDispatch -lt 0 -or $irqRiskDispatch -lt 0 -or $irqPreflightDispatch -lt 0) {
     throw "Kernel IRQ readiness guard failed: readiness/risk/preflight dispatch not found"
 }
@@ -18789,54 +18796,54 @@ Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_re
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_state()" "kernel boot path does not read pic remap state telemetry"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_history()" "kernel boot path does not read pic remap history telemetry"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_preflight()" "kernel boot path does not read pic remap preflight telemetry"
-$picRemapArmDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-arm"')
-$picRemapSmokeDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-smoke"')
-$picRemapStatusDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-status"')
-$picRemapStateDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-state"')
-$picRemapHistoryDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-history"')
-$picRemapPreflightDispatch = $kernelMainSource.IndexOf('line_str == "pic-remap-preflight"')
-$irqRuntimePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-preflight"')
-$irqRuntimeCommitDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-commit"')
-$irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-status"')
-$irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
-$eciRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-status"')
-$eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-blockers"')
-$irqMaskBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-mask-blockers"')
-$irqRuntimeMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-matrix"')
-$irqRuntimeReadinessMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-readiness"')
-$irqRuntimeActivationPlanDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-plan"')
-$irqRuntimeGateStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-gate-status"')
-$irqRuntimeGateCheckDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-gate-check"')
-$irqRuntimeGateBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-gate-blockers"')
-$irqRuntimeSimStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-status"')
-$irqRuntimeSimRunDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-run"')
-$irqRuntimeSimBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-blockers"')
-$stiStatusDispatch = $kernelMainSource.IndexOf('line_str == "sti-status"')
-$stiPreflightDispatch = $kernelMainSource.IndexOf('line_str == "sti-preflight"')
-$stiBlockersDispatch = $kernelMainSource.IndexOf('line_str == "sti-blockers"')
-$irqRuntimeActivationSmokeDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke"')
-$irqRuntimeActivationSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-status"')
-$irqRuntimeActivationSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-blockers"')
-$eoiDispatchSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-note"')
-$eoiDispatchSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-status"')
-$eoiDispatchSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-plan"')
-$eoiDispatchSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-blockers"')
-$picUnmaskSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-note"')
-$picUnmaskSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-status"')
-$picUnmaskSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-plan"')
-$picUnmaskSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-blockers"')
-$idtRuntimeBindSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-note"')
-$idtRuntimeBindSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-status"')
-$idtRuntimeBindSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-plan"')
-$idtRuntimeBindSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-blockers"')
-$irqRuntimeFinalGateNoteDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-note"')
-$irqRuntimeFinalGateStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-status"')
-$irqRuntimeFinalGateCheckDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-check"')
-$irqRuntimeFinalGateBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-blockers"')
-$irqRuntimeDecisionNoteDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-note"')
-$irqRuntimeDecisionStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-status"')
-$irqRuntimeDecisionFreezeDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-freeze"')
-$irqRuntimeDecisionBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-blockers"')
+$picRemapArmDispatch = (Find-KernelDispatch $kernelMainSource 'pic-remap-arm')
+$picRemapSmokeDispatch = (Find-KernelDispatch $kernelMainSource 'pic-remap-smoke')
+$picRemapStatusDispatch = (Find-KernelDispatch $kernelMainSource 'pic-remap-status')
+$picRemapStateDispatch = (Find-KernelDispatch $kernelMainSource 'pic-remap-state')
+$picRemapHistoryDispatch = (Find-KernelDispatch $kernelMainSource 'pic-remap-history')
+$picRemapPreflightDispatch = (Find-KernelDispatch $kernelMainSource 'pic-remap-preflight')
+$irqRuntimePreflightDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-preflight')
+$irqRuntimeCommitDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-commit')
+$irqRuntimeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-status')
+$irqRuntimeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-blockers')
+$eciRuntimeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-runtime-status')
+$eciRuntimeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-runtime-blockers')
+$irqMaskBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-mask-blockers')
+$irqRuntimeMatrixDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-matrix')
+$irqRuntimeReadinessMatrixDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-readiness')
+$irqRuntimeActivationPlanDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-plan')
+$irqRuntimeGateStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-gate-status')
+$irqRuntimeGateCheckDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-gate-check')
+$irqRuntimeGateBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-gate-blockers')
+$irqRuntimeSimStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-sim-status')
+$irqRuntimeSimRunDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-sim-run')
+$irqRuntimeSimBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-sim-blockers')
+$stiStatusDispatch = (Find-KernelDispatch $kernelMainSource 'sti-status')
+$stiPreflightDispatch = (Find-KernelDispatch $kernelMainSource 'sti-preflight')
+$stiBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'sti-blockers')
+$irqRuntimeActivationSmokeDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-smoke')
+$irqRuntimeActivationSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-smoke-status')
+$irqRuntimeActivationSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-smoke-blockers')
+$eoiDispatchSmokeNoteDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-note')
+$eoiDispatchSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-status')
+$eoiDispatchSmokePlanDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-plan')
+$eoiDispatchSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-blockers')
+$picUnmaskSmokeNoteDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-note')
+$picUnmaskSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-status')
+$picUnmaskSmokePlanDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-plan')
+$picUnmaskSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-blockers')
+$idtRuntimeBindSmokeNoteDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-note')
+$idtRuntimeBindSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-status')
+$idtRuntimeBindSmokePlanDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-plan')
+$idtRuntimeBindSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-blockers')
+$irqRuntimeFinalGateNoteDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-note')
+$irqRuntimeFinalGateStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-status')
+$irqRuntimeFinalGateCheckDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-check')
+$irqRuntimeFinalGateBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-blockers')
+$irqRuntimeDecisionNoteDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-note')
+$irqRuntimeDecisionStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-status')
+$irqRuntimeDecisionFreezeDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-freeze')
+$irqRuntimeDecisionBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-blockers')
 $irqRuntimeDecisionSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_decision_snapshot()')
 $irqRuntimeMutationSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mutation_snapshot()')
 $irqRuntimeMutationSequenceSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mutation_sequence_snapshot()')
@@ -18864,10 +18871,31 @@ if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_c
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_smoke_status()') -lt $picRemapStatusDispatch) {
     throw "Kernel PIC remap smoke guard failed: status helper call outside pic-remap-status dispatch"
 }
+$picStateAllowedDispatches = @(
+    $picRemapStateDispatch, (Find-KernelDispatch $kernelMainSource 'system'),
+    $irqRuntimePreflightDispatch, $irqRuntimeCommitDispatch, $irqRuntimeStatusDispatch,
+    $irqRuntimeBlockersDispatch, $eciRuntimeStatusDispatch, $eciRuntimeBlockersDispatch,
+    $irqMaskBlockersDispatch, $irqRuntimeMatrixDispatch, $irqRuntimeReadinessMatrixDispatch,
+    $irqRuntimeActivationPlanDispatch, $irqRuntimeGateStatusDispatch, $irqRuntimeGateCheckDispatch,
+    $irqRuntimeGateBlockersDispatch, $irqRuntimeSimStatusDispatch, $irqRuntimeSimRunDispatch,
+    $irqRuntimeSimBlockersDispatch, $stiStatusDispatch, $stiPreflightDispatch, $stiBlockersDispatch,
+    $irqRuntimeActivationSmokeDispatch, $irqRuntimeActivationSmokeStatusDispatch,
+    $irqRuntimeActivationSmokeBlockersDispatch, $eoiDispatchSmokeNoteDispatch,
+    $eoiDispatchSmokeStatusDispatch, $eoiDispatchSmokePlanDispatch, $eoiDispatchSmokeBlockersDispatch,
+    $picUnmaskSmokeNoteDispatch, $picUnmaskSmokeStatusDispatch, $picUnmaskSmokePlanDispatch,
+    $picUnmaskSmokeBlockersDispatch, $idtRuntimeBindSmokeNoteDispatch, $idtRuntimeBindSmokeStatusDispatch,
+    $idtRuntimeBindSmokePlanDispatch, $idtRuntimeBindSmokeBlockersDispatch,
+    $irqRuntimeFinalGateNoteDispatch, $irqRuntimeFinalGateStatusDispatch,
+    $irqRuntimeFinalGateCheckDispatch, $irqRuntimeFinalGateBlockersDispatch,
+    $irqRuntimeDecisionNoteDispatch, $irqRuntimeDecisionStatusDispatch,
+    $irqRuntimeDecisionFreezeDispatch, $irqRuntimeDecisionBlockersDispatch
+)
 foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterruptController::pic_remap_state\(\)')) {
     $callIndex = $call.Index
+    $nearestCommandDispatch = $kernelMainSource.LastIndexOf('line_str == "', $callIndex)
+    $insideAllowedCommandDispatch = $picStateAllowedDispatches -contains $nearestCommandDispatch
     $nearStateCommand = ($callIndex -gt $picRemapStateDispatch -and $callIndex -lt $picRemapStateDispatch + 1024)
-    $nearSystemCommand = ($callIndex -gt $kernelMainSource.IndexOf('line_str == "system"') -and $callIndex -lt $kernelMainSource.IndexOf('line_str == "system"') + 2048)
+    $nearSystemCommand = ($callIndex -gt (Find-KernelDispatch $kernelMainSource 'system') -and $callIndex -lt (Find-KernelDispatch $kernelMainSource 'system') + 2048)
     $nearPreflightCommand = ($callIndex -gt $irqRuntimePreflightDispatch -and $callIndex -lt $irqRuntimePreflightDispatch + 1024)
     $nearCommitCommand = ($callIndex -gt $irqRuntimeCommitDispatch -and $callIndex -lt $irqRuntimeCommitDispatch + 1024)
     $nearStatusCommand = ($callIndex -gt $irqRuntimeStatusDispatch -and $callIndex -lt $irqRuntimeStatusDispatch + 1024)
@@ -18910,23 +18938,23 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearIrqRuntimeDecisionStatusCommand = ($callIndex -gt $irqRuntimeDecisionStatusDispatch -and $callIndex -lt $irqRuntimeDecisionStatusDispatch + 4096)
     $nearIrqRuntimeDecisionFreezeCommand = ($callIndex -gt $irqRuntimeDecisionFreezeDispatch -and $callIndex -lt $irqRuntimeDecisionFreezeDispatch + 4096)
     $nearIrqRuntimeDecisionBlockersCommand = ($callIndex -gt $irqRuntimeDecisionBlockersDispatch -and $callIndex -lt $irqRuntimeDecisionBlockersDispatch + 4096)
-    $nearIrqRuntimeDecisionSnapshotHelper = ($callIndex -gt $irqRuntimeDecisionSnapshotHelper -and $callIndex -lt $irqRuntimeDecisionSnapshotHelper + 4096)
-    $nearIrqRuntimeMutationSnapshotHelper = ($callIndex -gt $irqRuntimeMutationSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSnapshotHelper + 4096)
-    $nearIrqRuntimeMutationSequenceSnapshotHelper = ($callIndex -gt $irqRuntimeMutationSequenceSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSequenceSnapshotHelper + 4096)
-    $nearEoiWriteSmokePreflightSnapshotHelper = ($callIndex -gt $eoiWriteSmokePreflightSnapshotHelper -and $callIndex -lt $eoiWriteSmokePreflightSnapshotHelper + 4096)
-    $nearEoiWriteSmokeCandidateSnapshotHelper = ($callIndex -gt $eoiWriteSmokeCandidateSnapshotHelper -and $callIndex -lt $eoiWriteSmokeCandidateSnapshotHelper + 4096)
-    $nearEoiWritePermitSnapshotHelper = ($callIndex -gt $eoiWritePermitSnapshotHelper -and $callIndex -lt $eoiWritePermitSnapshotHelper + 4096)
-    $nearEoiWriteOneShotSnapshotHelper = ($callIndex -gt $eoiWriteOneShotSnapshotHelper -and $callIndex -lt $eoiWriteOneShotSnapshotHelper + 2048)
-    $nearEoiRuntimeBridgeSnapshotHelper = ($callIndex -gt $eoiRuntimeBridgeSnapshotHelper -and $callIndex -lt $eoiRuntimeBridgeSnapshotHelper + 2048)
-    $nearIrq0WindowStatusSnapshotHelper = ($callIndex -gt $irq0WindowStatusSnapshotHelper -and $callIndex -lt $irq0WindowStatusSnapshotHelper + 2048)
-    $nearIrq0WindowArmSnapshotHelper = ($callIndex -gt $irq0WindowArmSnapshotHelper -and $callIndex -lt $irq0WindowArmSnapshotHelper + 2048)
-    $nearIrq0TicksStatusSnapshotHelper = ($callIndex -gt $irq0TicksStatusSnapshotHelper -and $callIndex -lt $irq0TicksStatusSnapshotHelper + 2048)
-    $nearIrq0TicksArmSnapshotHelper = ($callIndex -gt $irq0TicksArmSnapshotHelper -and $callIndex -lt $irq0TicksArmSnapshotHelper + 2048)
-    $nearIrq0RuntimeStatusSnapshotHelper = ($callIndex -gt $irq0RuntimeStatusSnapshotHelper -and $callIndex -lt $irq0RuntimeStatusSnapshotHelper + 2048)
-    $nearIrq0RuntimeStartSnapshotHelper = ($callIndex -gt $irq0RuntimeStartSnapshotHelper -and $callIndex -lt $irq0RuntimeStartSnapshotHelper + 2048)
-    $nearIrq0RuntimeStopSnapshotHelper = ($callIndex -gt $irq0RuntimeStopSnapshotHelper -and $callIndex -lt $irq0RuntimeStopSnapshotHelper + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper -or $nearEoiWritePermitSnapshotHelper -or $nearEoiWriteOneShotSnapshotHelper -or $nearEoiRuntimeBridgeSnapshotHelper -or $nearIrq0WindowStatusSnapshotHelper -or $nearIrq0WindowArmSnapshotHelper -or $nearIrq0TicksStatusSnapshotHelper -or $nearIrq0TicksArmSnapshotHelper -or $nearIrq0RuntimeStatusSnapshotHelper -or $nearIrq0RuntimeStartSnapshotHelper -or $nearIrq0RuntimeStopSnapshotHelper)) {
-        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call at source offset $callIndex outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
+    $nearIrqRuntimeDecisionSnapshotHelperCall = ($callIndex -gt $irqRuntimeDecisionSnapshotHelper -and $callIndex -lt $irqRuntimeDecisionSnapshotHelper + 4096)
+    $nearIrqRuntimeMutationSnapshotHelperCall = ($callIndex -gt $irqRuntimeMutationSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSnapshotHelper + 4096)
+    $nearIrqRuntimeMutationSequenceSnapshotHelperCall = ($callIndex -gt $irqRuntimeMutationSequenceSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSequenceSnapshotHelper + 4096)
+    $nearEoiWriteSmokePreflightSnapshotHelperCall = ($callIndex -gt $eoiWriteSmokePreflightSnapshotHelper -and $callIndex -lt $eoiWriteSmokePreflightSnapshotHelper + 4096)
+    $nearEoiWriteSmokeCandidateSnapshotHelperCall = ($callIndex -gt $eoiWriteSmokeCandidateSnapshotHelper -and $callIndex -lt $eoiWriteSmokeCandidateSnapshotHelper + 4096)
+    $nearEoiWritePermitSnapshotHelperCall = ($callIndex -gt $eoiWritePermitSnapshotHelper -and $callIndex -lt $eoiWritePermitSnapshotHelper + 4096)
+    $nearEoiWriteOneShotSnapshotHelperCall = ($callIndex -gt $eoiWriteOneShotSnapshotHelper -and $callIndex -lt $eoiWriteOneShotSnapshotHelper + 2048)
+    $nearEoiRuntimeBridgeSnapshotHelperCall = ($callIndex -gt $eoiRuntimeBridgeSnapshotHelper -and $callIndex -lt $eoiRuntimeBridgeSnapshotHelper + 2048)
+    $nearIrq0WindowStatusSnapshotHelperCall = ($callIndex -gt $irq0WindowStatusSnapshotHelper -and $callIndex -lt $irq0WindowStatusSnapshotHelper + 2048)
+    $nearIrq0WindowArmSnapshotHelperCall = ($callIndex -gt $irq0WindowArmSnapshotHelper -and $callIndex -lt $irq0WindowArmSnapshotHelper + 2048)
+    $nearIrq0TicksStatusSnapshotHelperCall = ($callIndex -gt $irq0TicksStatusSnapshotHelper -and $callIndex -lt $irq0TicksStatusSnapshotHelper + 2048)
+    $nearIrq0TicksArmSnapshotHelperCall = ($callIndex -gt $irq0TicksArmSnapshotHelper -and $callIndex -lt $irq0TicksArmSnapshotHelper + 2048)
+    $nearIrq0RuntimeStatusSnapshotHelperCall = ($callIndex -gt $irq0RuntimeStatusSnapshotHelper -and $callIndex -lt $irq0RuntimeStatusSnapshotHelper + 2048)
+    $nearIrq0RuntimeStartSnapshotHelperCall = ($callIndex -gt $irq0RuntimeStartSnapshotHelper -and $callIndex -lt $irq0RuntimeStartSnapshotHelper + 2048)
+    $nearIrq0RuntimeStopSnapshotHelperCall = ($callIndex -gt $irq0RuntimeStopSnapshotHelper -and $callIndex -lt $irq0RuntimeStopSnapshotHelper + 2048)
+    if (-not ($insideAllowedCommandDispatch -or $nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelperCall -or $nearIrqRuntimeMutationSnapshotHelperCall -or $nearIrqRuntimeMutationSequenceSnapshotHelperCall -or $nearEoiWriteSmokePreflightSnapshotHelperCall -or $nearEoiWriteSmokeCandidateSnapshotHelperCall -or $nearEoiWritePermitSnapshotHelperCall -or $nearEoiWriteOneShotSnapshotHelperCall -or $nearEoiRuntimeBridgeSnapshotHelperCall -or $nearIrq0WindowStatusSnapshotHelperCall -or $nearIrq0WindowArmSnapshotHelperCall -or $nearIrq0TicksStatusSnapshotHelperCall -or $nearIrq0TicksArmSnapshotHelperCall -or $nearIrq0RuntimeStatusSnapshotHelperCall -or $nearIrq0RuntimeStartSnapshotHelperCall -or $nearIrq0RuntimeStopSnapshotHelperCall)) {
+        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call at source offset $callIndex outside allowed dispatch; activation-status=$irqRuntimeActivationSmokeStatusDispatch near-activation-status=$nearIrqRuntimeActivationSmokeStatusCommand decision-helper=$irqRuntimeDecisionSnapshotHelper near-decision-helper=$nearIrqRuntimeDecisionSnapshotHelperCall"
     }
 }
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_history()') -lt $picRemapHistoryDispatch) {
@@ -18945,9 +18973,9 @@ Assert-NotContains $kernelBootPath "irq::irq_gate_bind_state()" "kernel boot pat
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_history()" "kernel boot path does not read irq gate bind history telemetry"
 Assert-NotContains $kernelBootPath "irq::irq_gate_bind_preflight()" "kernel boot path does not read irq gate bind preflight telemetry"
 Assert-NotContains $kernelBootPath "pic::ProgrammableInterruptController::pic_remap_state()" "kernel boot path does not read PIC remap state"
-$irqGateStateDispatch = $kernelMainSource.IndexOf('line_str == "irq-gate-state"')
-$irqGateHistoryDispatch = $kernelMainSource.IndexOf('line_str == "irq-gate-history"')
-$irqGatePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-gate-preflight"')
+$irqGateStateDispatch = (Find-KernelDispatch $kernelMainSource 'irq-gate-state')
+$irqGateHistoryDispatch = (Find-KernelDispatch $kernelMainSource 'irq-gate-history')
+$irqGatePreflightDispatch = (Find-KernelDispatch $kernelMainSource 'irq-gate-preflight')
 if ($irqGateStateDispatch -lt 0 -or $irqGateHistoryDispatch -lt 0 -or $irqGatePreflightDispatch -lt 0) {
     throw "Kernel IRQ gate bind telemetry guard failed: irq-gate state/history/preflight dispatch not found"
 }
@@ -18957,48 +18985,48 @@ if ($kernelMainSource.IndexOf('irq::irq_gate_bind_history()') -lt $irqGateHistor
 if ($kernelMainSource.IndexOf('irq::irq_gate_bind_preflight()') -lt $irqGatePreflightDispatch) {
     throw "Kernel IRQ gate bind telemetry guard failed: preflight helper call outside irq-gate-preflight dispatch"
 }
-$irqRuntimePreflightDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-preflight"')
-$irqRuntimeCommitDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-commit"')
-$irqRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-status"')
-$irqRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-blockers"')
-$eciRuntimeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-status"')
-$eciRuntimeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-runtime-blockers"')
-$irqMaskBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-mask-blockers"')
-$irqRuntimeMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-matrix"')
-$irqRuntimeReadinessMatrixDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-readiness"')
-$irqRuntimeActivationPlanDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-plan"')
-$irqRuntimeGateStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-gate-status"')
-$irqRuntimeGateCheckDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-gate-check"')
-$irqRuntimeGateBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-gate-blockers"')
-$irqRuntimeSimStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-status"')
-$irqRuntimeSimRunDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-run"')
-$irqRuntimeSimBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-sim-blockers"')
-$stiStatusDispatch = $kernelMainSource.IndexOf('line_str == "sti-status"')
-$stiPreflightDispatch = $kernelMainSource.IndexOf('line_str == "sti-preflight"')
-$stiBlockersDispatch = $kernelMainSource.IndexOf('line_str == "sti-blockers"')
-$irqRuntimeActivationSmokeDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke"')
-$irqRuntimeActivationSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-status"')
-$irqRuntimeActivationSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-blockers"')
-$eoiDispatchSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-note"')
-$eoiDispatchSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-status"')
-$eoiDispatchSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-plan"')
-$eoiDispatchSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-blockers"')
-$picUnmaskSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-note"')
-$picUnmaskSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-status"')
-$picUnmaskSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-plan"')
-$picUnmaskSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "pic-unmask-smoke-blockers"')
-$idtRuntimeBindSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-note"')
-$idtRuntimeBindSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-status"')
-$idtRuntimeBindSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-plan"')
-$idtRuntimeBindSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "idt-runtime-bind-smoke-blockers"')
-$irqRuntimeFinalGateNoteDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-note"')
-$irqRuntimeFinalGateStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-status"')
-$irqRuntimeFinalGateCheckDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-check"')
-$irqRuntimeFinalGateBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-final-gate-blockers"')
-$irqRuntimeDecisionNoteDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-note"')
-$irqRuntimeDecisionStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-status"')
-$irqRuntimeDecisionFreezeDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-freeze"')
-$irqRuntimeDecisionBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-decision-blockers"')
+$irqRuntimePreflightDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-preflight')
+$irqRuntimeCommitDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-commit')
+$irqRuntimeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-status')
+$irqRuntimeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-blockers')
+$eciRuntimeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-runtime-status')
+$eciRuntimeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-runtime-blockers')
+$irqMaskBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-mask-blockers')
+$irqRuntimeMatrixDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-matrix')
+$irqRuntimeReadinessMatrixDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-readiness')
+$irqRuntimeActivationPlanDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-plan')
+$irqRuntimeGateStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-gate-status')
+$irqRuntimeGateCheckDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-gate-check')
+$irqRuntimeGateBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-gate-blockers')
+$irqRuntimeSimStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-sim-status')
+$irqRuntimeSimRunDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-sim-run')
+$irqRuntimeSimBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-sim-blockers')
+$stiStatusDispatch = (Find-KernelDispatch $kernelMainSource 'sti-status')
+$stiPreflightDispatch = (Find-KernelDispatch $kernelMainSource 'sti-preflight')
+$stiBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'sti-blockers')
+$irqRuntimeActivationSmokeDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-smoke')
+$irqRuntimeActivationSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-smoke-status')
+$irqRuntimeActivationSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-activation-smoke-blockers')
+$eoiDispatchSmokeNoteDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-note')
+$eoiDispatchSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-status')
+$eoiDispatchSmokePlanDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-plan')
+$eoiDispatchSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'eoi-dispatch-smoke-blockers')
+$picUnmaskSmokeNoteDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-note')
+$picUnmaskSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-status')
+$picUnmaskSmokePlanDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-plan')
+$picUnmaskSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'pic-unmask-smoke-blockers')
+$idtRuntimeBindSmokeNoteDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-note')
+$idtRuntimeBindSmokeStatusDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-status')
+$idtRuntimeBindSmokePlanDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-plan')
+$idtRuntimeBindSmokeBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'idt-runtime-bind-smoke-blockers')
+$irqRuntimeFinalGateNoteDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-note')
+$irqRuntimeFinalGateStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-status')
+$irqRuntimeFinalGateCheckDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-check')
+$irqRuntimeFinalGateBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-final-gate-blockers')
+$irqRuntimeDecisionNoteDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-note')
+$irqRuntimeDecisionStatusDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-status')
+$irqRuntimeDecisionFreezeDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-freeze')
+$irqRuntimeDecisionBlockersDispatch = (Find-KernelDispatch $kernelMainSource 'irq-runtime-decision-blockers')
 $irqRuntimeDecisionSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_decision_snapshot()')
 $irqRuntimeMutationSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mutation_snapshot()')
 $irqRuntimeMutationSequenceSnapshotHelper = $kernelMainSource.IndexOf('fn irq_runtime_mutation_sequence_snapshot()')
@@ -19014,7 +19042,7 @@ if ($irqRuntimePreflightDispatch -lt 0 -or $irqRuntimeStatusDispatch -lt 0 -or $
 foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\(\)')) {
     $callIndex = $call.Index
     $nearStateCommand = ($callIndex -gt $irqGateStateDispatch -and $callIndex -lt $irqGateStateDispatch + 2048)
-    $nearSystemCommand = ($callIndex -gt $kernelMainSource.IndexOf('line_str == "system"') -and $callIndex -lt $kernelMainSource.IndexOf('line_str == "system"') + 4096)
+    $nearSystemCommand = ($callIndex -gt (Find-KernelDispatch $kernelMainSource 'system') -and $callIndex -lt (Find-KernelDispatch $kernelMainSource 'system') + 4096)
     $nearPreflightCommand = ($callIndex -gt $irqRuntimePreflightDispatch -and $callIndex -lt $irqRuntimePreflightDispatch + 1024)
     $nearCommitCommand = ($callIndex -gt $irqRuntimeCommitDispatch -and $callIndex -lt $irqRuntimeCommitDispatch + 1024)
     $nearStatusCommand = ($callIndex -gt $irqRuntimeStatusDispatch -and $callIndex -lt $irqRuntimeStatusDispatch + 1024)
@@ -19057,15 +19085,15 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'irq::irq_gate_bind_state\
     $nearIrqRuntimeDecisionStatusCommand = ($callIndex -gt $irqRuntimeDecisionStatusDispatch -and $callIndex -lt $irqRuntimeDecisionStatusDispatch + 4096)
     $nearIrqRuntimeDecisionFreezeCommand = ($callIndex -gt $irqRuntimeDecisionFreezeDispatch -and $callIndex -lt $irqRuntimeDecisionFreezeDispatch + 4096)
     $nearIrqRuntimeDecisionBlockersCommand = ($callIndex -gt $irqRuntimeDecisionBlockersDispatch -and $callIndex -lt $irqRuntimeDecisionBlockersDispatch + 4096)
-    $nearIrqRuntimeDecisionSnapshotHelper = ($callIndex -gt $irqRuntimeDecisionSnapshotHelper -and $callIndex -lt $irqRuntimeDecisionSnapshotHelper + 4096)
-    $nearIrqRuntimeMutationSnapshotHelper = ($callIndex -gt $irqRuntimeMutationSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSnapshotHelper + 4096)
-    $nearIrqRuntimeMutationSequenceSnapshotHelper = ($callIndex -gt $irqRuntimeMutationSequenceSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSequenceSnapshotHelper + 4096)
-    $nearEoiWriteSmokePreflightSnapshotHelper = ($callIndex -gt $eoiWriteSmokePreflightSnapshotHelper -and $callIndex -lt $eoiWriteSmokePreflightSnapshotHelper + 4096)
-    $nearEoiWriteSmokeCandidateSnapshotHelper = ($callIndex -gt $eoiWriteSmokeCandidateSnapshotHelper -and $callIndex -lt $eoiWriteSmokeCandidateSnapshotHelper + 4096)
-    $nearEoiWritePermitSnapshotHelper = ($callIndex -gt $eoiWritePermitSnapshotHelper -and $callIndex -lt $eoiWritePermitSnapshotHelper + 4096)
-    $nearEoiWriteOneShotSnapshotHelper = ($callIndex -gt $eoiWriteOneShotSnapshotHelper -and $callIndex -lt $eoiWriteOneShotSnapshotHelper + 2048)
-    $nearEoiRuntimeBridgeSnapshotHelper = ($callIndex -gt $eoiRuntimeBridgeSnapshotHelper -and $callIndex -lt $eoiRuntimeBridgeSnapshotHelper + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper -or $nearEoiWritePermitSnapshotHelper -or $nearEoiWriteOneShotSnapshotHelper -or $nearEoiRuntimeBridgeSnapshotHelper)) {
+    $nearIrqRuntimeDecisionSnapshotHelperCall = ($callIndex -gt $irqRuntimeDecisionSnapshotHelper -and $callIndex -lt $irqRuntimeDecisionSnapshotHelper + 4096)
+    $nearIrqRuntimeMutationSnapshotHelperCall = ($callIndex -gt $irqRuntimeMutationSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSnapshotHelper + 4096)
+    $nearIrqRuntimeMutationSequenceSnapshotHelperCall = ($callIndex -gt $irqRuntimeMutationSequenceSnapshotHelper -and $callIndex -lt $irqRuntimeMutationSequenceSnapshotHelper + 4096)
+    $nearEoiWriteSmokePreflightSnapshotHelperCall = ($callIndex -gt $eoiWriteSmokePreflightSnapshotHelper -and $callIndex -lt $eoiWriteSmokePreflightSnapshotHelper + 4096)
+    $nearEoiWriteSmokeCandidateSnapshotHelperCall = ($callIndex -gt $eoiWriteSmokeCandidateSnapshotHelper -and $callIndex -lt $eoiWriteSmokeCandidateSnapshotHelper + 4096)
+    $nearEoiWritePermitSnapshotHelperCall = ($callIndex -gt $eoiWritePermitSnapshotHelper -and $callIndex -lt $eoiWritePermitSnapshotHelper + 4096)
+    $nearEoiWriteOneShotSnapshotHelperCall = ($callIndex -gt $eoiWriteOneShotSnapshotHelper -and $callIndex -lt $eoiWriteOneShotSnapshotHelper + 2048)
+    $nearEoiRuntimeBridgeSnapshotHelperCall = ($callIndex -gt $eoiRuntimeBridgeSnapshotHelper -and $callIndex -lt $eoiRuntimeBridgeSnapshotHelper + 2048)
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelperCall -or $nearIrqRuntimeMutationSnapshotHelperCall -or $nearIrqRuntimeMutationSequenceSnapshotHelperCall -or $nearEoiWriteSmokePreflightSnapshotHelperCall -or $nearEoiWriteSmokeCandidateSnapshotHelperCall -or $nearEoiWritePermitSnapshotHelperCall -or $nearEoiWriteOneShotSnapshotHelperCall -or $nearEoiRuntimeBridgeSnapshotHelperCall)) {
         throw "Kernel IRQ gate bind telemetry guard failed: irq_gate_bind_state() call outside irq-gate-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
@@ -19886,7 +19914,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha in the v11.2.0 package smoke tests..."
+Write-Host "Running DByteOS Alpha in the v11.3.0 package smoke tests..."
 if (Test-Path (Join-Path $repoRoot "tmp")) { Remove-Item -Recurse -Force (Join-Path $repoRoot "tmp") }
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -19897,8 +19925,8 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& .\scripts\package_release.ps1 -Version "11.2.0" -SkipBundle
-$zipFile = Join-Path $repoRoot "dbyte-v11.2.0-windows-x64.zip"
+& .\scripts\package_release.ps1 -Version "11.3.0" -SkipBundle
+$zipFile = Join-Path $repoRoot "dbyte-v11.3.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -19922,7 +19950,7 @@ if ($packagedNativeHeader.Length -lt 20 -or $packagedNativeHeader[0] -ne 0x7f -o
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 11.2.0") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 11.3.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -20318,11 +20346,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 11.2.0`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 11.3.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.2.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.2.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.2.0`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.3.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.3.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.3.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -20576,7 +20604,7 @@ Journal: 0 entries recorded
 Open Tasks:
   demo: 2 open
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 11.2.0
+dbyte-shell> DByte 11.3.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"
@@ -20585,10 +20613,13 @@ Remove-Item -Recurse -Force $smokeRoot -ErrorAction SilentlyContinue
 Assert-GitStatus-Unchanged $packageSmokeStatus "package smoke cleanliness"
 Write-Host "Package smoke tests passed."
 
-& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "11.2.0"
+& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "11.3.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\scripts\verify_native_kernel_core.ps1 -MilestoneVersion "11.2.0"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& .\scripts\verify_native_memory_core.ps1 -MilestoneVersion "11.3.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "verify passed"

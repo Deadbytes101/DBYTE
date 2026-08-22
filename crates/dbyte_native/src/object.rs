@@ -40,6 +40,8 @@ const R_386_32: u8 = 1;
 const R_386_PC32: u8 = 2;
 const INTERRUPT_METADATA_SECTION: &str = ".dbyte.interrupts";
 const INTERRUPT_METADATA_PREFIX: &str = "__dbyte_interrupt:";
+const ENTRY_METADATA_SECTION: &str = ".dbyte.entry";
+pub const ENTRY_METADATA_PREFIX: &str = "__dbyte_entry:";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectSection {
@@ -283,7 +285,8 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     .collect();
 
     let interrupt_metadata = build_interrupt_metadata(image)?;
-    let symtab_index = 6u16
+    let entry_metadata = build_entry_metadata(image)?;
+    let symtab_index = 7u16
         .checked_add(
             u16::try_from(relocation_sections.len())
                 .map_err(|_| object_error("too many relocation sections"))?,
@@ -300,6 +303,7 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         ".data",
         ".bss",
         INTERRUPT_METADATA_SECTION,
+        ENTRY_METADATA_SECTION,
     ];
     for section in &relocation_sections {
         section_names.push(
@@ -401,12 +405,28 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         "interrupt metadata section end",
     )?;
 
+    let entry_metadata_offset = cursor;
+    let entry_metadata_size = checked_usize_u32(entry_metadata.len(), "entry metadata size")?;
+    headers.push(SectionHeader {
+        name: section_name_offsets[6],
+        section_type: SHT_PROGBITS,
+        flags: 0,
+        address: 0,
+        offset: entry_metadata_offset,
+        size: entry_metadata_size,
+        link: 0,
+        info: 0,
+        alignment: 1,
+        entry_size: 0,
+    });
+    cursor = checked_add(cursor, entry_metadata_size, "entry metadata section end")?;
+
     for (relocation_position, section) in relocation_sections.iter().copied().enumerate() {
         cursor = align_up(cursor, 4)?;
         let table = &relocation_tables[&section];
         let size = checked_usize_u32(table.len(), "relocation section size")?;
         headers.push(SectionHeader {
-            name: section_name_offsets[6 + relocation_position],
+            name: section_name_offsets[7 + relocation_position],
             section_type: SHT_REL,
             flags: 0,
             address: 0,
@@ -516,7 +536,7 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     for (index, section) in relocation_sections.iter().enumerate() {
         copy_bytes(
             &mut bytes,
-            headers[6 + index].offset as usize,
+            headers[7 + index].offset as usize,
             &relocation_tables[section],
         )?;
     }
@@ -525,6 +545,7 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         interrupt_metadata_offset as usize,
         &interrupt_metadata,
     )?;
+    copy_bytes(&mut bytes, entry_metadata_offset as usize, &entry_metadata)?;
     copy_bytes(&mut bytes, symtab_offset as usize, &symtab)?;
     copy_bytes(&mut bytes, strtab_offset as usize, &strtab)?;
     copy_bytes(&mut bytes, shstrtab_offset as usize, &shstrtab)?;
@@ -546,7 +567,7 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
     let section_header_size = read_u16(bytes, 46)?;
     let section_count = read_u16(bytes, 48)?;
     let shstrtab_index = read_u16(bytes, 50)?;
-    if section_header_size != SECTION_HEADER_SIZE as u16 || !(9..=12).contains(&section_count) {
+    if section_header_size != SECTION_HEADER_SIZE as u16 || !(9..=13).contains(&section_count) {
         return Err(invalid_object("unsupported ELF section-header shape"));
     }
     if shstrtab_index == 0 || shstrtab_index >= section_count {
@@ -671,6 +692,22 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
         section_file_bytes(bytes, metadata_header, INTERRUPT_METADATA_SECTION)?,
         &symbols,
     )?;
+    if let Some(entry_index) = by_name.get(ENTRY_METADATA_SECTION).copied() {
+        let entry_header = &parsed[entry_index as usize].header;
+        if entry_header.section_type != SHT_PROGBITS
+            || entry_header.flags != 0
+            || entry_header.link != 0
+            || entry_header.info != 0
+            || entry_header.alignment != 1
+            || entry_header.entry_size != 0
+        {
+            return Err(invalid_object("invalid .dbyte.entry section contract"));
+        }
+        validate_entry_metadata(
+            section_file_bytes(bytes, entry_header, ENTRY_METADATA_SECTION)?,
+            &symbols,
+        )?;
+    }
 
     let mut relocations = Vec::new();
     for target in [
@@ -1179,6 +1216,7 @@ fn validate_allowed_sections(sections: &[ParsedSection]) -> Result<(), Diagnosti
         ".data",
         ".bss",
         ".dbyte.interrupts",
+        ".dbyte.entry",
         ".rel.text",
         ".rel.rodata",
         ".rel.data",
@@ -1513,6 +1551,52 @@ fn validate_interrupt_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result
     Ok(())
 }
 
+fn build_entry_metadata(image: &ObjectImage) -> Result<Vec<u8>, Diagnostic> {
+    let mut records: Vec<&str> = image
+        .symbols
+        .iter()
+        .filter_map(|symbol| {
+            symbol
+                .name
+                .strip_prefix(ENTRY_METADATA_PREFIX)
+                .map(|_| symbol.name.as_str())
+        })
+        .collect();
+    records.sort_unstable();
+    records.dedup();
+    if records.len() > 1 {
+        return Err(object_error(
+            "object contains conflicting native entry metadata",
+        ));
+    }
+    let mut bytes = b"DBYTEENT\0\x01\0".to_vec();
+    for record in records {
+        if !matches!(
+            record,
+            "__dbyte_entry:legacy" | "__dbyte_entry:multiboot_v1"
+        ) {
+            return Err(object_error("native entry metadata ABI is unsupported"));
+        }
+        bytes.extend_from_slice(record.as_bytes());
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn validate_entry_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(), Diagnostic> {
+    let expected = build_entry_metadata(&ObjectImage {
+        sections: BTreeMap::new(),
+        symbols: symbols.to_vec(),
+        relocations: Vec::new(),
+    })?;
+    if bytes != expected {
+        return Err(invalid_object(
+            "non-canonical .dbyte.entry metadata does not match symbols",
+        ));
+    }
+    Ok(())
+}
+
 fn align_up(value: u32, alignment: u32) -> Result<u32, Diagnostic> {
     validate_alignment(alignment)?;
     value
@@ -1777,6 +1861,37 @@ mod tests {
         let error = parse_relocatable(&bytes).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidObject);
         assert!(error.message.contains(".dbyte.interrupts"));
+    }
+
+    #[test]
+    fn entry_metadata_round_trips_and_rejects_noncanonical_bytes() {
+        let mut image = sample_object();
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_entry:multiboot_v1".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let artifact = write_relocatable(&image).unwrap();
+        let parsed = parse_relocatable(&artifact.bytes).unwrap();
+        assert!(parsed
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "__dbyte_entry:multiboot_v1"));
+
+        let mut corrupt = artifact.bytes;
+        let at = corrupt
+            .windows(b"DBYTEENT".len())
+            .position(|window| window == b"DBYTEENT")
+            .expect("entry metadata magic is present");
+        corrupt[at] = b'X';
+        let error = parse_relocatable(&corrupt).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidObject);
+        assert!(error.message.contains(".dbyte.entry"));
     }
 
     #[test]

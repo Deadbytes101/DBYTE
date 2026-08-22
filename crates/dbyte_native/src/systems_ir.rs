@@ -55,6 +55,12 @@ pub enum SystemIntrinsic {
     CpuSti,
     CpuInt3,
     CpuReadEflags,
+    CpuReadCr0,
+    CpuWriteCr0,
+    CpuReadCr2,
+    CpuReadCr3,
+    CpuWriteCr3,
+    CpuInvlpg,
     CpuLgdt,
     CpuLidt,
 }
@@ -78,6 +84,12 @@ impl SystemIntrinsic {
             "cpu_sti" => Some(Self::CpuSti),
             "cpu_int3" => Some(Self::CpuInt3),
             "cpu_read_eflags" => Some(Self::CpuReadEflags),
+            "cpu_read_cr0" => Some(Self::CpuReadCr0),
+            "cpu_write_cr0" => Some(Self::CpuWriteCr0),
+            "cpu_read_cr2" => Some(Self::CpuReadCr2),
+            "cpu_read_cr3" => Some(Self::CpuReadCr3),
+            "cpu_write_cr3" => Some(Self::CpuWriteCr3),
+            "cpu_invlpg" => Some(Self::CpuInvlpg),
             "cpu_lgdt" => Some(Self::CpuLgdt),
             "cpu_lidt" => Some(Self::CpuLidt),
             _ => None,
@@ -101,6 +113,12 @@ impl SystemIntrinsic {
             Self::CpuSti => "native.cpu_sti",
             Self::CpuInt3 => "native.cpu_int3",
             Self::CpuReadEflags => "native.cpu_read_eflags",
+            Self::CpuReadCr0 => "native.cpu_read_cr0",
+            Self::CpuWriteCr0 => "native.cpu_write_cr0",
+            Self::CpuReadCr2 => "native.cpu_read_cr2",
+            Self::CpuReadCr3 => "native.cpu_read_cr3",
+            Self::CpuWriteCr3 => "native.cpu_write_cr3",
+            Self::CpuInvlpg => "native.cpu_invlpg",
             Self::CpuLgdt => "native.cpu_lgdt",
             Self::CpuLidt => "native.cpu_lidt",
         }
@@ -127,9 +145,17 @@ impl SystemIntrinsic {
             Self::IoIn8 => vec![SystemType::U16],
             Self::IoOut16 => vec![SystemType::U16, SystemType::U16],
             Self::IoIn16 => vec![SystemType::U16],
-            Self::CpuHlt | Self::CpuCli | Self::CpuSti | Self::CpuInt3 | Self::CpuReadEflags => {
-                Vec::new()
-            }
+            Self::CpuHlt
+            | Self::CpuCli
+            | Self::CpuSti
+            | Self::CpuInt3
+            | Self::CpuReadEflags
+            | Self::CpuReadCr0
+            | Self::CpuReadCr2
+            | Self::CpuReadCr3 => Vec::new(),
+            Self::CpuWriteCr0 => vec![SystemType::U32],
+            Self::CpuWriteCr3 => vec![SystemType::Usize],
+            Self::CpuInvlpg => vec![SystemType::Pointer(Box::new(SystemType::U8))],
             Self::CpuLgdt | Self::CpuLidt => vec![SystemType::Usize],
         }
     }
@@ -148,9 +174,13 @@ impl SystemIntrinsic {
             | Self::CpuCli
             | Self::CpuSti
             | Self::CpuInt3
+            | Self::CpuWriteCr0
+            | Self::CpuWriteCr3
+            | Self::CpuInvlpg
             | Self::CpuLgdt
             | Self::CpuLidt => None,
-            Self::CpuReadEflags => Some(SystemType::U32),
+            Self::CpuReadEflags | Self::CpuReadCr0 => Some(SystemType::U32),
+            Self::CpuReadCr2 | Self::CpuReadCr3 => Some(SystemType::Usize),
         }
     }
 }
@@ -364,6 +394,9 @@ pub enum SystemsInst {
         symbol: String,
         class: InterruptClass,
     },
+    LinkerAddress {
+        symbol: String,
+    },
     ReloadSegments {
         code_selector: u16,
         data_selector: u16,
@@ -426,6 +459,7 @@ impl fmt::Display for SystemsInst {
                 formatter,
                 "interrupt.address vector={vector} {symbol} class={class}"
             ),
+            Self::LinkerAddress { symbol } => write!(formatter, "linker.address {symbol}"),
             Self::ReloadSegments {
                 code_selector,
                 data_selector,

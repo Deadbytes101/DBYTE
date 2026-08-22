@@ -8,6 +8,7 @@ use crate::elf32::{
 use crate::object::{
     parse_relocatable, write_relocatable, ObjectImage, ObjectRelocation, ObjectSection,
     RelocationKind, SectionContents, SymbolBinding, SymbolDefinition, SymbolKind,
+    ENTRY_METADATA_PREFIX,
 };
 use crate::x86::{Encoder, Register};
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,6 +18,14 @@ pub const LINK_ENTRY_SYMBOL: &str = "kernel_main";
 pub const LINK_START_SYMBOL: &str = "_start";
 pub const LINK_STACK_BOTTOM_SYMBOL: &str = "__dbyte_stack_bottom";
 pub const LINK_STACK_TOP_SYMBOL: &str = "__dbyte_stack_top";
+pub const LINK_IMAGE_START_SYMBOL: &str = "__dbyte_image_start";
+pub const LINK_IMAGE_END_SYMBOL: &str = "__dbyte_image_end";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EntryAbi {
+    Legacy,
+    MultibootV1,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkInput {
@@ -118,7 +127,8 @@ pub fn link_images(inputs: &[(String, ObjectImage)]) -> Result<LinkArtifact, Dia
 
 fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
     validate_interrupt_metadata(inputs)?;
-    let mut merged = merge_sections(inputs)?;
+    let entry_abi = validate_entry_metadata(inputs)?;
+    let mut merged = merge_sections(inputs, entry_abi)?;
     let definitions = collect_definitions(inputs, &merged)?;
     validate_undefined_symbols(inputs, &definitions)?;
 
@@ -152,8 +162,8 @@ fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
     })
 }
 
-fn merge_sections(inputs: &[ParsedInput]) -> Result<MergedImage, Diagnostic> {
-    let (bootstrap_bytes, bootstrap) = build_bootstrap()?;
+fn merge_sections(inputs: &[ParsedInput], entry_abi: EntryAbi) -> Result<MergedImage, Diagnostic> {
+    let (bootstrap_bytes, bootstrap) = build_bootstrap(entry_abi)?;
     let mut text = bootstrap_bytes;
     let mut rodata = Vec::new();
     let mut data = Vec::new();
@@ -231,6 +241,7 @@ fn merge_sections(inputs: &[ParsedInput]) -> Result<MergedImage, Diagnostic> {
         bootstrap,
         stack_bottom_offset,
         stack_top_offset,
+        bss_size,
     )?;
     Ok(MergedImage {
         executable: LinkedExecutableImage {
@@ -252,7 +263,7 @@ fn merge_sections(inputs: &[ParsedInput]) -> Result<MergedImage, Diagnostic> {
     })
 }
 
-fn build_bootstrap() -> Result<(Vec<u8>, Bootstrap), Diagnostic> {
+fn build_bootstrap(entry_abi: EntryAbi) -> Result<(Vec<u8>, Bootstrap), Diagnostic> {
     let mut encoder = Encoder::new(64);
     encoder.cli().map_err(encoder_error)?;
     let stack_immediate = usize_u32(
@@ -264,10 +275,17 @@ fn build_bootstrap() -> Result<(Vec<u8>, Bootstrap), Diagnostic> {
     encoder
         .xor_reg_reg(Register::Ebp, Register::Ebp)
         .map_err(encoder_error)?;
+    if entry_abi == EntryAbi::MultibootV1 {
+        encoder.push_reg(Register::Ebx).map_err(encoder_error)?;
+        encoder.push_reg(Register::Eax).map_err(encoder_error)?;
+    }
     let entry_immediate = usize_u32(
         encoder.call_rel32_placeholder().map_err(encoder_error)?,
         "bootstrap entry relocation offset",
     )?;
+    if entry_abi == EntryAbi::MultibootV1 {
+        encoder.add_esp_imm32(8).map_err(encoder_error)?;
+    }
     let halt = encoder.new_label().map_err(encoder_error)?;
     encoder.bind_label(halt).map_err(encoder_error)?;
     encoder.hlt().map_err(encoder_error)?;
@@ -290,6 +308,7 @@ fn build_executable_symbols(
     bootstrap: Bootstrap,
     stack_bottom_offset: u32,
     stack_top_offset: u32,
+    image_end_offset: u32,
 ) -> Result<Vec<ExecutableSymbol>, Diagnostic> {
     let mut symbols = vec![
         ExecutableSymbol {
@@ -316,6 +335,22 @@ fn build_executable_symbols(
             offset: stack_top_offset,
             size: 0,
         },
+        ExecutableSymbol {
+            name: LINK_IMAGE_START_SYMBOL.to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Object,
+            section: ObjectSection::Text,
+            offset: 0,
+            size: 0,
+        },
+        ExecutableSymbol {
+            name: LINK_IMAGE_END_SYMBOL.to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Object,
+            section: ObjectSection::Bss,
+            offset: image_end_offset,
+            size: 0,
+        },
     ];
     for (input_index, input) in inputs.iter().enumerate() {
         for symbol in &input.image.symbols {
@@ -326,7 +361,10 @@ fn build_executable_symbols(
             // detail. The final executable already describes each merged
             // section in its section table, so emitting one entry per input
             // would give those symbols misleading nonzero section offsets.
-            if symbol.kind == SymbolKind::Section || symbol.name.starts_with("__dbyte_interrupt:") {
+            if symbol.kind == SymbolKind::Section
+                || symbol.name.starts_with("__dbyte_interrupt:")
+                || symbol.name.starts_with(ENTRY_METADATA_PREFIX)
+            {
                 continue;
             }
             let base = placements
@@ -423,6 +461,34 @@ fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic>
     Ok(())
 }
 
+fn validate_entry_metadata(inputs: &[ParsedInput]) -> Result<EntryAbi, Diagnostic> {
+    let mut abi = None;
+    for input in inputs {
+        for symbol in &input.image.symbols {
+            let Some(record) = symbol.name.strip_prefix(ENTRY_METADATA_PREFIX) else {
+                continue;
+            };
+            let candidate = match record {
+                "legacy" => EntryAbi::Legacy,
+                "multiboot_v1" => EntryAbi::MultibootV1,
+                _ => {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::InvalidObject,
+                        format!("unsupported native entry metadata ABI '{record}'"),
+                    ))
+                }
+            };
+            if abi.replace(candidate).is_some() {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::DuplicateSymbol,
+                    "multiple native entry metadata records",
+                ));
+            }
+        }
+    }
+    Ok(abi.unwrap_or(EntryAbi::Legacy))
+}
+
 fn collect_definitions(
     inputs: &[ParsedInput],
     merged: &MergedImage,
@@ -455,6 +521,26 @@ fn collect_definitions(
                 location: DefinitionLocation::Synthetic {
                     section: ObjectSection::Bss,
                     offset: merged.executable.stack_top_offset,
+                },
+            },
+        ),
+        (
+            LINK_IMAGE_START_SYMBOL.to_owned(),
+            GlobalDefinition {
+                kind: SymbolKind::Object,
+                location: DefinitionLocation::Synthetic {
+                    section: ObjectSection::Text,
+                    offset: 0,
+                },
+            },
+        ),
+        (
+            LINK_IMAGE_END_SYMBOL.to_owned(),
+            GlobalDefinition {
+                kind: SymbolKind::Object,
+                location: DefinitionLocation::Synthetic {
+                    section: ObjectSection::Bss,
+                    offset: merged.executable.bss_size,
                 },
             },
         ),
@@ -962,6 +1048,21 @@ mod tests {
         image
     }
 
+    fn multiboot_entry_object() -> ObjectImage {
+        let mut image = function_object(LINK_ENTRY_SYMBOL, vec![0xc3]);
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_entry:multiboot_v1".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        image
+    }
+
     fn caller_and_callee() -> Vec<(String, ObjectImage)> {
         let mut caller =
             function_object(LINK_ENTRY_SYMBOL, vec![0xe8, 0xfc, 0xff, 0xff, 0xff, 0xc3]);
@@ -1052,6 +1153,32 @@ mod tests {
             i32::from_le_bytes(artifact.machine_code[49..53].try_into().unwrap()),
             -21
         );
+    }
+
+    #[test]
+    fn multiboot_entry_metadata_selects_two_argument_bootstrap() {
+        let artifact = link_images(&[("kernel.o".to_owned(), multiboot_entry_object())]).unwrap();
+        assert_eq!(artifact.machine_code[0], 0xfa);
+        assert_eq!(artifact.machine_code[1], 0xbc);
+        assert_eq!(&artifact.machine_code[6..10], &[0x31, 0xed, 0x53, 0x50]);
+        assert_eq!(artifact.machine_code[10], 0xe8);
+        assert_eq!(&artifact.machine_code[15..21], &[0x81, 0xc4, 0x08, 0, 0, 0]);
+        assert!(!artifact.dump.contains("__dbyte_entry:"));
+
+        let mut conflict = multiboot_entry_object();
+        conflict.symbols.push(ObjectSymbol {
+            name: "__dbyte_entry:legacy".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let error = link_images(&[("kernel.o".to_owned(), conflict)]).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::Object);
+        assert!(error.message.contains("conflicting native entry metadata"));
     }
 
     #[test]

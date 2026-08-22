@@ -9,6 +9,8 @@ pub mod elf32;
 pub mod ir;
 pub mod linker;
 pub mod lower;
+#[cfg(test)]
+mod memory_contract;
 pub mod modules;
 pub mod object;
 pub mod semantic;

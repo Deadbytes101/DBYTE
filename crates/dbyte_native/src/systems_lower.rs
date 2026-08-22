@@ -4,7 +4,7 @@ use crate::diagnostics::{Diagnostic, DiagnosticCategory, NativeResult};
 use crate::ir::{CompareOp, LabelId, LocalId};
 use crate::object::{
     ObjectImage, ObjectRelocation, ObjectSection, ObjectSectionData, ObjectSymbol, RelocationKind,
-    SectionContents, SymbolBinding, SymbolDefinition, SymbolId, SymbolKind,
+    SectionContents, SymbolBinding, SymbolDefinition, SymbolId, SymbolKind, ENTRY_METADATA_PREFIX,
 };
 use crate::system_types::SystemType;
 use crate::systems_ir::{
@@ -274,6 +274,27 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
                 size: 0,
             },
         )?;
+        if function.symbol == "kernel_main" {
+            let abi = if function.parameter_types.is_empty() {
+                "legacy"
+            } else {
+                "multiboot_v1"
+            };
+            insert_named_symbol(
+                &mut symbols,
+                &mut symbol_ids,
+                ObjectSymbol {
+                    name: format!("{ENTRY_METADATA_PREFIX}{abi}"),
+                    binding: SymbolBinding::Local,
+                    kind: SymbolKind::Function,
+                    definition: SymbolDefinition::Defined {
+                        section: ObjectSection::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                },
+            )?;
+        }
     }
     let mut public_globals: Vec<_> = module
         .globals
@@ -328,6 +349,30 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
                 size: 0,
             },
         )?;
+    }
+    let linker_symbols: BTreeSet<String> = module
+        .functions
+        .iter()
+        .flat_map(|function| function.instructions.iter())
+        .filter_map(|instruction| match instruction {
+            SystemsInst::LinkerAddress { symbol } => Some(symbol.clone()),
+            _ => None,
+        })
+        .collect();
+    for symbol in linker_symbols {
+        if !symbol_ids.contains_key(&symbol) {
+            insert_named_symbol(
+                &mut symbols,
+                &mut symbol_ids,
+                ObjectSymbol {
+                    name: symbol,
+                    binding: SymbolBinding::Global,
+                    kind: SymbolKind::Object,
+                    definition: SymbolDefinition::Undefined,
+                    size: 0,
+                },
+            )?;
+        }
     }
 
     let mut encoder = Encoder::new(DEFAULT_MAX_CODE_SIZE);
@@ -534,10 +579,16 @@ fn lower_function(
             })?;
         }
     }
+    let multiboot_entry = function.symbol == "kernel_main"
+        && function.parameter_types == [SystemType::U32, SystemType::Usize];
     for (index, parameter) in function.params.iter().enumerate() {
-        let reverse = function.params.len() - 1 - index;
+        let incoming_index = if multiboot_entry {
+            index
+        } else {
+            function.params.len() - 1 - index
+        };
         let incoming = 8usize
-            .checked_add(reverse.checked_mul(4).ok_or_else(|| {
+            .checked_add(incoming_index.checked_mul(4).ok_or_else(|| {
                 function_error(function, "native incoming parameter offset overflow")
             })?)
             .ok_or_else(|| function_error(function, "native incoming parameter offset overflow"))?;
@@ -912,6 +963,11 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
+        SystemsInst::LinkerAddress { symbol } => {
+            emit_absolute_address(encoder, function, symbols, relocations, symbol)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
         SystemsInst::ReloadSegments {
             code_selector,
             data_selector,
@@ -1068,6 +1124,33 @@ fn lower_intrinsic(
             pop(encoder, function, Register::Eax)?;
             push(encoder, function, Register::Eax)?;
             *depth += 1;
+        }
+        SystemIntrinsic::CpuReadCr0 | SystemIntrinsic::CpuReadCr2 | SystemIntrinsic::CpuReadCr3 => {
+            require_intrinsic_arity(intrinsic, argument_count, 0, function)?;
+            match intrinsic {
+                SystemIntrinsic::CpuReadCr0 => emit(encoder, function, Encoder::mov_eax_cr0)?,
+                SystemIntrinsic::CpuReadCr2 => emit(encoder, function, Encoder::mov_eax_cr2)?,
+                SystemIntrinsic::CpuReadCr3 => emit(encoder, function, Encoder::mov_eax_cr3)?,
+                _ => unreachable!(),
+            }
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
+        SystemIntrinsic::CpuWriteCr0 | SystemIntrinsic::CpuWriteCr3 => {
+            require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
+            pop(encoder, function, Register::Eax)?;
+            match intrinsic {
+                SystemIntrinsic::CpuWriteCr0 => emit(encoder, function, Encoder::mov_cr0_eax)?,
+                SystemIntrinsic::CpuWriteCr3 => emit(encoder, function, Encoder::mov_cr3_eax)?,
+                _ => unreachable!(),
+            }
+        }
+        SystemIntrinsic::CpuInvlpg => {
+            require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
+            pop(encoder, function, Register::Eax)?;
+            emit(encoder, function, |encoder| {
+                encoder.invlpg(MemoryOperand::new(Register::Eax, 0))
+            })?;
         }
         SystemIntrinsic::CpuLgdt | SystemIntrinsic::CpuLidt => {
             require_intrinsic_arity(intrinsic, argument_count, 1, function)?;

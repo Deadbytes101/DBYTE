@@ -1,0 +1,9 @@
+import "arch_x86.dby" as arch
+import "paging.dby" as paging
+
+pub interrupt(error_code) fn page_fault(frame: ptr[arch.InterruptFrame], error_code: u32):
+    if paging.resolve_fault(error_code) != 0:
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    return

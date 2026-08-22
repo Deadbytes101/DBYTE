@@ -422,6 +422,32 @@ impl Encoder {
         self.emit_raw(&instruction)
     }
 
+    pub fn mov_eax_cr0(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x20, 0xc0])
+    }
+
+    pub fn mov_cr0_eax(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x22, 0xc0])
+    }
+
+    pub fn mov_eax_cr2(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x20, 0xd0])
+    }
+
+    pub fn mov_eax_cr3(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x20, 0xd8])
+    }
+
+    pub fn mov_cr3_eax(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x22, 0xd8])
+    }
+
+    pub fn invlpg(&mut self, address: MemoryOperand) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x0f, 0x01];
+        encode_memory_operand(&mut instruction, 7, address)?;
+        self.emit_raw(&instruction)
+    }
+
     pub fn mov_ax_imm16(&mut self, value: u16) -> Result<(), EncoderError> {
         let mut instruction = vec![0x66, 0xb8];
         instruction.extend_from_slice(&value.to_le_bytes());
@@ -1418,5 +1444,38 @@ mod tests {
                 0xcf,
             ]
         );
+    }
+
+    #[test]
+    fn paging_control_register_forms_have_exact_bytes_and_are_atomic() {
+        let mut encoder = Encoder::new(64);
+        encoder.mov_eax_cr0().unwrap();
+        encoder.mov_cr0_eax().unwrap();
+        encoder.mov_eax_cr2().unwrap();
+        encoder.mov_eax_cr3().unwrap();
+        encoder.mov_cr3_eax().unwrap();
+        encoder
+            .invlpg(MemoryOperand::new(Register::Eax, 0))
+            .unwrap();
+        encoder
+            .invlpg(MemoryOperand::new(Register::Ebp, -4))
+            .unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![
+                0x0f, 0x20, 0xc0, 0x0f, 0x22, 0xc0, 0x0f, 0x20, 0xd0, 0x0f, 0x20, 0xd8, 0x0f, 0x22,
+                0xd8, 0x0f, 0x01, 0x38, 0x0f, 0x01, 0x7d, 0xfc,
+            ]
+        );
+
+        let mut bounded = Encoder::new(2);
+        assert!(matches!(
+            bounded.mov_eax_cr0(),
+            Err(EncoderError::BufferOverflow {
+                limit: 2,
+                attempted_len: 3
+            })
+        ));
+        assert!(bounded.bytes().is_empty());
     }
 }

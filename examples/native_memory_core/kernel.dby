@@ -1,0 +1,96 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt.dby" as idt
+import "boot.dby" as boot
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "proof.dby" as proof
+
+const PROOF_ONE: usize = 0x00400000 as usize
+const PROOF_TWO: usize = 0x00401000 as usize
+const VALUE_ONE: u32 = 0xdbe00101 as u32
+const VALUE_TWO: u32 = 0xdbe00202 as u32
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail() -> int:
+    line("NATIVE MEMORY FAILED", 20 as usize)
+    return 1
+
+fn emit_boot_telemetry() -> int:
+    proof.value("MAP_COUNT", 9 as usize, boot.mmap_count() as usize)
+    proof.value("IMAGE_START", 11 as usize, frames.image_start())
+    proof.value("IMAGE_END", 9 as usize, frames.image_end())
+    proof.value("STACK_START", 11 as usize, frames.stack_start())
+    proof.value("STACK_END", 9 as usize, frames.stack_end())
+    proof.value("MB_INFO", 7 as usize, boot.info_address())
+    proof.value("MB_MAP", 6 as usize, boot.mmap_address())
+    proof.value("MB_MAP_LENGTH", 13 as usize, boot.mmap_length() as usize)
+    return 0
+
+pub fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int:
+    serial.init()
+    line("DBYTEOS NATIVE MEMORY", 21 as usize)
+    gdt.gdt_install()
+    idt.idt_install()
+    let boot_status: int = boot.validate(multiboot_magic, multiboot_info)
+    proof.value("BOOT_MAGIC", 10 as usize, multiboot_magic as usize)
+    proof.value("BOOT_INFO", 9 as usize, multiboot_info)
+    proof.value("BOOT_STATUS", 11 as usize, boot_status as usize)
+    if boot_status != 0:
+        return fail()
+    line("MEMORY MAP ONLINE", 17 as usize)
+    if frames.frames_initialize() != 0:
+        return fail()
+    emit_boot_telemetry()
+    line("FRAME ALLOCATOR ONLINE", 22 as usize)
+    let first: usize = frames.allocate()
+    let second: usize = frames.allocate()
+    if first == (0 as usize):
+        return fail()
+    if second == (0 as usize):
+        return fail()
+    if first == second:
+        return fail()
+    if frames.overlaps(first, first + (4096 as usize), frames.image_start(), frames.image_end()):
+        return fail()
+    if frames.overlaps(first, first + (4096 as usize), frames.stack_start(), frames.stack_end()):
+        return fail()
+    if frames.overlaps(second, second + (4096 as usize), frames.image_start(), frames.image_end()):
+        return fail()
+    if frames.overlaps(second, second + (4096 as usize), frames.stack_start(), frames.stack_end()):
+        return fail()
+    proof.value("FRAME_ONE", 9 as usize, first)
+    proof.value("FRAME_TWO", 9 as usize, second)
+    if paging.paging_initialize() != 0:
+        return fail()
+    proof.value("PAGE_DIRECTORY", 14 as usize, paging.directory_address())
+    proof.value("IDENTITY_TABLE", 14 as usize, paging.identity_address())
+    proof.value("FAULT_TABLE", 11 as usize, paging.fault_table_address())
+    proof.value("CR3", 3 as usize, paging.cr3_value())
+    proof.value("CR0", 3 as usize, paging.cr0_value() as usize)
+    line("PAGING ONLINE", 13 as usize)
+    if paging.arm(first) != 0:
+        return fail()
+    native.volatile_store32(PROOF_ONE as ptr[u32], VALUE_ONE)
+    if paging.fault_seen() != (1 as u32):
+        return fail()
+    if native.volatile_load32(PROOF_ONE as ptr[u32]) != VALUE_ONE:
+        return fail()
+    proof.value("CR2", 3 as usize, paging.last_cr2())
+    proof.value("PF_ERROR", 8 as usize, paging.last_error() as usize)
+    line("PAGE FAULT ABI ONLINE", 21 as usize)
+    line("PAGE ALLOC 001", 14 as usize)
+    if paging.map_second(second) != 0:
+        return fail()
+    native.volatile_store32(PROOF_TWO as ptr[u32], VALUE_TWO)
+    if native.volatile_load32(PROOF_TWO as ptr[u32]) != VALUE_TWO:
+        return fail()
+    if native.volatile_load32(PROOF_ONE as ptr[u32]) != VALUE_ONE:
+        return fail()
+    line("PAGE ALLOC 002", 14 as usize)
+    line("MEMORY CHECK OK", 15 as usize)
+    return 0
