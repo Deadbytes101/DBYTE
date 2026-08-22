@@ -1,0 +1,66 @@
+const MULTIBOOT_MAGIC: u32 = 0x2badb002 as u32
+const MMAP_FLAG: u32 = 0x40 as u32
+const MODULES_FLAG: u32 = 0x08 as u32
+const MAX_MMAP_LENGTH: u32 = 65536 as u32
+
+static mut INFO_ADDRESS: usize
+static mut MMAP_ADDRESS: usize
+static mut MMAP_LENGTH: u32
+
+fn read32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+pub fn validate(magic: u32, info: usize) -> int:
+    if magic != MULTIBOOT_MAGIC:
+        return 1
+    if info == (0 as usize):
+        return 2
+    if (info + (52 as usize)) < info:
+        return 3
+    let flags: u32 = read32(info)
+    if (flags & MMAP_FLAG) == (0 as u32):
+        return 4
+    if (flags & MODULES_FLAG) != (0 as u32):
+        if read32(info + (20 as usize)) != (0 as u32):
+            return 5
+    let length: u32 = read32(info + (44 as usize))
+    let address: usize = read32(info + (48 as usize)) as usize
+    if length == (0 as u32):
+        return 6
+    if length > MAX_MMAP_LENGTH:
+        return 6
+    let end: usize = address + (length as usize)
+    if end < address:
+        return 7
+    let cursor: usize = address
+    while cursor < end:
+        if (end - cursor) < (24 as usize):
+            return 8
+        let payload: u32 = read32(cursor)
+        if payload < (20 as u32):
+            return 9
+        let next: usize = cursor + (payload as usize) + (4 as usize)
+        if next <= cursor:
+            return 10
+        if next > end:
+            return 10
+        if read32(cursor + (8 as usize)) != (0 as u32):
+            return 11
+        if read32(cursor + (16 as usize)) != (0 as u32):
+            return 12
+        cursor = next
+    if cursor != end:
+        return 13
+    INFO_ADDRESS = info
+    MMAP_ADDRESS = address
+    MMAP_LENGTH = length
+    return 0
+
+pub fn info_address() -> usize:
+    return INFO_ADDRESS
+
+pub fn mmap_address() -> usize:
+    return MMAP_ADDRESS
+
+pub fn mmap_length() -> u32:
+    return MMAP_LENGTH

@@ -1216,6 +1216,16 @@ fn lower_intrinsic(
                 _ => unreachable!(),
             }
         }
+        SystemIntrinsic::TaskBlockTrap => {
+            require_intrinsic_arity(intrinsic, argument_count, 2, function)?;
+            pop(encoder, function, Register::Edx)?;
+            pop(encoder, function, Register::Eax)?;
+            emit(encoder, function, |encoder| {
+                encoder.software_interrupt(0x81)
+            })?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
         SystemIntrinsic::InterruptResume => {
             require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
             pop(encoder, function, Register::Eax)?;

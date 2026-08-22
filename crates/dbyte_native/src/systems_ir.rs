@@ -63,6 +63,7 @@ pub enum SystemIntrinsic {
     CpuInvlpg,
     CpuLgdt,
     CpuLidt,
+    TaskBlockTrap,
     InterruptResume,
 }
 
@@ -93,6 +94,7 @@ impl SystemIntrinsic {
             "cpu_invlpg" => Some(Self::CpuInvlpg),
             "cpu_lgdt" => Some(Self::CpuLgdt),
             "cpu_lidt" => Some(Self::CpuLidt),
+            "task_block_trap" => Some(Self::TaskBlockTrap),
             "interrupt_resume" => Some(Self::InterruptResume),
             _ => None,
         }
@@ -123,6 +125,7 @@ impl SystemIntrinsic {
             Self::CpuInvlpg => "native.cpu_invlpg",
             Self::CpuLgdt => "native.cpu_lgdt",
             Self::CpuLidt => "native.cpu_lidt",
+            Self::TaskBlockTrap => "native.task_block_trap",
             Self::InterruptResume => "native.interrupt_resume",
         }
     }
@@ -160,6 +163,7 @@ impl SystemIntrinsic {
             Self::CpuWriteCr3 => vec![SystemType::Usize],
             Self::CpuInvlpg => vec![SystemType::Pointer(Box::new(SystemType::U8))],
             Self::CpuLgdt | Self::CpuLidt => vec![SystemType::Usize],
+            Self::TaskBlockTrap => vec![SystemType::U32, SystemType::Usize],
             Self::InterruptResume => vec![SystemType::Usize],
         }
     }
@@ -183,6 +187,7 @@ impl SystemIntrinsic {
             | Self::CpuInvlpg
             | Self::CpuLgdt
             | Self::CpuLidt => None,
+            Self::TaskBlockTrap => Some(SystemType::I32),
             Self::InterruptResume => None,
             Self::CpuReadEflags | Self::CpuReadCr0 => Some(SystemType::U32),
             Self::CpuReadCr2 | Self::CpuReadCr3 => Some(SystemType::Usize),

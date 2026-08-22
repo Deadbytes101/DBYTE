@@ -386,6 +386,10 @@ impl Encoder {
         self.emit_raw(&[0xcc])
     }
 
+    pub fn software_interrupt(&mut self, vector: u8) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xcd, vector])
+    }
+
     pub fn pushfd(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0x9c])
     }
@@ -1459,6 +1463,7 @@ mod tests {
         encoder.sti().unwrap();
         encoder.hlt().unwrap();
         encoder.int3().unwrap();
+        encoder.software_interrupt(0x81).unwrap();
         encoder.pushfd().unwrap();
         encoder.pushad().unwrap();
         encoder.popad().unwrap();
@@ -1468,10 +1473,20 @@ mod tests {
         assert_eq!(
             finish(encoder),
             vec![
-                0xfa, 0xfb, 0xf4, 0xcc, 0x9c, 0x60, 0x61, 0x0f, 0x01, 0x10, 0x0f, 0x01, 0x5a, 0x04,
-                0xcf,
+                0xfa, 0xfb, 0xf4, 0xcc, 0xcd, 0x81, 0x9c, 0x60, 0x61, 0x0f, 0x01, 0x10, 0x0f, 0x01,
+                0x5a, 0x04, 0xcf,
             ]
         );
+
+        let mut bounded = Encoder::new(1);
+        assert!(matches!(
+            bounded.software_interrupt(0x81),
+            Err(EncoderError::BufferOverflow {
+                limit: 1,
+                attempted_len: 2
+            })
+        ));
+        assert!(bounded.bytes().is_empty());
     }
 
     #[test]

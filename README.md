@@ -45,7 +45,7 @@ DBYTE is a compact systems-oriented project built around a custom language named
 The repo currently contains four connected layers:
 
 - **DByte language toolchain**: lexer, parser, type checker, tree interpreter, bytecode compiler, bytecode VM, project loader, test runner, shell, REPL, and embedding API.
-- **DByte native kernel runtime**: a freestanding `i686-dbyte-none` path that owns physical frames, maps a fixed kernel arena, runs a page-backed coalescing heap, and provides DByte memory operations without a host runtime.
+- **DByte native kernel runtime**: a freestanding `i686-dbyte-none` path that owns physical frames, maps a fixed kernel arena, runs a page-backed heap, schedules preemptive kernel tasks, and blocks or wakes them without a host runtime.
 - **DByteOS userland**: host-runnable `.dby` programs under `examples/dbyteos/` that model a personal operating environment, shell commands, config, diagnostics, security checks, workspace flows, and system tools.
 - **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU boot experiments, VGA output, serial logs, IDT and IRQ research, exception surfaces, PIC planning, and controlled runtime probes.
 
@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.5.0**
+- Snapshot version: **v11.6.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -63,8 +63,8 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 
 - Kernel Rust source: **16,448 lines** across `kernel-lab/src/*.rs`.
 - Full Kernel Lab tracked files: **16,584 lines** across kernel sources, linker script, scripts, manifest, and lab README.
-- Main tracked source and docs set: **93,305 lines** across **550 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
-- Total tracked files in the repository: **871**.
+- Main tracked source and docs set: **98,787 lines** across **592 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
+- Total tracked files in the repository: **913**.
 
 ## Language Stack
 
@@ -92,6 +92,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Embed DByte in Rust applications.
 - Compile and boot a multi-module DByteOS core that releases physical frames, maps and unmaps kernel pages, grows and decommits a checked heap, and executes memory operations in DByte machine code.
 - Boot a preemptive ring-0 DByte scheduler whose non-yielding tasks switch from real IRQ0 resume images and whose page-backed stacks have unmapped guards.
+- Put DByte tasks to sleep without spinning and wake fixed FIFO Event waiters from task or hardware IRQ context while preserving interrupt state.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -124,6 +125,15 @@ the unmapped stack guard at `0xC1200FFC`.
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_scheduler_core.ps1
 ```
 
+The `v11.6.0` native blocking proof reuses the scheduler's sole canonical resume
+image through a CPL0 `int 0x81` blocking boundary. It proves wrap-safe sleeping,
+non-sticky wake-one FIFO Events, task- and IRQ-context signaling, IF preservation,
+continued runnable-task progress, and complete stack/frame reclamation.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_blocking_core.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
@@ -132,6 +142,8 @@ See [DByte Native Kernel Runtime](docs/DBYTE_NATIVE_KERNEL_RUNTIME.md) for
 releasable frames, arena paging, the checked heap, and memory-operation proof.
 See [DByte Native Kernel Scheduler](docs/DBYTE_NATIVE_KERNEL_SCHEDULER.md) for
 the resume-image ABI, IRQ0 scheduler, task lifecycle, stack reclamation, and guard proof.
+See [DByte Native Kernel Blocking](docs/DBYTE_NATIVE_KERNEL_BLOCKING.md) for
+sleep deadlines, the CPL0 blocking trap, FIFO Event semantics, and IRQ-safe wakeups.
 
 Launch the DByte shell with the DByteOS userland profile:
 

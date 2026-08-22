@@ -3,6 +3,8 @@
 //! This crate reuses DByte's lexer, parser, and AST. It does not invoke the
 //! hosted interpreter/VM or any external compiler, linker, or assembler.
 
+#[cfg(test)]
+mod blocking_contract;
 pub mod cli;
 pub mod diagnostics;
 pub mod elf32;

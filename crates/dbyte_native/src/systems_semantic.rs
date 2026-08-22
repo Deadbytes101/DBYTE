@@ -2973,6 +2973,25 @@ impl<'a> FunctionAnalyzer<'a> {
                 span,
             ));
         }
+        if intrinsic == SystemIntrinsic::TaskBlockTrap {
+            if self.signature.interrupt.is_some() {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "native.task_block_trap is only valid in normal functions",
+                    span,
+                ));
+            }
+            if args.len() == 2 {
+                let kind = self.constant_u16(&args[0], "task block request kind")?;
+                if kind != 1 && kind != 2 {
+                    return Err(self.error(
+                        DiagnosticCategory::InvalidIntrinsic,
+                        "native.task_block_trap request kind must be 1 (sleep) or 2 (event wait)",
+                        args[0].span(),
+                    ));
+                }
+            }
+        }
         let expected_types = intrinsic.parameter_types();
         if args.len() != expected_types.len() {
             return Err(self.error(
@@ -4269,5 +4288,38 @@ mod tests {
                 .category,
             DiagnosticCategory::InvalidIntrinsic
         );
+    }
+
+    #[test]
+    fn task_block_trap_is_typed_constant_and_normal_function_only() {
+        let source = "fn block(payload: usize) -> int:\n    return native.task_block_trap(1 as u32, payload)\nfn kernel_main() -> int:\n    return block(5 as usize)\n";
+        let project = analyze_systems_project(&one_module(source)).unwrap();
+        let block = project.modules[0]
+            .functions
+            .iter()
+            .find(|function| function.source_name == "block")
+            .unwrap();
+        assert!(block.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::TaskBlockTrap,
+                argument_count: 2,
+                result: Some(SystemType::I32),
+            }
+        )));
+
+        for invalid in [
+            "fn block(kind: u32) -> int:\n    return native.task_block_trap(kind, 0 as usize)\nfn kernel_main() -> int:\n    return block(1 as u32)\n",
+            "fn kernel_main() -> int:\n    return native.task_block_trap(3 as u32, 0 as usize)\n",
+            "struct InterruptFrame:\n    eip: u32\n    cs: u32\n    eflags: u32\ninterrupt(no_error_code) fn trap(frame: ptr[InterruptFrame]):\n    native.task_block_trap(1 as u32, 1 as usize)\n    return\nfn kernel_main() -> int:\n    return 0\n",
+            "struct InterruptFrame:\n    eip: u32\n    cs: u32\n    eflags: u32\ninterrupt(error_code) fn fault(frame: ptr[InterruptFrame], error: u32):\n    native.task_block_trap(2 as u32, 0 as usize)\n    return\nfn kernel_main() -> int:\n    return 0\n",
+        ] {
+            assert_eq!(
+                analyze_systems_project(&one_module(invalid))
+                    .unwrap_err()
+                    .category,
+                DiagnosticCategory::InvalidIntrinsic
+            );
+        }
     }
 }

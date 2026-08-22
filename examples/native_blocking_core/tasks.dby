@@ -1,0 +1,270 @@
+import "scheduler.dby" as scheduler
+import "serial.dby" as serial
+import "proof.dby" as proof
+import "paging.dby" as paging
+
+static mut FIFO_EVENT: scheduler.Event
+static mut TASK_EMPTY_EVENT: scheduler.Event
+static mut IRQ_EVENT: scheduler.Event
+static mut A_PROGRESS: usize
+static mut B_PROGRESS: usize
+static mut D_PROGRESS: usize
+static mut C_PROGRESS: usize
+static mut E_PROGRESS: usize
+static mut F_PROGRESS: usize
+static mut E_WAIT_TICK: u32
+static mut E_WAKE_TICK: u32
+static mut F_WAIT_TICK: u32
+static mut F_WAKE_TICK: u32
+static mut C_WHILE_BLOCKED: usize
+static mut SLEEP_START: u32
+static mut SLEEP_END: u32
+static mut A_SWITCH_BEFORE: usize
+static mut A_SWITCH_AFTER: usize
+static mut FIFO_ORDER: usize
+static mut B_WAKE_ORDER: usize
+static mut D_WAKE_ORDER: usize
+static mut TASK_IF_BEFORE: u32
+static mut TASK_IF_AFTER: u32
+static mut EMPTY_IF_BEFORE: u32
+static mut EMPTY_IF_AFTER: u32
+static mut BLOCKED_STACKS_MAPPED: usize
+static mut PROBE_SLOT: usize
+static mut PHASE: usize
+static mut FAILURE: i32
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(status: i32) -> int:
+    FAILURE = status
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+pub fn initialize_events() -> int:
+    if scheduler.event_initialize(&FIFO_EVENT) != 0:
+        return 1
+    if scheduler.event_initialize(&TASK_EMPTY_EVENT) != 0:
+        return 2
+    if scheduler.event_initialize(&IRQ_EVENT) != 0:
+        return 3
+    if scheduler.configure_irq_event(&IRQ_EVENT, 1 as u32, 9 as u32) != 0:
+        return 4
+    A_PROGRESS = 0 as usize
+    B_PROGRESS = 0 as usize
+    D_PROGRESS = 0 as usize
+    C_PROGRESS = 0 as usize
+    E_PROGRESS = 0 as usize
+    F_PROGRESS = 0 as usize
+    C_WHILE_BLOCKED = 0 as usize
+    FIFO_ORDER = 0 as usize
+    FAILURE = 0
+    return 0
+
+pub fn task_a() -> int:
+    A_PROGRESS = 1 as usize
+    SLEEP_START = scheduler.tick_count()
+    A_SWITCH_BEFORE = scheduler.current_switch_count()
+    let status: i32 = scheduler.task_sleep_ticks(5 as u32)
+    if status != 0:
+        return fail(status)
+    SLEEP_END = scheduler.tick_count()
+    A_SWITCH_AFTER = scheduler.current_switch_count()
+    A_PROGRESS = 2 as usize
+    TASK_IF_BEFORE = native.cpu_read_eflags()
+    if scheduler.event_signal(&FIFO_EVENT) != 0:
+        return fail(11)
+    TASK_IF_AFTER = native.cpu_read_eflags()
+    if scheduler.event_signal(&TASK_EMPTY_EVENT) != 0:
+        return fail(12)
+    A_PROGRESS = 3 as usize
+    scheduler.task_exit()
+    return 0
+
+pub fn task_b() -> int:
+    B_PROGRESS = 1 as usize
+    let status: i32 = scheduler.event_wait(&FIFO_EVENT)
+    if status != 0:
+        return fail(status)
+    FIFO_ORDER = FIFO_ORDER + (1 as usize)
+    B_WAKE_ORDER = FIFO_ORDER
+    B_PROGRESS = 2 as usize
+    if scheduler.event_signal(&FIFO_EVENT) != 0:
+        return fail(21)
+    B_PROGRESS = 3 as usize
+    return 0
+
+pub fn task_d() -> int:
+    D_PROGRESS = 1 as usize
+    let status: i32 = scheduler.event_wait(&FIFO_EVENT)
+    if status != 0:
+        return fail(status)
+    FIFO_ORDER = FIFO_ORDER + (1 as usize)
+    D_WAKE_ORDER = FIFO_ORDER
+    D_PROGRESS = 2 as usize
+    return 0
+
+pub fn task_c() -> int:
+    while A_PROGRESS < (3 as usize):
+        C_PROGRESS = C_PROGRESS + (1 as usize)
+        if A_PROGRESS == (1 as usize):
+            if B_PROGRESS == (1 as usize):
+                if D_PROGRESS == (1 as usize):
+                    C_WHILE_BLOCKED = C_WHILE_BLOCKED + (1 as usize)
+    while E_PROGRESS < (2 as usize):
+        C_PROGRESS = C_PROGRESS + (1 as usize)
+    while F_PROGRESS < (2 as usize):
+        C_PROGRESS = C_PROGRESS + (1 as usize)
+    return 0
+
+pub fn task_empty_probe() -> int:
+    EMPTY_IF_BEFORE = native.cpu_read_eflags()
+    if scheduler.event_signal(&TASK_EMPTY_EVENT) != 0:
+        return fail(31)
+    EMPTY_IF_AFTER = native.cpu_read_eflags()
+    E_PROGRESS = 1 as usize
+    E_WAIT_TICK = scheduler.tick_count()
+    let status: i32 = scheduler.event_wait(&TASK_EMPTY_EVENT)
+    if status != 0:
+        return fail(status)
+    E_PROGRESS = 2 as usize
+    E_WAKE_TICK = scheduler.tick_count()
+    return 0
+
+pub fn irq_waiter() -> int:
+    F_PROGRESS = 1 as usize
+    F_WAIT_TICK = scheduler.tick_count()
+    let status: i32 = scheduler.event_wait(&IRQ_EVENT)
+    if status != 0:
+        return fail(status)
+    F_PROGRESS = 2 as usize
+    F_WAKE_TICK = scheduler.tick_count()
+    return 0
+
+pub fn reuse_probe() -> int:
+    PROBE_SLOT = scheduler.current_slot()
+    return 0
+
+fn mapped_stack(slot: usize) -> bool:
+    let address: usize = paging.scheduler_start() + (slot * (0x5000 as usize)) + (0x1000 as usize)
+    return paging.is_kernel_page_mapped(address)
+
+fn proof_ready() -> bool:
+    if A_PROGRESS != (3 as usize):
+        return false
+    if B_PROGRESS != (3 as usize):
+        return false
+    if D_PROGRESS != (2 as usize):
+        return false
+    if E_PROGRESS != (2 as usize):
+        return false
+    if F_PROGRESS != (2 as usize):
+        return false
+    return true
+
+fn validate_proof() -> int:
+    if FAILURE != 0:
+        return 1
+    if (SLEEP_END - SLEEP_START) < (5 as u32):
+        return 2
+    if A_SWITCH_AFTER != (A_SWITCH_BEFORE + (1 as usize)):
+        return 3
+    if B_WAKE_ORDER != (1 as usize):
+        return 4
+    if D_WAKE_ORDER != (2 as usize):
+        return 5
+    if C_WHILE_BLOCKED == (0 as usize):
+        return 6
+    if (TASK_IF_BEFORE & (0x200 as u32)) == (0 as u32):
+        return 7
+    if (TASK_IF_AFTER & (0x200 as u32)) == (0 as u32):
+        return 8
+    if (EMPTY_IF_BEFORE & (0x200 as u32)) == (0 as u32):
+        return 9
+    if (EMPTY_IF_AFTER & (0x200 as u32)) == (0 as u32):
+        return 10
+    if BLOCKED_STACKS_MAPPED != (1 as usize):
+        return 11
+    if scheduler.eoi_count() != (scheduler.tick_count() as usize):
+        return 12
+    if scheduler.trap_count() < (5 as usize):
+        return 13
+    if PROBE_SLOT != (1 as usize):
+        return 14
+    if scheduler.last_spawn_first_frame() != scheduler.first_reclaimed_frame():
+        return 15
+    return 0
+
+fn emit_proof() -> int:
+    proof.value("SLEEP_START", 11 as usize, SLEEP_START as usize)
+    proof.value("SLEEP_END", 9 as usize, SLEEP_END as usize)
+    proof.value("SLEEP_DELTA", 11 as usize, (SLEEP_END - SLEEP_START) as usize)
+    proof.value("A_SWITCH_BEFORE", 15 as usize, A_SWITCH_BEFORE)
+    proof.value("A_SWITCH_AFTER", 14 as usize, A_SWITCH_AFTER)
+    proof.value("B_WAKE_ORDER", 12 as usize, B_WAKE_ORDER)
+    proof.value("D_WAKE_ORDER", 12 as usize, D_WAKE_ORDER)
+    proof.value("C_PROGRESS", 10 as usize, C_PROGRESS)
+    proof.value("C_WHILE_BLOCKED", 15 as usize, C_WHILE_BLOCKED)
+    proof.value("A_PROGRESS", 10 as usize, A_PROGRESS)
+    proof.value("B_PROGRESS", 10 as usize, B_PROGRESS)
+    proof.value("D_PROGRESS", 10 as usize, D_PROGRESS)
+    proof.value("E_PROGRESS", 10 as usize, E_PROGRESS)
+    proof.value("F_PROGRESS", 10 as usize, F_PROGRESS)
+    proof.value("E_WAIT_TICK", 11 as usize, E_WAIT_TICK as usize)
+    proof.value("E_WAKE_TICK", 11 as usize, E_WAKE_TICK as usize)
+    proof.value("F_WAIT_TICK", 11 as usize, F_WAIT_TICK as usize)
+    proof.value("F_WAKE_TICK", 11 as usize, F_WAKE_TICK as usize)
+    proof.value("TASK_IF_BEFORE", 14 as usize, TASK_IF_BEFORE as usize)
+    proof.value("TASK_IF_AFTER", 13 as usize, TASK_IF_AFTER as usize)
+    proof.value("EMPTY_IF_BEFORE", 15 as usize, EMPTY_IF_BEFORE as usize)
+    proof.value("EMPTY_IF_AFTER", 14 as usize, EMPTY_IF_AFTER as usize)
+    proof.value("BLOCKED_MAPPED", 14 as usize, BLOCKED_STACKS_MAPPED)
+    proof.value("REUSE_SLOT", 10 as usize, PROBE_SLOT)
+    scheduler.emit_state()
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        if scheduler.tick_count() >= (3 as u32):
+            if A_PROGRESS == (1 as usize):
+                if B_PROGRESS == (1 as usize):
+                    if D_PROGRESS == (1 as usize):
+                        if E_PROGRESS == (1 as usize):
+                            if mapped_stack(1 as usize):
+                                if mapped_stack(2 as usize):
+                                    if mapped_stack(3 as usize):
+                                        if mapped_stack(5 as usize):
+                                            BLOCKED_STACKS_MAPPED = 1 as usize
+        if scheduler.reap_exited() != 0:
+            return fail(41)
+        if PHASE == (0 as usize):
+            if proof_ready():
+                if scheduler.live_count() == (1 as usize):
+                    let probe_id: usize = scheduler.spawn(task_address(reuse_probe))
+                    if probe_id == (0 as usize):
+                        return fail(42)
+                    PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.live_count() == (1 as usize):
+                    if scheduler.exit_count() >= (7 as usize):
+                        if validate_proof() != 0:
+                            return fail(43)
+                        line("SLEEP WAKE OK", 13 as usize)
+                        line("EVENT WAIT OK", 13 as usize)
+                        line("EVENT WAKE OK", 13 as usize)
+                        line("NO BUSY WAIT OK", 15 as usize)
+                        line("BLOCK RECLAIM OK", 16 as usize)
+                        emit_proof()
+                        line("BLOCKING CHECK OK", 17 as usize)
+                        native.cpu_cli()
+                        while true:
+                            native.cpu_hlt()
+    return 0
