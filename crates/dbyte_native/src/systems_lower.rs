@@ -5,6 +5,7 @@ use crate::ir::{CompareOp, LabelId, LocalId};
 use crate::object::{
     ObjectImage, ObjectRelocation, ObjectSection, ObjectSectionData, ObjectSymbol, RelocationKind,
     SectionContents, SymbolBinding, SymbolDefinition, SymbolId, SymbolKind, ENTRY_METADATA_PREFIX,
+    TASK_METADATA_PREFIX,
 };
 use crate::system_types::SystemType;
 use crate::systems_ir::{
@@ -215,6 +216,37 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
             },
         )?;
     }
+    let mut task_markers = BTreeSet::new();
+    for function in &module.functions {
+        for instruction in &function.instructions {
+            match instruction {
+                SystemsInst::TaskAddress { symbol } => {
+                    task_markers.insert(format!("{TASK_METADATA_PREFIX}def:{symbol}"));
+                    task_markers.insert(format!("{TASK_METADATA_PREFIX}use:{symbol}"));
+                }
+                SystemsInst::LinkerAddress { symbol } if symbol == "__dbyte_task_trampoline" => {
+                    task_markers.insert(format!("{TASK_METADATA_PREFIX}trampoline"));
+                }
+                _ => {}
+            }
+        }
+    }
+    for marker in task_markers {
+        insert_named_symbol(
+            &mut symbols,
+            &mut symbol_ids,
+            ObjectSymbol {
+                name: marker,
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            },
+        )?;
+    }
     for (index, offset) in string_locations.iter().enumerate() {
         insert_named_symbol(
             &mut symbols,
@@ -361,13 +393,18 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
         .collect();
     for symbol in linker_symbols {
         if !symbol_ids.contains_key(&symbol) {
+            let kind = if symbol == "__dbyte_task_trampoline" {
+                SymbolKind::Function
+            } else {
+                SymbolKind::Object
+            };
             insert_named_symbol(
                 &mut symbols,
                 &mut symbol_ids,
                 ObjectSymbol {
                     name: symbol,
                     binding: SymbolBinding::Global,
-                    kind: SymbolKind::Object,
+                    kind,
                     definition: SymbolDefinition::Undefined,
                     size: 0,
                 },
@@ -641,7 +678,16 @@ fn lower_function(
             &mut returns,
         )?;
     }
-    if returns == 0 {
+    let terminal_resume = function.instructions.iter().any(|instruction| {
+        matches!(
+            instruction,
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::InterruptResume,
+                ..
+            }
+        )
+    });
+    if returns == 0 && !terminal_resume {
         return Err(function_error(
             function,
             "native systems function has no return instruction",
@@ -963,6 +1009,11 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
+        SystemsInst::TaskAddress { symbol } => {
+            emit_absolute_address(encoder, function, symbols, relocations, symbol)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
         SystemsInst::LinkerAddress { symbol } => {
             emit_absolute_address(encoder, function, symbols, relocations, symbol)?;
             push(encoder, function, Register::Eax)?;
@@ -1164,6 +1215,15 @@ fn lower_intrinsic(
                 })?,
                 _ => unreachable!(),
             }
+        }
+        SystemIntrinsic::InterruptResume => {
+            require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
+            pop(encoder, function, Register::Eax)?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Esp, Register::Eax)
+            })?;
+            emit(encoder, function, Encoder::popad)?;
+            emit(encoder, function, Encoder::iretd)?;
         }
     }
     Ok(())

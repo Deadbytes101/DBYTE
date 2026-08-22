@@ -1,0 +1,315 @@
+import "arch_x86.dby" as arch
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "heap.dby" as heap
+import "pic.dby" as pic
+import "proof.dby" as proof
+
+const MAX_TASKS: usize = 8 as usize
+const SLOT_SIZE: usize = 0x5000 as usize
+const STACK_PAGES: usize = 4 as usize
+const STATE_READY: u32 = 1 as u32
+const STATE_RUNNING: u32 = 2 as u32
+const STATE_EXITED: u32 = 3 as u32
+const COOKIE: u32 = 0x51ced00d as u32
+
+static mut QUEUE: array[usize, 8]
+static mut SLOT_OWNER: array[usize, 8]
+static mut TEMP_FRAMES: array[usize, 4]
+static mut CURRENT: usize
+static mut CURRENT_QUEUE: usize
+static mut NEXT_ID: usize
+static mut TICKS: usize
+static mut SWITCHES: usize
+static mut EXITS: usize
+static mut RECLAIMS: usize
+static mut EOI_COUNT: usize
+static mut NESTED: u32
+static mut LAST_RECLAIMED_SLOT: usize
+static mut FIRST_RECLAIMED_FRAME: usize
+static mut LAST_SPAWN_FIRST_FRAME: usize
+
+fn load(address: usize) -> usize:
+    return native.volatile_load32(address as ptr[u32]) as usize
+
+fn store(address: usize, value: usize) -> int:
+    native.volatile_store32(address as ptr[u32], value as u32)
+    return 0
+
+fn checksum(tcb: usize) -> u32:
+    let value: u32 = COOKIE ^ (load(tcb) as u32)
+    value = value ^ (load(tcb + (4 as usize)) as u32)
+    value = value ^ (load(tcb + (8 as usize)) as u32)
+    value = value ^ (load(tcb + (12 as usize)) as u32)
+    value = value ^ (load(tcb + (20 as usize)) as u32)
+    return value
+
+fn seal(tcb: usize) -> int:
+    store(tcb + (16 as usize), checksum(tcb) as usize)
+    return 0
+
+fn valid(tcb: usize) -> bool:
+    if tcb == (0 as usize):
+        return false
+    return load(tcb + (16 as usize)) == (checksum(tcb) as usize)
+
+fn set_state(tcb: usize, state: u32) -> int:
+    store(tcb + (4 as usize), state as usize)
+    seal(tcb)
+    return 0
+
+fn set_resume(tcb: usize, resume: usize) -> int:
+    store(tcb + (8 as usize), resume)
+    seal(tcb)
+    return 0
+
+fn increment_switch(tcb: usize) -> int:
+    store(tcb + (20 as usize), load(tcb + (20 as usize)) + (1 as usize))
+    seal(tcb)
+    return 0
+
+fn next_index(index: usize) -> usize:
+    let result: usize = index + (1 as usize)
+    if result >= MAX_TASKS:
+        return 0 as usize
+    return result
+
+fn select_next() -> usize:
+    let index: usize = next_index(CURRENT_QUEUE)
+    let searched: usize = 0 as usize
+    while searched < MAX_TASKS:
+        let candidate: usize = QUEUE[index]
+        if candidate != (0 as usize):
+            if valid(candidate):
+                let state: u32 = load(candidate + (4 as usize)) as u32
+                if state == STATE_READY:
+                    CURRENT_QUEUE = index
+                    CURRENT = candidate
+                    set_state(candidate, STATE_RUNNING)
+                    increment_switch(candidate)
+                    return candidate
+                if state == STATE_RUNNING:
+                    CURRENT_QUEUE = index
+                    CURRENT = candidate
+                    increment_switch(candidate)
+                    return candidate
+        index = next_index(index)
+        searched = searched + (1 as usize)
+    return 0 as usize
+
+fn rollback_spawn(slot: usize, mapped: usize, tcb: ptr[u8]) -> int:
+    let page: usize = 0 as usize
+    while page < mapped:
+        let address: usize = paging.scheduler_start() + (slot * SLOT_SIZE) + ((page + (1 as usize)) << (12 as usize))
+        let frame: usize = paging.unmap_kernel_page(address)
+        if frame != (0 as usize):
+            frames.release(frame)
+        page = page + (1 as usize)
+    heap.free(tcb)
+    return 0
+
+pub fn initialize() -> int:
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        QUEUE[index] = 0 as usize
+        SLOT_OWNER[index] = 0 as usize
+        index = index + (1 as usize)
+    CURRENT = 0 as usize
+    CURRENT_QUEUE = 7 as usize
+    NEXT_ID = 1 as usize
+    TICKS = 0 as usize
+    SWITCHES = 0 as usize
+    EXITS = 0 as usize
+    RECLAIMS = 0 as usize
+    EOI_COUNT = 0 as usize
+    NESTED = 0 as u32
+    LAST_RECLAIMED_SLOT = 0xffffffff as usize
+    FIRST_RECLAIMED_FRAME = 0 as usize
+    LAST_SPAWN_FIRST_FRAME = 0 as usize
+    if paging.heap_end() != paging.scheduler_start():
+        return 1
+    return 0
+
+pub fn spawn(entry: usize) -> usize:
+    native.cpu_cli()
+    if entry == (0 as usize):
+        return 0 as usize
+    let slot: usize = 0 as usize
+    while slot < MAX_TASKS:
+        if SLOT_OWNER[slot] == (0 as usize):
+            let queue_index: usize = 0 as usize
+            while queue_index < MAX_TASKS:
+                if QUEUE[queue_index] == (0 as usize):
+                    let tcb: ptr[u8] = heap.alloc(32 as usize, 16 as usize)
+                    if (tcb as usize) == (0 as usize):
+                        return 0 as usize
+                    let mapped: usize = 0 as usize
+                    while mapped < STACK_PAGES:
+                        let frame: usize = frames.allocate()
+                        if frame == (0 as usize):
+                            rollback_spawn(slot, mapped, tcb)
+                            return 0 as usize
+                        TEMP_FRAMES[mapped] = frame
+                        let virtual_address: usize = paging.scheduler_start() + (slot * SLOT_SIZE) + ((mapped + (1 as usize)) << (12 as usize))
+                        if paging.map_kernel_page(virtual_address, frame) != 0:
+                            frames.release(frame)
+                            rollback_spawn(slot, mapped, tcb)
+                            return 0 as usize
+                        mapped = mapped + (1 as usize)
+                    let stack_top: usize = paging.scheduler_start() + ((slot + (1 as usize)) * SLOT_SIZE)
+                    let resume: usize = stack_top - (48 as usize)
+                    let word: usize = 0 as usize
+                    while word < (12 as usize):
+                        store(resume + (word << (2 as usize)), 0 as usize)
+                        word = word + (1 as usize)
+                    store(resume + (28 as usize), entry)
+                    store(resume + (32 as usize), native.task_trampoline_address())
+                    store(resume + (36 as usize), 0x08 as usize)
+                    store(resume + (40 as usize), 0x202 as usize)
+                    store(resume + (44 as usize), task_address(task_returned))
+                    store(tcb as usize, NEXT_ID)
+                    store((tcb as usize) + (4 as usize), STATE_READY as usize)
+                    store((tcb as usize) + (8 as usize), resume)
+                    store((tcb as usize) + (12 as usize), slot)
+                    store((tcb as usize) + (20 as usize), 0 as usize)
+                    seal(tcb as usize)
+                    SLOT_OWNER[slot] = tcb as usize
+                    QUEUE[queue_index] = tcb as usize
+                    LAST_SPAWN_FIRST_FRAME = TEMP_FRAMES[0]
+                    let result: usize = NEXT_ID
+                    NEXT_ID = NEXT_ID + (1 as usize)
+                    return result
+                queue_index = queue_index + (1 as usize)
+            return 0 as usize
+        slot = slot + (1 as usize)
+    return 0 as usize
+
+pub fn start() -> int:
+    let next: usize = select_next()
+    if next == (0 as usize):
+        return 1
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub interrupt(no_error_code) fn irq0(frame: ptr[arch.InterruptFrame]):
+    if NESTED != (0 as u32):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    NESTED = 1 as u32
+    TICKS = TICKS + (1 as usize)
+    let old: usize = CURRENT
+    if old != (0 as usize):
+        if valid(old) == false:
+            native.cpu_cli()
+            while true:
+                native.cpu_hlt()
+        set_resume(old, (frame as usize) - (32 as usize))
+        if (load(old + (4 as usize)) as u32) == STATE_RUNNING:
+            set_state(old, STATE_READY)
+    let next: usize = select_next()
+    pic.eoi_master()
+    EOI_COUNT = EOI_COUNT + (1 as usize)
+    NESTED = 0 as u32
+    if next != old:
+        SWITCHES = SWITCHES + (1 as usize)
+        native.interrupt_resume(load(next + (8 as usize)))
+    return
+
+pub fn task_exit() -> int:
+    native.cpu_cli()
+    let old: usize = CURRENT
+    if old == (0 as usize):
+        while true:
+            native.cpu_hlt()
+    set_state(old, STATE_EXITED)
+    EXITS = EXITS + (1 as usize)
+    let next: usize = select_next()
+    if next == (0 as usize):
+        while true:
+            native.cpu_hlt()
+    SWITCHES = SWITCHES + (1 as usize)
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub fn task_returned() -> int:
+    task_exit()
+    native.cpu_hlt()
+    return 0
+
+pub fn reap_exited() -> int:
+    native.cpu_cli()
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        let tcb: usize = QUEUE[index]
+        if tcb != (0 as usize):
+            if tcb != CURRENT:
+                if valid(tcb):
+                    if (load(tcb + (4 as usize)) as u32) == STATE_EXITED:
+                        let slot: usize = load(tcb + (12 as usize))
+                        let page: usize = 0 as usize
+                        while page < STACK_PAGES:
+                            let address: usize = paging.scheduler_start() + (slot * SLOT_SIZE) + ((page + (1 as usize)) << (12 as usize))
+                            let frame: usize = paging.unmap_kernel_page(address)
+                            if page == (0 as usize):
+                                if FIRST_RECLAIMED_FRAME == (0 as usize):
+                                    FIRST_RECLAIMED_FRAME = frame
+                            if frame == (0 as usize):
+                                return 1
+                            if frames.release(frame) != 0:
+                                return 2
+                            page = page + (1 as usize)
+                        if heap.free(tcb as ptr[u8]) != 0:
+                            return 3
+                        QUEUE[index] = 0 as usize
+                        SLOT_OWNER[slot] = 0 as usize
+                        LAST_RECLAIMED_SLOT = slot
+                        RECLAIMS = RECLAIMS + (1 as usize)
+        index = index + (1 as usize)
+    return 0
+
+pub fn live_count() -> usize:
+    let count: usize = 0 as usize
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        if QUEUE[index] != (0 as usize):
+            count = count + (1 as usize)
+        index = index + (1 as usize)
+    return count
+
+pub fn tick_count() -> usize:
+    return TICKS
+
+pub fn switch_count() -> usize:
+    return SWITCHES
+
+pub fn exit_count() -> usize:
+    return EXITS
+
+pub fn reclaim_count() -> usize:
+    return RECLAIMS
+
+pub fn eoi_count() -> usize:
+    return EOI_COUNT
+
+pub fn last_reclaimed_slot() -> usize:
+    return LAST_RECLAIMED_SLOT
+
+pub fn first_reclaimed_frame() -> usize:
+    return FIRST_RECLAIMED_FRAME
+
+pub fn last_spawn_first_frame() -> usize:
+    return LAST_SPAWN_FIRST_FRAME
+
+pub fn current_slot() -> usize:
+    return load(CURRENT + (12 as usize))
+
+pub fn emit_state() -> int:
+    proof.value("TICKS", 5 as usize, TICKS)
+    proof.value("SWITCHES", 8 as usize, SWITCHES)
+    proof.value("EXITS", 5 as usize, EXITS)
+    proof.value("RECLAIMS", 8 as usize, RECLAIMS)
+    proof.value("EOI", 3 as usize, EOI_COUNT)
+    proof.value("LIVE", 4 as usize, live_count())
+    proof.value("SLOT", 4 as usize, LAST_RECLAIMED_SLOT)
+    proof.value("FRAME", 5 as usize, FIRST_RECLAIMED_FRAME)
+    proof.value("REUSED_FRAME", 12 as usize, LAST_SPAWN_FIRST_FRAME)
+    return 0

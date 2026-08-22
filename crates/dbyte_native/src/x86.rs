@@ -845,6 +845,10 @@ impl Encoder {
         Ok(immediate_offset)
     }
 
+    pub fn call_reg(&mut self, register: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xff, modrm(0b11, 2, register.code())])
+    }
+
     pub fn jump(&mut self, target: Label) -> Result<(), EncoderError> {
         self.emit_rel32(&[0xe9], target, FixupKind::JumpRel32)
     }
@@ -1356,6 +1360,30 @@ mod tests {
         encoder.nop().unwrap();
         assert_eq!(encoder.call_rel32_placeholder(), Ok(2));
         assert_eq!(finish(encoder), vec![0x90, 0xe8, 0xfc, 0xff, 0xff, 0xff]);
+    }
+
+    #[test]
+    fn task_trampoline_and_resume_sequence_have_exact_bytes_and_are_atomic() {
+        let mut encoder = Encoder::new(8);
+        encoder.call_reg(Register::Eax).unwrap();
+        encoder.ret().unwrap();
+        encoder.mov_reg_reg(Register::Esp, Register::Eax).unwrap();
+        encoder.popad().unwrap();
+        encoder.iretd().unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![0xff, 0xd0, 0xc3, 0x89, 0xc4, 0x61, 0xcf]
+        );
+
+        let mut bounded = Encoder::new(1);
+        assert!(matches!(
+            bounded.call_reg(Register::Eax),
+            Err(EncoderError::BufferOverflow {
+                limit: 1,
+                attempted_len: 2
+            })
+        ));
+        assert!(bounded.bytes().is_empty());
     }
 
     #[test]

@@ -63,6 +63,7 @@ pub enum SystemIntrinsic {
     CpuInvlpg,
     CpuLgdt,
     CpuLidt,
+    InterruptResume,
 }
 
 impl SystemIntrinsic {
@@ -92,6 +93,7 @@ impl SystemIntrinsic {
             "cpu_invlpg" => Some(Self::CpuInvlpg),
             "cpu_lgdt" => Some(Self::CpuLgdt),
             "cpu_lidt" => Some(Self::CpuLidt),
+            "interrupt_resume" => Some(Self::InterruptResume),
             _ => None,
         }
     }
@@ -121,6 +123,7 @@ impl SystemIntrinsic {
             Self::CpuInvlpg => "native.cpu_invlpg",
             Self::CpuLgdt => "native.cpu_lgdt",
             Self::CpuLidt => "native.cpu_lidt",
+            Self::InterruptResume => "native.interrupt_resume",
         }
     }
 
@@ -157,6 +160,7 @@ impl SystemIntrinsic {
             Self::CpuWriteCr3 => vec![SystemType::Usize],
             Self::CpuInvlpg => vec![SystemType::Pointer(Box::new(SystemType::U8))],
             Self::CpuLgdt | Self::CpuLidt => vec![SystemType::Usize],
+            Self::InterruptResume => vec![SystemType::Usize],
         }
     }
 
@@ -179,6 +183,7 @@ impl SystemIntrinsic {
             | Self::CpuInvlpg
             | Self::CpuLgdt
             | Self::CpuLidt => None,
+            Self::InterruptResume => None,
             Self::CpuReadEflags | Self::CpuReadCr0 => Some(SystemType::U32),
             Self::CpuReadCr2 | Self::CpuReadCr3 => Some(SystemType::Usize),
         }
@@ -394,6 +399,9 @@ pub enum SystemsInst {
         symbol: String,
         class: InterruptClass,
     },
+    TaskAddress {
+        symbol: String,
+    },
     LinkerAddress {
         symbol: String,
     },
@@ -459,6 +467,7 @@ impl fmt::Display for SystemsInst {
                 formatter,
                 "interrupt.address vector={vector} {symbol} class={class}"
             ),
+            Self::TaskAddress { symbol } => write!(formatter, "task.address {symbol}"),
             Self::LinkerAddress { symbol } => write!(formatter, "linker.address {symbol}"),
             Self::ReloadSegments {
                 code_selector,

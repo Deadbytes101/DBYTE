@@ -1,0 +1,36 @@
+import "arch_x86.dby" as arch
+import "paging.dby" as paging
+import "serial.dby" as serial
+import "proof.dby" as proof
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+pub interrupt(error_code) fn page_fault(frame: ptr[arch.InterruptFrame], error_code: u32):
+    let fault_address: usize = native.cpu_read_cr2()
+    if fault_address != (0xc1200ffc as usize):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    if (error_code & (7 as u32)) != (2 as u32):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    if paging.is_kernel_page_mapped(0xc1200000 as usize):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    line("PAGE FAULT CAUGHT", 17 as usize)
+    line("CR2 C1200FFC", 12 as usize)
+    line("ERROR 00000002", 14 as usize)
+    line("GUARD PAGE VERIFIED", 19 as usize)
+    proof.value("CR2", 3 as usize, fault_address)
+    proof.value("ERROR", 5 as usize, (error_code & (7 as u32)) as usize)
+    proof.value("GUARD_PTE", 9 as usize, 0 as usize)
+    line("HALT", 4 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return

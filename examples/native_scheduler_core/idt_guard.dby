@@ -1,0 +1,24 @@
+import "arch_x86.dby" as arch
+import "guard_fault.dby" as guard_fault
+
+packed struct IdtEntry:
+    offset_low: u16
+    selector: u16
+    zero: u8
+    flags: u8
+    offset_high: u16
+
+static mut IDT: array[IdtEntry, 256]
+static mut IDTR: arch.DescriptorTablePointer
+
+pub fn install() -> int:
+    let address: usize = interrupt_address(14, guard_fault.page_fault)
+    IDT[14].offset_low = (address & (0xffff as usize)) as u16
+    IDT[14].selector = 0x08 as u16
+    IDT[14].zero = 0 as u8
+    IDT[14].flags = 0x8e as u8
+    IDT[14].offset_high = (address >> (16 as usize)) as u16
+    IDTR.limit = 2047 as u16
+    IDTR.base = (&IDT) as usize as u32
+    native.cpu_lidt((&IDTR) as usize)
+    return 0

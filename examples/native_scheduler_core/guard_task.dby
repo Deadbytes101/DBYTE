@@ -1,0 +1,2 @@
+pub fn guard_task() -> int:
+    return 0

@@ -2732,6 +2732,9 @@ impl<'a> FunctionAnalyzer<'a> {
         if name == "interrupt_address" {
             return self.compile_interrupt_address(args, span);
         }
+        if name == "task_address" {
+            return self.compile_task_address(args, span);
+        }
         if matches!(name, "size_of" | "align_of") {
             if args.len() != 1 {
                 return Err(self.error(
@@ -2919,6 +2922,7 @@ impl<'a> FunctionAnalyzer<'a> {
             "kernel_image_end" => Some("__dbyte_image_end"),
             "bootstrap_stack_start" => Some("__dbyte_stack_bottom"),
             "bootstrap_stack_end" => Some("__dbyte_stack_top"),
+            "task_trampoline_address" => Some("__dbyte_task_trampoline"),
             _ => None,
         };
         if let Some(symbol) = linker_symbol {
@@ -2960,6 +2964,15 @@ impl<'a> FunctionAnalyzer<'a> {
                 span,
             )
         })?;
+        if intrinsic == SystemIntrinsic::InterruptResume
+            && self.signature.interrupt == Some(InterruptClass::ErrorCode)
+        {
+            return Err(self.error(
+                DiagnosticCategory::InvalidIntrinsic,
+                "native.interrupt_resume is forbidden in error-code interrupt functions",
+                span,
+            ));
+        }
         let expected_types = intrinsic.parameter_types();
         if args.len() != expected_types.len() {
             return Err(self.error(
@@ -3150,6 +3163,96 @@ impl<'a> FunctionAnalyzer<'a> {
             vector,
             symbol: signature.symbol,
             class,
+        });
+        Ok(ExprResult::Value(SystemType::Usize))
+    }
+
+    fn compile_task_address(&mut self, args: &[Expr], span: Span) -> NativeResult<ExprResult> {
+        if args.len() != 1 {
+            return Err(self.error(
+                DiagnosticCategory::WrongArity,
+                format!("task_address expects 1 argument, got {}", args.len()),
+                span,
+            ));
+        }
+        let (signature, source_name, external) = match &args[0] {
+            Expr::Ident(name, _) => (
+                self.context.symbols[self.module_id]
+                    .functions
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.error(
+                            DiagnosticCategory::UnresolvedFunction,
+                            format!("unresolved task entry '{name}'"),
+                            args[0].span(),
+                        )
+                    })?,
+                name.clone(),
+                false,
+            ),
+            Expr::Member {
+                object, property, ..
+            } => {
+                let Expr::Ident(alias, _) = object.as_ref() else {
+                    return Err(self.error(
+                        DiagnosticCategory::InvalidIntrinsic,
+                        "task_address entry must be a public function symbol",
+                        args[0].span(),
+                    ));
+                };
+                let target = import_target(self.context, self.module_id, alias, args[0].span())?;
+                let signature = self.context.symbols[target]
+                    .functions
+                    .get(property)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.error(
+                            DiagnosticCategory::UnresolvedFunction,
+                            format!("module '{alias}' has no task entry '{property}'"),
+                            args[0].span(),
+                        )
+                    })?;
+                if !signature.public {
+                    return Err(self.error(
+                        DiagnosticCategory::UnresolvedFunction,
+                        format!("task entry '{alias}.{property}' is module-private"),
+                        args[0].span(),
+                    ));
+                }
+                (signature, format!("{alias}.{property}"), true)
+            }
+            _ => {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "task_address entry must be a public function symbol",
+                    args[0].span(),
+                ))
+            }
+        };
+        if !signature.public
+            || signature.interrupt.is_some()
+            || !signature.params.is_empty()
+            || signature.return_type != SystemType::I32
+            || signature.symbol == "kernel_main"
+        {
+            return Err(self.error(
+                DiagnosticCategory::InvalidIntrinsic,
+                format!("task entry '{source_name}' must be public non-interrupt fn() -> int and cannot be kernel_main"),
+                args[0].span(),
+            ));
+        }
+        if external {
+            self.external_functions
+                .entry(signature.symbol.clone())
+                .or_insert_with(|| ExternalFunction {
+                    symbol: signature.symbol.clone(),
+                    parameter_types: Vec::new(),
+                    return_type: SystemType::I32,
+                });
+        }
+        self.instructions.push(SystemsInst::TaskAddress {
+            symbol: signature.symbol,
         });
         Ok(ExprResult::Value(SystemType::Usize))
     }
@@ -3751,6 +3854,12 @@ fn block_always_returns(statements: &[Stmt]) -> bool {
 fn statement_always_returns(statement: &Stmt) -> bool {
     match statement {
         Stmt::Return { .. } => true,
+        Stmt::Expr(Expr::MemberCall {
+            object, property, ..
+        }) => {
+            matches!(object.as_ref(), Expr::Ident(name, _) if name == "native")
+                && property == "interrupt_resume"
+        }
         Stmt::If {
             then_body,
             else_body: Some(else_body),
@@ -4112,5 +4221,53 @@ mod tests {
         let error = analyze_systems_project(&one_module(source)).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InterruptClassMismatch);
         assert!(error.message.contains("vector 14 requires error_code"));
+    }
+
+    #[test]
+    fn checked_task_addresses_and_terminal_resume_are_typed_narrowly() {
+        let source = "pub fn worker() -> int:\n    return 0\nfn switch(resume: usize) -> int:\n    native.interrupt_resume(resume)\nfn kernel_main() -> int:\n    let entry: usize = task_address(worker)\n    let trampoline: usize = native.task_trampoline_address()\n    return (entry + trampoline) as i32\n";
+        let project = analyze_systems_project(&one_module(source)).unwrap();
+        let kernel = project.modules[0].function("kernel_main").unwrap();
+        assert!(kernel.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::TaskAddress { symbol } if symbol == "worker"
+        )));
+        assert!(kernel.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::LinkerAddress { symbol } if symbol == "__dbyte_task_trampoline"
+        )));
+        let switch = project.modules[0]
+            .functions
+            .iter()
+            .find(|function| function.source_name == "switch")
+            .unwrap();
+        assert!(switch.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::InterruptResume,
+                ..
+            }
+        )));
+
+        for invalid in [
+            "fn worker() -> int:\n    return 0\nfn kernel_main() -> int:\n    task_address(worker)\n    return 0\n",
+            "pub fn worker(value: usize) -> int:\n    return value as i32\nfn kernel_main() -> int:\n    task_address(worker)\n    return 0\n",
+            "fn kernel_main() -> int:\n    task_address(kernel_main)\n    return 0\n",
+        ] {
+            assert_eq!(
+                analyze_systems_project(&one_module(invalid))
+                    .unwrap_err()
+                    .category,
+                DiagnosticCategory::InvalidIntrinsic
+            );
+        }
+
+        let error_code = "struct InterruptFrame:\n    eip: u32\n    cs: u32\n    eflags: u32\ninterrupt(error_code) fn fault(frame: ptr[InterruptFrame], error: u32):\n    native.interrupt_resume(frame as usize)\nfn kernel_main() -> int:\n    return 0\n";
+        assert_eq!(
+            analyze_systems_project(&one_module(error_code))
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::InvalidIntrinsic
+        );
     }
 }

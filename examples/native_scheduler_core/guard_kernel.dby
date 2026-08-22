@@ -1,0 +1,43 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt_guard.dby" as idt
+import "boot.dby" as boot
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "heap.dby" as heap
+import "scheduler.dby" as scheduler
+import "guard_task.dby" as guard_task
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn halt_failed() -> int:
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 1
+
+pub fn kernel_main(multiboot_magic: u32, multiboot_info: usize) -> int:
+    serial.init()
+    line("DBYTEOS TASK GUARD TEST", 23 as usize)
+    gdt.gdt_install()
+    if boot.validate(multiboot_magic, multiboot_info) != 0:
+        return halt_failed()
+    if frames.frames_initialize() != 0:
+        return halt_failed()
+    if paging.paging_initialize() != 0:
+        return halt_failed()
+    if heap.heap_initialize() != 0:
+        return halt_failed()
+    if scheduler.initialize() != 0:
+        return halt_failed()
+    idt.install()
+    if scheduler.spawn(task_address(guard_task.guard_task)) == (0 as usize):
+        return halt_failed()
+    if paging.is_kernel_page_mapped(0xc1200000 as usize):
+        return halt_failed()
+    line("GUARD ARMED", 11 as usize)
+    native.volatile_store32(0xc1200ffc as usize as ptr[u32], 0x12345678 as u32)
+    return halt_failed()

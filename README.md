@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.4.0**
+- Snapshot version: **v11.5.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -91,6 +91,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Launch a DByte REPL or shell.
 - Embed DByte in Rust applications.
 - Compile and boot a multi-module DByteOS core that releases physical frames, maps and unmaps kernel pages, grows and decommits a checked heap, and executes memory operations in DByte machine code.
+- Boot a preemptive ring-0 DByte scheduler whose non-yielding tasks switch from real IRQ0 resume images and whose page-backed stacks have unmapped guards.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -113,12 +114,24 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_native_memory_core.ps1
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_runtime_core.ps1
 ```
 
+The `v11.5.0` native scheduler proof builds separate normal and fatal guard images
+from DByte objects. The normal image preempts two non-yielding ring-0 tasks from
+real PIT IRQ0 delivery, reclaims their page-backed stacks, and proves deterministic
+slot/frame reuse. The guard image raises one real supervisor-write page fault on
+the unmapped stack guard at `0xC1200FFC`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_scheduler_core.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
 Multiboot entry metadata, physical ownership, paging, and page-fault proof.
 See [DByte Native Kernel Runtime](docs/DBYTE_NATIVE_KERNEL_RUNTIME.md) for
 releasable frames, arena paging, the checked heap, and memory-operation proof.
+See [DByte Native Kernel Scheduler](docs/DBYTE_NATIVE_KERNEL_SCHEDULER.md) for
+the resume-image ABI, IRQ0 scheduler, task lifecycle, stack reclamation, and guard proof.
 
 Launch the DByte shell with the DByteOS userland profile:
 

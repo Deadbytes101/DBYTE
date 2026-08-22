@@ -13,6 +13,8 @@ pub mod lower;
 mod memory_contract;
 pub mod modules;
 pub mod object;
+#[cfg(test)]
+mod scheduler_contract;
 pub mod semantic;
 pub mod system_types;
 pub mod systems_compiler;

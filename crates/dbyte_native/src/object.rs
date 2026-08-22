@@ -42,6 +42,8 @@ const INTERRUPT_METADATA_SECTION: &str = ".dbyte.interrupts";
 const INTERRUPT_METADATA_PREFIX: &str = "__dbyte_interrupt:";
 const ENTRY_METADATA_SECTION: &str = ".dbyte.entry";
 pub const ENTRY_METADATA_PREFIX: &str = "__dbyte_entry:";
+const TASK_METADATA_SECTION: &str = ".dbyte.tasks";
+pub const TASK_METADATA_PREFIX: &str = "__dbyte_task:";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectSection {
@@ -286,7 +288,13 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
 
     let interrupt_metadata = build_interrupt_metadata(image)?;
     let entry_metadata = build_entry_metadata(image)?;
-    let symtab_index = 7u16
+    let task_metadata = build_task_metadata(image)?;
+    let has_task_metadata = image
+        .symbols
+        .iter()
+        .any(|symbol| symbol.name.starts_with(TASK_METADATA_PREFIX));
+    let metadata_section_count = if has_task_metadata { 8u16 } else { 7u16 };
+    let symtab_index = metadata_section_count
         .checked_add(
             u16::try_from(relocation_sections.len())
                 .map_err(|_| object_error("too many relocation sections"))?,
@@ -305,6 +313,9 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         INTERRUPT_METADATA_SECTION,
         ENTRY_METADATA_SECTION,
     ];
+    if has_task_metadata {
+        section_names.push(TASK_METADATA_SECTION);
+    }
     for section in &relocation_sections {
         section_names.push(
             section
@@ -421,12 +432,30 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     });
     cursor = checked_add(cursor, entry_metadata_size, "entry metadata section end")?;
 
+    let task_metadata_offset = cursor;
+    if has_task_metadata {
+        let task_metadata_size = checked_usize_u32(task_metadata.len(), "task metadata size")?;
+        headers.push(SectionHeader {
+            name: section_name_offsets[7],
+            section_type: SHT_PROGBITS,
+            flags: 0,
+            address: 0,
+            offset: task_metadata_offset,
+            size: task_metadata_size,
+            link: 0,
+            info: 0,
+            alignment: 1,
+            entry_size: 0,
+        });
+        cursor = checked_add(cursor, task_metadata_size, "task metadata section end")?;
+    }
+
     for (relocation_position, section) in relocation_sections.iter().copied().enumerate() {
         cursor = align_up(cursor, 4)?;
         let table = &relocation_tables[&section];
         let size = checked_usize_u32(table.len(), "relocation section size")?;
         headers.push(SectionHeader {
-            name: section_name_offsets[7 + relocation_position],
+            name: section_name_offsets[metadata_section_count as usize + relocation_position],
             section_type: SHT_REL,
             flags: 0,
             address: 0,
@@ -536,7 +565,7 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     for (index, section) in relocation_sections.iter().enumerate() {
         copy_bytes(
             &mut bytes,
-            headers[7 + index].offset as usize,
+            headers[metadata_section_count as usize + index].offset as usize,
             &relocation_tables[section],
         )?;
     }
@@ -546,6 +575,9 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         &interrupt_metadata,
     )?;
     copy_bytes(&mut bytes, entry_metadata_offset as usize, &entry_metadata)?;
+    if has_task_metadata {
+        copy_bytes(&mut bytes, task_metadata_offset as usize, &task_metadata)?;
+    }
     copy_bytes(&mut bytes, symtab_offset as usize, &symtab)?;
     copy_bytes(&mut bytes, strtab_offset as usize, &strtab)?;
     copy_bytes(&mut bytes, shstrtab_offset as usize, &shstrtab)?;
@@ -567,7 +599,7 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
     let section_header_size = read_u16(bytes, 46)?;
     let section_count = read_u16(bytes, 48)?;
     let shstrtab_index = read_u16(bytes, 50)?;
-    if section_header_size != SECTION_HEADER_SIZE as u16 || !(9..=13).contains(&section_count) {
+    if section_header_size != SECTION_HEADER_SIZE as u16 || !(9..=14).contains(&section_count) {
         return Err(invalid_object("unsupported ELF section-header shape"));
     }
     if shstrtab_index == 0 || shstrtab_index >= section_count {
@@ -705,6 +737,22 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
         }
         validate_entry_metadata(
             section_file_bytes(bytes, entry_header, ENTRY_METADATA_SECTION)?,
+            &symbols,
+        )?;
+    }
+    if let Some(task_index) = by_name.get(TASK_METADATA_SECTION).copied() {
+        let task_header = &parsed[task_index as usize].header;
+        if task_header.section_type != SHT_PROGBITS
+            || task_header.flags != 0
+            || task_header.link != 0
+            || task_header.info != 0
+            || task_header.alignment != 1
+            || task_header.entry_size != 0
+        {
+            return Err(invalid_object("invalid .dbyte.tasks section contract"));
+        }
+        validate_task_metadata(
+            section_file_bytes(bytes, task_header, TASK_METADATA_SECTION)?,
             &symbols,
         )?;
     }
@@ -1217,6 +1265,7 @@ fn validate_allowed_sections(sections: &[ParsedSection]) -> Result<(), Diagnosti
         ".bss",
         ".dbyte.interrupts",
         ".dbyte.entry",
+        ".dbyte.tasks",
         ".rel.text",
         ".rel.rodata",
         ".rel.data",
@@ -1597,6 +1646,54 @@ fn validate_entry_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(),
     Ok(())
 }
 
+fn build_task_metadata(image: &ObjectImage) -> Result<Vec<u8>, Diagnostic> {
+    let mut records: Vec<&str> = image
+        .symbols
+        .iter()
+        .filter_map(|symbol| {
+            symbol
+                .name
+                .strip_prefix(TASK_METADATA_PREFIX)
+                .map(|_| symbol.name.as_str())
+        })
+        .collect();
+    records.sort_unstable();
+    records.dedup();
+    let mut bytes = b"DBYTETSK\0\x01\0".to_vec();
+    for record in records {
+        let tail = record
+            .strip_prefix(TASK_METADATA_PREFIX)
+            .ok_or_else(|| object_error("task metadata prefix is missing"))?;
+        let valid = tail == "trampoline"
+            || tail
+                .strip_prefix("def:")
+                .is_some_and(|symbol| !symbol.is_empty() && !symbol.contains(':'))
+            || tail
+                .strip_prefix("use:")
+                .is_some_and(|symbol| !symbol.is_empty() && !symbol.contains(':'));
+        if !valid || !record.is_ascii() || record.contains('\n') {
+            return Err(object_error("task metadata symbol is not canonical"));
+        }
+        bytes.extend_from_slice(record.as_bytes());
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn validate_task_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(), Diagnostic> {
+    let expected = build_task_metadata(&ObjectImage {
+        sections: BTreeMap::new(),
+        symbols: symbols.to_vec(),
+        relocations: Vec::new(),
+    })?;
+    if bytes != expected {
+        return Err(invalid_object(
+            "non-canonical .dbyte.tasks metadata does not match symbols",
+        ));
+    }
+    Ok(())
+}
+
 fn align_up(value: u32, alignment: u32) -> Result<u32, Diagnostic> {
     validate_alignment(alignment)?;
     value
@@ -1892,6 +1989,50 @@ mod tests {
         let error = parse_relocatable(&corrupt).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidObject);
         assert!(error.message.contains(".dbyte.entry"));
+    }
+
+    #[test]
+    fn task_metadata_is_optional_canonical_and_fail_closed() {
+        let legacy = write_relocatable(&sample_object()).unwrap();
+        assert!(!legacy
+            .bytes
+            .windows(b".dbyte.tasks".len())
+            .any(|window| window == b".dbyte.tasks"));
+
+        let mut image = sample_object();
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_task:def:callee".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_task:use:callee".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let artifact = write_relocatable(&image).unwrap();
+        assert!(section_data_offset(&artifact.bytes, ".dbyte.tasks") > 0);
+        parse_relocatable(&artifact.bytes).unwrap();
+
+        let mut corrupt = artifact.bytes;
+        let at = corrupt
+            .windows(b"DBYTETSK".len())
+            .position(|window| window == b"DBYTETSK")
+            .unwrap();
+        corrupt[at] = b'X';
+        let error = parse_relocatable(&corrupt).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidObject);
+        assert!(error.message.contains(".dbyte.tasks"));
     }
 
     #[test]

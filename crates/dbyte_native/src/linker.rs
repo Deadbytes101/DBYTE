@@ -8,7 +8,7 @@ use crate::elf32::{
 use crate::object::{
     parse_relocatable, write_relocatable, ObjectImage, ObjectRelocation, ObjectSection,
     RelocationKind, SectionContents, SymbolBinding, SymbolDefinition, SymbolKind,
-    ENTRY_METADATA_PREFIX,
+    ENTRY_METADATA_PREFIX, TASK_METADATA_PREFIX,
 };
 use crate::x86::{Encoder, Register};
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,6 +20,7 @@ pub const LINK_STACK_BOTTOM_SYMBOL: &str = "__dbyte_stack_bottom";
 pub const LINK_STACK_TOP_SYMBOL: &str = "__dbyte_stack_top";
 pub const LINK_IMAGE_START_SYMBOL: &str = "__dbyte_image_start";
 pub const LINK_IMAGE_END_SYMBOL: &str = "__dbyte_image_end";
+pub const LINK_TASK_TRAMPOLINE_SYMBOL: &str = "__dbyte_task_trampoline";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EntryAbi {
@@ -81,6 +82,7 @@ struct MergedImage {
     executable: LinkedExecutableImage,
     placements: BTreeMap<(usize, ObjectSection), u32>,
     bootstrap: Bootstrap,
+    task_trampoline: Option<u32>,
 }
 
 /// Parses and links serialized DByte ELF objects. Input order does not affect
@@ -127,8 +129,9 @@ pub fn link_images(inputs: &[(String, ObjectImage)]) -> Result<LinkArtifact, Dia
 
 fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
     validate_interrupt_metadata(inputs)?;
+    let needs_task_trampoline = validate_task_metadata(inputs)?;
     let entry_abi = validate_entry_metadata(inputs)?;
-    let mut merged = merge_sections(inputs, entry_abi)?;
+    let mut merged = merge_sections(inputs, entry_abi, needs_task_trampoline)?;
     let definitions = collect_definitions(inputs, &merged)?;
     validate_undefined_symbols(inputs, &definitions)?;
 
@@ -162,9 +165,27 @@ fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
     })
 }
 
-fn merge_sections(inputs: &[ParsedInput], entry_abi: EntryAbi) -> Result<MergedImage, Diagnostic> {
+fn merge_sections(
+    inputs: &[ParsedInput],
+    entry_abi: EntryAbi,
+    needs_task_trampoline: bool,
+) -> Result<MergedImage, Diagnostic> {
     let (bootstrap_bytes, bootstrap) = build_bootstrap(entry_abi)?;
     let mut text = bootstrap_bytes;
+    let task_trampoline = if needs_task_trampoline {
+        let offset = usize_u32(text.len(), "task trampoline offset")?;
+        let mut encoder = Encoder::new(3);
+        encoder.call_reg(Register::Eax).map_err(encoder_error)?;
+        encoder.ret().map_err(encoder_error)?;
+        extend_bounded(
+            &mut text,
+            &encoder.finish().map_err(encoder_error)?.bytes,
+            "task trampoline",
+        )?;
+        Some(offset)
+    } else {
+        None
+    };
     let mut rodata = Vec::new();
     let mut data = Vec::new();
     let mut bss_size = 0u32;
@@ -242,6 +263,7 @@ fn merge_sections(inputs: &[ParsedInput], entry_abi: EntryAbi) -> Result<MergedI
         stack_bottom_offset,
         stack_top_offset,
         bss_size,
+        task_trampoline,
     )?;
     Ok(MergedImage {
         executable: LinkedExecutableImage {
@@ -260,6 +282,7 @@ fn merge_sections(inputs: &[ParsedInput], entry_abi: EntryAbi) -> Result<MergedI
         },
         placements,
         bootstrap,
+        task_trampoline,
     })
 }
 
@@ -309,6 +332,7 @@ fn build_executable_symbols(
     stack_bottom_offset: u32,
     stack_top_offset: u32,
     image_end_offset: u32,
+    task_trampoline: Option<u32>,
 ) -> Result<Vec<ExecutableSymbol>, Diagnostic> {
     let mut symbols = vec![
         ExecutableSymbol {
@@ -352,6 +376,16 @@ fn build_executable_symbols(
             size: 0,
         },
     ];
+    if let Some(offset) = task_trampoline {
+        symbols.push(ExecutableSymbol {
+            name: LINK_TASK_TRAMPOLINE_SYMBOL.to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Function,
+            section: ObjectSection::Text,
+            offset,
+            size: 3,
+        });
+    }
     for (input_index, input) in inputs.iter().enumerate() {
         for symbol in &input.image.symbols {
             let SymbolDefinition::Defined { section, value } = symbol.definition else {
@@ -364,6 +398,7 @@ fn build_executable_symbols(
             if symbol.kind == SymbolKind::Section
                 || symbol.name.starts_with("__dbyte_interrupt:")
                 || symbol.name.starts_with(ENTRY_METADATA_PREFIX)
+                || symbol.name.starts_with(TASK_METADATA_PREFIX)
             {
                 continue;
             }
@@ -461,6 +496,125 @@ fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic>
     Ok(())
 }
 
+fn validate_task_metadata(inputs: &[ParsedInput]) -> Result<bool, Diagnostic> {
+    let mut definitions = BTreeSet::new();
+    let mut uses = BTreeSet::new();
+    let mut trampoline = false;
+    for input in inputs {
+        for symbol in &input.image.symbols {
+            let Some(record) = symbol.name.strip_prefix(TASK_METADATA_PREFIX) else {
+                continue;
+            };
+            if symbol.binding != SymbolBinding::Local
+                || symbol.kind != SymbolKind::Function
+                || symbol.definition == SymbolDefinition::Undefined
+            {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("invalid task metadata symbol contract '{}'", symbol.name),
+                ));
+            }
+            if record == "trampoline" {
+                if trampoline {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::DuplicateSymbol,
+                        "duplicate task trampoline metadata",
+                    ));
+                }
+                trampoline = true;
+                let target = input
+                    .image
+                    .symbols
+                    .iter()
+                    .position(|candidate| {
+                        candidate.name == LINK_TASK_TRAMPOLINE_SYMBOL
+                            && candidate.binding == SymbolBinding::Global
+                            && candidate.kind == SymbolKind::Function
+                            && candidate.definition == SymbolDefinition::Undefined
+                    })
+                    .ok_or_else(|| {
+                        Diagnostic::without_span(
+                            DiagnosticCategory::InvalidObject,
+                            "task trampoline metadata lacks its undefined function symbol",
+                        )
+                    })?;
+                if !input.image.relocations.iter().any(|relocation| {
+                    relocation.symbol.0 as usize == target
+                        && relocation.kind == RelocationKind::Abs32
+                }) {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::InvalidObject,
+                        "task trampoline metadata lacks R_386_32",
+                    ));
+                }
+            } else if let Some(name) = record.strip_prefix("def:") {
+                if name.is_empty() || name.contains(':') || !definitions.insert(name.to_owned()) {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::DuplicateSymbol,
+                        format!("duplicate or malformed task definition metadata for '{name}'"),
+                    ));
+                }
+                let valid = input.image.symbols.iter().any(|candidate| {
+                    candidate.name == name
+                        && candidate.binding == SymbolBinding::Global
+                        && candidate.kind == SymbolKind::Function
+                });
+                if !valid {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::InvalidObject,
+                        format!("task definition metadata for '{name}' lacks a global function"),
+                    ));
+                }
+            } else if let Some(name) = record.strip_prefix("use:") {
+                if name.is_empty() || name.contains(':') || !uses.insert(name.to_owned()) {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::DuplicateSymbol,
+                        format!("duplicate or malformed task reference metadata for '{name}'"),
+                    ));
+                }
+                let target = input
+                    .image
+                    .symbols
+                    .iter()
+                    .position(|candidate| {
+                        candidate.name == name
+                            && candidate.binding == SymbolBinding::Global
+                            && candidate.kind == SymbolKind::Function
+                    })
+                    .ok_or_else(|| {
+                        Diagnostic::without_span(
+                            DiagnosticCategory::InvalidObject,
+                            format!("task reference metadata for '{name}' lacks a function symbol"),
+                        )
+                    })?;
+                if !input.image.relocations.iter().any(|relocation| {
+                    relocation.symbol.0 as usize == target
+                        && relocation.kind == RelocationKind::Abs32
+                }) {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::InvalidObject,
+                        format!("task reference metadata for '{name}' lacks R_386_32"),
+                    ));
+                }
+            } else {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("malformed task metadata symbol '{}'", symbol.name),
+                ));
+            }
+        }
+    }
+    for name in &uses {
+        if !definitions.contains(name) {
+            return Err(Diagnostic::without_span(
+                DiagnosticCategory::UndefinedSymbol,
+                format!("task entry '{name}' has no checked task definition metadata"),
+            ));
+        }
+    }
+    Ok(trampoline || !uses.is_empty())
+}
+
 fn validate_entry_metadata(inputs: &[ParsedInput]) -> Result<EntryAbi, Diagnostic> {
     let mut abi = None;
     for input in inputs {
@@ -545,6 +699,18 @@ fn collect_definitions(
             },
         ),
     ]);
+    if let Some(offset) = merged.task_trampoline {
+        definitions.insert(
+            LINK_TASK_TRAMPOLINE_SYMBOL.to_owned(),
+            GlobalDefinition {
+                kind: SymbolKind::Function,
+                location: DefinitionLocation::Synthetic {
+                    section: ObjectSection::Text,
+                    offset,
+                },
+            },
+        );
+    }
     for (input_index, input) in inputs.iter().enumerate() {
         for (symbol_index, symbol) in input.image.symbols.iter().enumerate() {
             if symbol.binding != SymbolBinding::Global
@@ -1179,6 +1345,72 @@ mod tests {
         let error = link_images(&[("kernel.o".to_owned(), conflict)]).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::Object);
         assert!(error.message.contains("conflicting native entry metadata"));
+    }
+
+    #[test]
+    fn checked_task_metadata_synthesizes_exact_trampoline_and_requires_abs32() {
+        let mut image = function_object(LINK_ENTRY_SYMBOL, vec![0; 9]);
+        image.symbols.push(ObjectSymbol {
+            name: "worker".to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 8,
+            },
+            size: 1,
+        });
+        image.symbols.push(ObjectSymbol {
+            name: LINK_TASK_TRAMPOLINE_SYMBOL.to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Undefined,
+            size: 0,
+        });
+        for name in [
+            "__dbyte_task:def:worker",
+            "__dbyte_task:use:worker",
+            "__dbyte_task:trampoline",
+        ] {
+            image.symbols.push(ObjectSymbol {
+                name: name.to_owned(),
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            });
+        }
+        image.relocations.push(ObjectRelocation {
+            section: ObjectSection::Text,
+            offset: 0,
+            symbol: SymbolId(1),
+            kind: RelocationKind::Abs32,
+            addend: 0,
+        });
+        image.relocations.push(ObjectRelocation {
+            section: ObjectSection::Text,
+            offset: 4,
+            symbol: SymbolId(2),
+            kind: RelocationKind::Abs32,
+            addend: 0,
+        });
+
+        let artifact = link_images(&[("kernel.o".to_owned(), image.clone())]).unwrap();
+        let (_, bootstrap) = build_bootstrap(EntryAbi::Legacy).unwrap();
+        assert_eq!(
+            &artifact.machine_code[bootstrap.size as usize..bootstrap.size as usize + 3],
+            &[0xff, 0xd0, 0xc3]
+        );
+        assert!(artifact.dump.contains(LINK_TASK_TRAMPOLINE_SYMBOL));
+        assert!(!artifact.dump.contains(".dbyte.tasks"));
+
+        image.relocations.pop();
+        let error = link_images(&[("kernel.o".to_owned(), image)]).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidObject);
+        assert!(error.message.contains("trampoline metadata lacks R_386_32"));
     }
 
     #[test]

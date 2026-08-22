@@ -1,0 +1,93 @@
+import "scheduler.dby" as scheduler
+import "serial.dby" as serial
+import "proof.dby" as proof
+
+static mut COUNTER_A: usize
+static mut COUNTER_B: usize
+static mut B_AFTER_A: usize
+static mut PHASE: usize
+static mut INITIAL_RECLAIM_SLOT: usize
+static mut PROBE_SLOT: usize
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+pub fn task_a() -> int:
+    while scheduler.tick_count() < (7 as usize):
+        COUNTER_A = COUNTER_A + (1 as usize)
+    scheduler.task_exit()
+    return 0
+
+pub fn task_b() -> int:
+    while scheduler.tick_count() < (16 as usize):
+        COUNTER_B = COUNTER_B + (1 as usize)
+        if scheduler.exit_count() > (0 as usize):
+            B_AFTER_A = B_AFTER_A + (1 as usize)
+    return 0
+
+pub fn reuse_probe() -> int:
+    PROBE_SLOT = scheduler.current_slot()
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        if scheduler.reap_exited() != 0:
+            while true:
+                native.cpu_hlt()
+        if PHASE == (0 as usize):
+            if scheduler.exit_count() >= (2 as usize):
+                if scheduler.live_count() == (1 as usize):
+                    INITIAL_RECLAIM_SLOT = scheduler.last_reclaimed_slot()
+                    let probe_id: usize = scheduler.spawn(task_address(reuse_probe))
+                    if probe_id == (0 as usize):
+                        while true:
+                            native.cpu_hlt()
+                    PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.exit_count() >= (3 as usize):
+                    if scheduler.live_count() == (1 as usize):
+                        if COUNTER_A == (0 as usize):
+                            while true:
+                                native.cpu_hlt()
+                        if COUNTER_B == (0 as usize):
+                            while true:
+                                native.cpu_hlt()
+                        if B_AFTER_A == (0 as usize):
+                            while true:
+                                native.cpu_hlt()
+                        if scheduler.eoi_count() != scheduler.tick_count():
+                            while true:
+                                native.cpu_hlt()
+                        if PROBE_SLOT != (1 as usize):
+                            while true:
+                                native.cpu_hlt()
+                        if scheduler.last_spawn_first_frame() != scheduler.first_reclaimed_frame():
+                            while true:
+                                native.cpu_hlt()
+                        line("PREEMPTION ONLINE", 17 as usize)
+                        line("TASK A RAN", 10 as usize)
+                        line("TASK B RAN", 10 as usize)
+                        line("TASK EXIT OK", 12 as usize)
+                        line("STACK RECLAIM OK", 16 as usize)
+                        proof.value("COUNTER_A", 9 as usize, COUNTER_A)
+                        proof.value("COUNTER_B", 9 as usize, COUNTER_B)
+                        proof.value("B_AFTER_A", 9 as usize, B_AFTER_A)
+                        proof.value("REUSE_SLOT", 10 as usize, PROBE_SLOT)
+                        scheduler.emit_state()
+                        line("SCHEDULER CHECK OK", 18 as usize)
+                        native.cpu_cli()
+                        while true:
+                            native.cpu_hlt()
+    return 0
+
+pub fn counter_a() -> usize:
+    return COUNTER_A
+
+pub fn counter_b() -> usize:
+    return COUNTER_B
