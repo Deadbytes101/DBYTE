@@ -22,12 +22,25 @@ impl std::fmt::Display for Span {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeAnnotation {
     Int,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    Usize,
     Float,
     Bool,
     Str,
     Bytes,
     Buffer,
     List(Box<TypeAnnotation>),
+    Pointer(Box<TypeAnnotation>),
+    Array {
+        element: Box<TypeAnnotation>,
+        length: u32,
+    },
+    Named(String),
     Inferred,
 }
 
@@ -35,12 +48,24 @@ impl std::fmt::Display for TypeAnnotation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeAnnotation::Int => write!(f, "int"),
+            TypeAnnotation::I8 => write!(f, "i8"),
+            TypeAnnotation::U8 => write!(f, "u8"),
+            TypeAnnotation::I16 => write!(f, "i16"),
+            TypeAnnotation::U16 => write!(f, "u16"),
+            TypeAnnotation::I32 => write!(f, "i32"),
+            TypeAnnotation::U32 => write!(f, "u32"),
+            TypeAnnotation::Usize => write!(f, "usize"),
             TypeAnnotation::Float => write!(f, "float"),
             TypeAnnotation::Bool => write!(f, "bool"),
             TypeAnnotation::Str => write!(f, "str"),
             TypeAnnotation::Bytes => write!(f, "bytes"),
             TypeAnnotation::Buffer => write!(f, "buffer"),
             TypeAnnotation::List(inner) => write!(f, "list[{}]", inner),
+            TypeAnnotation::Pointer(inner) => write!(f, "ptr[{}]", inner),
+            TypeAnnotation::Array { element, length } => {
+                write!(f, "array[{}, {}]", element, length)
+            }
+            TypeAnnotation::Named(name) => f.write_str(name),
             TypeAnnotation::Inferred => write!(f, "<inferred>"),
         }
     }
@@ -58,6 +83,11 @@ pub enum BinOp {
     Gt,
     LtEq,
     GtEq,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
 impl std::fmt::Display for BinOp {
@@ -73,6 +103,11 @@ impl std::fmt::Display for BinOp {
             BinOp::Gt => ">",
             BinOp::LtEq => "<=",
             BinOp::GtEq => ">=",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::Shl => "<<",
+            BinOp::Shr => ">>",
         };
         write!(f, "{}", s)
     }
@@ -82,6 +117,9 @@ impl std::fmt::Display for BinOp {
 pub enum UnaryOp {
     Neg,
     Not,
+    BitNot,
+    AddressOf,
+    Deref,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -132,6 +170,11 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    Cast {
+        expr: Box<Expr>,
+        ty: TypeAnnotation,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -150,13 +193,21 @@ impl Expr {
             | Expr::Call { span, .. }
             | Expr::Index { span, .. }
             | Expr::Member { span, .. }
-            | Expr::MemberCall { span, .. } => *span,
+            | Expr::MemberCall { span, .. }
+            | Expr::Cast { span, .. } => *span,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
+    pub name: String,
+    pub ty: TypeAnnotation,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
     pub name: String,
     pub ty: TypeAnnotation,
     pub span: Span,
@@ -173,6 +224,14 @@ pub enum Stmt {
     },
     Assign {
         name: String,
+        value: Expr,
+        span: Span,
+    },
+    /// Assignment through a native lvalue such as `*ptr`, `array[index]`, or
+    /// `record.field`. Simple identifier assignment remains `Assign` so hosted
+    /// consumers retain their existing AST contract.
+    Store {
+        target: Expr,
         value: Expr,
         span: Span,
     },
@@ -210,6 +269,28 @@ pub enum Stmt {
         alias: String,
         span: Span,
     },
+    StructDef {
+        is_pub: bool,
+        is_packed: bool,
+        name: String,
+        fields: Vec<StructField>,
+        span: Span,
+    },
+    Const {
+        is_pub: bool,
+        name: String,
+        ty: TypeAnnotation,
+        value: Expr,
+        span: Span,
+    },
+    Static {
+        is_pub: bool,
+        is_mut: bool,
+        name: String,
+        ty: TypeAnnotation,
+        value: Option<Expr>,
+        span: Span,
+    },
     Expr(Expr),
 }
 
@@ -218,12 +299,16 @@ impl Stmt {
         match self {
             Stmt::Let { span, .. } => *span,
             Stmt::Assign { span, .. } => *span,
+            Stmt::Store { span, .. } => *span,
             Stmt::FnDef { span, .. } => *span,
             Stmt::Return { span, .. } => *span,
             Stmt::If { span, .. } => *span,
             Stmt::While { span, .. } => *span,
             Stmt::For { span, .. } => *span,
             Stmt::Import { span, .. } => *span,
+            Stmt::StructDef { span, .. } => *span,
+            Stmt::Const { span, .. } => *span,
+            Stmt::Static { span, .. } => *span,
             Stmt::Expr(e) => e.span(),
         }
     }
@@ -232,4 +317,28 @@ impl Stmt {
 #[derive(Debug, Clone)]
 pub struct Program {
     pub stmts: Vec<Stmt>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn systems_type_annotations_have_stable_source_spelling() {
+        let ty = TypeAnnotation::Pointer(Box::new(TypeAnnotation::Array {
+            element: Box::new(TypeAnnotation::U16),
+            length: 4,
+        }));
+        assert_eq!(ty.to_string(), "ptr[array[u16, 4]]");
+        assert_eq!(TypeAnnotation::Named("Header".into()).to_string(), "Header");
+    }
+
+    #[test]
+    fn systems_operators_have_stable_source_spelling() {
+        assert_eq!(BinOp::BitAnd.to_string(), "&");
+        assert_eq!(BinOp::BitOr.to_string(), "|");
+        assert_eq!(BinOp::BitXor.to_string(), "^");
+        assert_eq!(BinOp::Shl.to_string(), "<<");
+        assert_eq!(BinOp::Shr.to_string(), ">>");
+    }
 }

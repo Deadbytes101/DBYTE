@@ -1175,7 +1175,7 @@ fn usage() {
     println!(
         "DByte - low-level scripting language\n\n\
          Usage:\n  \
-         dbyte build <source.dby> --target i686-dbyte-none --emit elf|bin -o <output>\n  \
+         dbyte build <source.dby> --target i686-dbyte-none --emit elf|bin|obj -o <output>\n  \
          dbyte run [--vm] <file> [arg ...]\n  \
          dbyte check <file>\n  \
          dbyte test [--engine tree|vm]\n  \

@@ -1,8 +1,8 @@
-use dbyte_native::cli::run_build_args;
+use dbyte_native::cli::run_args;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Err(error) = run_build_args(&args) {
+    if let Err(error) = run_args(&args) {
         eprintln!("{error}");
         std::process::exit(error.exit_code());
     }

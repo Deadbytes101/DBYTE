@@ -6,6 +6,7 @@
 use crate::diagnostics::{Diagnostic, DiagnosticCategory};
 use crate::ir::{IrProgram, StringId};
 use crate::lower::{AbsoluteFixupTarget, LoweredProgram, NATIVE_ENTRY_FUNCTION};
+use crate::object::{ObjectSection, SymbolBinding, SymbolKind};
 use std::collections::BTreeSet;
 use std::fmt::Write;
 
@@ -51,8 +52,10 @@ const PF_W: u32 = 0x2;
 const PF_R: u32 = 0x4;
 
 const STB_GLOBAL: u8 = 1;
+const STB_LOCAL: u8 = 0;
 const STT_OBJECT: u8 = 1;
 const STT_FUNC: u8 = 2;
+const STT_SECTION: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ElfLayout {
@@ -95,6 +98,34 @@ pub struct ElfArtifact {
     pub machine_code: Vec<u8>,
     pub layout: ElfLayout,
     pub dump: String,
+}
+
+/// A fully resolved, section-relative image consumed by the final ELF writer.
+/// Relocations must already have been applied by the DByte linker.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LinkedExecutableImage {
+    pub text: Vec<u8>,
+    pub rodata: Vec<u8>,
+    pub data: Vec<u8>,
+    pub bss_size: u32,
+    pub text_alignment: u32,
+    pub rodata_alignment: u32,
+    pub data_alignment: u32,
+    pub bss_alignment: u32,
+    pub entry_offset: u32,
+    pub stack_bottom_offset: u32,
+    pub stack_top_offset: u32,
+    pub symbols: Vec<ExecutableSymbol>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutableSymbol {
+    pub name: String,
+    pub binding: SymbolBinding,
+    pub kind: SymbolKind,
+    pub section: ObjectSection,
+    pub offset: u32,
+    pub size: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -415,6 +446,395 @@ pub fn write_executable(
         layout,
         dump,
     })
+}
+
+/// Writes a final Multiboot-loadable ET_EXEC from an already linked image.
+/// This is the only serialization seam used by the in-process static linker.
+pub fn write_linked_executable(image: &LinkedExecutableImage) -> Result<ElfArtifact, Diagnostic> {
+    validate_linked_image(image)?;
+
+    let text_size = usize_u32(image.text.len(), "linked text size")?;
+    let rodata_size = usize_u32(image.rodata.len(), "linked rodata size")?;
+    let data_size = usize_u32(image.data.len(), "linked data size")?;
+    let text_relative = align_up(MULTIBOOT_HEADER_SIZE, image.text_alignment.max(16))?;
+    let rodata_relative = align_up(
+        checked_add(text_relative, text_size, "linked text end")?,
+        image.rodata_alignment.max(16),
+    )?;
+    let data_relative = align_up(
+        checked_add(rodata_relative, rodata_size, "linked rodata end")?,
+        image.data_alignment.max(16),
+    )?;
+    let data_end_relative = checked_add(data_relative, data_size, "linked data end")?;
+    let bss_relative = align_up(data_end_relative, image.bss_alignment.max(16))?;
+    let load_file_size = data_end_relative;
+    let load_memory_size = checked_add(bss_relative, image.bss_size, "linked load memory size")?;
+    if load_memory_size > MAX_LOAD_MEMORY_SIZE {
+        return Err(elf_diagnostic(format!(
+            "ELF load image {load_memory_size} exceeds bound {MAX_LOAD_MEMORY_SIZE}"
+        )));
+    }
+
+    let multiboot_address = IMAGE_BASE;
+    let text_address = checked_add(IMAGE_BASE, text_relative, "linked text address")?;
+    let rodata_address = checked_add(IMAGE_BASE, rodata_relative, "linked rodata address")?;
+    let data_address = checked_add(IMAGE_BASE, data_relative, "linked data address")?;
+    let bss_address = checked_add(IMAGE_BASE, bss_relative, "linked bss address")?;
+    let entry = checked_add(text_address, image.entry_offset, "linked entry address")?;
+    let stack_bottom = checked_add(
+        bss_address,
+        image.stack_bottom_offset,
+        "linked stack bottom",
+    )?;
+    let stack_top = checked_add(bss_address, image.stack_top_offset, "linked stack top")?;
+
+    let text_offset = checked_add(LOAD_FILE_OFFSET, text_relative, "linked text file offset")?;
+    let rodata_offset = checked_add(
+        LOAD_FILE_OFFSET,
+        rodata_relative,
+        "linked rodata file offset",
+    )?;
+    let data_offset = checked_add(LOAD_FILE_OFFSET, data_relative, "linked data file offset")?;
+    let bss_offset = checked_add(LOAD_FILE_OFFSET, bss_relative, "linked bss file offset")?;
+
+    let mut bin = bounded_zeros(load_file_size as usize, "linked PT_LOAD file image")?;
+    write_u32(&mut bin, 0, MULTIBOOT_MAGIC)?;
+    write_u32(&mut bin, 4, MULTIBOOT_FLAGS)?;
+    write_u32(&mut bin, 8, MULTIBOOT_CHECKSUM)?;
+    copy_bytes(&mut bin, text_relative as usize, &image.text)?;
+    copy_bytes(&mut bin, rodata_relative as usize, &image.rodata)?;
+    copy_bytes(&mut bin, data_relative as usize, &image.data)?;
+
+    let mut symbol_order: Vec<&ExecutableSymbol> = image.symbols.iter().collect();
+    symbol_order.sort_by(|left, right| {
+        left.binding
+            .cmp(&right.binding)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.kind.cmp(&right.kind))
+            .then_with(|| left.section.cmp(&right.section))
+            .then_with(|| left.offset.cmp(&right.offset))
+            .then_with(|| left.size.cmp(&right.size))
+    });
+    let local_symbol_count = symbol_order
+        .iter()
+        .take_while(|symbol| symbol.binding == SymbolBinding::Local)
+        .count();
+    let mut symbol_specs = Vec::with_capacity(symbol_order.len());
+    for symbol in &symbol_order {
+        let (section_address, section_index) = match symbol.section {
+            ObjectSection::Text => (text_address, SECTION_TEXT),
+            ObjectSection::Rodata => (rodata_address, SECTION_RODATA),
+            ObjectSection::Data => (data_address, SECTION_DATA),
+            ObjectSection::Bss => (bss_address, SECTION_BSS),
+        };
+        let binding = match symbol.binding {
+            SymbolBinding::Local => STB_LOCAL,
+            SymbolBinding::Global => STB_GLOBAL,
+        };
+        let symbol_type = match symbol.kind {
+            SymbolKind::Function => STT_FUNC,
+            SymbolKind::Object => STT_OBJECT,
+            SymbolKind::Section => STT_SECTION,
+        };
+        symbol_specs.push(SymbolSpec {
+            name: symbol.name.clone(),
+            value: checked_add(section_address, symbol.offset, "linked symbol address")?,
+            size: symbol.size,
+            info: symbol_info(binding, symbol_type),
+            section_index,
+        });
+    }
+    let (symtab, strtab) = build_symbol_tables(&symbol_specs)?;
+    let (shstrtab, section_name_offsets) = build_section_name_table()?;
+
+    let load_file_end = checked_add(LOAD_FILE_OFFSET, load_file_size, "linked load file end")?;
+    let symtab_offset = align_up(load_file_end, 4)?;
+    let symtab_size = usize_u32(symtab.len(), "linked symbol table size")?;
+    let strtab_offset = checked_add(symtab_offset, symtab_size, "linked string table offset")?;
+    let strtab_size = usize_u32(strtab.len(), "linked string table size")?;
+    let shstrtab_offset = checked_add(
+        strtab_offset,
+        strtab_size,
+        "linked section-name table offset",
+    )?;
+    let shstrtab_size = usize_u32(shstrtab.len(), "linked section-name table size")?;
+    let section_header_offset = align_up(
+        checked_add(
+            shstrtab_offset,
+            shstrtab_size,
+            "linked section-header offset",
+        )?,
+        4,
+    )?;
+    let file_size = checked_add(
+        section_header_offset,
+        checked_mul(
+            u32::from(SECTION_COUNT),
+            SECTION_HEADER_SIZE,
+            "linked section-header table size",
+        )?,
+        "linked ELF file size",
+    )?;
+    if file_size as usize > MAX_ELF_SIZE {
+        return Err(elf_diagnostic(format!(
+            "ELF file size {file_size} exceeds bound {MAX_ELF_SIZE}"
+        )));
+    }
+
+    let layout = ElfLayout {
+        image_base: IMAGE_BASE,
+        load_file_offset: LOAD_FILE_OFFSET,
+        load_file_size,
+        load_memory_size,
+        entry,
+        multiboot_offset: LOAD_FILE_OFFSET,
+        multiboot_address,
+        text_offset,
+        text_address,
+        text_size,
+        rodata_offset,
+        rodata_address,
+        rodata_size,
+        data_offset,
+        data_address,
+        data_size,
+        bss_offset,
+        bss_address,
+        bss_size: image.bss_size,
+        stack_bottom,
+        stack_top,
+        symtab_offset,
+        strtab_offset,
+        shstrtab_offset,
+        section_header_offset,
+        file_size,
+        string_addresses: Vec::new(),
+    };
+
+    let section_headers = vec![
+        SectionHeader {
+            name: 0,
+            section_type: SHT_NULL,
+            flags: 0,
+            address: 0,
+            offset: 0,
+            size: 0,
+            link: 0,
+            info: 0,
+            address_align: 0,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_MULTIBOOT as usize],
+            section_type: SHT_PROGBITS,
+            flags: SHF_ALLOC,
+            address: multiboot_address,
+            offset: LOAD_FILE_OFFSET,
+            size: MULTIBOOT_HEADER_SIZE,
+            link: 0,
+            info: 0,
+            address_align: 4,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_TEXT as usize],
+            section_type: SHT_PROGBITS,
+            flags: SHF_ALLOC | SHF_EXECINSTR,
+            address: text_address,
+            offset: text_offset,
+            size: text_size,
+            link: 0,
+            info: 0,
+            address_align: image.text_alignment,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_RODATA as usize],
+            section_type: SHT_PROGBITS,
+            flags: SHF_ALLOC,
+            address: rodata_address,
+            offset: rodata_offset,
+            size: rodata_size,
+            link: 0,
+            info: 0,
+            address_align: image.rodata_alignment,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_DATA as usize],
+            section_type: SHT_PROGBITS,
+            flags: SHF_ALLOC | SHF_WRITE,
+            address: data_address,
+            offset: data_offset,
+            size: data_size,
+            link: 0,
+            info: 0,
+            address_align: image.data_alignment,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_BSS as usize],
+            section_type: SHT_NOBITS,
+            flags: SHF_ALLOC | SHF_WRITE,
+            address: bss_address,
+            offset: bss_offset,
+            size: image.bss_size,
+            link: 0,
+            info: 0,
+            address_align: image.bss_alignment,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_SYMTAB as usize],
+            section_type: SHT_SYMTAB,
+            flags: 0,
+            address: 0,
+            offset: symtab_offset,
+            size: symtab_size,
+            link: u32::from(SECTION_STRTAB),
+            info: usize_u32(local_symbol_count + 1, "first linked global symbol")?,
+            address_align: 4,
+            entry_size: SYMBOL_SIZE,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_STRTAB as usize],
+            section_type: SHT_STRTAB,
+            flags: 0,
+            address: 0,
+            offset: strtab_offset,
+            size: strtab_size,
+            link: 0,
+            info: 0,
+            address_align: 1,
+            entry_size: 0,
+        },
+        SectionHeader {
+            name: section_name_offsets[SECTION_SHSTRTAB as usize],
+            section_type: SHT_STRTAB,
+            flags: 0,
+            address: 0,
+            offset: shstrtab_offset,
+            size: shstrtab_size,
+            link: 0,
+            info: 0,
+            address_align: 1,
+            entry_size: 0,
+        },
+    ];
+
+    validate_layout(&layout, &section_headers)?;
+    let mut elf = bounded_zeros(file_size as usize, "linked ELF file")?;
+    write_elf_header(&mut elf, &layout)?;
+    write_program_header(&mut elf, &layout)?;
+    copy_bytes(&mut elf, LOAD_FILE_OFFSET as usize, &bin)?;
+    copy_bytes(&mut elf, symtab_offset as usize, &symtab)?;
+    copy_bytes(&mut elf, strtab_offset as usize, &strtab)?;
+    copy_bytes(&mut elf, shstrtab_offset as usize, &shstrtab)?;
+    write_section_headers(&mut elf, section_header_offset, &section_headers)?;
+    validate_final_bytes(&elf, &layout)?;
+    let dump = linked_layout_dump(&layout, &section_headers, &symbol_order);
+    Ok(ElfArtifact {
+        elf,
+        bin,
+        machine_code: image.text.clone(),
+        layout,
+        dump,
+    })
+}
+
+fn validate_linked_image(image: &LinkedExecutableImage) -> Result<(), Diagnostic> {
+    if image.text.is_empty() {
+        return Err(elf_diagnostic(
+            "linked executable has an empty .text section",
+        ));
+    }
+    if image.entry_offset as usize >= image.text.len() {
+        return Err(Diagnostic::without_span(
+            DiagnosticCategory::InvalidEntryPoint,
+            "linked entry offset is outside .text",
+        ));
+    }
+    for (name, alignment) in [
+        (".text", image.text_alignment),
+        (".rodata", image.rodata_alignment),
+        (".data", image.data_alignment),
+        (".bss", image.bss_alignment),
+    ] {
+        if alignment == 0 || !alignment.is_power_of_two() || alignment > 4096 {
+            return Err(elf_diagnostic(format!(
+                "invalid linked {name} alignment {alignment}"
+            )));
+        }
+    }
+    if image
+        .stack_top_offset
+        .checked_sub(image.stack_bottom_offset)
+        != Some(BOOTSTRAP_STACK_SIZE)
+        || image.stack_top_offset > image.bss_size
+        || !image.stack_top_offset.is_multiple_of(16)
+    {
+        return Err(elf_diagnostic(
+            "linked bootstrap stack offsets are inconsistent",
+        ));
+    }
+    let section_sizes = [
+        (
+            ObjectSection::Text,
+            usize_u32(image.text.len(), "linked text size")?,
+        ),
+        (
+            ObjectSection::Rodata,
+            usize_u32(image.rodata.len(), "linked rodata size")?,
+        ),
+        (
+            ObjectSection::Data,
+            usize_u32(image.data.len(), "linked data size")?,
+        ),
+        (ObjectSection::Bss, image.bss_size),
+    ];
+    let mut globals = BTreeSet::new();
+    for symbol in &image.symbols {
+        if symbol.name.as_bytes().contains(&0)
+            || (symbol.name.is_empty() && symbol.kind != SymbolKind::Section)
+        {
+            return Err(elf_diagnostic("linked symbol has an invalid name"));
+        }
+        if symbol.kind == SymbolKind::Section
+            && (symbol.binding != SymbolBinding::Local || symbol.offset != 0 || symbol.size != 0)
+        {
+            return Err(elf_diagnostic(
+                "linked section symbols must be local at offset zero",
+            ));
+        }
+        let section_size = section_sizes
+            .iter()
+            .find_map(|(section, size)| (*section == symbol.section).then_some(*size))
+            .expect("all object sections have final sizes");
+        if symbol
+            .offset
+            .checked_add(symbol.size)
+            .is_none_or(|end| end > section_size)
+        {
+            return Err(elf_diagnostic(format!(
+                "linked symbol '{}' exceeds {} bounds",
+                symbol.name,
+                symbol.section.name()
+            )));
+        }
+        if symbol.kind == SymbolKind::Function && symbol.section != ObjectSection::Text {
+            return Err(elf_diagnostic(format!(
+                "linked function '{}' is outside .text",
+                symbol.name
+            )));
+        }
+        if symbol.binding == SymbolBinding::Global && !globals.insert(symbol.name.as_str()) {
+            return Err(elf_diagnostic(format!(
+                "duplicate linked global symbol '{}'",
+                symbol.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_lowered(program: &IrProgram, lowered: &LoweredProgram) -> Result<(), Diagnostic> {
@@ -809,6 +1229,57 @@ fn layout_dump(layout: &ElfLayout, sections: &[SectionHeader], lowered: &Lowered
             dump,
             "patched absolute immediate=0x{:08x} target={:?}",
             fixup.immediate_offset, fixup.target
+        );
+    }
+    dump
+}
+
+fn linked_layout_dump(
+    layout: &ElfLayout,
+    sections: &[SectionHeader],
+    symbols: &[&ExecutableSymbol],
+) -> String {
+    let mut dump = String::new();
+    let _ = writeln!(dump, "ELF32 little-endian ET_EXEC EM_386 linked");
+    let _ = writeln!(dump, "entry 0x{:08x}", layout.entry);
+    let _ = writeln!(
+        dump,
+        "PT_LOAD file=0x{:08x}+0x{:x} memory=0x{:08x}+0x{:x} flags=rwx",
+        layout.load_file_offset, layout.load_file_size, layout.image_base, layout.load_memory_size
+    );
+    let names = [
+        "",
+        ".multiboot",
+        ".text",
+        ".rodata",
+        ".data",
+        ".bss",
+        ".symtab",
+        ".strtab",
+        ".shstrtab",
+    ];
+    for (index, section) in sections.iter().enumerate().skip(1) {
+        let _ = writeln!(
+            dump,
+            "section {} offset=0x{:08x} address=0x{:08x} size=0x{:x} type={}",
+            names[index], section.offset, section.address, section.size, section.section_type
+        );
+    }
+    let _ = writeln!(
+        dump,
+        "stack bottom=0x{:08x} top=0x{:08x} size={}",
+        layout.stack_bottom, layout.stack_top, BOOTSTRAP_STACK_SIZE
+    );
+    for symbol in symbols {
+        let _ = writeln!(
+            dump,
+            "symbol {:?} {:?} {:?} {}+0x{:08x} size={}",
+            symbol.binding,
+            symbol.kind,
+            symbol.name,
+            symbol.section.name(),
+            symbol.offset,
+            symbol.size
         );
     }
     dump

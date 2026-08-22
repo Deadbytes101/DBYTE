@@ -1,0 +1,10 @@
+pub fn out8(port: u16, value: u8) -> int:
+    native.io_out8(port, value)
+    return 0
+
+pub fn in8(port: u16) -> u8:
+    return native.io_in8(port)
+
+pub fn halt() -> int:
+    native.cpu_hlt()
+    return 0

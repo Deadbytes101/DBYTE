@@ -45,7 +45,7 @@ DBYTE is a compact systems-oriented project built around a custom language named
 The repo currently contains four connected layers:
 
 - **DByte language toolchain**: lexer, parser, type checker, tree interpreter, bytecode compiler, bytecode VM, project loader, test runner, shell, REPL, and embedding API.
-- **DByte native compiler**: an additive freestanding `i686-dbyte-none` path with typed native IR, a bounded in-project x86 encoder, and a direct ELF32/Multiboot writer.
+- **DByte native systems toolchain**: a freestanding `i686-dbyte-none` path with systems types, deterministic modules, typed IR, a bounded in-project x86 encoder, real ELF32 objects, a static linker, and Multiboot output.
 - **DByteOS userland**: host-runnable `.dby` programs under `examples/dbyteos/` that model a personal operating environment, shell commands, config, diagnostics, security checks, workspace flows, and system tools.
 - **DByteOS Kernel Lab**: a separate freestanding x86 Rust kernel sandbox under `kernel-lab/` for QEMU boot experiments, VGA output, serial logs, IDT and IRQ research, exception surfaces, PIC planning, and controlled runtime probes.
 
@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.0.0**
+- Snapshot version: **v11.1.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -75,7 +75,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 | Type checker | `crates/dbyte_typeck` | Static checks for DByte programs |
 | Tree runtime | `crates/dbyte_interp` | Direct interpreter runtime |
 | Bytecode path | `crates/dbyte_bytecode`, `crates/dbyte_compiler`, `crates/dbyte_vm` | Compilation and VM execution |
-| Native path | `crates/dbyte_native` | Freestanding validation, typed IR, i686 encoding, and ELF32 output |
+| Native path | `crates/dbyte_native` | Systems validation, modules, typed IR, i686 encoding, ET_REL objects, static linking, and Multiboot ELF output |
 | Modules and projects | `crates/dbyte_module`, `crates/dbyte_project` | Imports, packages, `Dbyte.toml` workflows |
 | CLI | `crates/dbyte_cli` | `dbyte run`, `dbyte test`, REPL, shell, tools |
 | Embedding | `crates/dbyte_embed` | Rust host integration |
@@ -90,7 +90,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Execute tests with `dbyte test`.
 - Launch a DByte REPL or shell.
 - Embed DByte in Rust applications.
-- Compile the freestanding native profile to DByte-owned i686 machine code.
+- Compile multiple freestanding DByte modules through DByte-owned i686 encoding, ELF32 objects, and static linking.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -102,16 +102,16 @@ cargo run -p dbyte_cli -- run examples/hello.dby
 cargo run -p dbyte_cli -- test
 ```
 
-Build the native DByte kernel proof without an external code generator:
+Build the multi-module native DByte kernel without an external code generator or linker:
 
 ```powershell
-cargo run -p dbyte_cli --bin dbytec -- build examples/native_kernel/kernel.dby `
-    --target i686-dbyte-none --emit elf -o tmp/dbyte_native_kernel_v11.0.0.elf
+cargo run -p dbyte_cli --bin dbytec -- build examples/native_kernel_multimodule/kernel.dby `
+    --target i686-dbyte-none --emit elf -o tmp/dbyte_native_system_v11.1.0.elf
 powershell -ExecutionPolicy Bypass -File scripts/verify_native.ps1
 ```
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
-DBYTE32 ABI, intrinsic boundary, and binary contract.
+DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 
 Launch the DByte shell with the DByteOS userland profile:
 

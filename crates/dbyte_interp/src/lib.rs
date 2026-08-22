@@ -654,6 +654,16 @@ impl Interpreter {
                         BinOp::LtEq => Ok(Value::Bool(a <= b)),
                         BinOp::Gt => Ok(Value::Bool(a > b)),
                         BinOp::GtEq => Ok(Value::Bool(a >= b)),
+                        BinOp::BitAnd
+                        | BinOp::BitOr
+                        | BinOp::BitXor
+                        | BinOp::Shl
+                        | BinOp::Shr => Err(RuntimeError {
+                            msg: format!(
+                                "native systems operator `{op}` is unavailable in the hosted interpreter"
+                            ),
+                            span: *span,
+                        }),
                     },
                     (Value::Float(a), Value::Float(b)) => match op {
                         BinOp::Add => Ok(Value::Float(a + b)),
@@ -666,6 +676,16 @@ impl Interpreter {
                         BinOp::LtEq => Ok(Value::Bool(a <= b)),
                         BinOp::Gt => Ok(Value::Bool(a > b)),
                         BinOp::GtEq => Ok(Value::Bool(a >= b)),
+                        BinOp::BitAnd
+                        | BinOp::BitOr
+                        | BinOp::BitXor
+                        | BinOp::Shl
+                        | BinOp::Shr => Err(RuntimeError {
+                            msg: format!(
+                                "native systems operator `{op}` is unavailable in the hosted interpreter"
+                            ),
+                            span: *span,
+                        }),
                     },
                     (Value::Str(a), Value::Str(b)) => match op {
                         BinOp::Add => Ok(Value::Str(a + &b)),
@@ -709,6 +729,11 @@ impl Interpreter {
                             span: *span,
                         }),
                     },
+                    UnaryOp::BitNot | UnaryOp::AddressOf | UnaryOp::Deref => Err(RuntimeError {
+                        msg: "native systems unary operators are unavailable in the hosted interpreter"
+                            .into(),
+                        span: *span,
+                    }),
                 }
             }
 
@@ -830,6 +855,10 @@ impl Interpreter {
                     span: *span,
                 }),
             },
+            Expr::Cast { span, .. } => Err(RuntimeError {
+                msg: "native systems casts are unavailable in the hosted interpreter".into(),
+                span: *span,
+            }),
         }
     }
 
@@ -1015,6 +1044,17 @@ impl Interpreter {
                     .load_module(path, alias, *span)
                     .map_err(Signal::Error)?;
                 self.define(alias, Value::Module(module));
+            }
+
+            Stmt::Store { span, .. }
+            | Stmt::StructDef { span, .. }
+            | Stmt::Const { span, .. }
+            | Stmt::Static { span, .. } => {
+                return Err(Signal::Error(RuntimeError {
+                    msg: "native systems statements are unavailable in the hosted interpreter"
+                        .into(),
+                    span: *span,
+                }));
             }
 
             Stmt::Expr(e) => {

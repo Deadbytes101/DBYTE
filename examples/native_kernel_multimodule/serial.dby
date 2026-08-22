@@ -1,0 +1,37 @@
+import "arch_x86.dby" as arch
+
+const COM1_DATA: u16 = 0x3f8 as u16
+const COM1_INTERRUPT: u16 = 0x3f9 as u16
+const COM1_FIFO: u16 = 0x3fa as u16
+const COM1_LINE_CONTROL: u16 = 0x3fb as u16
+const COM1_MODEM_CONTROL: u16 = 0x3fc as u16
+const COM1_LINE_STATUS: u16 = 0x3fd as u16
+
+pub fn init() -> int:
+    arch.out8(COM1_INTERRUPT, 0 as u8)
+    arch.out8(COM1_LINE_CONTROL, 0x80 as u8)
+    arch.out8(COM1_DATA, 3 as u8)
+    arch.out8(COM1_INTERRUPT, 0 as u8)
+    arch.out8(COM1_LINE_CONTROL, 3 as u8)
+    arch.out8(COM1_FIFO, 0xc7 as u8)
+    arch.out8(COM1_MODEM_CONTROL, 0x0b as u8)
+    return 0
+
+pub fn putc(value: u8) -> int:
+    let ready: u8 = arch.in8(COM1_LINE_STATUS)
+    while (ready & (0x20 as u8)) == (0 as u8):
+        ready = arch.in8(COM1_LINE_STATUS)
+    arch.out8(COM1_DATA, value)
+    return value as i32
+
+pub fn write(text: str, length: usize) -> usize:
+    let index: usize = 0 as usize
+    while index < length:
+        putc(text[index] as u8)
+        index = index + (1 as usize)
+    return index
+
+pub fn newline() -> int:
+    putc(13 as u8)
+    putc(10 as u8)
+    return 0

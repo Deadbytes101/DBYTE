@@ -1,0 +1,22 @@
+import "memory.dby" as memory
+import "numbers.dby" as numbers
+import "serial.dby" as serial
+
+fn kernel_main() -> int:
+    serial.init()
+    let value: u32 = memory.compute(40 as u32)
+    if value == (42 as u32):
+        serial.write("DBYTE NATIVE SYSTEM", 19 as usize)
+        serial.newline()
+        serial.write("MULTI MODULE ONLINE", 19 as usize)
+        serial.newline()
+        serial.write("LINKER ONLINE", 13 as usize)
+        serial.newline()
+        serial.write("SYSTEM TYPES ONLINE", 19 as usize)
+        serial.newline()
+        numbers.write_decimal_0_99(value)
+        serial.newline()
+    else:
+        serial.write("SYSTEM CHECK FAILED", 19 as usize)
+        serial.newline()
+    return value as i32

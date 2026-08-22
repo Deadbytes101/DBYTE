@@ -7,8 +7,16 @@ pub mod cli;
 pub mod diagnostics;
 pub mod elf32;
 pub mod ir;
+pub mod linker;
 pub mod lower;
+pub mod modules;
+pub mod object;
 pub mod semantic;
+pub mod system_types;
+pub mod systems_compiler;
+pub mod systems_ir;
+pub mod systems_lower;
+pub mod systems_semantic;
 pub mod types;
 pub mod x86;
 
@@ -26,6 +34,7 @@ pub const TARGET: &str = "i686-dbyte-none";
 pub enum EmitKind {
     Elf,
     Bin,
+    Obj,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

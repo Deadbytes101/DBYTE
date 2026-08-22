@@ -1,4 +1,7 @@
-use crate::{compile_source, EmitKind, NativeArtifact, TARGET};
+use crate::linker::{link_object_bytes, LinkInput};
+use crate::object::parse_relocatable;
+use crate::systems_compiler::{compile_systems_objects, compile_systems_project};
+use crate::{compile_source, Diagnostic, EmitKind, TARGET};
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -6,7 +9,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage: dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin -o <output> [--dump-ir] [--dump-machine-code]";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec link <object.o>... -o <output.elf>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -21,6 +24,9 @@ pub enum CliError {
         path: PathBuf,
         diagnostic: String,
     },
+    Link {
+        diagnostic: String,
+    },
     Output {
         path: PathBuf,
         action: &'static str,
@@ -33,7 +39,11 @@ impl CliError {
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::Argument(_) => 2,
-            Self::Input { .. } | Self::Compile { .. } | Self::Output { .. } | Self::Stdout(_) => 1,
+            Self::Input { .. }
+            | Self::Compile { .. }
+            | Self::Link { .. }
+            | Self::Output { .. }
+            | Self::Stdout(_) => 1,
         }
     }
 
@@ -44,6 +54,12 @@ impl CliError {
     fn compile(path: &Path, diagnostic: impl Into<String>) -> Self {
         Self::Compile {
             path: path.to_path_buf(),
+            diagnostic: diagnostic.into(),
+        }
+    }
+
+    fn link(diagnostic: impl Into<String>) -> Self {
+        Self::Link {
             diagnostic: diagnostic.into(),
         }
     }
@@ -74,6 +90,7 @@ impl fmt::Display for CliError {
                     write!(formatter, "{}: {diagnostic}", path.display())
                 }
             }
+            Self::Link { diagnostic } => formatter.write_str(diagnostic),
             Self::Output { path, action, kind } => write!(
                 formatter,
                 "error[output]: could not {action} '{}': {kind:?}",
@@ -97,8 +114,32 @@ struct BuildOptions {
     dump_machine_code: bool,
 }
 
+#[derive(Debug)]
+struct LinkOptions {
+    inputs: Vec<PathBuf>,
+    output: PathBuf,
+}
+
+#[derive(Debug)]
+struct BuildProduct {
+    bytes: Vec<u8>,
+    ir_dump: String,
+    machine_dump: String,
+}
+
+/// Dispatch the standalone `dbytec` command while retaining the historical
+/// direct-source form accepted by `run_build_args`.
+pub fn run_args(args: &[String]) -> Result<(), CliError> {
+    match args.first().map(String::as_str) {
+        Some("link") => run_link_args(args),
+        _ => run_build_args(args),
+    }
+}
+
 pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
     let options = parse_build_args(args)?;
+    // Preserve the original CLI's input-error contract before the systems
+    // compiler canonicalizes and loads the complete module graph.
     let source_text = fs::read_to_string(&options.source).map_err(|error| CliError::Input {
         path: options.source.clone(),
         kind: error.kind(),
@@ -106,19 +147,132 @@ pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
 
     reject_source_as_output(&options.source, &options.output)?;
 
-    let path_label = options.source.to_string_lossy();
-    let artifact = compile_source(path_label.as_ref(), &source_text).map_err(|diagnostic| {
-        CliError::compile(
-            &options.source,
-            diagnostic.render_with_path(path_label.as_ref()),
-        )
-    })?;
+    let product = compile_build_product(&options, &source_text)?;
+    validate_selected_output(&options.source, &options.emit, &product.bytes)?;
 
-    let bytes = selected_output(&artifact, &options.emit);
-    validate_selected_output(&options.source, &options.emit, bytes)?;
+    write_requested_dumps(&product, &options)?;
+    replace_output_transactionally(&options.output, &product.bytes)
+}
 
-    write_requested_dumps(&artifact, &options)?;
-    replace_output_transactionally(&options.output, bytes)
+pub fn run_link_args(args: &[String]) -> Result<(), CliError> {
+    let options = parse_link_args(args)?;
+    let mut inputs = Vec::with_capacity(options.inputs.len());
+    for path in &options.inputs {
+        reject_source_as_output(path, &options.output)?;
+        let bytes = fs::read(path).map_err(|error| CliError::Input {
+            path: path.clone(),
+            kind: error.kind(),
+        })?;
+        inputs.push(LinkInput::new(path.to_string_lossy(), bytes));
+    }
+
+    let linked =
+        link_object_bytes(&inputs).map_err(|diagnostic| CliError::link(diagnostic.to_string()))?;
+    validate_elf32_kind(&options.output, &linked.elf, ElfKind::Executable, "linker")?;
+    replace_output_transactionally(&options.output, &linked.elf)
+}
+
+fn compile_build_product(
+    options: &BuildOptions,
+    source_text: &str,
+) -> Result<BuildProduct, CliError> {
+    match options.emit {
+        EmitKind::Obj => {
+            let objects = compile_systems_objects(&options.source)
+                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+            let root = objects.root_object();
+            let mut machine_dump = root.machine_dump.clone();
+            append_dump(&mut machine_dump, &root.object_dump);
+            Ok(BuildProduct {
+                bytes: root.bytes.clone(),
+                ir_dump: root.ir_dump.clone(),
+                machine_dump,
+            })
+        }
+        EmitKind::Elf | EmitKind::Bin => {
+            if !requires_systems_pipeline(source_text) {
+                let path_label = options.source.to_string_lossy();
+                let artifact = compile_source(path_label.as_ref(), source_text)
+                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+                let bytes = match options.emit {
+                    EmitKind::Elf => artifact.elf,
+                    EmitKind::Bin => artifact.bin,
+                    EmitKind::Obj => unreachable!("object emission handled above"),
+                };
+                return Ok(BuildProduct {
+                    bytes,
+                    ir_dump: artifact.ir_dump,
+                    machine_dump: artifact.machine_dump,
+                });
+            }
+            let artifact = compile_systems_project(&options.source)
+                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+            let bytes = match options.emit {
+                EmitKind::Elf => artifact.linked.elf,
+                EmitKind::Bin => artifact.linked.bin,
+                EmitKind::Obj => unreachable!("object emission handled above"),
+            };
+            Ok(BuildProduct {
+                bytes,
+                ir_dump: artifact.ir_dump,
+                machine_dump: artifact.machine_dump,
+            })
+        }
+    }
+}
+
+/// Keep the proven v11.0.0 i32/bool single-image profile source-compatible,
+/// while selecting the object/linker pipeline whenever source opts into the
+/// v11.1 systems surface. Object emission always uses the systems pipeline.
+fn requires_systems_pipeline(source: &str) -> bool {
+    const SYSTEMS_MARKERS: [&str; 25] = [
+        "import \"",
+        "pub fn ",
+        "pub const ",
+        "pub static ",
+        "struct ",
+        "packed struct ",
+        "const ",
+        "static ",
+        "ptr[",
+        "array[",
+        ": i8",
+        ": u8",
+        ": i16",
+        ": u16",
+        ": i32",
+        ": u32",
+        ": usize",
+        "-> i8",
+        "-> u8",
+        "-> i16",
+        "-> u16",
+        "-> i32",
+        "-> u32",
+        "-> usize",
+        " as ",
+    ];
+    SYSTEMS_MARKERS.iter().any(|marker| source.contains(marker))
+}
+
+fn compile_diagnostic(source: &Path, diagnostic: Diagnostic) -> CliError {
+    let path_label = source.to_string_lossy();
+    let diagnostic = if diagnostic.path.is_some() {
+        diagnostic
+    } else {
+        diagnostic.with_path(path_label.as_ref())
+    };
+    CliError::compile(source, diagnostic.to_string())
+}
+
+fn append_dump(output: &mut String, dump: &str) {
+    if !output.is_empty() && !output.ends_with('\n') {
+        output.push('\n');
+    }
+    output.push_str(dump);
+    if !output.ends_with('\n') {
+        output.push('\n');
+    }
 }
 
 fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
@@ -204,6 +358,41 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
     })
 }
 
+fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
+    let args = match args.first().map(String::as_str) {
+        Some("link") => &args[1..],
+        _ => args,
+    };
+
+    let mut inputs = Vec::new();
+    let mut output: Option<PathBuf> = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        match argument {
+            "-o" | "--output" => {
+                reject_duplicate(output.is_some(), "-o/--output")?;
+                output = Some(PathBuf::from(take_option_value(
+                    args, &mut index, argument,
+                )?));
+            }
+            _ if argument.starts_with('-') => {
+                return Err(CliError::argument(format!("unknown option '{argument}'")));
+            }
+            _ => inputs.push(PathBuf::from(argument)),
+        }
+        index += 1;
+    }
+
+    if inputs.is_empty() {
+        return Err(CliError::argument(
+            "link requires at least one ELF32 object input",
+        ));
+    }
+    let output = output.ok_or_else(|| CliError::argument("missing required -o/--output"))?;
+    Ok(LinkOptions { inputs, output })
+}
+
 fn reject_duplicate(already_seen: bool, option: &str) -> Result<(), CliError> {
     if already_seen {
         Err(CliError::argument(format!(
@@ -230,8 +419,9 @@ fn parse_emit(value: &str) -> Result<EmitKind, CliError> {
     match value {
         "elf" => Ok(EmitKind::Elf),
         "bin" => Ok(EmitKind::Bin),
+        "obj" => Ok(EmitKind::Obj),
         _ => Err(CliError::argument(format!(
-            "unsupported emit kind '{value}'; expected 'elf' or 'bin'"
+            "unsupported emit kind '{value}'; expected 'elf', 'bin', or 'obj'"
         ))),
     }
 }
@@ -247,13 +437,6 @@ fn reject_source_as_output(source: &Path, output: &Path) -> Result<(), CliError>
     Ok(())
 }
 
-fn selected_output<'a>(artifact: &'a NativeArtifact, emit: &EmitKind) -> &'a [u8] {
-    match emit {
-        EmitKind::Elf => &artifact.elf,
-        EmitKind::Bin => &artifact.bin,
-    }
-}
-
 fn validate_selected_output(source: &Path, emit: &EmitKind, bytes: &[u8]) -> Result<(), CliError> {
     match emit {
         EmitKind::Bin if bytes.is_empty() => Err(CliError::compile(
@@ -261,39 +444,75 @@ fn validate_selected_output(source: &Path, emit: &EmitKind, bytes: &[u8]) -> Res
             "error[native-output]: compiler produced an empty binary",
         )),
         EmitKind::Bin => Ok(()),
-        EmitKind::Elf => validate_elf32(source, bytes),
+        EmitKind::Elf => validate_elf32_kind(source, bytes, ElfKind::Executable, "compiler"),
+        EmitKind::Obj => {
+            validate_elf32_kind(source, bytes, ElfKind::Relocatable, "compiler")?;
+            parse_relocatable(bytes)
+                .map(|_| ())
+                .map_err(|diagnostic| compile_diagnostic(source, diagnostic))
+        }
     }
 }
 
-fn validate_elf32(source: &Path, bytes: &[u8]) -> Result<(), CliError> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElfKind {
+    Relocatable,
+    Executable,
+}
+
+impl ElfKind {
+    const fn elf_type(self) -> u16 {
+        match self {
+            Self::Relocatable => 1,
+            Self::Executable => 2,
+        }
+    }
+
+    const fn description(self) -> &'static str {
+        match self {
+            Self::Relocatable => "relocatable object",
+            Self::Executable => "executable",
+        }
+    }
+}
+
+fn validate_elf32_kind(
+    path: &Path,
+    bytes: &[u8],
+    expected: ElfKind,
+    producer: &str,
+) -> Result<(), CliError> {
     let valid = bytes.len() >= 52
         && bytes.starts_with(b"\x7fELF")
         && bytes[4] == 1
         && bytes[5] == 1
-        && u16::from_le_bytes([bytes[16], bytes[17]]) == 2
-        && u16::from_le_bytes([bytes[18], bytes[19]]) == 3;
+        && bytes[6] == 1
+        && u16::from_le_bytes([bytes[16], bytes[17]]) == expected.elf_type()
+        && u16::from_le_bytes([bytes[18], bytes[19]]) == 3
+        && u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]) == 1
+        && u16::from_le_bytes([bytes[40], bytes[41]]) == 52;
 
     if valid {
         Ok(())
     } else {
         Err(CliError::compile(
-            source,
-            "error[elf32]: compiler produced an invalid ELF32/i386 executable",
+            path,
+            format!(
+                "error[elf32]: {producer} produced an invalid ELF32/i386 {}",
+                expected.description()
+            ),
         ))
     }
 }
 
-fn write_requested_dumps(
-    artifact: &NativeArtifact,
-    options: &BuildOptions,
-) -> Result<(), CliError> {
+fn write_requested_dumps(product: &BuildProduct, options: &BuildOptions) -> Result<(), CliError> {
     let stdout = io::stdout();
     let mut output = stdout.lock();
     if options.dump_ir {
-        write_dump(&mut output, &artifact.ir_dump)?;
+        write_dump(&mut output, &product.ir_dump)?;
     }
     if options.dump_machine_code {
-        write_dump(&mut output, &artifact.machine_dump)?;
+        write_dump(&mut output, &product.machine_dump)?;
     }
     output
         .flush()
@@ -442,9 +661,62 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::linker::LINK_ENTRY_SYMBOL;
+    use crate::object::{
+        write_relocatable, ObjectImage, ObjectSection, ObjectSectionData, ObjectSymbol,
+        SymbolBinding, SymbolDefinition, SymbolKind,
+    };
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    fn function_object(name: &str) -> ObjectImage {
+        let text = vec![0xc3];
+        let mut image = ObjectImage::empty();
+        image.sections.insert(
+            ObjectSection::Text,
+            ObjectSectionData::bytes(text.clone(), 16),
+        );
+        image.symbols.push(ObjectSymbol {
+            name: name.to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: text.len() as u32,
+        });
+        image
+    }
+
+    fn object_bytes(image: &ObjectImage) -> Vec<u8> {
+        write_relocatable(image)
+            .expect("serialize test object")
+            .bytes
+    }
+
+    fn valid_kernel_object_bytes() -> Vec<u8> {
+        object_bytes(&function_object(LINK_ENTRY_SYMBOL))
+    }
+
+    fn known_good_elf() -> Vec<u8> {
+        link_object_bytes(&[LinkInput::new("known-good.o", valid_kernel_object_bytes())])
+            .expect("link known-good ELF")
+            .elf
+    }
+
+    fn temporary_file_count(path: &Path) -> usize {
+        fs::read_dir(path)
+            .expect("read test directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".dbytec-"))
+            .count()
+    }
+
+    fn assert_no_temporary_files(path: &Path) {
+        assert_eq!(temporary_file_count(path), 0);
     }
 
     #[test]
@@ -471,6 +743,67 @@ mod tests {
     }
 
     #[test]
+    fn parses_object_emit_and_direct_link_contract() {
+        let object = parse_build_args(&args(&[
+            "kernel.dby",
+            "--target",
+            TARGET,
+            "--emit",
+            "obj",
+            "-o",
+            "kernel.o",
+        ]))
+        .expect("object build options should parse");
+        assert_eq!(object.emit, EmitKind::Obj);
+        assert_eq!(object.output, PathBuf::from("kernel.o"));
+
+        let link = parse_link_args(&args(&["link", "kernel.o", "serial.o", "-o", "kernel.elf"]))
+            .expect("link options should parse");
+        assert_eq!(
+            link.inputs,
+            vec![PathBuf::from("kernel.o"), PathBuf::from("serial.o")]
+        );
+        assert_eq!(link.output, PathBuf::from("kernel.elf"));
+    }
+
+    #[test]
+    fn direct_link_requires_inputs_and_one_output() {
+        let no_inputs = parse_link_args(&args(&["link", "-o", "kernel.elf"]))
+            .expect_err("empty link should fail");
+        assert!(no_inputs.to_string().contains("at least one"));
+
+        let no_output =
+            parse_link_args(&args(&["link", "kernel.o"])).expect_err("output is required");
+        assert!(no_output
+            .to_string()
+            .contains("missing required -o/--output"));
+
+        let duplicate_output = parse_link_args(&args(&[
+            "link",
+            "kernel.o",
+            "-o",
+            "first.elf",
+            "--output",
+            "second.elf",
+        ]))
+        .expect_err("duplicate output should fail");
+        assert!(duplicate_output.to_string().contains("more than once"));
+
+        let unsupported = parse_link_args(&args(&[
+            "link",
+            "kernel.o",
+            "--target",
+            TARGET,
+            "-o",
+            "kernel.elf",
+        ]))
+        .expect_err("link-only options should remain narrow");
+        assert!(unsupported
+            .to_string()
+            .contains("unknown option '--target'"));
+    }
+
+    #[test]
     fn rejects_invalid_target() {
         let error = parse_build_args(&args(&[
             "kernel.dby",
@@ -492,9 +825,9 @@ mod tests {
             "--target",
             TARGET,
             "--emit",
-            "obj",
+            "wasm",
             "-o",
-            "kernel.o",
+            "kernel.wasm",
         ]))
         .expect_err("emit kind should fail");
         assert!(error.to_string().contains("unsupported emit kind"));
@@ -508,12 +841,177 @@ mod tests {
     }
 
     #[test]
+    fn elf_validation_distinguishes_relocatable_and_executable_outputs() {
+        let object = valid_kernel_object_bytes();
+        validate_elf32_kind(
+            Path::new("kernel.o"),
+            &object,
+            ElfKind::Relocatable,
+            "compiler",
+        )
+        .expect("ET_REL should validate as an object");
+        parse_relocatable(&object).expect("ET_REL should pass the real object parser");
+        assert!(validate_elf32_kind(
+            Path::new("kernel.o"),
+            &object,
+            ElfKind::Executable,
+            "linker",
+        )
+        .is_err());
+
+        let executable = known_good_elf();
+        validate_elf32_kind(
+            Path::new("kernel.elf"),
+            &executable,
+            ElfKind::Executable,
+            "linker",
+        )
+        .expect("ET_EXEC should validate as an executable");
+        assert!(validate_elf32_kind(
+            Path::new("kernel.elf"),
+            &executable,
+            ElfKind::Relocatable,
+            "compiler",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn pipeline_selection_preserves_legacy_and_selects_systems_sources() {
+        let legacy = include_str!("../../../examples/native_kernel/kernel.dby");
+        let systems = include_str!("../../../examples/native_kernel_multimodule/kernel.dby");
+        assert!(!requires_systems_pipeline(legacy));
+        assert!(requires_systems_pipeline(systems));
+        assert!(requires_systems_pipeline(
+            "fn kernel_main() -> u32:\n    return 0 as u32\n"
+        ));
+    }
+
+    #[test]
+    fn legacy_v11_source_still_builds_transactionally() {
+        let test_dir = TestDirectory::new("legacy-v11-build");
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/native_kernel/kernel.dby");
+        let output = test_dir.path.join("legacy.elf");
+
+        run_build_args(&[
+            "build".to_owned(),
+            source.to_string_lossy().into_owned(),
+            "--target".to_owned(),
+            TARGET.to_owned(),
+            "--emit".to_owned(),
+            "elf".to_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect("v11.0.0 native source should remain buildable");
+
+        let bytes = fs::read(&output).expect("read legacy native ELF");
+        validate_elf32_kind(&output, &bytes, ElfKind::Executable, "compiler")
+            .expect("legacy pipeline should still emit ET_EXEC");
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn object_build_writes_root_et_rel_that_parses() {
+        let test_dir = TestDirectory::new("object-build");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_kernel_multimodule/kernel.dby");
+        let output = test_dir.path.join("kernel.o");
+
+        run_build_args(&[
+            "build".to_owned(),
+            source.to_string_lossy().into_owned(),
+            "--target".to_owned(),
+            TARGET.to_owned(),
+            "--emit".to_owned(),
+            "obj".to_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect("systems object build should succeed");
+
+        let bytes = fs::read(&output).expect("read object output");
+        assert_eq!(u16::from_le_bytes([bytes[16], bytes[17]]), 1);
+        let image = parse_relocatable(&bytes).expect("CLI object should parse as ET_REL");
+        assert!(image
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == LINK_ENTRY_SYMBOL));
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn build_forms_emit_linked_elf_and_nonempty_bin() {
+        let test_dir = TestDirectory::new("integrated-build");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_kernel_multimodule/kernel.dby");
+        let elf_output = test_dir.path.join("kernel.elf");
+        let bin_output = test_dir.path.join("kernel.bin");
+
+        // `dbyte build` passes the direct source form, while standalone
+        // `dbytec build` includes the command token. Keep both contracts.
+        run_build_args(&[
+            source.to_string_lossy().into_owned(),
+            "--target".to_owned(),
+            TARGET.to_owned(),
+            "--emit".to_owned(),
+            "elf".to_owned(),
+            "-o".to_owned(),
+            elf_output.to_string_lossy().into_owned(),
+        ])
+        .expect("integrated ELF build should succeed");
+        run_args(&[
+            "build".to_owned(),
+            source.to_string_lossy().into_owned(),
+            "--target".to_owned(),
+            TARGET.to_owned(),
+            "--emit".to_owned(),
+            "bin".to_owned(),
+            "-o".to_owned(),
+            bin_output.to_string_lossy().into_owned(),
+        ])
+        .expect("integrated flat-binary build should succeed");
+
+        let elf = fs::read(&elf_output).expect("read integrated ELF");
+        validate_elf32_kind(&elf_output, &elf, ElfKind::Executable, "compiler")
+            .expect("integrated build should emit ET_EXEC");
+        assert!(!fs::read(&bin_output)
+            .expect("read integrated binary")
+            .is_empty());
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn direct_link_dispatch_writes_valid_et_exec() {
+        let test_dir = TestDirectory::new("direct-link-success");
+        let input = test_dir.path.join("kernel.o");
+        let output = test_dir.path.join("kernel.elf");
+        fs::write(&input, valid_kernel_object_bytes()).expect("write kernel object");
+
+        run_args(&[
+            "link".to_owned(),
+            input.to_string_lossy().into_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect("direct link should succeed");
+
+        let bytes = fs::read(&output).expect("read linked executable");
+        assert_eq!(u16::from_le_bytes([bytes[16], bytes[17]]), 2);
+        validate_elf32_kind(&output, &bytes, ElfKind::Executable, "linker")
+            .expect("linked output should be ET_EXEC");
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
     fn compile_failure_leaves_existing_output_untouched() {
         let test_dir = TestDirectory::new("compile-failure");
         let source = test_dir.path.join("invalid.dby");
         let output = test_dir.path.join("kernel.elf");
         fs::write(&source, "@").expect("write invalid source");
-        fs::write(&output, b"existing output").expect("write sentinel output");
+        let known_good = known_good_elf();
+        fs::write(&output, &known_good).expect("write known-good ELF");
 
         let result = run_build_args(&[
             "build".to_owned(),
@@ -528,15 +1026,90 @@ mod tests {
 
         assert!(matches!(result, Err(CliError::Compile { .. })));
         assert_eq!(
-            fs::read(&output).expect("read sentinel output"),
-            b"existing output"
+            fs::read(&output).expect("read preserved output"),
+            known_good
         );
-        let temporary_files = fs::read_dir(&test_dir.path)
-            .expect("read test directory")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".dbytec-"))
-            .count();
-        assert_eq!(temporary_files, 0);
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn malformed_object_link_failure_preserves_known_good_output() {
+        let test_dir = TestDirectory::new("malformed-link-failure");
+        let input = test_dir.path.join("malformed.o");
+        let output = test_dir.path.join("kernel.elf");
+        let known_good = known_good_elf();
+        fs::write(&input, vec![0; 52]).expect("write malformed object");
+        fs::write(&output, &known_good).expect("write known-good ELF");
+
+        let error = run_link_args(&[
+            "link".to_owned(),
+            input.to_string_lossy().into_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect_err("malformed object link should fail");
+
+        assert!(matches!(&error, CliError::Link { .. }));
+        assert!(error.to_string().contains("InvalidObject"));
+        assert_eq!(fs::read(&output).expect("read output"), known_good);
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn undefined_symbol_link_failure_preserves_known_good_output() {
+        let test_dir = TestDirectory::new("undefined-link-failure");
+        let input = test_dir.path.join("undefined.o");
+        let output = test_dir.path.join("kernel.elf");
+        let known_good = known_good_elf();
+        let mut image = function_object(LINK_ENTRY_SYMBOL);
+        image.symbols.push(ObjectSymbol {
+            name: "missing".to_owned(),
+            binding: SymbolBinding::Global,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Undefined,
+            size: 0,
+        });
+        fs::write(&input, object_bytes(&image)).expect("write undefined-symbol object");
+        fs::write(&output, &known_good).expect("write known-good ELF");
+
+        let error = run_link_args(&[
+            input.to_string_lossy().into_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect_err("undefined symbol link should fail");
+
+        assert!(matches!(&error, CliError::Link { .. }));
+        assert!(error.to_string().contains("UndefinedSymbol"));
+        assert_eq!(fs::read(&output).expect("read output"), known_good);
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn duplicate_symbol_link_failure_preserves_known_good_output() {
+        let test_dir = TestDirectory::new("duplicate-link-failure");
+        let first = test_dir.path.join("first.o");
+        let second = test_dir.path.join("second.o");
+        let output = test_dir.path.join("kernel.elf");
+        let known_good = known_good_elf();
+        let duplicate = valid_kernel_object_bytes();
+        fs::write(&first, &duplicate).expect("write first duplicate object");
+        fs::write(&second, &duplicate).expect("write second duplicate object");
+        fs::write(&output, &known_good).expect("write known-good ELF");
+
+        let error = run_link_args(&[
+            "link".to_owned(),
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect_err("duplicate symbol link should fail");
+
+        assert!(matches!(&error, CliError::Link { .. }));
+        assert!(error.to_string().contains("DuplicateSymbol"));
+        assert_eq!(fs::read(&output).expect("read output"), known_good);
+        assert_no_temporary_files(&test_dir.path);
     }
 
     #[test]
@@ -552,12 +1125,7 @@ mod tests {
             fs::read(&output).expect("read replaced output"),
             b"new machine bytes"
         );
-        let temporary_files = fs::read_dir(&test_dir.path)
-            .expect("read test directory")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".dbytec-"))
-            .count();
-        assert_eq!(temporary_files, 0);
+        assert_no_temporary_files(&test_dir.path);
     }
 
     #[test]
@@ -570,12 +1138,7 @@ mod tests {
 
         assert!(matches!(result, Err(CliError::Output { .. })));
         assert!(output.is_dir());
-        let temporary_files = fs::read_dir(&test_dir.path)
-            .expect("read test directory")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".dbytec-"))
-            .count();
-        assert_eq!(temporary_files, 0);
+        assert_no_temporary_files(&test_dir.path);
     }
 
     struct TestDirectory {

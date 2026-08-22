@@ -71,7 +71,17 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         TypeAnnotation::List(inner) => {
             ann_to_resolved(inner).map(|t| ResolvedType::List(Box::new(t)))
         }
-        TypeAnnotation::Inferred => None,
+        TypeAnnotation::I8
+        | TypeAnnotation::U8
+        | TypeAnnotation::I16
+        | TypeAnnotation::U16
+        | TypeAnnotation::I32
+        | TypeAnnotation::U32
+        | TypeAnnotation::Usize
+        | TypeAnnotation::Pointer(_)
+        | TypeAnnotation::Array { .. }
+        | TypeAnnotation::Named(_)
+        | TypeAnnotation::Inferred => None,
     }
 }
 
@@ -403,6 +413,16 @@ impl TypeChecker {
                     | BinOp::Gt
                     | BinOp::LtEq
                     | BinOp::GtEq => Ok(ResolvedType::Bool),
+                    BinOp::BitAnd
+                    | BinOp::BitOr
+                    | BinOp::BitXor
+                    | BinOp::Shl
+                    | BinOp::Shr => Err(TypeError {
+                        msg: format!(
+                            "native systems operator `{op}` is unavailable in the hosted type checker"
+                        ),
+                        span: *span,
+                    }),
                 }
             }
 
@@ -423,6 +443,11 @@ impl TypeChecker {
                             span: *span,
                         }),
                     },
+                    UnaryOp::BitNot | UnaryOp::AddressOf | UnaryOp::Deref => Err(TypeError {
+                        msg: "native systems unary operators are unavailable in the hosted type checker"
+                            .into(),
+                        span: *span,
+                    }),
                 }
             }
 
@@ -521,6 +546,10 @@ impl TypeChecker {
                     span: *span,
                 }),
             },
+            Expr::Cast { span, .. } => Err(TypeError {
+                msg: "native systems casts are unavailable in the hosted type checker".into(),
+                span: *span,
+            }),
         }
     }
 
@@ -749,6 +778,17 @@ impl TypeChecker {
                 } else {
                     self.define(alias, ty);
                 }
+            }
+
+            Stmt::Store { span, .. }
+            | Stmt::StructDef { span, .. }
+            | Stmt::Const { span, .. }
+            | Stmt::Static { span, .. } => {
+                return Err(TypeError {
+                    msg: "native systems statements are unavailable in the hosted type checker"
+                        .into(),
+                    span: *span,
+                });
             }
 
             Stmt::Expr(e) => {

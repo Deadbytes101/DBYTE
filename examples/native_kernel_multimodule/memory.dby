@@ -1,0 +1,35 @@
+import "numbers.dby" as numbers
+
+struct SystemRecord:
+    value: u32
+    port: u16
+    flags: u8
+
+packed struct PackedProof:
+    tag: u8
+    word: u16
+
+const EXPECTED_RECORD_SIZE: usize = 8 as usize
+const EXPECTED_RECORD_ALIGN: usize = 4 as usize
+static BUILD_ID: u32 = 11 as u32
+static mut CELLS: array[u8, 4] = [1 as u8, 2 as u8, 3 as u8, 4 as u8]
+static mut LAST_PORT: u16 = 0 as u16
+static mut TOTAL: u32
+
+pub fn compute(base: u32) -> u32:
+    let record: SystemRecord = SystemRecord(base, 0x3f8 as u16, 1 as u8)
+    let proof: PackedProof = PackedProof(1 as u8, 0x1234 as u16)
+    let index: usize = 1 as usize
+    let cell: ptr[u8] = &CELLS[index]
+    *cell = ((*cell | (1 as u8)) << (1 as u8))
+    LAST_PORT = record.port ^ (proof.word & (0 as u16))
+    let increment: u32 = (record.flags as u32) << (1 as u32)
+    let record_size: usize = size_of(SystemRecord)
+    let record_align: usize = align_of(SystemRecord)
+    if record_size == EXPECTED_RECORD_SIZE:
+        if record_align == EXPECTED_RECORD_ALIGN:
+            if *cell == (6 as u8):
+                if BUILD_ID == (11 as u32):
+                    TOTAL = numbers.add(record.value, increment)
+                    return TOTAL
+    return 0 as u32

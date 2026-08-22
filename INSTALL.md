@@ -5,7 +5,7 @@ entrypoint, docs, and examples.
 
 ## Install From Release Zip
 
-1. Download `dbyte-v11.0.0-windows-x64.zip` from the release page.
+1. Download `dbyte-v11.1.0-windows-x64.zip` from the release page.
 2. Extract it to a stable folder.
 3. Run the installer from the extracted folder:
 
@@ -31,14 +31,14 @@ Open a new PowerShell window, return to the extracted release folder, and verify
 
 ```powershell
 dbyte --version
-dbytec build examples\native_kernel\kernel.dby --target i686-dbyte-none --emit elf -o kernel.elf
+dbytec build examples\native_kernel_multimodule\kernel.dby --target i686-dbyte-none --emit elf -o kernel.elf
 dbyte run --vm examples\hello.dby
 ```
 
 Expected version for this release:
 
 ```txt
-DByte 11.0.0
+DByte 11.1.0
 ```
 
 ## Install From Source

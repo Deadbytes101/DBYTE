@@ -321,6 +321,15 @@ impl<'a> FunctionAnalyzer<'a> {
                 }
                 self.instructions.push(IrInst::LocalStore(binding.slot));
             }
+            Stmt::Store { span, .. }
+            | Stmt::StructDef { span, .. }
+            | Stmt::Const { span, .. }
+            | Stmt::Static { span, .. } => {
+                return Err(unsupported(
+                    "systems declarations and lvalue stores in the v11.0 single-image profile",
+                    *span,
+                ));
+            }
             Stmt::FnDef { span, .. } => {
                 return Err(Diagnostic::new(
                     DiagnosticCategory::UnsupportedFeature,
@@ -495,6 +504,10 @@ impl<'a> FunctionAnalyzer<'a> {
                 args,
                 span,
             } => self.compile_intrinsic(object, property, args, *span),
+            Expr::Cast { span, .. } => Err(unsupported(
+                "explicit systems casts in the v11.0 single-image profile",
+                *span,
+            )),
         }
     }
 
@@ -569,6 +582,12 @@ impl<'a> FunctionAnalyzer<'a> {
                 Ok(ExprResult::Value(NativeType::Bool))
             }
             BinOp::Div => unreachable!(),
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
+                Err(unsupported(
+                    "bitwise and shift operators in the v11.0 single-image profile",
+                    span,
+                ))
+            }
         }
     }
 
@@ -619,6 +638,10 @@ impl<'a> FunctionAnalyzer<'a> {
                 self.instructions.push(IrInst::BoolNot);
                 Ok(ExprResult::Value(NativeType::Bool))
             }
+            UnaryOp::BitNot | UnaryOp::AddressOf | UnaryOp::Deref => Err(unsupported(
+                "systems unary operators in the v11.0 single-image profile",
+                span,
+            )),
         }
     }
 
@@ -830,7 +853,7 @@ fn explicit_native_type(
     owner: &str,
 ) -> NativeResult<NativeType> {
     match annotation {
-        TypeAnnotation::Int => Ok(NativeType::I32),
+        TypeAnnotation::Int | TypeAnnotation::I32 => Ok(NativeType::I32),
         TypeAnnotation::Bool => Ok(NativeType::Bool),
         TypeAnnotation::Str => Ok(NativeType::Str),
         TypeAnnotation::Inferred => Err(Diagnostic::new(
@@ -856,6 +879,19 @@ fn explicit_native_type(
         TypeAnnotation::List(inner) => Err(Diagnostic::new(
             DiagnosticCategory::InvalidType,
             format!("{owner} uses unsupported native type `list[{inner}]`"),
+            span,
+        )),
+        TypeAnnotation::I8
+        | TypeAnnotation::U8
+        | TypeAnnotation::I16
+        | TypeAnnotation::U16
+        | TypeAnnotation::U32
+        | TypeAnnotation::Usize
+        | TypeAnnotation::Pointer(_)
+        | TypeAnnotation::Array { .. }
+        | TypeAnnotation::Named(_) => Err(Diagnostic::new(
+            DiagnosticCategory::InvalidType,
+            format!("{owner} uses systems type `{annotation}` outside the v11.1 systems pipeline"),
             span,
         )),
     }

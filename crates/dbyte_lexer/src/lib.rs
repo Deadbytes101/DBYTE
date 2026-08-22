@@ -13,6 +13,11 @@ pub enum TokenKind {
     Import,
     As,
     Pub,
+    Const,
+    Static,
+    Mut,
+    Struct,
+    Packed,
     True,
     False,
 
@@ -27,6 +32,10 @@ pub enum TokenKind {
     Star,
     Slash,
     Bang,
+    Ampersand,
+    Pipe,
+    Caret,
+    Tilde,
     Equal,
     EqualEqual,
     BangEqual,
@@ -34,6 +43,8 @@ pub enum TokenKind {
     LessEqual,
     Greater,
     GreaterEqual,
+    ShiftLeft,
+    ShiftRight,
     Arrow,
 
     Colon,
@@ -64,6 +75,11 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Import => write!(f, "import"),
             TokenKind::As => write!(f, "as"),
             TokenKind::Pub => write!(f, "pub"),
+            TokenKind::Const => write!(f, "const"),
+            TokenKind::Static => write!(f, "static"),
+            TokenKind::Mut => write!(f, "mut"),
+            TokenKind::Struct => write!(f, "struct"),
+            TokenKind::Packed => write!(f, "packed"),
             TokenKind::True => write!(f, "true"),
             TokenKind::False => write!(f, "false"),
             TokenKind::Ident(s) => write!(f, "{}", s),
@@ -76,6 +92,10 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Star => write!(f, "*"),
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Bang => write!(f, "!"),
+            TokenKind::Ampersand => write!(f, "&"),
+            TokenKind::Pipe => write!(f, "|"),
+            TokenKind::Caret => write!(f, "^"),
+            TokenKind::Tilde => write!(f, "~"),
             TokenKind::Equal => write!(f, "="),
             TokenKind::EqualEqual => write!(f, "=="),
             TokenKind::BangEqual => write!(f, "!="),
@@ -83,6 +103,8 @@ impl std::fmt::Display for TokenKind {
             TokenKind::LessEqual => write!(f, "<="),
             TokenKind::Greater => write!(f, ">"),
             TokenKind::GreaterEqual => write!(f, ">="),
+            TokenKind::ShiftLeft => write!(f, "<<"),
+            TokenKind::ShiftRight => write!(f, ">>"),
             TokenKind::Arrow => write!(f, "->"),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Comma => write!(f, ","),
@@ -364,6 +386,11 @@ impl<'src> Lexer<'src> {
             "import" => TokenKind::Import,
             "as" => TokenKind::As,
             "pub" => TokenKind::Pub,
+            "const" => TokenKind::Const,
+            "static" => TokenKind::Static,
+            "mut" => TokenKind::Mut,
+            "struct" => TokenKind::Struct,
+            "packed" => TokenKind::Packed,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             _ => TokenKind::Ident(s),
@@ -524,10 +551,33 @@ impl<'src> Lexer<'src> {
                         tokens.push(Token::new(TokenKind::Bang, sp));
                     }
                 }
+                '&' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::Ampersand, sp));
+                }
+                '|' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::Pipe, sp));
+                }
+                '^' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::Caret, sp));
+                }
+                '~' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::Tilde, sp));
+                }
                 '<' => {
                     let sp = self.span();
                     self.advance();
-                    if self.peek_char() == Some('=') {
+                    if self.peek_char() == Some('<') {
+                        self.advance();
+                        tokens.push(Token::new(TokenKind::ShiftLeft, sp));
+                    } else if self.peek_char() == Some('=') {
                         self.advance();
                         tokens.push(Token::new(TokenKind::LessEqual, sp));
                     } else {
@@ -537,7 +587,10 @@ impl<'src> Lexer<'src> {
                 '>' => {
                     let sp = self.span();
                     self.advance();
-                    if self.peek_char() == Some('=') {
+                    if self.peek_char() == Some('>') {
+                        self.advance();
+                        tokens.push(Token::new(TokenKind::ShiftRight, sp));
+                    } else if self.peek_char() == Some('=') {
                         self.advance();
                         tokens.push(Token::new(TokenKind::GreaterEqual, sp));
                     } else {
@@ -582,5 +635,31 @@ mod tests {
     fn empty_hexadecimal_literal_is_rejected() {
         let error = Lexer::new("0x").tokenize().unwrap_err();
         assert_eq!(error.msg, "invalid hexadecimal integer literal");
+    }
+
+    #[test]
+    fn tokenizes_native_systems_keywords_and_operators() {
+        let tokens = Lexer::new("const static mut struct packed & | ^ ~ << >>\n")
+            .tokenize()
+            .expect("systems syntax should lex");
+        let kinds: Vec<_> = tokens.into_iter().map(|token| token.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::Const,
+                TokenKind::Static,
+                TokenKind::Mut,
+                TokenKind::Struct,
+                TokenKind::Packed,
+                TokenKind::Ampersand,
+                TokenKind::Pipe,
+                TokenKind::Caret,
+                TokenKind::Tilde,
+                TokenKind::ShiftLeft,
+                TokenKind::ShiftRight,
+                TokenKind::Newline,
+                TokenKind::Eof,
+            ]
+        );
     }
 }

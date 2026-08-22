@@ -69,12 +69,41 @@ impl Parser {
         }
     }
 
-    fn parse_type_full(&mut self) -> TypeAnnotation {
-        if let TokenKind::Ident(name) = self.peek_kind().clone() {
-            match name.as_str() {
+    fn parse_type_full(&mut self) -> Result<TypeAnnotation, ParseError> {
+        let token = self.peek().clone();
+        if let TokenKind::Ident(name) = token.kind {
+            let ty = match name.as_str() {
                 "int" => {
                     self.advance();
                     TypeAnnotation::Int
+                }
+                "i8" => {
+                    self.advance();
+                    TypeAnnotation::I8
+                }
+                "u8" => {
+                    self.advance();
+                    TypeAnnotation::U8
+                }
+                "i16" => {
+                    self.advance();
+                    TypeAnnotation::I16
+                }
+                "u16" => {
+                    self.advance();
+                    TypeAnnotation::U16
+                }
+                "i32" => {
+                    self.advance();
+                    TypeAnnotation::I32
+                }
+                "u32" => {
+                    self.advance();
+                    TypeAnnotation::U32
+                }
+                "usize" => {
+                    self.advance();
+                    TypeAnnotation::Usize
                 }
                 "float" => {
                     self.advance();
@@ -100,17 +129,76 @@ impl Parser {
                     self.advance();
                     if matches!(self.peek_kind(), TokenKind::LBracket) {
                         self.advance();
-                        let inner = self.parse_type_full();
-                        let _ = self.expect(&TokenKind::RBracket);
+                        let inner = self.parse_type_full()?;
+                        self.expect(&TokenKind::RBracket)?;
                         TypeAnnotation::List(Box::new(inner))
                     } else {
                         TypeAnnotation::Inferred
                     }
                 }
-                _ => TypeAnnotation::Inferred,
-            }
+                "ptr" => {
+                    self.advance();
+                    self.expect(&TokenKind::LBracket)?;
+                    let inner = self.parse_type_full()?;
+                    self.expect(&TokenKind::RBracket)?;
+                    TypeAnnotation::Pointer(Box::new(inner))
+                }
+                "array" => {
+                    self.advance();
+                    self.expect(&TokenKind::LBracket)?;
+                    let element = self.parse_type_full()?;
+                    self.expect(&TokenKind::Comma)?;
+                    let length_token = self.peek().clone();
+                    let length = match length_token.kind {
+                        TokenKind::Int(length) => {
+                            let length = u32::try_from(length).map_err(|_| ParseError {
+                                msg: "array length must be an unsigned 32-bit integer".into(),
+                                span: length_token.span,
+                            })?;
+                            self.advance();
+                            length
+                        }
+                        _ => {
+                            return Err(ParseError {
+                                msg: "expected integer array length".into(),
+                                span: length_token.span,
+                            })
+                        }
+                    };
+                    self.expect(&TokenKind::RBracket)?;
+                    TypeAnnotation::Array {
+                        element: Box::new(element),
+                        length,
+                    }
+                }
+                _ => {
+                    self.advance();
+                    let mut qualified = name;
+                    while matches!(self.peek_kind(), TokenKind::Dot) {
+                        self.advance();
+                        match self.peek_kind().clone() {
+                            TokenKind::Ident(part) => {
+                                self.advance();
+                                qualified.push('.');
+                                qualified.push_str(&part);
+                            }
+                            _ => {
+                                return Err(ParseError {
+                                    msg: "expected type name after `.`".into(),
+                                    span: self.peek().span,
+                                });
+                            }
+                        }
+                    }
+                    TypeAnnotation::Named(qualified)
+                }
+            };
+            Ok(ty)
         } else {
-            TypeAnnotation::Inferred
+            Err(ParseError {
+                msg: format!("expected type, found `{}`", token.kind),
+                span: token.span,
+            })
         }
     }
 
@@ -119,7 +207,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_additive()?;
+        let mut left = self.parse_bitwise_or()?;
         loop {
             let op = match self.peek_kind() {
                 TokenKind::EqualEqual => BinOp::EqEq,
@@ -128,6 +216,75 @@ impl Parser {
                 TokenKind::LessEqual => BinOp::LtEq,
                 TokenKind::Greater => BinOp::Gt,
                 TokenKind::GreaterEqual => BinOp::GtEq,
+                _ => break,
+            };
+            let span = self.peek().span;
+            self.advance();
+            let right = self.parse_bitwise_or()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitwise_or(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.parse_bitwise_xor()?;
+        while matches!(self.peek_kind(), TokenKind::Pipe) {
+            let span = self.peek().span;
+            self.advance();
+            let right = self.parse_bitwise_xor()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::BitOr,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.parse_bitwise_and()?;
+        while matches!(self.peek_kind(), TokenKind::Caret) {
+            let span = self.peek().span;
+            self.advance();
+            let right = self.parse_bitwise_and()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::BitXor,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_bitwise_and(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.parse_shift()?;
+        while matches!(self.peek_kind(), TokenKind::Ampersand) {
+            let span = self.peek().span;
+            self.advance();
+            let right = self.parse_shift()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: BinOp::BitAnd,
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_shift(&mut self) -> Result<Expr, ParseError> {
+        let mut left = self.parse_additive()?;
+        loop {
+            let op = match self.peek_kind() {
+                TokenKind::ShiftLeft => BinOp::Shl,
+                TokenKind::ShiftRight => BinOp::Shr,
                 _ => break,
             };
             let span = self.peek().span;
@@ -165,7 +322,7 @@ impl Parser {
     }
 
     fn parse_multiplicative(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.parse_unary()?;
+        let mut left = self.parse_cast()?;
         loop {
             let op = match self.peek_kind() {
                 TokenKind::Star => BinOp::Mul,
@@ -174,7 +331,7 @@ impl Parser {
             };
             let span = self.peek().span;
             self.advance();
-            let right = self.parse_unary()?;
+            let right = self.parse_cast()?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op,
@@ -185,6 +342,21 @@ impl Parser {
         Ok(left)
     }
 
+    fn parse_cast(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.parse_unary()?;
+        while matches!(self.peek_kind(), TokenKind::As) {
+            let span = self.peek().span;
+            self.advance();
+            let ty = self.parse_type_full()?;
+            expr = Expr::Cast {
+                expr: Box::new(expr),
+                ty,
+                span,
+            };
+        }
+        Ok(expr)
+    }
+
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
         match self.peek_kind() {
             TokenKind::Minus => {
@@ -192,7 +364,7 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Unary {
                     op: UnaryOp::Neg,
-                    expr: Box::new(self.parse_postfix()?),
+                    expr: Box::new(self.parse_unary()?),
                     span,
                 })
             }
@@ -201,7 +373,34 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Unary {
                     op: UnaryOp::Not,
-                    expr: Box::new(self.parse_postfix()?),
+                    expr: Box::new(self.parse_unary()?),
+                    span,
+                })
+            }
+            TokenKind::Tilde => {
+                let span = self.peek().span;
+                self.advance();
+                Ok(Expr::Unary {
+                    op: UnaryOp::BitNot,
+                    expr: Box::new(self.parse_unary()?),
+                    span,
+                })
+            }
+            TokenKind::Ampersand => {
+                let span = self.peek().span;
+                self.advance();
+                Ok(Expr::Unary {
+                    op: UnaryOp::AddressOf,
+                    expr: Box::new(self.parse_unary()?),
+                    span,
+                })
+            }
+            TokenKind::Star => {
+                let span = self.peek().span;
+                self.advance();
+                Ok(Expr::Unary {
+                    op: UnaryOp::Deref,
+                    expr: Box::new(self.parse_unary()?),
                     span,
                 })
             }
@@ -366,13 +565,21 @@ impl Parser {
         match self.peek_kind().clone() {
             TokenKind::Let => self.parse_let(false),
             TokenKind::Fn => self.parse_fn(false),
+            TokenKind::Const => self.parse_const(false),
+            TokenKind::Static => self.parse_static(false),
+            TokenKind::Struct => self.parse_struct(false, false),
+            TokenKind::Packed => self.parse_packed_struct(false),
             TokenKind::Pub => {
                 self.advance();
                 match self.peek_kind().clone() {
                     TokenKind::Let => self.parse_let(true),
                     TokenKind::Fn => self.parse_fn(true),
+                    TokenKind::Const => self.parse_const(true),
+                    TokenKind::Static => self.parse_static(true),
+                    TokenKind::Struct => self.parse_struct(true, false),
+                    TokenKind::Packed => self.parse_packed_struct(true),
                     _ => Err(ParseError {
-                        msg: "expected `let` or `fn` after `pub`".into(),
+                        msg: "expected `let`, `fn`, `const`, `static`, `struct`, or `packed struct` after `pub`".into(),
                         span: self.peek().span,
                     }),
                 }
@@ -389,16 +596,42 @@ impl Parser {
                 if next_is_assign {
                     self.parse_assign()
                 } else {
-                    let expr = self.parse_expr()?;
-                    self.consume_newline_or_eof();
-                    Ok(Stmt::Expr(expr))
+                    self.parse_expr_or_store()
                 }
             }
-            _ => {
-                let expr = self.parse_expr()?;
-                self.consume_newline_or_eof();
-                Ok(Stmt::Expr(expr))
+            _ => self.parse_expr_or_store(),
+        }
+    }
+
+    fn parse_expr_or_store(&mut self) -> Result<Stmt, ParseError> {
+        let target = self.parse_expr()?;
+        if matches!(self.peek_kind(), TokenKind::Equal) {
+            let span = target.span();
+            if !matches!(
+                &target,
+                Expr::Index { .. }
+                    | Expr::Member { .. }
+                    | Expr::Unary {
+                        op: UnaryOp::Deref,
+                        ..
+                    }
+            ) {
+                return Err(ParseError {
+                    msg: "assignment target must be a name, dereference, index, or field".into(),
+                    span,
+                });
             }
+            self.advance();
+            let value = self.parse_expr()?;
+            self.consume_newline_or_eof();
+            Ok(Stmt::Store {
+                target,
+                value,
+                span,
+            })
+        } else {
+            self.consume_newline_or_eof();
+            Ok(Stmt::Expr(target))
         }
     }
 
@@ -475,7 +708,7 @@ impl Parser {
         };
         let ty = if matches!(self.peek_kind(), TokenKind::Colon) {
             self.advance();
-            self.parse_type_full()
+            self.parse_type_full()?
         } else {
             TypeAnnotation::Inferred
         };
@@ -487,6 +720,131 @@ impl Parser {
             name,
             ty,
             value,
+            span,
+        })
+    }
+
+    fn parse_const(&mut self, is_pub: bool) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.advance();
+        let name = self.parse_declaration_name("const")?;
+        self.expect(&TokenKind::Colon)?;
+        let ty = self.parse_type_full()?;
+        self.expect(&TokenKind::Equal)?;
+        let value = self.parse_expr()?;
+        self.consume_newline_or_eof();
+        Ok(Stmt::Const {
+            is_pub,
+            name,
+            ty,
+            value,
+            span,
+        })
+    }
+
+    fn parse_static(&mut self, is_pub: bool) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.advance();
+        let is_mut = if matches!(self.peek_kind(), TokenKind::Mut) {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        let name = self.parse_declaration_name(if is_mut { "static mut" } else { "static" })?;
+        self.expect(&TokenKind::Colon)?;
+        let ty = self.parse_type_full()?;
+        let value = if matches!(self.peek_kind(), TokenKind::Equal) {
+            self.advance();
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        self.consume_newline_or_eof();
+        Ok(Stmt::Static {
+            is_pub,
+            is_mut,
+            name,
+            ty,
+            value,
+            span,
+        })
+    }
+
+    fn parse_declaration_name(&mut self, declaration: &str) -> Result<String, ParseError> {
+        match self.peek_kind().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(name)
+            }
+            _ => Err(ParseError {
+                msg: format!("expected identifier after `{declaration}`"),
+                span: self.peek().span,
+            }),
+        }
+    }
+
+    fn parse_packed_struct(&mut self, is_pub: bool) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.advance();
+        self.expect(&TokenKind::Struct)?;
+        self.parse_struct_after_keyword(is_pub, true, span)
+    }
+
+    fn parse_struct(&mut self, is_pub: bool, is_packed: bool) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.advance();
+        self.parse_struct_after_keyword(is_pub, is_packed, span)
+    }
+
+    fn parse_struct_after_keyword(
+        &mut self,
+        is_pub: bool,
+        is_packed: bool,
+        span: Span,
+    ) -> Result<Stmt, ParseError> {
+        let name = self.parse_declaration_name("struct")?;
+        self.expect(&TokenKind::Colon)?;
+        self.consume_newline_or_eof();
+        self.skip_newlines();
+        self.expect(&TokenKind::Indent)?;
+
+        let mut fields = Vec::new();
+        loop {
+            self.skip_newlines();
+            if matches!(self.peek_kind(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+            let field_span = self.peek().span;
+            let field_name = match self.peek_kind().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                _ => {
+                    return Err(ParseError {
+                        msg: "expected struct field name".into(),
+                        span: field_span,
+                    })
+                }
+            };
+            self.expect(&TokenKind::Colon)?;
+            let ty = self.parse_type_full()?;
+            self.consume_newline_or_eof();
+            fields.push(StructField {
+                name: field_name,
+                ty,
+                span: field_span,
+            });
+        }
+        if matches!(self.peek_kind(), TokenKind::Dedent) {
+            self.advance();
+        }
+        Ok(Stmt::StructDef {
+            is_pub,
+            is_packed,
+            name,
+            fields,
             span,
         })
     }
@@ -543,7 +901,7 @@ impl Parser {
                 }
             };
             self.expect(&TokenKind::Colon)?;
-            let ty = self.parse_type_full();
+            let ty = self.parse_type_full()?;
             params.push(Param {
                 name: p_name,
                 ty,
@@ -556,7 +914,7 @@ impl Parser {
         self.expect(&TokenKind::RParen)?;
         let ret_ty = if matches!(self.peek_kind(), TokenKind::Arrow) {
             self.advance();
-            self.parse_type_full()
+            self.parse_type_full()?
         } else {
             TypeAnnotation::Inferred
         };
@@ -715,4 +1073,195 @@ fn parse_fstr_parts(s: &str) -> Vec<FStrPart> {
         parts.push(FStrPart::Literal(cur));
     }
     parts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dbyte_lexer::Lexer;
+
+    fn parse(source: &str) -> Program {
+        let tokens = Lexer::new(source).tokenize().expect("source should lex");
+        Parser::new(tokens)
+            .parse_program()
+            .expect("source should parse")
+    }
+
+    #[test]
+    fn parses_native_systems_declarations_and_types() {
+        let program = parse(
+            "pub struct Header:\n    tag: u16\n    next: ptr[Header]\n    owner: ptr[types.Owner]\npacked struct Wire:\n    bytes: array[u8, 4]\npub const PORT: usize = 1016\npub static MESSAGE: array[u8, 4] = [68, 66, 89, 0]\nstatic mut BUFFER: array[u8, 64]\n",
+        );
+
+        assert!(matches!(
+            &program.stmts[0],
+            Stmt::StructDef {
+                is_pub: true,
+                is_packed: false,
+                name,
+                fields,
+                ..
+            } if name == "Header"
+                && fields[0].ty == TypeAnnotation::U16
+                && fields[1].ty == TypeAnnotation::Pointer(Box::new(TypeAnnotation::Named("Header".into())))
+                && fields[2].ty == TypeAnnotation::Pointer(Box::new(TypeAnnotation::Named("types.Owner".into())))
+        ));
+        assert!(matches!(
+            &program.stmts[1],
+            Stmt::StructDef {
+                is_packed: true,
+                fields,
+                ..
+            } if fields[0].ty == TypeAnnotation::Array {
+                element: Box::new(TypeAnnotation::U8),
+                length: 4,
+            }
+        ));
+        assert!(matches!(
+            &program.stmts[2],
+            Stmt::Const { is_pub: true, .. }
+        ));
+        assert!(matches!(
+            &program.stmts[3],
+            Stmt::Static {
+                is_pub: true,
+                is_mut: false,
+                value: Some(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &program.stmts[4],
+            Stmt::Static {
+                is_pub: false,
+                is_mut: true,
+                value: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_every_native_scalar_annotation() {
+        let program = parse(
+            "fn widths(a: i8, b: u8, c: i16, d: u16, e: i32, f: u32, g: usize, h: bool) -> i32:\n    return 0\n",
+        );
+        let Stmt::FnDef { params, ret_ty, .. } = &program.stmts[0] else {
+            panic!("expected function");
+        };
+        let types: Vec<_> = params.iter().map(|param| param.ty.clone()).collect();
+        assert_eq!(
+            types,
+            vec![
+                TypeAnnotation::I8,
+                TypeAnnotation::U8,
+                TypeAnnotation::I16,
+                TypeAnnotation::U16,
+                TypeAnnotation::I32,
+                TypeAnnotation::U32,
+                TypeAnnotation::Usize,
+                TypeAnnotation::Bool,
+            ]
+        );
+        assert_eq!(*ret_ty, TypeAnnotation::I32);
+    }
+
+    #[test]
+    fn parses_native_operators_casts_and_general_store_targets() {
+        let program = parse(
+            "fn kernel_main() -> i32:\n    let p: ptr[u32] = 4096 as ptr[u32]\n    let pp: ptr[ptr[u32]] = &p\n    *p = (~1 & 255) | (2 << 3) ^ (8 >> 1)\n    p[1] = 7\n    p.value = 9\n    return *p as i32\n",
+        );
+        let Stmt::FnDef { body, .. } = &program.stmts[0] else {
+            panic!("expected function");
+        };
+        assert!(matches!(
+            &body[0],
+            Stmt::Let {
+                ty: TypeAnnotation::Pointer(inner),
+                value: Expr::Cast { ty: cast_ty, .. },
+                ..
+            } if **inner == TypeAnnotation::U32
+                && *cast_ty == TypeAnnotation::Pointer(Box::new(TypeAnnotation::U32))
+        ));
+        assert!(matches!(
+            &body[1],
+            Stmt::Let {
+                value: Expr::Unary {
+                    op: UnaryOp::AddressOf,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &body[2],
+            Stmt::Store {
+                target: Expr::Unary {
+                    op: UnaryOp::Deref,
+                    ..
+                },
+                value: Expr::Binary {
+                    op: BinOp::BitOr,
+                    ..
+                },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &body[3],
+            Stmt::Store {
+                target: Expr::Index { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &body[4],
+            Stmt::Store {
+                target: Expr::Member { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            &body[5],
+            Stmt::Return {
+                value: Some(Expr::Cast {
+                    expr,
+                    ty: TypeAnnotation::I32,
+                    ..
+                }),
+                ..
+            } if matches!(expr.as_ref(), Expr::Unary { op: UnaryOp::Deref, .. })
+        ));
+    }
+
+    #[test]
+    fn preserves_existing_import_visibility_and_list_syntax() {
+        let program = parse(
+            "import \"module.dby\" as module\npub let values: list[int] = [1, 2]\npub fn first(items: list[int]) -> int:\n    return items[0]\n",
+        );
+        assert!(
+            matches!(&program.stmts[0], Stmt::Import { path, alias, .. } if path == "module.dby" && alias == "module")
+        );
+        assert!(matches!(
+            &program.stmts[1],
+            Stmt::Let {
+                is_pub: true,
+                ty: TypeAnnotation::List(inner),
+                ..
+            } if **inner == TypeAnnotation::Int
+        ));
+        assert!(matches!(
+            &program.stmts[2],
+            Stmt::FnDef { is_pub: true, .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_non_integer_array_lengths() {
+        let tokens = Lexer::new("let x: array[u8, nope] = []\n")
+            .tokenize()
+            .unwrap();
+        let error = Parser::new(tokens).parse_program().unwrap_err();
+        assert_eq!(error.msg, "expected integer array length");
+    }
 }

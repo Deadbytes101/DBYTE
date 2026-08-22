@@ -1,0 +1,15 @@
+import "serial.dby" as serial
+
+pub fn add(left: u32, right: u32) -> u32:
+    return left + right
+
+pub fn write_decimal_0_99(value: u32) -> u32:
+    let tens: u32 = 0 as u32
+    let ones: u32 = value
+    while ones >= (10 as u32):
+        ones = ones - (10 as u32)
+        tens = tens + (1 as u32)
+    if tens > (0 as u32):
+        serial.putc(((48 as u32) + tens) as u8)
+    serial.putc(((48 as u32) + ones) as u8)
+    return value

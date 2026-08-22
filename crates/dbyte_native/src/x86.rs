@@ -88,6 +88,83 @@ impl Condition {
     }
 }
 
+/// Width of a scalar register or memory operand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperandWidth {
+    Byte,
+    Word,
+    Dword,
+}
+
+/// Extension applied while loading a narrow integer into a 32-bit register.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Extension {
+    Zero,
+    Sign,
+}
+
+/// Scale encoded in a 32-bit SIB memory operand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Scale {
+    One = 0,
+    Two = 1,
+    Four = 2,
+    Eight = 3,
+}
+
+impl Scale {
+    const fn code(self) -> u8 {
+        self as u8
+    }
+}
+
+/// A bounded i686 base/index/scale/displacement memory address.
+///
+/// `ESP` is valid as the base but not as the index because the corresponding
+/// SIB index encoding means "no index" on i686.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MemoryOperand {
+    pub base: Register,
+    pub index: Option<(Register, Scale)>,
+    pub displacement: i32,
+}
+
+impl MemoryOperand {
+    pub const fn new(base: Register, displacement: i32) -> Self {
+        Self {
+            base,
+            index: None,
+            displacement,
+        }
+    }
+
+    pub const fn indexed(base: Register, index: Register, scale: Scale, displacement: i32) -> Self {
+        Self {
+            base,
+            index: Some((index, scale)),
+            displacement,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShiftKind {
+    LeftLogical,
+    RightLogical,
+    RightArithmetic,
+}
+
+impl ShiftKind {
+    const fn opcode_extension(self) -> u8 {
+        match self {
+            Self::LeftLogical => 4,
+            Self::RightLogical => 5,
+            Self::RightArithmetic => 7,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FixupKind {
     CallRel32,
@@ -154,6 +231,11 @@ pub enum EncoderError {
     InvalidRegister(u8),
     InvalidByteRegister(Register),
     InvalidIndexRegister(Register),
+    InvalidLoadExtension {
+        width: OperandWidth,
+        extension: Option<Extension>,
+    },
+    InvalidExtensionWidth(OperandWidth),
     BufferOverflow {
         limit: usize,
         attempted_len: usize,
@@ -179,6 +261,13 @@ impl fmt::Display for EncoderError {
             }
             Self::InvalidIndexRegister(register) => {
                 write!(formatter, "register {register:?} cannot be a SIB index")
+            }
+            Self::InvalidLoadExtension { width, extension } => write!(
+                formatter,
+                "invalid {extension:?} extension for {width:?} memory load"
+            ),
+            Self::InvalidExtensionWidth(width) => {
+                write!(formatter, "cannot extend a {width:?} register operand")
             }
             Self::BufferOverflow {
                 limit,
@@ -428,6 +517,82 @@ impl Encoder {
         self.emit_raw(&instruction)
     }
 
+    /// Loads a scalar from memory into a 32-bit register.
+    ///
+    /// Byte and word loads require either zero or sign extension. A dword
+    /// load is already register-sized and therefore requires `None`.
+    pub fn mov_reg_from_memory(
+        &mut self,
+        destination: Register,
+        source: MemoryOperand,
+        width: OperandWidth,
+        extension: Option<Extension>,
+    ) -> Result<(), EncoderError> {
+        let mut instruction = match (width, extension) {
+            (OperandWidth::Byte, Some(Extension::Zero)) => vec![0x0f, 0xb6],
+            (OperandWidth::Byte, Some(Extension::Sign)) => vec![0x0f, 0xbe],
+            (OperandWidth::Word, Some(Extension::Zero)) => vec![0x0f, 0xb7],
+            (OperandWidth::Word, Some(Extension::Sign)) => vec![0x0f, 0xbf],
+            (OperandWidth::Dword, None) => vec![0x8b],
+            _ => return Err(EncoderError::InvalidLoadExtension { width, extension }),
+        };
+        encode_memory_operand(&mut instruction, destination.code(), source)?;
+        self.emit_raw(&instruction)
+    }
+
+    pub fn movzx_reg_from_memory(
+        &mut self,
+        destination: Register,
+        source: MemoryOperand,
+        width: OperandWidth,
+    ) -> Result<(), EncoderError> {
+        if width == OperandWidth::Dword {
+            return Err(EncoderError::InvalidExtensionWidth(width));
+        }
+        self.mov_reg_from_memory(destination, source, width, Some(Extension::Zero))
+    }
+
+    pub fn movsx_reg_from_memory(
+        &mut self,
+        destination: Register,
+        source: MemoryOperand,
+        width: OperandWidth,
+    ) -> Result<(), EncoderError> {
+        if width == OperandWidth::Dword {
+            return Err(EncoderError::InvalidExtensionWidth(width));
+        }
+        self.mov_reg_from_memory(destination, source, width, Some(Extension::Sign))
+    }
+
+    /// Stores the low byte, low word, or full dword of a register to memory.
+    pub fn mov_memory_from_reg(
+        &mut self,
+        destination: MemoryOperand,
+        source: Register,
+        width: OperandWidth,
+    ) -> Result<(), EncoderError> {
+        let mut instruction = match width {
+            OperandWidth::Byte => {
+                require_byte_register(source)?;
+                vec![0x88]
+            }
+            OperandWidth::Word => vec![0x66, 0x89],
+            OperandWidth::Dword => vec![0x89],
+        };
+        encode_memory_operand(&mut instruction, source.code(), destination)?;
+        self.emit_raw(&instruction)
+    }
+
+    pub fn lea_reg_from_memory(
+        &mut self,
+        destination: Register,
+        source: MemoryOperand,
+    ) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x8d];
+        encode_memory_operand(&mut instruction, destination.code(), source)?;
+        self.emit_raw(&instruction)
+    }
+
     pub fn add_reg_reg(
         &mut self,
         destination: Register,
@@ -480,6 +645,31 @@ impl Encoder {
         self.emit_raw(&[0xf7, modrm(0b11, 3, register.code())])
     }
 
+    pub fn not_reg(&mut self, register: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf7, modrm(0b11, 2, register.code())])
+    }
+
+    pub fn shift_reg_by_cl(
+        &mut self,
+        register: Register,
+        kind: ShiftKind,
+    ) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xd3, modrm(0b11, kind.opcode_extension(), register.code())])
+    }
+
+    pub fn shift_reg_imm8(
+        &mut self,
+        register: Register,
+        kind: ShiftKind,
+        amount: u8,
+    ) -> Result<(), EncoderError> {
+        self.emit_raw(&[
+            0xc1,
+            modrm(0b11, kind.opcode_extension(), register.code()),
+            amount,
+        ])
+    }
+
     pub fn cmp_reg_reg(&mut self, left: Register, right: Register) -> Result<(), EncoderError> {
         self.emit_raw(&[0x39, modrm(0b11, right.code(), left.code())])
     }
@@ -516,6 +706,24 @@ impl Encoder {
         self.emit_raw(&[0x0f, 0xb6, modrm(0b11, destination.code(), source.code())])
     }
 
+    pub fn movzx_reg_reg(
+        &mut self,
+        destination: Register,
+        source: Register,
+        width: OperandWidth,
+    ) -> Result<(), EncoderError> {
+        self.mov_extend_reg_reg(destination, source, width, Extension::Zero)
+    }
+
+    pub fn movsx_reg_reg(
+        &mut self,
+        destination: Register,
+        source: Register,
+        width: OperandWidth,
+    ) -> Result<(), EncoderError> {
+        self.mov_extend_reg_reg(destination, source, width, Extension::Sign)
+    }
+
     pub fn add_reg_imm32(&mut self, register: Register, value: i32) -> Result<(), EncoderError> {
         let mut instruction = vec![0x81, modrm(0b11, 0, register.code())];
         instruction.extend_from_slice(&value.to_le_bytes());
@@ -540,6 +748,20 @@ impl Encoder {
         self.emit_rel32(&[0xe8], target, FixupKind::CallRel32)
     }
 
+    /// Emits an unresolved `call rel32` and returns its immediate offset.
+    ///
+    /// ELF `R_386_PC32` computes `S + A - P`. Because x86 measures a call
+    /// displacement from the end of its four-byte immediate, the in-place REL
+    /// addend is `-4` (`fc ff ff ff`).
+    pub fn call_rel32_placeholder(&mut self) -> Result<usize, EncoderError> {
+        let immediate_offset = self
+            .position()
+            .checked_add(1)
+            .ok_or(EncoderError::OffsetOutOfRange(self.position()))?;
+        self.emit_raw(&[0xe8, 0xfc, 0xff, 0xff, 0xff])?;
+        Ok(immediate_offset)
+    }
+
     pub fn jump(&mut self, target: Label) -> Result<(), EncoderError> {
         self.emit_rel32(&[0xe9], target, FixupKind::JumpRel32)
     }
@@ -556,8 +778,16 @@ impl Encoder {
         self.emit_raw(&[0xec])
     }
 
+    pub fn in_ax_dx(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x66, 0xed])
+    }
+
     pub fn out_dx_al(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0xee])
+    }
+
+    pub fn out_dx_ax(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x66, 0xef])
     }
 
     pub fn finish(self) -> Result<EncodedCode, EncoderError> {
@@ -633,6 +863,28 @@ impl Encoder {
         Ok(())
     }
 
+    fn mov_extend_reg_reg(
+        &mut self,
+        destination: Register,
+        source: Register,
+        width: OperandWidth,
+        extension: Extension,
+    ) -> Result<(), EncoderError> {
+        let opcode = match (width, extension) {
+            (OperandWidth::Byte, Extension::Zero) => 0xb6,
+            (OperandWidth::Byte, Extension::Sign) => 0xbe,
+            (OperandWidth::Word, Extension::Zero) => 0xb7,
+            (OperandWidth::Word, Extension::Sign) => 0xbf,
+            (OperandWidth::Dword, _) => {
+                return Err(EncoderError::InvalidExtensionWidth(width));
+            }
+        };
+        if width == OperandWidth::Byte {
+            require_byte_register(source)?;
+        }
+        self.emit_raw(&[0x0f, opcode, modrm(0b11, destination.code(), source.code())])
+    }
+
     fn require_known_label(&self, label: Label) -> Result<(), EncoderError> {
         if label.index() >= self.next_label {
             Err(EncoderError::UnknownLabel(label))
@@ -688,6 +940,44 @@ fn encode_base_operand(output: &mut Vec<u8>, reg_field: u8, base: Register) {
         }
         other => output.push(modrm(0b00, reg_field, other.code())),
     }
+}
+
+fn encode_memory_operand(
+    output: &mut Vec<u8>,
+    reg_field: u8,
+    operand: MemoryOperand,
+) -> Result<(), EncoderError> {
+    if let Some((Register::Esp, _)) = operand.index {
+        return Err(EncoderError::InvalidIndexRegister(Register::Esp));
+    }
+
+    let displacement_fits_i8 = i8::try_from(operand.displacement).is_ok();
+    let mode = if operand.displacement == 0 && operand.base != Register::Ebp {
+        0b00
+    } else if displacement_fits_i8 {
+        0b01
+    } else {
+        0b10
+    };
+    let uses_sib = operand.index.is_some() || operand.base == Register::Esp;
+    let rm = if uses_sib { 0b100 } else { operand.base.code() };
+    output.push(modrm(mode, reg_field, rm));
+
+    if uses_sib {
+        let (index, scale) = operand
+            .index
+            .map(|(index, scale)| (index.code(), scale.code()))
+            .unwrap_or((0b100, Scale::One.code()));
+        output.push(sib(scale, index, operand.base.code()));
+    }
+
+    match mode {
+        0b00 => {}
+        0b01 => output.push(operand.displacement as i8 as u8),
+        0b10 => output.extend_from_slice(&operand.displacement.to_le_bytes()),
+        _ => unreachable!("memory operand mode is selected internally"),
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -817,12 +1107,16 @@ mod tests {
             .mov_base8_from_reg(Register::Edx, Register::Eax)
             .unwrap();
         encoder.in_al_dx().unwrap();
+        encoder.in_ax_dx().unwrap();
         encoder.out_dx_al().unwrap();
+        encoder.out_dx_ax().unwrap();
         encoder.cli().unwrap();
         encoder.hlt().unwrap();
         assert_eq!(
             finish(encoder),
-            vec![0x0f, 0xb6, 0x04, 0x0b, 0x88, 0x02, 0xec, 0xee, 0xfa, 0xf4]
+            vec![
+                0x0f, 0xb6, 0x04, 0x0b, 0x88, 0x02, 0xec, 0x66, 0xed, 0xee, 0x66, 0xef, 0xfa, 0xf4,
+            ]
         );
     }
 
@@ -834,6 +1128,199 @@ mod tests {
             .movzx_reg_reg8(Register::Eax, Register::Eax)
             .unwrap();
         assert_eq!(finish(encoder), vec![0x0f, 0x9c, 0xc0, 0x0f, 0xb6, 0xc0]);
+    }
+
+    #[test]
+    fn width_specific_memory_loads_have_exact_bytes() {
+        let mut encoder = Encoder::new(64);
+        encoder
+            .mov_reg_from_memory(
+                Register::Eax,
+                MemoryOperand::new(Register::Ebx, 0),
+                OperandWidth::Dword,
+                None,
+            )
+            .unwrap();
+        encoder
+            .movzx_reg_from_memory(
+                Register::Edx,
+                MemoryOperand::new(Register::Ebp, -128),
+                OperandWidth::Byte,
+            )
+            .unwrap();
+        encoder
+            .movsx_reg_from_memory(
+                Register::Edi,
+                MemoryOperand::indexed(Register::Esp, Register::Esi, Scale::Four, 127),
+                OperandWidth::Word,
+            )
+            .unwrap();
+        encoder
+            .movzx_reg_from_memory(
+                Register::Ecx,
+                MemoryOperand::new(Register::Ebx, 128),
+                OperandWidth::Word,
+            )
+            .unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![
+                0x8b, 0x03, 0x0f, 0xb6, 0x55, 0x80, 0x0f, 0xbf, 0x7c, 0xb4, 0x7f, 0x0f, 0xb7, 0x8b,
+                0x80, 0x00, 0x00, 0x00,
+            ]
+        );
+    }
+
+    #[test]
+    fn width_specific_memory_stores_have_exact_bytes() {
+        let mut encoder = Encoder::new(64);
+        encoder
+            .mov_memory_from_reg(
+                MemoryOperand::indexed(Register::Edi, Register::Ecx, Scale::Two, -4),
+                Register::Eax,
+                OperandWidth::Byte,
+            )
+            .unwrap();
+        encoder
+            .mov_memory_from_reg(
+                MemoryOperand::new(Register::Ebp, 0),
+                Register::Esi,
+                OperandWidth::Word,
+            )
+            .unwrap();
+        encoder
+            .mov_memory_from_reg(
+                MemoryOperand::new(Register::Esp, 0x1234_5678),
+                Register::Edx,
+                OperandWidth::Dword,
+            )
+            .unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![
+                0x88, 0x44, 0x4f, 0xfc, 0x66, 0x89, 0x75, 0x00, 0x89, 0x94, 0x24, 0x78, 0x56, 0x34,
+                0x12,
+            ]
+        );
+    }
+
+    #[test]
+    fn register_extensions_lea_not_and_shifts_have_exact_bytes() {
+        let mut encoder = Encoder::new(64);
+        encoder
+            .movsx_reg_reg(Register::Eax, Register::Ecx, OperandWidth::Byte)
+            .unwrap();
+        encoder
+            .movzx_reg_reg(Register::Edx, Register::Esi, OperandWidth::Word)
+            .unwrap();
+        encoder
+            .movsx_reg_reg(Register::Edi, Register::Ebx, OperandWidth::Word)
+            .unwrap();
+        encoder
+            .lea_reg_from_memory(
+                Register::Eax,
+                MemoryOperand::indexed(Register::Ebx, Register::Ecx, Scale::Four, 8),
+            )
+            .unwrap();
+        encoder.not_reg(Register::Edx).unwrap();
+        encoder
+            .shift_reg_by_cl(Register::Eax, ShiftKind::LeftLogical)
+            .unwrap();
+        encoder
+            .shift_reg_imm8(Register::Ebx, ShiftKind::RightLogical, 7)
+            .unwrap();
+        encoder
+            .shift_reg_by_cl(Register::Esi, ShiftKind::RightArithmetic)
+            .unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![
+                0x0f, 0xbe, 0xc1, 0x0f, 0xb7, 0xd6, 0x0f, 0xbf, 0xfb, 0x8d, 0x44, 0x8b, 0x08, 0xf7,
+                0xd2, 0xd3, 0xe0, 0xc1, 0xeb, 0x07, 0xd3, 0xfe,
+            ]
+        );
+    }
+
+    #[test]
+    fn memory_displacement_boundaries_have_exact_bytes() {
+        let mut encoder = Encoder::new(64);
+        for displacement in [127, 128, -128, -129] {
+            encoder
+                .lea_reg_from_memory(
+                    Register::Eax,
+                    MemoryOperand::new(Register::Ebx, displacement),
+                )
+                .unwrap();
+        }
+        encoder
+            .lea_reg_from_memory(Register::Eax, MemoryOperand::new(Register::Ebp, 0))
+            .unwrap();
+        encoder
+            .lea_reg_from_memory(Register::Eax, MemoryOperand::new(Register::Esp, 0))
+            .unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![
+                0x8d, 0x43, 0x7f, 0x8d, 0x83, 0x80, 0x00, 0x00, 0x00, 0x8d, 0x43, 0x80, 0x8d, 0x83,
+                0x7f, 0xff, 0xff, 0xff, 0x8d, 0x45, 0x00, 0x8d, 0x04, 0x24,
+            ]
+        );
+    }
+
+    #[test]
+    fn external_call_placeholder_contains_rel_addend() {
+        let mut encoder = Encoder::new(16);
+        encoder.nop().unwrap();
+        assert_eq!(encoder.call_rel32_placeholder(), Ok(2));
+        assert_eq!(finish(encoder), vec![0x90, 0xe8, 0xfc, 0xff, 0xff, 0xff]);
+    }
+
+    #[test]
+    fn invalid_memory_and_width_forms_are_atomic() {
+        let invalid_index = MemoryOperand::indexed(Register::Eax, Register::Esp, Scale::Eight, 0);
+        let mut encoder = Encoder::new(16);
+        assert_eq!(
+            encoder.lea_reg_from_memory(Register::Eax, invalid_index),
+            Err(EncoderError::InvalidIndexRegister(Register::Esp))
+        );
+        assert_eq!(
+            encoder.mov_memory_from_reg(
+                MemoryOperand::new(Register::Eax, 0),
+                Register::Esi,
+                OperandWidth::Byte,
+            ),
+            Err(EncoderError::InvalidByteRegister(Register::Esi))
+        );
+        assert_eq!(
+            encoder.mov_reg_from_memory(
+                Register::Eax,
+                MemoryOperand::new(Register::Ebx, 0),
+                OperandWidth::Dword,
+                Some(Extension::Sign),
+            ),
+            Err(EncoderError::InvalidLoadExtension {
+                width: OperandWidth::Dword,
+                extension: Some(Extension::Sign),
+            })
+        );
+        assert_eq!(
+            encoder.movzx_reg_reg(Register::Eax, Register::Ecx, OperandWidth::Dword),
+            Err(EncoderError::InvalidExtensionWidth(OperandWidth::Dword))
+        );
+        assert!(encoder.bytes().is_empty());
+
+        let mut bounded = Encoder::new(3);
+        assert_eq!(
+            bounded.lea_reg_from_memory(
+                Register::Eax,
+                MemoryOperand::indexed(Register::Ebx, Register::Ecx, Scale::Four, 8),
+            ),
+            Err(EncoderError::BufferOverflow {
+                limit: 3,
+                attempted_len: 4,
+            })
+        );
+        assert!(bounded.bytes().is_empty());
     }
 
     #[test]

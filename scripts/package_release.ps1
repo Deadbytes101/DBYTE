@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "11.0.0",
+    [string]$Version = "11.1.0",
     [switch]$SkipBundle
 )
 
@@ -8,6 +8,16 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
 Set-Location $repoRoot
+
+$workspaceManifest = Get-Content -LiteralPath (Join-Path $repoRoot "Cargo.toml") -Raw
+$workspaceVersionMatch = [regex]::Match($workspaceManifest, '(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"')
+if (-not $workspaceVersionMatch.Success) {
+    throw "could not read workspace package version"
+}
+$workspaceVersion = $workspaceVersionMatch.Groups[1].Value
+if ($Version -ne $workspaceVersion) {
+    throw "release version $Version does not match workspace version $workspaceVersion"
+}
 
 $cargo = "$env:USERPROFILE\.cargo\bin\cargo.exe"
 $releaseName = "dbyte-v$Version-windows-x64"
@@ -74,9 +84,17 @@ if (-not $SkipBundle) {
     if ($LASTEXITCODE -ne 0) { throw "git status failed" }
     if ($status) { throw "release bundle requires a clean working tree" }
 
+    $headCommit = git rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw "could not resolve HEAD" }
+
     $tagType = git cat-file -t $tagName 2>$null
     if ($LASTEXITCODE -ne 0 -or $tagType -ne "tag") {
         throw "release bundle requires annotated tag $tagName"
+    }
+
+    $tagCommit = git rev-parse "$tagName^{}"
+    if ($LASTEXITCODE -ne 0 -or $headCommit -ne $tagCommit) {
+        throw "release bundle requires HEAD == $tagName^{}"
     }
 
     $tagRefs = @(git for-each-ref '--format=%(refname)' refs/tags)

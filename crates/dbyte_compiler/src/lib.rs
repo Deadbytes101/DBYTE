@@ -420,6 +420,16 @@ impl FunctionCompiler {
                 self.set_local_type(alias, ExprType::Module);
                 self.emit(Op::Import(path.clone(), slot));
             }
+            Stmt::Store { span, .. }
+            | Stmt::StructDef { span, .. }
+            | Stmt::Const { span, .. }
+            | Stmt::Static { span, .. } => {
+                return Err(CompileError {
+                    msg: "native systems statements are unavailable in the hosted VM compiler"
+                        .into(),
+                    span: *span,
+                });
+            }
             Stmt::Expr(expr) => {
                 if self.compile_discarded_call_fast_path(expr)? {
                     return Ok(());
@@ -540,6 +550,14 @@ impl FunctionCompiler {
                     (_, BinOp::LtEq) => Op::Le,
                     (_, BinOp::Gt) => Op::Gt,
                     (_, BinOp::GtEq) => Op::Ge,
+                    (_, BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr) => {
+                        return Err(CompileError {
+                            msg: format!(
+                                "native systems operator `{op}` is unavailable in the hosted VM compiler"
+                            ),
+                            span: expr.span(),
+                        });
+                    }
                 });
             }
             Expr::Unary { op, expr, .. } => {
@@ -547,6 +565,13 @@ impl FunctionCompiler {
                 self.emit(match op {
                     UnaryOp::Neg => Op::Neg,
                     UnaryOp::Not => Op::Not,
+                    UnaryOp::BitNot | UnaryOp::AddressOf | UnaryOp::Deref => {
+                        return Err(CompileError {
+                            msg: "native systems unary operators are unavailable in the hosted VM compiler"
+                                .into(),
+                            span: expr.span(),
+                        });
+                    }
                 });
             }
             Expr::Call { name, args, .. } => {
@@ -590,6 +615,12 @@ impl FunctionCompiler {
                     self.compile_expr(arg)?;
                 }
                 self.emit(Op::MemberCall(property.clone(), args.len()));
+            }
+            Expr::Cast { span, .. } => {
+                return Err(CompileError {
+                    msg: "native systems casts are unavailable in the hosted VM compiler".into(),
+                    span: *span,
+                });
             }
         }
         Ok(())
@@ -1229,6 +1260,9 @@ impl FunctionCompiler {
                         | BinOp::Gt
                         | BinOp::LtEq
                         | BinOp::GtEq => ExprType::Bool,
+                        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
+                            ExprType::Unknown
+                        }
                     }
                 } else {
                     ExprType::Unknown
