@@ -32,8 +32,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOutput = .\target\debug\dbyte.exe --version
-if ($versionOutput -ne 'DByte 11.1.0') {
-    throw "Version mismatch: expected 'DByte 11.1.0', got '$versionOutput'"
+if ($versionOutput -ne 'DByte 11.2.0') {
+    throw "Version mismatch: expected 'DByte 11.2.0', got '$versionOutput'"
 }
 
 function Normalize-Output($value) {
@@ -8723,7 +8723,9 @@ Assert-Contains $mainContent1031 "idt::IDT.entries[32].set_handler(interrupts::i
 Assert-Contains $mainContent1031 "idt::IDT.entries[33].set_handler(interrupts::irq1_keyboard_gate_smoke_asm as *const ())" "v10.21.1 controlled IRQ gate smoke vector 33 unchanged"
 
 $idtBindStubStart10211 = $kernelInterruptsSource.IndexOf('"idt_bind_hw_smoke_test_asm:"')
-$idtBindStubEnd10211 = $kernelInterruptsSource.IndexOf(');', $idtBindStubStart10211)
+$idtBindStubTail10211 = $kernelInterruptsSource.Substring($idtBindStubStart10211)
+$idtBindStubEndRelative10211 = $idtBindStubTail10211.IndexOf(');', [System.StringComparison]::Ordinal)
+$idtBindStubEnd10211 = if ($idtBindStubEndRelative10211 -lt 0) { -1 } else { $idtBindStubStart10211 + $idtBindStubEndRelative10211 }
 if ($idtBindStubStart10211 -lt 0 -or $idtBindStubEnd10211 -lt $idtBindStubStart10211) { throw "v10.21.1 inert IDT bind smoke stub block missing" }
 $idtBindStubBlock10211 = $kernelInterruptsSource.Substring($idtBindStubStart10211, $idtBindStubEnd10211 - $idtBindStubStart10211)
 Assert-Contains $idtBindStubBlock10211 '"    iretd"' "v10.21.1 inert stub returns with iretd"
@@ -9181,7 +9183,9 @@ Assert-Contains $idtInvokeRecordFnBlock10230 'IDT_INVOKE_HW_SMOKE_STUB_REACHED.s
 Assert-Contains $idtInvokeStubRustBlock10230 'crate::idt::idt_invoke_hw_smoke_record_stub_reached();' "v10.23.0 stub calls software telemetry hook only"
 
 $idtInvokeStubStart10230 = $kernelInterruptsSource.IndexOf('"idt_bind_hw_smoke_test_asm:"')
-$idtInvokeStubEnd10230 = $kernelInterruptsSource.IndexOf(');', $idtInvokeStubStart10230)
+$idtInvokeStubTail10230 = $kernelInterruptsSource.Substring($idtInvokeStubStart10230)
+$idtInvokeStubEndRelative10230 = $idtInvokeStubTail10230.IndexOf(');', [System.StringComparison]::Ordinal)
+$idtInvokeStubEnd10230 = if ($idtInvokeStubEndRelative10230 -lt 0) { -1 } else { $idtInvokeStubStart10230 + $idtInvokeStubEndRelative10230 }
 if ($idtInvokeStubStart10230 -lt 0 -or $idtInvokeStubEnd10230 -lt $idtInvokeStubStart10230) { throw "v10.23.0 inert IDT invoke stub block missing" }
 $idtInvokeStubBlock10230 = $kernelInterruptsSource.Substring($idtInvokeStubStart10230, $idtInvokeStubEnd10230 - $idtInvokeStubStart10230)
 Assert-ContainsInOrder $idtInvokeStubBlock10230 @(
@@ -13986,7 +13990,9 @@ if (([regex]::Matches($kernelVmSource10320, 'pub const [A-Z_]+: u8 = 0x')).Count
 Assert-Contains $kernelVmSource10320 'HostValueOutOfRange(u8),' "v10.61.0 platform-neutral host range error"
 foreach ($forbiddenVmCoreClockToken10610 in @('ClockValueOverflow', 'KERNEL_CLOCK', 'IRQ0', 'kernel_clock', 'ticks')) {
     $vmErrorStart10610 = $kernelVmSource10320.IndexOf('pub enum VmError {')
-    $vmErrorEnd10610 = $kernelVmSource10320.IndexOf('    }', $vmErrorStart10610)
+    $vmErrorTail10610 = $kernelVmSource10320.Substring($vmErrorStart10610)
+    $vmErrorEndRelative10610 = $vmErrorTail10610.IndexOf('    }', [System.StringComparison]::Ordinal)
+    $vmErrorEnd10610 = if ($vmErrorEndRelative10610 -lt 0) { -1 } else { $vmErrorStart10610 + $vmErrorEndRelative10610 }
     if ($vmErrorStart10610 -lt 0 -or $vmErrorEnd10610 -le $vmErrorStart10610) { throw "v10.61.0 VM error enum shape changed" }
     $vmErrorBlock10610 = $kernelVmSource10320.Substring($vmErrorStart10610, $vmErrorEnd10610 - $vmErrorStart10610)
     Assert-NotContains $vmErrorBlock10610 $forbiddenVmCoreClockToken10610 "v10.61.0 VM error remains platform-neutral: $forbiddenVmCoreClockToken10610"
@@ -14457,7 +14463,7 @@ Write-Host "[OK] v10.55.1 DByte Graphics Shell IRQ0 Runtime Bridge Hardening ver
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 11.1.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 11.2.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -16706,7 +16712,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 11.1.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 11.2.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -16714,7 +16720,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.1.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.2.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.2.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.2.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -18245,7 +18251,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "11.1.0"
+$EXPECTED_VERSION = "11.2.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -18809,8 +18815,8 @@ $stiStatusDispatch = $kernelMainSource.IndexOf('line_str == "sti-status"')
 $stiPreflightDispatch = $kernelMainSource.IndexOf('line_str == "sti-preflight"')
 $stiBlockersDispatch = $kernelMainSource.IndexOf('line_str == "sti-blockers"')
 $irqRuntimeActivationSmokeDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke"')
-$irqRuntimeActivationSmokeStatusDispatch = $kernelMainSource.IndexOf('"irq-runtime-activation-smoke-status"')
-$irqRuntimeActivationSmokeBlockersDispatch = $kernelMainSource.IndexOf('"irq-runtime-activation-smoke-blockers"')
+$irqRuntimeActivationSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-status"')
+$irqRuntimeActivationSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-blockers"')
 $eoiDispatchSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-note"')
 $eoiDispatchSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-status"')
 $eoiDispatchSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-plan"')
@@ -18841,6 +18847,8 @@ $eoiWriteOneShotSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_write_oneshot
 $eoiRuntimeBridgeSnapshotHelper = $kernelMainSource.IndexOf('fn eoi_runtime_bridge_readiness_snapshot()')
 $irq0WindowStatusSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_window_status_snapshot()')
 $irq0WindowArmSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_window_arm_snapshot()')
+$irq0TicksStatusSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_ticks_status_snapshot()')
+$irq0TicksArmSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_ticks_arm_snapshot()')
 $irq0RuntimeStatusSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_runtime_status_snapshot()')
 $irq0RuntimeStartSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_runtime_start_snapshot()')
 $irq0RuntimeStopSnapshotHelper = $kernelMainSource.IndexOf('fn irq0_runtime_stop_snapshot()')
@@ -18912,11 +18920,13 @@ foreach ($call in [regex]::Matches($kernelMainSource, 'pic::ProgrammableInterrup
     $nearEoiRuntimeBridgeSnapshotHelper = ($callIndex -gt $eoiRuntimeBridgeSnapshotHelper -and $callIndex -lt $eoiRuntimeBridgeSnapshotHelper + 2048)
     $nearIrq0WindowStatusSnapshotHelper = ($callIndex -gt $irq0WindowStatusSnapshotHelper -and $callIndex -lt $irq0WindowStatusSnapshotHelper + 2048)
     $nearIrq0WindowArmSnapshotHelper = ($callIndex -gt $irq0WindowArmSnapshotHelper -and $callIndex -lt $irq0WindowArmSnapshotHelper + 2048)
+    $nearIrq0TicksStatusSnapshotHelper = ($callIndex -gt $irq0TicksStatusSnapshotHelper -and $callIndex -lt $irq0TicksStatusSnapshotHelper + 2048)
+    $nearIrq0TicksArmSnapshotHelper = ($callIndex -gt $irq0TicksArmSnapshotHelper -and $callIndex -lt $irq0TicksArmSnapshotHelper + 2048)
     $nearIrq0RuntimeStatusSnapshotHelper = ($callIndex -gt $irq0RuntimeStatusSnapshotHelper -and $callIndex -lt $irq0RuntimeStatusSnapshotHelper + 2048)
     $nearIrq0RuntimeStartSnapshotHelper = ($callIndex -gt $irq0RuntimeStartSnapshotHelper -and $callIndex -lt $irq0RuntimeStartSnapshotHelper + 2048)
     $nearIrq0RuntimeStopSnapshotHelper = ($callIndex -gt $irq0RuntimeStopSnapshotHelper -and $callIndex -lt $irq0RuntimeStopSnapshotHelper + 2048)
-    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper -or $nearEoiWritePermitSnapshotHelper -or $nearEoiWriteOneShotSnapshotHelper -or $nearEoiRuntimeBridgeSnapshotHelper -or $nearIrq0WindowStatusSnapshotHelper -or $nearIrq0WindowArmSnapshotHelper -or $nearIrq0RuntimeStatusSnapshotHelper -or $nearIrq0RuntimeStartSnapshotHelper -or $nearIrq0RuntimeStopSnapshotHelper)) {
-        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
+    if (-not ($nearStateCommand -or $nearSystemCommand -or $nearPreflightCommand -or $nearCommitCommand -or $nearStatusCommand -or $nearBlockersCommand -or $nearEoiStatusCommand -or $nearEoiBlockersCommand -or $nearIrqMaskBlockersCommand -or $nearIrqRuntimeMatrixCommand -or $nearIrqRuntimeReadinessCommand -or $nearIrqRuntimeActivationPlanCommand -or $nearIrqRuntimeGateStatusCommand -or $nearIrqRuntimeGateCheckCommand -or $nearIrqRuntimeGateBlockersCommand -or $nearIrqRuntimeSimStatusCommand -or $nearIrqRuntimeSimRunCommand -or $nearIrqRuntimeSimBlockersCommand -or $nearStiStatusCommand -or $nearStiPreflightCommand -or $nearStiBlockersCommand -or $nearIrqRuntimeActivationSmokeCommand -or $nearIrqRuntimeActivationSmokeStatusCommand -or $nearIrqRuntimeActivationSmokeBlockersCommand -or $nearEoiDispatchSmokeNoteCommand -or $nearEoiDispatchSmokeStatusCommand -or $nearEoiDispatchSmokePlanCommand -or $nearEoiDispatchSmokeBlockersCommand -or $nearPicUnmaskSmokeNoteCommand -or $nearPicUnmaskSmokeStatusCommand -or $nearPicUnmaskSmokePlanCommand -or $nearPicUnmaskSmokeBlockersCommand -or $nearIdtRuntimeBindSmokeNoteCommand -or $nearIdtRuntimeBindSmokeStatusCommand -or $nearIdtRuntimeBindSmokePlanCommand -or $nearIdtRuntimeBindSmokeBlockersCommand -or $nearIrqRuntimeFinalGateNoteCommand -or $nearIrqRuntimeFinalGateStatusCommand -or $nearIrqRuntimeFinalGateCheckCommand -or $nearIrqRuntimeFinalGateBlockersCommand -or $nearIrqRuntimeDecisionNoteCommand -or $nearIrqRuntimeDecisionStatusCommand -or $nearIrqRuntimeDecisionFreezeCommand -or $nearIrqRuntimeDecisionBlockersCommand -or $nearIrqRuntimeDecisionSnapshotHelper -or $nearIrqRuntimeMutationSnapshotHelper -or $nearIrqRuntimeMutationSequenceSnapshotHelper -or $nearEoiWriteSmokePreflightSnapshotHelper -or $nearEoiWriteSmokeCandidateSnapshotHelper -or $nearEoiWritePermitSnapshotHelper -or $nearEoiWriteOneShotSnapshotHelper -or $nearEoiRuntimeBridgeSnapshotHelper -or $nearIrq0WindowStatusSnapshotHelper -or $nearIrq0WindowArmSnapshotHelper -or $nearIrq0TicksStatusSnapshotHelper -or $nearIrq0TicksArmSnapshotHelper -or $nearIrq0RuntimeStatusSnapshotHelper -or $nearIrq0RuntimeStartSnapshotHelper -or $nearIrq0RuntimeStopSnapshotHelper)) {
+        throw "Kernel PIC remap telemetry guard failed: pic_remap_state() call at source offset $callIndex outside pic-remap-state/system/irq-runtime-preconditions/eoi-runtime/irq-mask-blockers/matrix dispatch"
     }
 }
 if ($kernelMainSource.IndexOf('pic::ProgrammableInterruptController::pic_remap_history()') -lt $picRemapHistoryDispatch) {
@@ -18967,8 +18977,8 @@ $stiStatusDispatch = $kernelMainSource.IndexOf('line_str == "sti-status"')
 $stiPreflightDispatch = $kernelMainSource.IndexOf('line_str == "sti-preflight"')
 $stiBlockersDispatch = $kernelMainSource.IndexOf('line_str == "sti-blockers"')
 $irqRuntimeActivationSmokeDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke"')
-$irqRuntimeActivationSmokeStatusDispatch = $kernelMainSource.IndexOf('"irq-runtime-activation-smoke-status"')
-$irqRuntimeActivationSmokeBlockersDispatch = $kernelMainSource.IndexOf('"irq-runtime-activation-smoke-blockers"')
+$irqRuntimeActivationSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-status"')
+$irqRuntimeActivationSmokeBlockersDispatch = $kernelMainSource.IndexOf('line_str == "irq-runtime-activation-smoke-blockers"')
 $eoiDispatchSmokeNoteDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-note"')
 $eoiDispatchSmokeStatusDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-status"')
 $eoiDispatchSmokePlanDispatch = $kernelMainSource.IndexOf('line_str == "eoi-dispatch-smoke-plan"')
@@ -19876,7 +19886,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha in the v11.1.0 package smoke tests..."
+Write-Host "Running DByteOS Alpha in the v11.2.0 package smoke tests..."
 if (Test-Path (Join-Path $repoRoot "tmp")) { Remove-Item -Recurse -Force (Join-Path $repoRoot "tmp") }
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -19887,8 +19897,8 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& .\scripts\package_release.ps1 -Version "11.1.0" -SkipBundle
-$zipFile = Join-Path $repoRoot "dbyte-v11.1.0-windows-x64.zip"
+& .\scripts\package_release.ps1 -Version "11.2.0" -SkipBundle
+$zipFile = Join-Path $repoRoot "dbyte-v11.2.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -19912,7 +19922,7 @@ if ($packagedNativeHeader.Length -lt 20 -or $packagedNativeHeader[0] -ne 0x7f -o
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 11.1.0") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 11.2.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -20308,11 +20318,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 11.1.0`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 11.2.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.1.0`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 11.2.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 11.2.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 11.2.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -20566,7 +20576,7 @@ Journal: 0 entries recorded
 Open Tasks:
   demo: 2 open
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 11.1.0
+dbyte-shell> DByte 11.2.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"
@@ -20575,7 +20585,10 @@ Remove-Item -Recurse -Force $smokeRoot -ErrorAction SilentlyContinue
 Assert-GitStatus-Unchanged $packageSmokeStatus "package smoke cleanliness"
 Write-Host "Package smoke tests passed."
 
-& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0"
+& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "11.2.0"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& .\scripts\verify_native_kernel_core.ps1 -MilestoneVersion "11.2.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "verify passed"

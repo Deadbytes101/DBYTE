@@ -213,6 +213,21 @@ pub struct StructField {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterruptClass {
+    NoErrorCode,
+    ErrorCode,
+}
+
+impl std::fmt::Display for InterruptClass {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::NoErrorCode => "no_error_code",
+            Self::ErrorCode => "error_code",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let {
@@ -237,6 +252,7 @@ pub enum Stmt {
     },
     FnDef {
         is_pub: bool,
+        interrupt: Option<InterruptClass>,
         name: String,
         params: Vec<Param>,
         ret_ty: TypeAnnotation,

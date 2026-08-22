@@ -2,6 +2,7 @@
 
 use crate::ir::{CompareOp, LabelId, LocalId, StringId};
 use crate::system_types::SystemType;
+pub use dbyte_ast::InterruptClass;
 use dbyte_ast::Span;
 use std::fmt::{self, Write};
 
@@ -50,6 +51,12 @@ pub enum SystemIntrinsic {
     IoOut16,
     IoIn16,
     CpuHlt,
+    CpuCli,
+    CpuSti,
+    CpuInt3,
+    CpuReadEflags,
+    CpuLgdt,
+    CpuLidt,
 }
 
 impl SystemIntrinsic {
@@ -67,6 +74,12 @@ impl SystemIntrinsic {
             "io_out16" => Some(Self::IoOut16),
             "io_in16" => Some(Self::IoIn16),
             "cpu_hlt" => Some(Self::CpuHlt),
+            "cpu_cli" => Some(Self::CpuCli),
+            "cpu_sti" => Some(Self::CpuSti),
+            "cpu_int3" => Some(Self::CpuInt3),
+            "cpu_read_eflags" => Some(Self::CpuReadEflags),
+            "cpu_lgdt" => Some(Self::CpuLgdt),
+            "cpu_lidt" => Some(Self::CpuLidt),
             _ => None,
         }
     }
@@ -84,6 +97,12 @@ impl SystemIntrinsic {
             Self::IoOut16 => "native.io_out16",
             Self::IoIn16 => "native.io_in16",
             Self::CpuHlt => "native.cpu_hlt",
+            Self::CpuCli => "native.cpu_cli",
+            Self::CpuSti => "native.cpu_sti",
+            Self::CpuInt3 => "native.cpu_int3",
+            Self::CpuReadEflags => "native.cpu_read_eflags",
+            Self::CpuLgdt => "native.cpu_lgdt",
+            Self::CpuLidt => "native.cpu_lidt",
         }
     }
 
@@ -108,7 +127,10 @@ impl SystemIntrinsic {
             Self::IoIn8 => vec![SystemType::U16],
             Self::IoOut16 => vec![SystemType::U16, SystemType::U16],
             Self::IoIn16 => vec![SystemType::U16],
-            Self::CpuHlt => Vec::new(),
+            Self::CpuHlt | Self::CpuCli | Self::CpuSti | Self::CpuInt3 | Self::CpuReadEflags => {
+                Vec::new()
+            }
+            Self::CpuLgdt | Self::CpuLidt => vec![SystemType::Usize],
         }
     }
 
@@ -122,7 +144,13 @@ impl SystemIntrinsic {
             | Self::VolatileStore32
             | Self::IoOut8
             | Self::IoOut16
-            | Self::CpuHlt => None,
+            | Self::CpuHlt
+            | Self::CpuCli
+            | Self::CpuSti
+            | Self::CpuInt3
+            | Self::CpuLgdt
+            | Self::CpuLidt => None,
+            Self::CpuReadEflags => Some(SystemType::U32),
         }
     }
 }
@@ -235,6 +263,7 @@ pub struct SystemsFunction {
     pub source_name: String,
     pub symbol: String,
     pub visibility: Visibility,
+    pub interrupt: Option<InterruptClass>,
     pub parameter_types: Vec<SystemType>,
     pub params: Vec<SystemsParam>,
     pub return_type: SystemType,
@@ -330,6 +359,15 @@ pub enum SystemsInst {
         argument_count: usize,
         result: SystemType,
     },
+    InterruptAddress {
+        vector: u8,
+        symbol: String,
+        class: InterruptClass,
+    },
+    ReloadSegments {
+        code_selector: u16,
+        data_selector: u16,
+    },
     Intrinsic {
         intrinsic: SystemIntrinsic,
         argument_count: usize,
@@ -380,6 +418,21 @@ impl fmt::Display for SystemsInst {
                 argument_count,
                 result,
             } => write!(formatter, "call {symbol} {argument_count} -> {result}"),
+            Self::InterruptAddress {
+                vector,
+                symbol,
+                class,
+            } => write!(
+                formatter,
+                "interrupt.address vector={vector} {symbol} class={class}"
+            ),
+            Self::ReloadSegments {
+                code_selector,
+                data_selector,
+            } => write!(
+                formatter,
+                "cpu.reload_segments cs=0x{code_selector:04x} ds=0x{data_selector:04x}"
+            ),
             Self::Intrinsic {
                 intrinsic,
                 argument_count,
@@ -418,6 +471,7 @@ mod tests {
                 source_name: "check".into(),
                 symbol: "check".into(),
                 visibility: Visibility::Public,
+                interrupt: None,
                 parameter_types: vec![],
                 params: vec![],
                 return_type: SystemType::U32,

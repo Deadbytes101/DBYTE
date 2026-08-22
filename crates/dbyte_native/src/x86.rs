@@ -378,12 +378,69 @@ impl Encoder {
         self.emit_raw(&[0xfa])
     }
 
+    pub fn sti(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xfb])
+    }
+
+    pub fn int3(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xcc])
+    }
+
+    pub fn pushfd(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x9c])
+    }
+
+    pub fn pushad(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x60])
+    }
+
+    pub fn popad(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x61])
+    }
+
+    pub fn iretd(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xcf])
+    }
+
     pub fn hlt(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0xf4])
     }
 
     pub fn ret(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0xc3])
+    }
+
+    pub fn lgdt(&mut self, source: MemoryOperand) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x0f, 0x01];
+        encode_memory_operand(&mut instruction, 2, source)?;
+        self.emit_raw(&instruction)
+    }
+
+    pub fn lidt(&mut self, source: MemoryOperand) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x0f, 0x01];
+        encode_memory_operand(&mut instruction, 3, source)?;
+        self.emit_raw(&instruction)
+    }
+
+    pub fn mov_ax_imm16(&mut self, value: u16) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x66, 0xb8];
+        instruction.extend_from_slice(&value.to_le_bytes());
+        self.emit_raw(&instruction)
+    }
+
+    /// Loads AX into DS, ES, FS, GS, and SS in that order.
+    pub fn load_data_segments_from_ax(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x8e, 0xd8, 0x8e, 0xc0, 0x8e, 0xe0, 0x8e, 0xe8, 0x8e, 0xd0])
+    }
+
+    /// Emits `jmp ptr16:32` with a placeholder offset and returns its byte offset.
+    pub fn far_jump_imm32_placeholder(&mut self, selector: u16) -> Result<usize, EncoderError> {
+        self.ensure_capacity(7)?;
+        self.bytes.push(0xea);
+        let offset = self.bytes.len();
+        self.bytes.extend_from_slice(&0u32.to_le_bytes());
+        self.bytes.extend_from_slice(&selector.to_le_bytes());
+        Ok(offset)
     }
 
     pub fn push_reg(&mut self, register: Register) -> Result<(), EncoderError> {
@@ -1339,5 +1396,27 @@ mod tests {
         assert!(call < jump);
         assert!(dump.contains("target=L0"));
         assert!(dump.contains("target=L1"));
+    }
+
+    #[test]
+    fn privileged_interrupt_forms_have_exact_bytes() {
+        let mut encoder = Encoder::new(64);
+        encoder.cli().unwrap();
+        encoder.sti().unwrap();
+        encoder.hlt().unwrap();
+        encoder.int3().unwrap();
+        encoder.pushfd().unwrap();
+        encoder.pushad().unwrap();
+        encoder.popad().unwrap();
+        encoder.lgdt(MemoryOperand::new(Register::Eax, 0)).unwrap();
+        encoder.lidt(MemoryOperand::new(Register::Edx, 4)).unwrap();
+        encoder.iretd().unwrap();
+        assert_eq!(
+            finish(encoder),
+            vec![
+                0xfa, 0xfb, 0xf4, 0xcc, 0x9c, 0x60, 0x61, 0x0f, 0x01, 0x10, 0x0f, 0x01, 0x5a, 0x04,
+                0xcf,
+            ]
+        );
     }
 }

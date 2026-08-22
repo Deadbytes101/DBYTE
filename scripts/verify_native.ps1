@@ -1,6 +1,9 @@
 param(
-    [string]$MilestoneVersion = "11.1.0"
+    [string]$MilestoneVersion = "11.1.0",
+    [string]$WorkspaceVersion = ""
 )
+
+if ([string]::IsNullOrWhiteSpace($WorkspaceVersion)) { $WorkspaceVersion = $MilestoneVersion }
 
 $ErrorActionPreference = "Stop"
 
@@ -225,7 +228,7 @@ Assert-True ((git rev-parse "v11.0.0^{}").Trim() -eq "fa85c484c05ceebb74ce70298d
 
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot "Cargo.toml") -Raw
 $versionMatch = [regex]::Match($manifest, '(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"')
-Assert-True ($versionMatch.Success -and $versionMatch.Groups[1].Value -eq $MilestoneVersion) "workspace version does not match native milestone $MilestoneVersion"
+Assert-True ($versionMatch.Success -and $versionMatch.Groups[1].Value -eq $WorkspaceVersion) "workspace version does not match expected compatibility version $WorkspaceVersion"
 
 foreach ($directory in @($proofRoot, $repeatRoot)) {
     if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
@@ -243,7 +246,7 @@ Assert-True (Test-Path -LiteralPath $dbytec) "dbytec executable was not produced
 Assert-True (Test-Path -LiteralPath $dbyte) "dbyte executable was not produced"
 
 $version = Invoke-Checked $dbyte @("--version") "dbyte version"
-Assert-True (($version -join "`n").Trim() -eq "DByte $MilestoneVersion") "dbyte version does not match $MilestoneVersion"
+Assert-True (($version -join "`n").Trim() -eq "DByte $WorkspaceVersion") "dbyte version does not match $WorkspaceVersion"
 
 Write-Host "Building five DByte ET_REL modules twice..."
 Build-ObjectSet $proofRoot $dbytec

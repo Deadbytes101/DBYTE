@@ -12,8 +12,9 @@ use crate::system_types::{
     TypeLayouts,
 };
 use crate::systems_ir::{
-    ExternalFunction, ExternalGlobal, GlobalSection, SystemIntrinsic, SystemsFunction,
-    SystemsGlobal, SystemsInst, SystemsModuleIr, SystemsParam, SystemsSlot, Visibility,
+    ExternalFunction, ExternalGlobal, GlobalSection, InterruptClass, SystemIntrinsic,
+    SystemsFunction, SystemsGlobal, SystemsInst, SystemsModuleIr, SystemsParam, SystemsSlot,
+    Visibility,
 };
 use dbyte_ast::{BinOp, Expr, Param, Span, Stmt, StructField, TypeAnnotation, UnaryOp};
 use std::collections::{BTreeMap, BTreeSet};
@@ -59,6 +60,7 @@ struct StructHeader {
 #[derive(Debug, Clone)]
 struct RawFunction {
     public: bool,
+    interrupt: Option<InterruptClass>,
     params: Vec<Param>,
     return_type: TypeAnnotation,
     span: Span,
@@ -93,6 +95,7 @@ struct ModuleHeader {
 #[derive(Debug, Clone)]
 struct FunctionSignature {
     public: bool,
+    interrupt: Option<InterruptClass>,
     symbol: String,
     params: Vec<SystemType>,
     return_type: SystemType,
@@ -294,6 +297,7 @@ fn collect_headers(graph: &NativeModuleGraph) -> NativeResult<Vec<ModuleHeader>>
                 }
                 Stmt::FnDef {
                     is_pub,
+                    interrupt,
                     name,
                     params,
                     ret_ty,
@@ -305,6 +309,7 @@ fn collect_headers(graph: &NativeModuleGraph) -> NativeResult<Vec<ModuleHeader>>
                         name.clone(),
                         RawFunction {
                             public: *is_pub,
+                            interrupt: *interrupt,
                             params: params.clone(),
                             return_type: ret_ty.clone(),
                             span: *span,
@@ -455,13 +460,34 @@ fn resolve_module_symbols(
                 require_abi_scalar(module, &ty, parameter.span, "parameter")?;
                 params.push(ty);
             }
-            let return_type =
-                resolve_annotation(graph, headers, module.id, &raw.return_type, raw.span)?;
-            require_abi_scalar(module, &return_type, raw.span, "return type")?;
+            let return_type = if let Some(class) = raw.interrupt {
+                if !matches!(raw.return_type, TypeAnnotation::Inferred) {
+                    return Err(module_diagnostic(
+                        module,
+                        DiagnosticCategory::InvalidReturn,
+                        "interrupt functions cannot declare a return type",
+                        raw.span,
+                    ));
+                }
+                validate_interrupt_signature(
+                    module,
+                    layouts,
+                    class,
+                    &params,
+                    &raw.params,
+                    raw.span,
+                )?;
+                SystemType::I32
+            } else {
+                let ty = resolve_annotation(graph, headers, module.id, &raw.return_type, raw.span)?;
+                require_abi_scalar(module, &ty, raw.span, "return type")?;
+                ty
+            };
             symbols.functions.insert(
                 name.clone(),
                 FunctionSignature {
                     public: raw.public,
+                    interrupt: raw.interrupt,
                     symbol: emitted_symbol(graph, module.id, name, raw.public),
                     params,
                     return_type,
@@ -774,6 +800,79 @@ fn require_abi_scalar(
             span,
         ))
     }
+}
+
+fn validate_interrupt_signature(
+    module: &NativeSourceModule,
+    layouts: &TypeLayouts,
+    class: InterruptClass,
+    params: &[SystemType],
+    raw_params: &[Param],
+    span: Span,
+) -> NativeResult<()> {
+    let expected_count = match class {
+        InterruptClass::NoErrorCode => 1,
+        InterruptClass::ErrorCode => 2,
+    };
+    if params.len() != expected_count {
+        return Err(module_diagnostic(
+            module,
+            DiagnosticCategory::WrongArity,
+            format!(
+                "interrupt({class}) function expects {expected_count} parameters, got {}",
+                params.len()
+            ),
+            span,
+        ));
+    }
+    let Some(SystemType::Pointer(frame)) = params.first() else {
+        return Err(module_diagnostic(
+            module,
+            DiagnosticCategory::InvalidType,
+            "interrupt frame parameter must be a pointer to InterruptFrame",
+            raw_params.first().map_or(span, |param| param.span),
+        ));
+    };
+    let SystemType::Struct(frame_name) = frame.as_ref() else {
+        return Err(module_diagnostic(
+            module,
+            DiagnosticCategory::InvalidType,
+            "interrupt frame parameter must point to a struct",
+            raw_params[0].span,
+        ));
+    };
+    let layout = layouts.structure(frame_name).ok_or_else(|| {
+        module_diagnostic(
+            module,
+            DiagnosticCategory::UnknownType,
+            format!("unknown interrupt frame type '{frame_name}'"),
+            raw_params[0].span,
+        )
+    })?;
+    let valid_frame = layout.size == 12
+        && layout.fields.len() == 3
+        && layout
+            .fields
+            .iter()
+            .zip(["eip", "cs", "eflags"])
+            .all(|(field, name)| field.name == name && field.ty == SystemType::U32);
+    if !valid_frame {
+        return Err(module_diagnostic(
+            module,
+            DiagnosticCategory::InvalidType,
+            "InterruptFrame must contain declaration-order u32 fields eip, cs, eflags",
+            raw_params[0].span,
+        ));
+    }
+    if class == InterruptClass::ErrorCode && params[1] != SystemType::U32 {
+        return Err(module_diagnostic(
+            module,
+            DiagnosticCategory::InvalidType,
+            "interrupt(error_code) second parameter must be u32",
+            raw_params[1].span,
+        ));
+    }
+    Ok(())
 }
 
 fn emitted_symbol(graph: &NativeModuleGraph, module_id: usize, name: &str, public: bool) -> String {
@@ -1777,6 +1876,7 @@ impl<'a> FunctionAnalyzer<'a> {
             source_name: self.function_name.to_owned(),
             symbol: self.signature.symbol.clone(),
             visibility: visibility(self.signature.public),
+            interrupt: self.signature.interrupt,
             parameter_types: self.signature.params.clone(),
             params: self.params,
             return_type: self.signature.return_type.clone(),
@@ -1893,6 +1993,24 @@ impl<'a> FunctionAnalyzer<'a> {
                 self.instructions.push(SystemsInst::Store(destination.ty));
             }
             Stmt::Return { value, span } => {
+                if self.signature.interrupt.is_some() {
+                    if value.is_some() {
+                        return Err(self.error(
+                            DiagnosticCategory::InvalidReturn,
+                            format!(
+                                "interrupt function '{}' cannot return a value",
+                                self.function_name
+                            ),
+                            *span,
+                        ));
+                    }
+                    self.instructions.push(SystemsInst::Const {
+                        bits: 0,
+                        ty: SystemType::I32,
+                    });
+                    self.instructions.push(SystemsInst::Return);
+                    return Ok(());
+                }
                 let Some(value) = value else {
                     return Err(self.error(
                         DiagnosticCategory::InvalidReturn,
@@ -2607,6 +2725,9 @@ impl<'a> FunctionAnalyzer<'a> {
     }
 
     fn compile_call(&mut self, name: &str, args: &[Expr], span: Span) -> NativeResult<ExprResult> {
+        if name == "interrupt_address" {
+            return self.compile_interrupt_address(args, span);
+        }
         if matches!(name, "size_of" | "align_of") {
             if args.len() != 1 {
                 return Err(self.error(
@@ -2730,6 +2851,13 @@ impl<'a> FunctionAnalyzer<'a> {
         span: Span,
         external: bool,
     ) -> NativeResult<ExprResult> {
+        if signature.interrupt.is_some() {
+            return Err(self.error(
+                DiagnosticCategory::InvalidType,
+                format!("interrupt function '{source_name}' is not directly callable"),
+                span,
+            ));
+        }
         if args.len() != signature.params.len() {
             return Err(self.error(
                 DiagnosticCategory::WrongArity,
@@ -2782,6 +2910,25 @@ impl<'a> FunctionAnalyzer<'a> {
         args: &[Expr],
         span: Span,
     ) -> NativeResult<ExprResult> {
+        if property == "cpu_reload_segments" {
+            if args.len() != 2 {
+                return Err(self.error(
+                    DiagnosticCategory::WrongArity,
+                    format!(
+                        "native.cpu_reload_segments expects 2 arguments, got {}",
+                        args.len()
+                    ),
+                    span,
+                ));
+            }
+            let code_selector = self.constant_u16(&args[0], "code selector")?;
+            let data_selector = self.constant_u16(&args[1], "data selector")?;
+            self.instructions.push(SystemsInst::ReloadSegments {
+                code_selector,
+                data_selector,
+            });
+            return Ok(ExprResult::Void);
+        }
         let intrinsic = SystemIntrinsic::from_name(property).ok_or_else(|| {
             self.error(
                 DiagnosticCategory::InvalidIntrinsic,
@@ -2826,6 +2973,161 @@ impl<'a> FunctionAnalyzer<'a> {
             result: result.clone(),
         });
         Ok(result.map_or(ExprResult::Void, ExprResult::Value))
+    }
+
+    fn constant_u16(&self, expression: &Expr, role: &str) -> NativeResult<u16> {
+        let mut evaluator = ConstantEvaluator {
+            graph: self.context.graph,
+            headers: &self.context.headers,
+            symbols: &self.context.symbols,
+            layouts: &self.context.layouts,
+            values: self.context.constants.clone(),
+            visiting: BTreeSet::new(),
+        };
+        let value = evaluator
+            .evaluate_expr(self.module_id, expression, Some(&SystemType::U16))
+            .map_err(|_| {
+                self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    format!(
+                        "native.cpu_reload_segments {role} must be a compile-time u16 constant"
+                    ),
+                    expression.span(),
+                )
+            })?;
+        u16::try_from(value.bits).map_err(|_| {
+            self.error(
+                DiagnosticCategory::IntegerOutOfRange,
+                format!("native.cpu_reload_segments {role} exceeds u16"),
+                expression.span(),
+            )
+        })
+    }
+
+    fn compile_interrupt_address(&mut self, args: &[Expr], span: Span) -> NativeResult<ExprResult> {
+        if args.len() != 2 {
+            return Err(self.error(
+                DiagnosticCategory::WrongArity,
+                format!("interrupt_address expects 2 arguments, got {}", args.len()),
+                span,
+            ));
+        }
+        let mut evaluator = ConstantEvaluator {
+            graph: self.context.graph,
+            headers: &self.context.headers,
+            symbols: &self.context.symbols,
+            layouts: &self.context.layouts,
+            values: self.context.constants.clone(),
+            visiting: BTreeSet::new(),
+        };
+        let vector_value = evaluator
+            .evaluate_expr(self.module_id, &args[0], Some(&SystemType::Usize))
+            .map_err(|_| {
+                self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "interrupt_address vector must be a compile-time constant",
+                    args[0].span(),
+                )
+            })?;
+        let vector = u8::try_from(vector_value.bits).map_err(|_| {
+            self.error(
+                DiagnosticCategory::IntegerOutOfRange,
+                "interrupt_address vector must be in 0..255",
+                args[0].span(),
+            )
+        })?;
+        let (signature, source_name, external) = match &args[1] {
+            Expr::Ident(name, _) => (
+                self.context.symbols[self.module_id]
+                    .functions
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.error(
+                            DiagnosticCategory::UnresolvedFunction,
+                            format!("unresolved interrupt handler '{name}'"),
+                            args[1].span(),
+                        )
+                    })?,
+                name.clone(),
+                false,
+            ),
+            Expr::Member {
+                object, property, ..
+            } => {
+                let Expr::Ident(alias, _) = object.as_ref() else {
+                    return Err(self.error(
+                        DiagnosticCategory::InvalidIntrinsic,
+                        "interrupt_address handler must be a function symbol",
+                        args[1].span(),
+                    ));
+                };
+                let target = import_target(self.context, self.module_id, alias, args[1].span())?;
+                let signature = self.context.symbols[target]
+                    .functions
+                    .get(property)
+                    .cloned()
+                    .ok_or_else(|| {
+                        self.error(
+                            DiagnosticCategory::UnresolvedFunction,
+                            format!("module '{alias}' has no handler '{property}'"),
+                            args[1].span(),
+                        )
+                    })?;
+                if !signature.public {
+                    return Err(self.error(
+                        DiagnosticCategory::UnresolvedFunction,
+                        format!("interrupt handler '{alias}.{property}' is module-private"),
+                        args[1].span(),
+                    ));
+                }
+                (signature, format!("{alias}.{property}"), true)
+            }
+            _ => {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "interrupt_address handler must be an interrupt function symbol",
+                    args[1].span(),
+                ))
+            }
+        };
+        let Some(class) = signature.interrupt else {
+            return Err(self.error(
+                DiagnosticCategory::InvalidIntrinsic,
+                format!("'{source_name}' is not an interrupt function"),
+                args[1].span(),
+            ));
+        };
+        let requires_error = matches!(vector, 8 | 10 | 11 | 12 | 13 | 14 | 17);
+        let required = if requires_error {
+            InterruptClass::ErrorCode
+        } else {
+            InterruptClass::NoErrorCode
+        };
+        if class != required {
+            return Err(self.error(
+                DiagnosticCategory::InterruptClassMismatch,
+                format!(
+                    "vector {vector} requires {required} handler, but {source_name} is {class}"
+                ),
+                span,
+            ));
+        }
+        if external {
+            self.external_functions
+                .entry(signature.symbol.clone())
+                .or_insert_with(|| ExternalFunction {
+                    symbol: signature.symbol.clone(),
+                    parameter_types: signature.params.clone(),
+                    return_type: signature.return_type.clone(),
+                });
+        }
+        self.instructions.push(SystemsInst::InterruptAddress {
+            vector,
+            symbol: signature.symbol,
+            class,
+        });
+        Ok(ExprResult::Value(SystemType::Usize))
     }
 
     fn compile_lvalue(&mut self, expression: &Expr) -> NativeResult<LValue> {
@@ -3730,5 +4032,39 @@ mod tests {
         let error = analyze_systems_project(&invalid_id).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidModuleImport);
         assert!(error.message.contains("expected deterministic index"));
+    }
+
+    #[test]
+    fn interrupt_address_preserves_class_and_rejects_direct_calls() {
+        let source = "struct InterruptFrame:\n    eip: u32\n    cs: u32\n    eflags: u32\ninterrupt(no_error_code) fn breakpoint(frame: ptr[InterruptFrame]):\n    return\nfn kernel_main() -> int:\n    interrupt_address(3, breakpoint)\n    return 0\n";
+        let project = analyze_systems_project(&one_module(source)).unwrap();
+        let kernel = project.modules[0].function("kernel_main").unwrap();
+        assert!(kernel.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::InterruptAddress {
+                vector: 3,
+                class: InterruptClass::NoErrorCode,
+                ..
+            }
+        )));
+
+        let direct = source.replace(
+            "interrupt_address(3, breakpoint)",
+            "breakpoint(0 as usize as ptr[InterruptFrame])",
+        );
+        assert_eq!(
+            analyze_systems_project(&one_module(&direct))
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::InvalidType
+        );
+    }
+
+    #[test]
+    fn interrupt_vector_class_mismatch_is_compile_time_error() {
+        let source = "struct InterruptFrame:\n    eip: u32\n    cs: u32\n    eflags: u32\ninterrupt(no_error_code) fn page_fault(frame: ptr[InterruptFrame]):\n    return\nfn kernel_main() -> int:\n    interrupt_address(14, page_fault)\n    return 0\n";
+        let error = analyze_systems_project(&one_module(source)).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InterruptClassMismatch);
+        assert!(error.message.contains("vector 14 requires error_code"));
     }
 }

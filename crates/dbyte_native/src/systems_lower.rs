@@ -111,7 +111,7 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
     ] {
         push_symbol(
             &mut symbols,
-            None,
+            Some(&mut symbol_ids),
             ObjectSymbol {
                 name: name.into(),
                 binding: SymbolBinding::Local,
@@ -136,6 +136,75 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
             &mut symbol_ids,
             ObjectSymbol {
                 name: function.symbol.clone(),
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            },
+        )?;
+    }
+    let mut interrupt_bodies: Vec<_> = module
+        .functions
+        .iter()
+        .filter(|function| function.interrupt.is_some())
+        .collect();
+    interrupt_bodies.sort_by(|left, right| left.symbol.cmp(&right.symbol));
+    for function in interrupt_bodies {
+        let name = interrupt_body_symbol(function);
+        insert_named_symbol(
+            &mut symbols,
+            &mut symbol_ids,
+            ObjectSymbol {
+                name,
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            },
+        )?;
+        let marker = interrupt_definition_marker(function);
+        insert_named_symbol(
+            &mut symbols,
+            &mut symbol_ids,
+            ObjectSymbol {
+                name: marker,
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            },
+        )?;
+    }
+    let mut use_markers = BTreeSet::new();
+    for function in &module.functions {
+        for instruction in &function.instructions {
+            if let SystemsInst::InterruptAddress {
+                vector,
+                symbol,
+                class,
+            } = instruction
+            {
+                use_markers.insert(format!(
+                    "__dbyte_interrupt:use:{vector:03}:{class}:{symbol}"
+                ));
+            }
+        }
+    }
+    for marker in use_markers {
+        insert_named_symbol(
+            &mut symbols,
+            &mut symbol_ids,
+            ObjectSymbol {
+                name: marker,
                 binding: SymbolBinding::Local,
                 kind: SymbolKind::Function,
                 definition: SymbolDefinition::Defined {
@@ -269,6 +338,12 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
     functions.sort_by(|left, right| left.symbol.cmp(&right.symbol));
     for function in functions {
         let start = checked_u32(encoder.position(), "native function offset")?;
+        let body_start = if let Some(class) = function.interrupt {
+            lower_interrupt_stub(function, class, &mut encoder, &symbol_ids, &mut relocations)?;
+            Some(checked_u32(encoder.position(), "interrupt body offset")?)
+        } else {
+            None
+        };
         lower_function(
             function,
             &mut encoder,
@@ -296,7 +371,27 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
             section: ObjectSection::Text,
             value: start,
         };
-        symbol.size = end - start;
+        symbol.size = body_start.unwrap_or(end) - start;
+        if let Some(body_start) = body_start {
+            let body_name = interrupt_body_symbol(function);
+            let body_id = symbol_ids.get(&body_name).copied().ok_or_else(|| {
+                backend_error(
+                    DiagnosticCategory::UndefinedSymbol,
+                    format!("missing object symbol for interrupt body '{body_name}'"),
+                )
+            })?;
+            let body_symbol = symbols.get_mut(body_id.0 as usize).ok_or_else(|| {
+                backend_error(
+                    DiagnosticCategory::InvalidObject,
+                    "interrupt body symbol id is out of range",
+                )
+            })?;
+            body_symbol.definition = SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: body_start,
+            };
+            body_symbol.size = end - body_start;
+        }
     }
     let encoded = encoder
         .finish()
@@ -347,6 +442,71 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
         },
         machine_dump,
     })
+}
+
+fn interrupt_body_symbol(function: &SystemsFunction) -> String {
+    format!("__dbyte_interrupt_{}_body", function.symbol)
+}
+
+fn interrupt_definition_marker(function: &SystemsFunction) -> String {
+    format!(
+        "__dbyte_interrupt:def:{}:{}",
+        function.interrupt.expect("interrupt definition marker"),
+        function.symbol
+    )
+}
+
+fn lower_interrupt_stub(
+    function: &SystemsFunction,
+    class: dbyte_ast::InterruptClass,
+    encoder: &mut Encoder,
+    symbols: &BTreeMap<String, SymbolId>,
+    relocations: &mut Vec<ObjectRelocation>,
+) -> NativeResult<()> {
+    emit(encoder, function, Encoder::pushad)?;
+    match class {
+        dbyte_ast::InterruptClass::NoErrorCode => {
+            emit(encoder, function, |encoder| {
+                encoder.lea_reg_from_memory(Register::Eax, MemoryOperand::new(Register::Esp, 32))
+            })?;
+            push(encoder, function, Register::Eax)?;
+        }
+        dbyte_ast::InterruptClass::ErrorCode => {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_from_memory(
+                    Register::Eax,
+                    MemoryOperand::new(Register::Esp, 32),
+                    OperandWidth::Dword,
+                    None,
+                )
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.lea_reg_from_memory(Register::Edx, MemoryOperand::new(Register::Esp, 36))
+            })?;
+            push(encoder, function, Register::Edx)?;
+            push(encoder, function, Register::Eax)?;
+        }
+    }
+    let immediate = encoder
+        .call_rel32_placeholder()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    relocations.push(ObjectRelocation {
+        section: ObjectSection::Text,
+        offset: checked_u32(immediate, "interrupt body call relocation")?,
+        symbol: lookup_symbol(symbols, &interrupt_body_symbol(function))?,
+        kind: RelocationKind::Pc32,
+        addend: -4,
+    });
+    let cleanup = match class {
+        dbyte_ast::InterruptClass::NoErrorCode => 4,
+        dbyte_ast::InterruptClass::ErrorCode => 8,
+    };
+    emit(encoder, function, |encoder| encoder.add_esp_imm32(cleanup))?;
+    emit(encoder, function, Encoder::popad)?;
+    if class == dbyte_ast::InterruptClass::ErrorCode {
+        emit(encoder, function, |encoder| encoder.add_esp_imm32(4))?;
+    }
+    emit(encoder, function, Encoder::iretd)
 }
 
 fn lower_function(
@@ -747,6 +907,33 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
+        SystemsInst::InterruptAddress { symbol, .. } => {
+            emit_absolute_address(encoder, function, symbols, relocations, symbol)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
+        SystemsInst::ReloadSegments {
+            code_selector,
+            data_selector,
+        } => {
+            emit(encoder, function, |encoder| {
+                encoder.mov_ax_imm16(*data_selector)
+            })?;
+            emit(encoder, function, Encoder::load_data_segments_from_ax)?;
+            let immediate = encoder
+                .far_jump_imm32_placeholder(*code_selector)
+                .map_err(|error| encoder_error(error, Some(function)))?;
+            let destination = checked_u32(encoder.position(), "far-jump destination")?;
+            relocations.push(ObjectRelocation {
+                section: ObjectSection::Text,
+                offset: checked_u32(immediate, "far-jump relocation offset")?,
+                symbol: lookup_symbol(symbols, ".text")?,
+                kind: RelocationKind::Abs32,
+                addend: i32::try_from(destination).map_err(|_| {
+                    function_error(function, "far-jump destination exceeds signed REL addend")
+                })?,
+            });
+        }
         SystemsInst::Intrinsic {
             intrinsic,
             argument_count,
@@ -862,6 +1049,38 @@ fn lower_intrinsic(
         SystemIntrinsic::CpuHlt => {
             require_intrinsic_arity(intrinsic, argument_count, 0, function)?;
             emit(encoder, function, |encoder| encoder.hlt())?;
+        }
+        SystemIntrinsic::CpuCli => {
+            require_intrinsic_arity(intrinsic, argument_count, 0, function)?;
+            emit(encoder, function, Encoder::cli)?;
+        }
+        SystemIntrinsic::CpuSti => {
+            require_intrinsic_arity(intrinsic, argument_count, 0, function)?;
+            emit(encoder, function, Encoder::sti)?;
+        }
+        SystemIntrinsic::CpuInt3 => {
+            require_intrinsic_arity(intrinsic, argument_count, 0, function)?;
+            emit(encoder, function, Encoder::int3)?;
+        }
+        SystemIntrinsic::CpuReadEflags => {
+            require_intrinsic_arity(intrinsic, argument_count, 0, function)?;
+            emit(encoder, function, Encoder::pushfd)?;
+            pop(encoder, function, Register::Eax)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
+        SystemIntrinsic::CpuLgdt | SystemIntrinsic::CpuLidt => {
+            require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
+            pop(encoder, function, Register::Eax)?;
+            match intrinsic {
+                SystemIntrinsic::CpuLgdt => emit(encoder, function, |encoder| {
+                    encoder.lgdt(MemoryOperand::new(Register::Eax, 0))
+                })?,
+                SystemIntrinsic::CpuLidt => emit(encoder, function, |encoder| {
+                    encoder.lidt(MemoryOperand::new(Register::Eax, 0))
+                })?,
+                _ => unreachable!(),
+            }
         }
     }
     Ok(())
@@ -1426,6 +1645,7 @@ mod tests {
             source_name: "kernel_main".into(),
             symbol: "kernel_main".into(),
             visibility: Visibility::Private,
+            interrupt: None,
             parameter_types: vec![],
             params: vec![],
             return_type: SystemType::I32,
@@ -1526,6 +1746,7 @@ mod tests {
             source_name: "helper".into(),
             symbol: "helper".into(),
             visibility: Visibility::Public,
+            interrupt: None,
             parameter_types: vec![SystemType::U8, SystemType::U32],
             params: vec![
                 SystemsParam {
@@ -1633,6 +1854,7 @@ mod tests {
             source_name: "narrow_mix".into(),
             symbol: "narrow_mix".into(),
             visibility: Visibility::Public,
+            interrupt: None,
             parameter_types: vec![SystemType::U16, SystemType::U8],
             params: vec![
                 SystemsParam {
@@ -1735,6 +1957,7 @@ mod tests {
             source_name: symbol.into(),
             symbol: symbol.into(),
             visibility: Visibility::Public,
+            interrupt: None,
             parameter_types: vec![ty.clone()],
             params: vec![SystemsParam {
                 name: "value".into(),

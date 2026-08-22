@@ -1,0 +1,18 @@
+import "arch_x86.dby" as arch
+import "pic.dby" as pic
+
+static mut TICKS: u32
+
+pub interrupt(no_error_code) fn irq0(frame: ptr[arch.InterruptFrame]):
+    TICKS = TICKS + (1 as u32)
+    pic.eoi_master()
+    return
+
+pub fn program_100hz() -> int:
+    arch.out8(0x43 as u16, 0x34 as u8)
+    arch.out8(0x40 as u16, 0x9c as u8)
+    arch.out8(0x40 as u16, 0x2e as u8)
+    return 0
+
+pub fn ticks() -> u32:
+    return TICKS

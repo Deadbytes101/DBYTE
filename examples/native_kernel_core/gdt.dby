@@ -1,0 +1,15 @@
+import "arch_x86.dby" as arch
+
+struct SegmentDescriptor:
+    low: u32
+    high: u32
+
+static mut GDT: array[SegmentDescriptor, 3] = [SegmentDescriptor(0 as u32, 0 as u32), SegmentDescriptor(0x0000ffff as u32, 0x00cf9a00 as u32), SegmentDescriptor(0x0000ffff as u32, 0x00cf9200 as u32)]
+static mut GDTR: arch.DescriptorTablePointer
+
+pub fn gdt_install() -> int:
+    GDTR.limit = 23 as u16
+    GDTR.base = (&GDT) as usize as u32
+    native.cpu_lgdt((&GDTR) as usize)
+    native.cpu_reload_segments(0x08 as u16, 0x10 as u16)
+    return 0

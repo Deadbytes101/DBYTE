@@ -564,7 +564,8 @@ impl Parser {
         self.skip_newlines();
         match self.peek_kind().clone() {
             TokenKind::Let => self.parse_let(false),
-            TokenKind::Fn => self.parse_fn(false),
+            TokenKind::Fn => self.parse_fn(false, None),
+            TokenKind::Interrupt => self.parse_interrupt_fn(false),
             TokenKind::Const => self.parse_const(false),
             TokenKind::Static => self.parse_static(false),
             TokenKind::Struct => self.parse_struct(false, false),
@@ -573,13 +574,14 @@ impl Parser {
                 self.advance();
                 match self.peek_kind().clone() {
                     TokenKind::Let => self.parse_let(true),
-                    TokenKind::Fn => self.parse_fn(true),
+                    TokenKind::Fn => self.parse_fn(true, None),
+                    TokenKind::Interrupt => self.parse_interrupt_fn(true),
                     TokenKind::Const => self.parse_const(true),
                     TokenKind::Static => self.parse_static(true),
                     TokenKind::Struct => self.parse_struct(true, false),
                     TokenKind::Packed => self.parse_packed_struct(true),
                     _ => Err(ParseError {
-                        msg: "expected `let`, `fn`, `const`, `static`, `struct`, or `packed struct` after `pub`".into(),
+                        msg: "expected `let`, `fn`, `interrupt`, `const`, `static`, `struct`, or `packed struct` after `pub`".into(),
                         span: self.peek().span,
                     }),
                 }
@@ -869,7 +871,36 @@ impl Parser {
         Ok(Stmt::Assign { name, value, span })
     }
 
-    fn parse_fn(&mut self, is_pub: bool) -> Result<Stmt, ParseError> {
+    fn parse_interrupt_fn(&mut self, is_pub: bool) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.expect(&TokenKind::Interrupt)?;
+        self.expect(&TokenKind::LParen)?;
+        let class = match self.peek_kind().clone() {
+            TokenKind::Ident(name) if name == "no_error_code" => InterruptClass::NoErrorCode,
+            TokenKind::Ident(name) if name == "error_code" => InterruptClass::ErrorCode,
+            _ => {
+                return Err(ParseError {
+                    msg: "expected interrupt class `no_error_code` or `error_code`".into(),
+                    span: self.peek().span,
+                })
+            }
+        };
+        self.advance();
+        self.expect(&TokenKind::RParen)?;
+        if !matches!(self.peek_kind(), TokenKind::Fn) {
+            return Err(ParseError {
+                msg: "expected `fn` after interrupt class".into(),
+                span,
+            });
+        }
+        self.parse_fn(is_pub, Some(class))
+    }
+
+    fn parse_fn(
+        &mut self,
+        is_pub: bool,
+        interrupt: Option<InterruptClass>,
+    ) -> Result<Stmt, ParseError> {
         let span = self.peek().span;
         self.advance();
         let name = match self.peek_kind().clone() {
@@ -923,6 +954,7 @@ impl Parser {
         let body = self.parse_block()?;
         Ok(Stmt::FnDef {
             is_pub,
+            interrupt,
             name,
             params,
             ret_ty,
@@ -1263,5 +1295,28 @@ mod tests {
             .unwrap();
         let error = Parser::new(tokens).parse_program().unwrap_err();
         assert_eq!(error.msg, "expected integer array length");
+    }
+
+    #[test]
+    fn parses_explicit_interrupt_abi_classes() {
+        let program = parse(
+            "pub interrupt(no_error_code) fn irq0(frame: ptr[InterruptFrame]):\n    return\ninterrupt(error_code) fn fault(frame: ptr[InterruptFrame], error_code: u32):\n    return\n",
+        );
+        assert!(matches!(
+            &program.stmts[0],
+            Stmt::FnDef {
+                is_pub: true,
+                interrupt: Some(InterruptClass::NoErrorCode),
+                ret_ty: TypeAnnotation::Inferred,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &program.stmts[1],
+            Stmt::FnDef {
+                interrupt: Some(InterruptClass::ErrorCode),
+                ..
+            }
+        ));
     }
 }

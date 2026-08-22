@@ -1,0 +1,58 @@
+import "arch_x86.dby" as arch
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt.dby" as idt
+import "exceptions.dby" as exceptions
+import "pic.dby" as pic
+import "pit.dby" as pit
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail() -> int:
+    line("NATIVE CORE FAILED", 18 as usize)
+    return 1
+
+fn one_tick() -> int:
+    arch.sti()
+    arch.hlt()
+    arch.cli()
+    return 0
+
+fn kernel_main() -> int:
+    serial.init()
+    line("DBYTEOS NATIVE CORE", 19 as usize)
+    gdt.gdt_install()
+    line("GDT ONLINE", 10 as usize)
+    idt.idt_install()
+    line("IDT ONLINE", 10 as usize)
+    arch.int3()
+    if exceptions.breakpoint_count() != (1 as u32):
+        return fail()
+    line("EXCEPTIONS ONLINE", 17 as usize)
+    if pic.remap_masked() != 0:
+        return fail()
+    line("PIC ONLINE", 10 as usize)
+    pit.program_100hz()
+    if pic.unmask_irq0() != 0:
+        return fail()
+    if (arch.read_eflags() & (0x200 as u32)) != (0 as u32):
+        return fail()
+    one_tick()
+    if pit.ticks() != (1 as u32):
+        return fail()
+    line("IRQ0 TIMER ONLINE", 17 as usize)
+    serial.write("TICKS ", 6 as usize)
+    serial.decimal(pit.ticks())
+    serial.newline()
+    while pit.ticks() < (8 as u32):
+        one_tick()
+    pic.mask_all()
+    if (arch.read_eflags() & (0x200 as u32)) != (0 as u32):
+        return fail()
+    serial.write("TICKS ", 6 as usize)
+    serial.decimal(pit.ticks())
+    serial.newline()
+    return 0

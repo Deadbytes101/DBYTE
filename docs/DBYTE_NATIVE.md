@@ -118,9 +118,40 @@ native.volatile_load32(address)      native.volatile_store32(address, value)
 native.io_in8(port)                  native.io_out8(port, value)
 native.io_in16(port)                 native.io_out16(port, value)
 native.cpu_hlt()
+native.cpu_cli()                     native.cpu_sti()
+native.cpu_int3()                    native.cpu_read_eflags()
+native.cpu_lgdt(descriptor_address)  native.cpu_lidt(descriptor_address)
+native.cpu_reload_segments(code_selector, data_selector)
 ```
 
 Widths are checked statically. There is no host callback or hidden runtime.
+
+## Interrupt entry contract
+
+`v11.2.0` adds first-class ring-zero i686 interrupt functions. The ABI class is
+explicit and describes whether the CPU pushes an error code:
+
+```dbyte
+interrupt(no_error_code) fn breakpoint(frame: ptr[InterruptFrame]):
+    return
+
+interrupt(error_code) fn page_fault(frame: ptr[InterruptFrame], error_code: u32):
+    return
+```
+
+The exported handler symbol is a compiler-generated x86 entry stub. It saves
+the interrupted general registers, normalizes the CPL0 frame, crosses into a
+local DBYTE32 body, restores the registers, performs class-specific stack
+cleanup, and emits `iretd`. It never sends EOI or changes interrupt policy.
+
+`interrupt_address(vector, handler)` is the only legal way to take an interrupt
+handler address. Its vector is a compile-time `0..255` constant; the compiler
+rejects class mismatches for i686 error-code vectors `8, 10, 11, 12, 13, 14,
+17`. Each ET_REL carries deterministic non-loadable `.dbyte.interrupts`
+metadata for linker validation, while the final executable strips it.
+
+See [DByte Native Kernel Core](DBYTE_NATIVE_KERNEL_CORE.md) for the executed
+GDT, IDT, exception, PIC, PIT, and IRQ0 proof.
 
 ## Object and executable contract
 

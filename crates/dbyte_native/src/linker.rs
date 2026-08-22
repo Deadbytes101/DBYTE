@@ -10,7 +10,7 @@ use crate::object::{
     RelocationKind, SectionContents, SymbolBinding, SymbolDefinition, SymbolKind,
 };
 use crate::x86::{Encoder, Register};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 pub const LINK_ENTRY_SYMBOL: &str = "kernel_main";
@@ -117,6 +117,7 @@ pub fn link_images(inputs: &[(String, ObjectImage)]) -> Result<LinkArtifact, Dia
 }
 
 fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
+    validate_interrupt_metadata(inputs)?;
     let mut merged = merge_sections(inputs)?;
     let definitions = collect_definitions(inputs, &merged)?;
     validate_undefined_symbols(inputs, &definitions)?;
@@ -325,7 +326,7 @@ fn build_executable_symbols(
             // detail. The final executable already describes each merged
             // section in its section table, so emitting one entry per input
             // would give those symbols misleading nonzero section offsets.
-            if symbol.kind == SymbolKind::Section {
+            if symbol.kind == SymbolKind::Section || symbol.name.starts_with("__dbyte_interrupt:") {
                 continue;
             }
             let base = placements
@@ -354,6 +355,72 @@ fn build_executable_symbols(
         }
     }
     Ok(symbols)
+}
+
+fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic> {
+    let mut definitions = BTreeSet::new();
+    let mut uses = Vec::new();
+    for input in inputs {
+        for symbol in &input.image.symbols {
+            let Some(record) = symbol.name.strip_prefix("__dbyte_interrupt:") else {
+                continue;
+            };
+            let parts: Vec<&str> = record.split(':').collect();
+            match parts.as_slice() {
+                ["def", class, handler]
+                    if matches!(*class, "no_error_code" | "error_code") && !handler.is_empty() =>
+                {
+                    if !definitions.insert((class.to_string(), handler.to_string())) {
+                        return Err(Diagnostic::without_span(
+                            DiagnosticCategory::DuplicateSymbol,
+                            format!("duplicate interrupt definition metadata for {handler}"),
+                        ));
+                    }
+                }
+                ["use", vector, class, handler]
+                    if matches!(*class, "no_error_code" | "error_code") && !handler.is_empty() =>
+                {
+                    let vector: u8 = vector.parse().map_err(|_| {
+                        Diagnostic::without_span(
+                            DiagnosticCategory::InvalidObject,
+                            format!("invalid interrupt vector metadata '{}'", symbol.name),
+                        )
+                    })?;
+                    let required = if matches!(vector, 8 | 10 | 11 | 12 | 13 | 14 | 17) {
+                        "error_code"
+                    } else {
+                        "no_error_code"
+                    };
+                    if *class != required {
+                        return Err(Diagnostic::without_span(
+                            DiagnosticCategory::InterruptClassMismatch,
+                            format!(
+                                "vector {vector} requires {required} handler, metadata names {class}"
+                            ),
+                        ));
+                    }
+                    uses.push((class.to_string(), handler.to_string(), vector));
+                }
+                _ => {
+                    return Err(Diagnostic::without_span(
+                        DiagnosticCategory::InvalidObject,
+                        format!("malformed interrupt metadata symbol '{}'", symbol.name),
+                    ))
+                }
+            }
+        }
+    }
+    for (class, handler, vector) in uses {
+        if !definitions.contains(&(class.clone(), handler.clone())) {
+            return Err(Diagnostic::without_span(
+                DiagnosticCategory::UndefinedSymbol,
+                format!(
+                    "interrupt vector {vector} references {class} handler '{handler}' without matching metadata"
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn collect_definitions(
