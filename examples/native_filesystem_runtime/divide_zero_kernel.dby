@@ -1,0 +1,15 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt_divide_zero.dby" as idt
+
+static mut ZERO_DIVISOR: u32
+
+pub fn kernel_main() -> int:
+    serial.init()
+    serial.write("DBYTE NATIVE DIVIDE FAULT", 25 as usize)
+    serial.newline()
+    gdt.gdt_install()
+    idt.install_divide_zero()
+    let divisor: u32 = native.volatile_load32(&ZERO_DIVISOR)
+    let result: u32 = (7 as u32) / divisor
+    return result as i32

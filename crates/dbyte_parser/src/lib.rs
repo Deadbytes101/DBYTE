@@ -327,6 +327,7 @@ impl Parser {
             let op = match self.peek_kind() {
                 TokenKind::Star => BinOp::Mul,
                 TokenKind::Slash => BinOp::Div,
+                TokenKind::Percent => BinOp::Rem,
                 _ => break,
             };
             let span = self.peek().span;

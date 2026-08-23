@@ -320,6 +320,7 @@ impl Vm {
                     Op::Sub => self.binary_num("sub", |a, b| a.checked_sub(b), |a, b| a - b)?,
                     Op::Mul => self.binary_num("mul", |a, b| a.checked_mul(b), |a, b| a * b)?,
                     Op::Div => self.binary_div()?,
+                    Op::Rem => self.binary_rem()?,
                     Op::AddI64 => self.binary_i64(|a, b| checked_i64(a.checked_add(b)))?,
                     Op::SubI64 => self.binary_i64(|a, b| checked_i64(a.checked_sub(b)))?,
                     Op::MulI64 => self.binary_i64(|a, b| checked_i64(a.checked_mul(b)))?,
@@ -328,6 +329,13 @@ impl Vm {
                             Err(VmError::new("division by zero"))
                         } else {
                             checked_i64(a.checked_div(b))
+                        }
+                    })?,
+                    Op::RemI64 => self.binary_i64(|a, b| {
+                        if b == 0 {
+                            Err(VmError::new("remainder by zero"))
+                        } else {
+                            checked_i64(a.checked_rem(b))
                         }
                     })?,
                     Op::AddI64Stack => {
@@ -344,6 +352,13 @@ impl Vm {
                             Err(VmError::new("division by zero"))
                         } else {
                             checked_i64(a.checked_div(b))
+                        }
+                    })?,
+                    Op::RemI64Stack => self.binary_i64_stack(|a, b| {
+                        if b == 0 {
+                            Err(VmError::new("remainder by zero"))
+                        } else {
+                            checked_i64(a.checked_rem(b))
                         }
                     })?,
                     Op::Eq => self.binary_cmp(|a, b| a == b)?,
@@ -1205,6 +1220,18 @@ impl Vm {
             (Value::Int(a), Value::Int(b)) => Value::Int(checked_i64(a.checked_div(b))?),
             (Value::Float(a), Value::Float(b)) => Value::Float(a / b),
             _ => return Err(VmError::new("unsupported div operation")),
+        };
+        self.push(value);
+        Ok(())
+    }
+
+    fn binary_rem(&mut self) -> Result<(), VmError> {
+        let b = self.pop()?;
+        let a = self.pop()?;
+        let value = match (a, b) {
+            (Value::Int(_), Value::Int(0)) => return Err(VmError::new("remainder by zero")),
+            (Value::Int(a), Value::Int(b)) => Value::Int(checked_i64(a.checked_rem(b))?),
+            _ => return Err(VmError::new("unsupported rem operation")),
         };
         self.push(value);
         Ok(())
@@ -2200,6 +2227,30 @@ impl Vm {
 mod tests {
     use super::*;
     use dbyte_bytecode::{BytecodeFunction, Chunk, Op, Value};
+
+    #[test]
+    fn signed_remainder_and_zero_failure_are_deterministic() {
+        let mut chunk = Chunk::new("remainder");
+        chunk.code.push(Op::ConstI64(-17));
+        chunk.code.push(Op::ConstI64(5));
+        chunk.code.push(Op::RemI64);
+        chunk.code.push(Op::StoreLocalI64(0));
+        chunk.code.push(Op::Halt);
+        chunk.local_names.push("result".into());
+        chunk.local_kinds.push(LocalKind::I64);
+        chunk.local_i64_slots.push(Some(0));
+        chunk.i64_local_count = 1;
+        let mut vm = Vm::new();
+        vm.run(&chunk).unwrap();
+
+        let mut failure = Chunk::new("remainder-zero");
+        failure.code.push(Op::ConstI64(1));
+        failure.code.push(Op::ConstI64(0));
+        failure.code.push(Op::RemI64);
+        failure.code.push(Op::Halt);
+        let error = Vm::new().run(&failure).unwrap_err();
+        assert_eq!(error.msg, "remainder by zero");
+    }
 
     #[test]
     fn reports_stack_underflow() {

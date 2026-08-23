@@ -518,15 +518,11 @@ impl<'a> FunctionAnalyzer<'a> {
         right: &Expr,
         span: Span,
     ) -> NativeResult<ExprResult> {
-        if matches!(operator, BinOp::Div) {
-            return Err(unsupported("integer division", span));
-        }
-
         let left_type = require_value(self.compile_expr(left)?, left.span(), "left operand")?;
         let right_type = require_value(self.compile_expr(right)?, right.span(), "right operand")?;
 
         match operator {
-            BinOp::Add | BinOp::Sub | BinOp::Mul => {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
                 if left_type != NativeType::I32 || right_type != NativeType::I32 {
                     return Err(type_mismatch(
                         format!(
@@ -539,6 +535,8 @@ impl<'a> FunctionAnalyzer<'a> {
                     BinOp::Add => IrInst::AddI32,
                     BinOp::Sub => IrInst::SubI32,
                     BinOp::Mul => IrInst::MulI32,
+                    BinOp::Div => IrInst::DivI32,
+                    BinOp::Rem => IrInst::RemI32,
                     _ => unreachable!(),
                 });
                 Ok(ExprResult::Value(NativeType::I32))
@@ -581,7 +579,6 @@ impl<'a> FunctionAnalyzer<'a> {
                 self.instructions.push(IrInst::Compare(compare));
                 Ok(ExprResult::Value(NativeType::Bool))
             }
-            BinOp::Div => unreachable!(),
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
                 Err(unsupported(
                     "bitwise and shift operators in the v11.0 single-image profile",
@@ -1297,7 +1294,6 @@ mod tests {
         let cases = [
             "fn kernel_main() -> int:\n    print(1)\n    return 0\n",
             "fn kernel_main() -> int:\n    len(\"A\")\n    return 0\n",
-            "fn kernel_main() -> int:\n    return 4 / 2\n",
             "fn kernel_main() -> int:\n    let value = 1.5\n    return 0\n",
             "fn kernel_main() -> int:\n    let value = b\"A\"\n    return 0\n",
             "fn kernel_main() -> int:\n    let value = \"answer {missing}\"\n    return 0\n",
@@ -1317,6 +1313,16 @@ mod tests {
                 "unexpected diagnostic for source:\n{source}\n{error}"
             );
         }
+    }
+
+    #[test]
+    fn lowers_signed_division_and_remainder() {
+        let program = analyze_source(
+            "fn kernel_main() -> int:\n    let quotient: int = -17 / 5\n    let remainder: int = -17 % 5\n    return quotient + remainder\n",
+        );
+        let instructions = &kernel(&program).instructions;
+        assert!(instructions.contains(&IrInst::DivI32));
+        assert!(instructions.contains(&IrInst::RemI32));
     }
 
     #[test]

@@ -1,0 +1,105 @@
+import "ata.dby" as ata
+import "dbfs_layout.dby" as layout
+
+pub struct CacheEntry:
+    valid: u32
+    lba: u32
+    data: array[u8, 512]
+
+const CACHE_ENTRIES: usize = 16 as usize
+const SECTOR_SIZE: usize = 512 as usize
+const COUNTER_MAX: u32 = 0xffffffff as u32
+
+static mut ENTRIES: array[CacheEntry, 16]
+static mut HITS: u32
+static mut MISSES: u32
+static mut REPLACEMENTS: u32
+static mut ATA_READS: u32
+static mut ATA_WRITES: u32
+
+fn increment(counter: ptr[u32]) -> int:
+    if (*counter) != COUNTER_MAX:
+        (*counter) = (*counter) + (1 as u32)
+    return 0
+
+fn copy(destination: ptr[u8], source: ptr[u8]) -> int:
+    let index: usize = 0 as usize
+    while index < SECTOR_SIZE:
+        layout.put8(destination, index, layout.get8(source, index))
+        index = index + (1 as usize)
+    return 0
+
+fn entry_data(entry: ptr[CacheEntry]) -> ptr[u8]:
+    return (&(*entry).data[0]) as usize as ptr[u8]
+
+fn entry_for(lba: u32) -> ptr[CacheEntry]:
+    let index: usize = (lba as usize) % CACHE_ENTRIES
+    return &ENTRIES[index]
+
+pub fn cache_initialize() -> int:
+    let index: usize = 0 as usize
+    while index < CACHE_ENTRIES:
+        let entry: ptr[CacheEntry] = &ENTRIES[index]
+        (*entry).valid = 0 as u32
+        (*entry).lba = 0 as u32
+        layout.zero(entry_data(entry), SECTOR_SIZE)
+        index = index + (1 as usize)
+    HITS = 0 as u32
+    MISSES = 0 as u32
+    REPLACEMENTS = 0 as u32
+    ATA_READS = 0 as u32
+    ATA_WRITES = 0 as u32
+    return 0
+
+pub fn cache_read_sector(lba: u32, destination: ptr[u8]) -> bool:
+    if destination as usize == (0 as usize):
+        return false
+    if lba >= ata.ata_sector_count():
+        return false
+    let entry: ptr[CacheEntry] = entry_for(lba)
+    if (*entry).valid != (0 as u32):
+        if (*entry).lba == lba:
+            copy(destination, entry_data(entry))
+            increment(&HITS)
+            return true
+        increment(&REPLACEMENTS)
+    increment(&MISSES)
+    if ata.ata_read_sector(lba, destination) == false:
+        return false
+    increment(&ATA_READS)
+    copy(entry_data(entry), destination)
+    (*entry).lba = lba
+    (*entry).valid = 1 as u32
+    return true
+
+pub fn cache_write_sector(lba: u32, source: ptr[u8]) -> bool:
+    if source as usize == (0 as usize):
+        return false
+    if lba >= ata.ata_sector_count():
+        return false
+    if ata.ata_write_sector(lba, source) == false:
+        return false
+    increment(&ATA_WRITES)
+    let entry: ptr[CacheEntry] = entry_for(lba)
+    if (*entry).valid != (0 as u32):
+        if (*entry).lba != lba:
+            increment(&REPLACEMENTS)
+    copy(entry_data(entry), source)
+    (*entry).lba = lba
+    (*entry).valid = 1 as u32
+    return true
+
+pub fn hit_count() -> usize:
+    return HITS as usize
+
+pub fn miss_count() -> usize:
+    return MISSES as usize
+
+pub fn replacement_count() -> usize:
+    return REPLACEMENTS as usize
+
+pub fn ata_read_count() -> usize:
+    return ATA_READS as usize
+
+pub fn ata_write_count() -> usize:
+    return ATA_WRITES as usize

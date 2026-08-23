@@ -12,6 +12,8 @@ pub mod diagnostics;
 pub mod elf32;
 #[cfg(test)]
 mod filesystem_contract;
+#[cfg(test)]
+mod filesystem_runtime_contract;
 pub mod ir;
 #[cfg(test)]
 mod irq_io_contract;

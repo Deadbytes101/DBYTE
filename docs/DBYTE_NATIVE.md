@@ -58,9 +58,13 @@ emitted. Mixed-width arithmetic, implicit narrowing, and implicit
 integer-pointer conversion are rejected. Explicit `as` casts are required;
 only `usize` has an explicit pointer conversion.
 
-The native operator set includes `+`, `-`, `*`, `&`, `|`, `^`, `~`, `<<`, and
-`>>`. Shift counts must be integer values and the i686 low-five-bit count rule
-is the documented wrapping systems behavior.
+The native operator set includes `+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `~`,
+`<<`, and `>>`. Signed division truncates toward zero and its remainder has the
+sign of the dividend; unsigned division uses zero extension. Hosted execution
+reports division by zero and signed minimum divided by `-1` as deterministic
+runtime errors. Freestanding native execution deliberately leaves those cases
+to the i686 `#DE` exception contract. Shift counts use the i686 low-five-bit
+count rule.
 
 `&value` takes an address and `*pointer` loads or stores the pointee type.
 Pointers are typed; arbitrary integer-pointer mixing is not accepted.
@@ -187,9 +191,10 @@ SYSTEM TYPES ONLINE
 42
 ```
 
-There is no heap, dynamic array, 64-bit arithmetic, division, dynamic linking,
-weak symbol, runtime module loading, scheduler, filesystem, driver framework,
-or self-hosted compiler in this foundation release.
+The v11.1 foundation did not include a heap, dynamic arrays, 64-bit arithmetic,
+division, dynamic linking, weak symbols, runtime module loading, a scheduler,
+a filesystem, a driver framework, or a self-hosted compiler. Later native
+milestones add only the bounded capabilities documented below.
 
 ## v11.3 memory entry and paging boundary
 

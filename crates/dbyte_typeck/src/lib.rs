@@ -391,7 +391,7 @@ impl TypeChecker {
                 let lt = self.check_expr(left)?;
                 let rt = self.check_expr(right)?;
                 match op {
-                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
                         if lt != rt {
                             return Err(TypeError {
                                 msg: format!("type mismatch: `{}` {} `{}`", lt, op, rt),
@@ -399,7 +399,8 @@ impl TypeChecker {
                             });
                         }
                         match &lt {
-                            ResolvedType::Int | ResolvedType::Float => Ok(lt),
+                            ResolvedType::Int => Ok(lt),
+                            ResolvedType::Float if !matches!(op, BinOp::Rem) => Ok(lt),
                             ResolvedType::Str if matches!(op, BinOp::Add) => Ok(lt),
                             _ => Err(TypeError {
                                 msg: format!("operator `{}` not supported for `{}`", op, lt),

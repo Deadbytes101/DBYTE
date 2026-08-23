@@ -32,6 +32,7 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Percent,
     Bang,
     Ampersand,
     Pipe,
@@ -93,6 +94,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Minus => write!(f, "-"),
             TokenKind::Star => write!(f, "*"),
             TokenKind::Slash => write!(f, "/"),
+            TokenKind::Percent => write!(f, "%"),
             TokenKind::Bang => write!(f, "!"),
             TokenKind::Ampersand => write!(f, "&"),
             TokenKind::Pipe => write!(f, "|"),
@@ -489,6 +491,11 @@ impl<'src> Lexer<'src> {
                     self.advance();
                     tokens.push(Token::new(TokenKind::Slash, sp));
                 }
+                '%' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::Percent, sp));
+                }
                 ',' => {
                     let sp = self.span();
                     self.advance();
@@ -642,7 +649,7 @@ mod tests {
 
     #[test]
     fn tokenizes_native_systems_keywords_and_operators() {
-        let tokens = Lexer::new("const static mut struct packed & | ^ ~ << >>\n")
+        let tokens = Lexer::new("const static mut struct packed % & | ^ ~ << >>\n")
             .tokenize()
             .expect("systems syntax should lex");
         let kinds: Vec<_> = tokens.into_iter().map(|token| token.kind).collect();
@@ -654,6 +661,7 @@ mod tests {
                 TokenKind::Mut,
                 TokenKind::Struct,
                 TokenKind::Packed,
+                TokenKind::Percent,
                 TokenKind::Ampersand,
                 TokenKind::Pipe,
                 TokenKind::Caret,

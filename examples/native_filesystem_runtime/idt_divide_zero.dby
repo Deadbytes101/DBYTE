@@ -1,0 +1,24 @@
+import "arch_x86.dby" as arch
+import "divide_fault.dby" as fault
+
+packed struct IdtEntry:
+    offset_low: u16
+    selector: u16
+    zero: u8
+    flags: u8
+    offset_high: u16
+
+static mut IDT_ZERO: array[IdtEntry, 256]
+static mut IDTR_ZERO: arch.DescriptorTablePointer
+
+pub fn install_divide_zero() -> int:
+    let address: usize = interrupt_address(0, fault.divide_zero)
+    IDT_ZERO[0].offset_low = (address & (0xffff as usize)) as u16
+    IDT_ZERO[0].selector = 0x08 as u16
+    IDT_ZERO[0].zero = 0 as u8
+    IDT_ZERO[0].flags = 0x8e as u8
+    IDT_ZERO[0].offset_high = (address >> (16 as usize)) as u16
+    IDTR_ZERO.limit = 2047 as u16
+    IDTR_ZERO.base = (&IDT_ZERO) as usize as u32
+    native.cpu_lidt((&IDTR_ZERO) as usize)
+    return 0

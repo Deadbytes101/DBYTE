@@ -728,6 +728,18 @@ impl Encoder {
         self.emit_raw(&[0x0f, 0xaf, modrm(0b11, destination.code(), source.code())])
     }
 
+    pub fn cdq(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x99])
+    }
+
+    pub fn div_reg(&mut self, divisor: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf7, modrm(0b11, 6, divisor.code())])
+    }
+
+    pub fn idiv_reg(&mut self, divisor: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf7, modrm(0b11, 7, divisor.code())])
+    }
+
     pub fn neg_reg(&mut self, register: Register) -> Result<(), EncoderError> {
         self.emit_raw(&[0xf7, modrm(0b11, 3, register.code())])
     }
@@ -1123,6 +1135,21 @@ mod tests {
             finish(encoder),
             vec![0x01, 0xc8, 0x29, 0xc8, 0x0f, 0xaf, 0xc1, 0x39, 0xc8]
         );
+    }
+
+    #[test]
+    fn division_forms_have_exact_bytes_and_are_transactional() {
+        let mut encoder = Encoder::new(5);
+        encoder.cdq().unwrap();
+        encoder.div_reg(Register::Ecx).unwrap();
+        encoder.idiv_reg(Register::Ecx).unwrap();
+        assert_eq!(finish(encoder), vec![0x99, 0xf7, 0xf1, 0xf7, 0xf9]);
+
+        let mut encoder = Encoder::new(1);
+        encoder.cdq().unwrap();
+        let before = encoder.bytes().to_vec();
+        assert!(encoder.div_reg(Register::Ecx).is_err());
+        assert_eq!(encoder.bytes(), before);
     }
 
     #[test]

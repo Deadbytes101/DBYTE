@@ -648,6 +648,15 @@ impl Interpreter {
                             }
                             checked_int(a.checked_div(b), *span)
                         }
+                        BinOp::Rem => {
+                            if b == 0 {
+                                return Err(RuntimeError {
+                                    msg: "remainder by zero".into(),
+                                    span: *span,
+                                });
+                            }
+                            checked_int(a.checked_rem(b), *span)
+                        }
                         BinOp::EqEq => Ok(Value::Bool(a == b)),
                         BinOp::NotEq => Ok(Value::Bool(a != b)),
                         BinOp::Lt => Ok(Value::Bool(a < b)),
@@ -670,6 +679,10 @@ impl Interpreter {
                         BinOp::Sub => Ok(Value::Float(a - b)),
                         BinOp::Mul => Ok(Value::Float(a * b)),
                         BinOp::Div => Ok(Value::Float(a / b)),
+                        BinOp::Rem => Err(RuntimeError {
+                            msg: "operator '%' requires integer operands".into(),
+                            span: *span,
+                        }),
                         BinOp::EqEq => Ok(Value::Bool(a == b)),
                         BinOp::NotEq => Ok(Value::Bool(a != b)),
                         BinOp::Lt => Ok(Value::Bool(a < b)),
@@ -691,6 +704,10 @@ impl Interpreter {
                         BinOp::Add => Ok(Value::Str(a + &b)),
                         BinOp::EqEq => Ok(Value::Bool(a == b)),
                         BinOp::NotEq => Ok(Value::Bool(a != b)),
+                        BinOp::Rem => Err(RuntimeError {
+                            msg: "operator '%' requires integer operands".into(),
+                            span: *span,
+                        }),
                         _ => Err(RuntimeError {
                             msg: "unsupported str operation".into(),
                             span: *span,
@@ -699,6 +716,10 @@ impl Interpreter {
                     (Value::Bool(a), Value::Bool(b)) => match op {
                         BinOp::EqEq => Ok(Value::Bool(a == b)),
                         BinOp::NotEq => Ok(Value::Bool(a != b)),
+                        BinOp::Rem => Err(RuntimeError {
+                            msg: "operator '%' requires integer operands".into(),
+                            span: *span,
+                        }),
                         _ => Err(RuntimeError {
                             msg: "unsupported bool operation".into(),
                             span: *span,
@@ -1675,5 +1696,31 @@ fn format_module_error(error: &ModuleError) -> String {
         ModuleError::LocalModuleNotFound { requested, .. } => {
             format!("local module not found: {}", requested)
         }
+    }
+}
+
+#[cfg(test)]
+mod remainder_tests {
+    use super::*;
+    use dbyte_lexer::Lexer;
+    use dbyte_parser::Parser;
+
+    fn parse(source: &str) -> dbyte_ast::Program {
+        Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap()
+    }
+
+    #[test]
+    fn signed_remainder_matches_truncation_and_zero_is_an_error() {
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse("print(-17 % 5)\n")).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "-2\n");
+
+        let error = Interpreter::new()
+            .run(&parse("let value: int = 1 % 0\n"))
+            .unwrap_err();
+        assert_eq!(error.msg, "remainder by zero");
     }
 }

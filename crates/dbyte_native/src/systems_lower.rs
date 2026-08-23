@@ -841,6 +841,28 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
+        SystemsInst::Div(ty) | SystemsInst::Rem(ty) => {
+            consume(depth, 2, function, "division")?;
+            pop(encoder, function, Register::Ecx)?;
+            pop(encoder, function, Register::Eax)?;
+            if ty.is_signed_integer() {
+                emit(encoder, function, |encoder| encoder.cdq())?;
+                emit(encoder, function, |encoder| encoder.idiv_reg(Register::Ecx))?;
+            } else {
+                emit(encoder, function, |encoder| {
+                    encoder.xor_reg_reg(Register::Edx, Register::Edx)
+                })?;
+                emit(encoder, function, |encoder| encoder.div_reg(Register::Ecx))?;
+            }
+            if matches!(instruction, SystemsInst::Rem(_)) {
+                emit(encoder, function, |encoder| {
+                    encoder.mov_reg_reg(Register::Eax, Register::Edx)
+                })?;
+            }
+            normalize(encoder, function, Register::Eax, ty)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
         SystemsInst::Neg(ty) | SystemsInst::BitNot(ty) => {
             consume(depth, 1, function, "unary integer operation")?;
             pop(encoder, function, Register::Eax)?;

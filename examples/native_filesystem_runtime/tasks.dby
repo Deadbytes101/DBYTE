@@ -1,0 +1,468 @@
+import "scheduler.dby" as scheduler
+import "serial.dby" as serial
+import "proof.dby" as proof
+import "pic.dby" as pic
+import "ata.dby" as ata
+import "dbfs.dby" as dbfs
+import "filesystem_runtime.dby" as fs
+import "file_handles.dby" as handles
+import "block_cache.dby" as cache
+import "dbfs_layout.dby" as layout
+
+static mut CONFIG: array[u8, 48]
+static mut COUNTER: array[u8, 4]
+static mut LOG_RECORD: array[u8, 13]
+static mut READBACK: array[u8, 4096]
+static mut HANDLE_SET: array[u32, 16]
+static mut CACHE_BUFFER: array[u16, 256]
+static mut FILESYSTEM_DONE: usize
+static mut PROGRESS_DONE: usize
+static mut PROGRESS: usize
+static mut PROGRESS_WHILE_BLOCKED: usize
+static mut BOOT_PHASE: usize
+static mut PHASE: usize
+static mut FAILURE: i32
+static mut LEAKED_HANDLE: u32
+static mut LEAKED_OWNER: usize
+static mut CLEANUP_PROVEN: usize
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(status: i32) -> int:
+    FAILURE = status
+    proof.value("FSRT_FAILURE", 12 as usize, status as usize)
+    proof.value("FSRT_DBFS", 9 as usize, dbfs.dbfs_last_error() as usize)
+    proof.value("FSRT_API", 8 as usize, fs.runtime_last_error() as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn copy_text(destination: ptr[u8], offset: usize, text: str, length: usize) -> usize:
+    let index: usize = 0 as usize
+    while index < length:
+        layout.put8(destination, offset + index, text[index] as u8)
+        index = index + (1 as usize)
+    return offset + length
+
+fn fill_config() -> int:
+    let destination: ptr[u8] = (&CONFIG[0]) as usize as ptr[u8]
+    let offset: usize = copy_text(destination, 0 as usize, "DBYTEOS=1\n", 10 as usize)
+    offset = copy_text(destination, offset, "SCHEDULER=ROUND_ROBIN\n", 22 as usize)
+    offset = copy_text(destination, offset, "IO=IRQ\n", 7 as usize)
+    offset = copy_text(destination, offset, "VALUE=", 6 as usize)
+    let value: usize = (40 as usize) + (2 as usize)
+    CONFIG[offset] = (48 as u8) + ((value / (10 as usize)) as u8)
+    CONFIG[offset + (1 as usize)] = (48 as u8) + ((value % (10 as usize)) as u8)
+    CONFIG[offset + (2 as usize)] = 10 as u8
+    return 0
+
+fn fill_counter(value: u32) -> int:
+    COUNTER[0] = (value & (0xff as u32)) as u8
+    COUNTER[1] = ((value >> (8 as u32)) & (0xff as u32)) as u8
+    COUNTER[2] = ((value >> (16 as u32)) & (0xff as u32)) as u8
+    COUNTER[3] = ((value >> (24 as u32)) & (0xff as u32)) as u8
+    return 0
+
+fn read_counter_value() -> u32:
+    return (READBACK[0] as u32) | ((READBACK[1] as u32) << (8 as u32)) | ((READBACK[2] as u32) << (16 as u32)) | ((READBACK[3] as u32) << (24 as u32))
+
+fn fill_log_record(value: u32) -> int:
+    let destination: ptr[u8] = (&LOG_RECORD[0]) as usize as ptr[u8]
+    copy_text(destination, 0 as usize, "BOOT ", 5 as usize)
+    LOG_RECORD[5] = (48 as u8) + (((value / (1000 as u32)) % (10 as u32)) as u8)
+    LOG_RECORD[6] = (48 as u8) + (((value / (100 as u32)) % (10 as u32)) as u8)
+    LOG_RECORD[7] = (48 as u8) + (((value / (10 as u32)) % (10 as u32)) as u8)
+    LOG_RECORD[8] = (48 as u8) + ((value % (10 as u32)) as u8)
+    copy_text(destination, 9 as usize, " OK\n", 4 as usize)
+    return 0
+
+fn bytes_equal(left: ptr[u8], right: ptr[u8], length: usize) -> bool:
+    let index: usize = 0 as usize
+    while index < length:
+        if layout.get8(left, index) != layout.get8(right, index):
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn native_ops_check() -> bool:
+    let signed_value: i32 = native.volatile_load32((&FAILURE) as usize as ptr[u32]) as i32
+    signed_value = signed_value - 17
+    if (signed_value / 5) != (-3):
+        return false
+    if (signed_value % 5) != (-2):
+        return false
+    let unsigned_value: u32 = (0xfffffff0 as u32)
+    if (unsigned_value / (16 as u32)) != (0x0fffffff as u32):
+        return false
+    if (unsigned_value % (16 as u32)) != (0 as u32):
+        return false
+    let address_value: usize = 12345 as usize
+    if (address_value / (16 as usize)) != (771 as usize):
+        return false
+    if (address_value % (16 as usize)) != (9 as usize):
+        return false
+    return true
+
+fn write_whole(path_value: str, path_length: usize, source: ptr[u8], length: usize, flags: u32) -> int:
+    let handle: u32 = 0 as u32
+    let written: usize = 0 as usize
+    let status: int = fs.fs_open(path_value, path_length, flags, &handle)
+    if status != 0:
+        return status
+    let write_status: int = fs.fs_handle_write(handle, source, length, &written)
+    if write_status != 0:
+        fs.fs_close(handle)
+        return write_status
+    if written != length:
+        fs.fs_close(handle)
+        return 90
+    return fs.fs_close(handle)
+
+fn read_whole(path_value: str, path_length: usize, destination: ptr[u8], length: usize, output: ptr[usize]) -> int:
+    let handle: u32 = 0 as u32
+    let status: int = fs.fs_open(path_value, path_length, fs.READ, &handle)
+    if status != 0:
+        return status
+    let read_status: int = fs.fs_handle_read(handle, destination, length, output)
+    if read_status != 0:
+        fs.fs_close(handle)
+        return read_status
+    return fs.fs_close(handle)
+
+fn append_log(value: u32) -> int:
+    fill_log_record(value)
+    return write_whole("/LOG/BOOT.LOG", 13 as usize, (&LOG_RECORD[0]) as usize as ptr[u8], 13 as usize, fs.WRITE | fs.CREATE | fs.APPEND)
+
+fn write_counter(value: u32) -> int:
+    fill_counter(value)
+    return write_whole("/SYSTEM/BOOT.CNT", 16 as usize, (&COUNTER[0]) as usize as ptr[u8], 4 as usize, fs.WRITE | fs.CREATE | fs.TRUNCATE)
+
+fn read_counter() -> u32:
+    let count: usize = 0 as usize
+    if read_whole("/SYSTEM/BOOT.CNT", 16 as usize, (&READBACK[0]) as usize as ptr[u8], 4 as usize, &count) != 0:
+        return 0xffffffff as u32
+    if count != (4 as usize):
+        return 0xffffffff as u32
+    return read_counter_value()
+
+fn handle_contract_proof() -> int:
+    let first: u32 = 0 as u32
+    if fs.fs_open("/SYSTEM/CONFIG.TXT", 18 as usize, fs.READ, &first) != 0:
+        return 101
+    if fs.fs_close(first) != 0:
+        return 102
+    let second: u32 = 0 as u32
+    if fs.fs_open("/SYSTEM/CONFIG.TXT", 18 as usize, fs.READ, &second) != 0:
+        return 103
+    if first == second:
+        return 104
+    let count: usize = 0 as usize
+    if fs.fs_handle_read(first, (&READBACK[0]) as usize as ptr[u8], 1 as usize, &count) != 22:
+        return 105
+    if fs.fs_close(second) != 0:
+        return 106
+    let index: usize = 0 as usize
+    while index < (16 as usize):
+        if fs.fs_open("/SYSTEM/CONFIG.TXT", 18 as usize, fs.READ, &HANDLE_SET[index]) != 0:
+            return 107
+        index = index + (1 as usize)
+    let extra: u32 = 0 as u32
+    if fs.fs_open("/SYSTEM/CONFIG.TXT", 18 as usize, fs.READ, &extra) != 20:
+        return 108
+    index = 0 as usize
+    while index < (16 as usize):
+        if fs.fs_close(HANDLE_SET[index]) != 0:
+            return 109
+        index = index + (1 as usize)
+    return 0
+
+fn directory_contract_proof() -> int:
+    if dbfs.fs_mkdir("/TEMP", 5 as usize) != 0:
+        return 111
+    if dbfs.fs_rmdir("/TEMP", 5 as usize) != 0:
+        return 112
+    if dbfs.fs_mkdir("/TEMP", 5 as usize) != 0:
+        return 113
+    let temp_handle: u32 = 0 as u32
+    if fs.fs_open("/TEMP/A.TXT", 11 as usize, fs.WRITE | fs.CREATE, &temp_handle) != 0:
+        return 114
+    if fs.fs_close(temp_handle) != 0:
+        return 115
+    if dbfs.fs_rmdir("/TEMP", 5 as usize) != 19:
+        return 116
+    if dbfs.fs_unlink("/TEMP/A.TXT", 11 as usize) != 0:
+        return 117
+    if dbfs.fs_rmdir("/TEMP", 5 as usize) != 0:
+        return 118
+    return 0
+
+fn cache_contract_proof() -> int:
+    let destination: ptr[u8] = (&CACHE_BUFFER[0]) as usize as ptr[u8]
+    let root_lba: u32 = dbfs.data_start()
+    let log_lba: u32 = root_lba + (16 as u32)
+    let before: usize = cache.miss_count()
+    if cache.cache_read_sector(root_lba, destination) == false:
+        return 121
+    if cache.cache_read_sector(log_lba, destination) == false:
+        return 122
+    if cache.cache_read_sector(root_lba, destination) == false:
+        return 123
+    let ata_after_replace: usize = cache.ata_read_count()
+    if cache.cache_read_sector(root_lba, destination) == false:
+        return 126
+    if cache.ata_read_count() != ata_after_replace:
+        return 127
+    if cache.miss_count() < before + (2 as usize):
+        return 124
+    if cache.replacement_count() == (0 as usize):
+        return 125
+    return 0
+
+pub fn tasks_initialize() -> int:
+    FILESYSTEM_DONE = 0 as usize
+    PROGRESS_DONE = 0 as usize
+    PROGRESS = 0 as usize
+    PROGRESS_WHILE_BLOCKED = 0 as usize
+    BOOT_PHASE = 0 as usize
+    PHASE = 0 as usize
+    FAILURE = 0
+    LEAKED_HANDLE = 0 as u32
+    LEAKED_OWNER = 0 as usize
+    CLEANUP_PROVEN = 0 as usize
+    fill_config()
+    if dbfs.dbfs_initialize() != 0:
+        return 1
+    return fs.runtime_initialize()
+
+fn boot_one() -> int:
+    if native_ops_check() == false:
+        return fail(201)
+    line("NATIVE OPS ONLINE", 17 as usize)
+    if dbfs.dbfs_format() != 0:
+        return fail(202)
+    if dbfs.fs_mkdir("/SYSTEM", 7 as usize) != 0:
+        return fail(203)
+    if dbfs.fs_mkdir("/LOG", 4 as usize) != 0:
+        return fail(204)
+    if write_whole("/SYSTEM/CONFIG.TXT", 18 as usize, (&CONFIG[0]) as usize as ptr[u8], 48 as usize, fs.WRITE | fs.CREATE | fs.TRUNCATE) != 0:
+        return fail(205)
+    if write_counter(1 as u32) != 0:
+        return fail(206)
+    if append_log(1 as u32) != 0:
+        return fail(207)
+    if directory_contract_proof() != 0:
+        return fail(208)
+    if handle_contract_proof() != 0:
+        return fail(209)
+    if cache_contract_proof() != 0:
+        return fail(210)
+    line("PATH RESOLVER ONLINE", 20 as usize)
+    line("FILE HANDLES ONLINE", 19 as usize)
+    line("DIRECTORIES ONLINE", 18 as usize)
+    line("BLOCK CACHE ONLINE", 18 as usize)
+    line("KERNEL CONFIG ONLINE", 20 as usize)
+    line("KERNEL LOG ONLINE", 17 as usize)
+    line("BOOT STATE 1 OK", 15 as usize)
+    BOOT_PHASE = 1 as usize
+    return 0
+
+fn boot_two() -> int:
+    line("DBFS MOUNT ONLINE", 17 as usize)
+    let count: usize = 0 as usize
+    if read_whole("/SYSTEM/CONFIG.TXT", 18 as usize, (&READBACK[0]) as usize as ptr[u8], 48 as usize, &count) != 0:
+        return fail(221)
+    if count != (48 as usize):
+        return fail(222)
+    if bytes_equal((&READBACK[0]) as usize as ptr[u8], (&CONFIG[0]) as usize as ptr[u8], 48 as usize) == false:
+        return fail(223)
+    line("CONFIG READ OK", 14 as usize)
+    let handle: u32 = 0 as u32
+    if fs.fs_open("/SYSTEM/CONFIG.TXT", 18 as usize, fs.READ, &handle) != 0:
+        return fail(224)
+    let position: usize = 0 as usize
+    if fs.fs_seek(handle, fs.SEEK_START, 9, &position) != 0:
+        return fail(225)
+    if position != (9 as usize):
+        return fail(226)
+    if fs.fs_seek(handle, fs.SEEK_END, -3, &position) != 0:
+        return fail(227)
+    if position != (45 as usize):
+        return fail(228)
+    if fs.fs_close(handle) != 0:
+        return fail(229)
+    line("HANDLE SEEK OK", 14 as usize)
+    if cache_contract_proof() != 0:
+        return fail(230)
+    line("CACHE HIT OK", 12 as usize)
+    if write_counter(2 as u32) != 0:
+        return fail(234)
+    if append_log(2 as u32) != 0:
+        return fail(235)
+    line("LOG APPEND OK", 13 as usize)
+    line("BOOT STATE 2 OK", 15 as usize)
+    BOOT_PHASE = 2 as usize
+    return 0
+
+fn boot_three() -> int:
+    line("DBFS MOUNT ONLINE", 17 as usize)
+    let count: usize = 0 as usize
+    if read_whole("/SYSTEM/CONFIG.TXT", 18 as usize, (&READBACK[0]) as usize as ptr[u8], 48 as usize, &count) != 0:
+        return fail(241)
+    if count != (48 as usize):
+        return fail(242)
+    if bytes_equal((&READBACK[0]) as usize as ptr[u8], (&CONFIG[0]) as usize as ptr[u8], 48 as usize) == false:
+        return fail(243)
+    line("CONFIG PERSIST OK", 17 as usize)
+    let system_inode: u32 = 0 as u32
+    let log_inode: u32 = 0 as u32
+    if dbfs.fs_lookup("/SYSTEM", 7 as usize, &system_inode) != 0:
+        return fail(244)
+    if dbfs.fs_lookup("/LOG", 4 as usize, &log_inode) != 0:
+        return fail(245)
+    if system_inode == log_inode:
+        return fail(246)
+    line("DIRECTORY TREE OK", 17 as usize)
+    if handle_contract_proof() != 0:
+        return fail(247)
+    line("HANDLE GENERATION OK", 20 as usize)
+    if write_counter(3 as u32) != 0:
+        return fail(248)
+    if append_log(3 as u32) != 0:
+        return fail(249)
+    if read_whole("/LOG/BOOT.LOG", 13 as usize, (&READBACK[0]) as usize as ptr[u8], 39 as usize, &count) != 0:
+        return fail(250)
+    if count != (39 as usize):
+        return fail(251)
+    let record: u32 = 1 as u32
+    while record <= (3 as u32):
+        fill_log_record(record)
+        if bytes_equal(((&READBACK[0]) as usize + (((record - (1 as u32)) as usize) * (13 as usize))) as ptr[u8], (&LOG_RECORD[0]) as usize as ptr[u8], 13 as usize) == false:
+            return fail(252)
+        record = record + (1 as u32)
+    line("BOOT LOG HISTORY OK", 19 as usize)
+    line("BOOT STATE 3 OK", 15 as usize)
+    BOOT_PHASE = 3 as usize
+    return 0
+
+pub fn filesystem_worker() -> int:
+    let status: int = dbfs.dbfs_mount()
+    if status == 3:
+        boot_one()
+    else:
+        if status != 0:
+            return fail(301)
+        let current: u32 = read_counter()
+        if current == (1 as u32):
+            boot_two()
+        else:
+            if current == (2 as u32):
+                boot_three()
+            else:
+                return fail(302)
+    LEAKED_OWNER = scheduler.current_task_id()
+    if fs.fs_open("/SYSTEM/CONFIG.TXT", 18 as usize, fs.READ, &LEAKED_HANDLE) != 0:
+        return fail(303)
+    FILESYSTEM_DONE = 1 as usize
+    return 0
+
+pub fn progress_worker() -> int:
+    while FILESYSTEM_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+        if ata.ata_reader_block_count() != ata.ata_reader_wake_count():
+            PROGRESS_WHILE_BLOCKED = PROGRESS_WHILE_BLOCKED + (1 as usize)
+    PROGRESS_DONE = 1 as usize
+    return 0
+
+pub fn cleanup_probe() -> int:
+    let inode_number: u32 = 0 as u32
+    let offset: usize = 0 as usize
+    let flags: u32 = 0 as u32
+    if handles.validate_handle(LEAKED_HANDLE, LEAKED_OWNER, &inode_number, &offset, &flags) != 22:
+        return fail(311)
+    CLEANUP_PROVEN = 1 as usize
+    return 0
+
+fn emit() -> int:
+    proof.value("BOOT_PHASE", 10 as usize, BOOT_PHASE)
+    proof.value("CACHE_HITS", 10 as usize, cache.hit_count())
+    proof.value("CACHE_MISSES", 12 as usize, cache.miss_count())
+    proof.value("CACHE_REPLACE", 13 as usize, cache.replacement_count())
+    proof.value("CACHE_ATA_READ", 14 as usize, cache.ata_read_count())
+    proof.value("CACHE_ATA_WRITE", 15 as usize, cache.ata_write_count())
+    proof.value("FS_OPENS", 8 as usize, fs.runtime_open_count())
+    proof.value("FS_CLOSES", 9 as usize, fs.runtime_close_count())
+    proof.value("FS_READ_OPS", 11 as usize, fs.runtime_read_count())
+    proof.value("FS_WRITE_OPS", 12 as usize, fs.runtime_write_count())
+    proof.value("FS_SEEKS", 8 as usize, fs.runtime_seek_count())
+    proof.value("HANDLE_CLEANUP", 14 as usize, handles.handle_cleanup_count())
+    proof.value("IRQ14", 5 as usize, ata.ata_irq_count())
+    proof.value("IRQ14_ACCEPT", 12 as usize, ata.ata_accepted_count())
+    proof.value("IRQ14_SPURIOUS", 14 as usize, ata.ata_spurious_count())
+    proof.value("IRQ14_SLAVE_EOI", 15 as usize, ata.ata_slave_eoi_count())
+    proof.value("IRQ14_MASTER_EOI", 16 as usize, ata.ata_master_eoi_count())
+    proof.value("ATA_POSTS", 9 as usize, ata.ata_completion_post_count())
+    proof.value("READER_BLOCK", 12 as usize, ata.ata_reader_block_count())
+    proof.value("READER_WAKE", 11 as usize, ata.ata_reader_wake_count())
+    proof.value("PIC_MASTER", 10 as usize, pic.master_mask() as usize)
+    proof.value("PIC_SLAVE", 9 as usize, pic.slave_mask() as usize)
+    proof.value("PROGRESS", 8 as usize, PROGRESS)
+    proof.value("PROGRESS_BLOCKED", 16 as usize, PROGRESS_WHILE_BLOCKED)
+    proof.value("CLEANUP_PROVEN", 14 as usize, CLEANUP_PROVEN)
+    scheduler.emit_state()
+    return 0
+
+fn validate() -> int:
+    if FAILURE != 0:
+        return 1
+    if CLEANUP_PROVEN == (0 as usize):
+        return 2
+    if ata.ata_irq_count() != ata.ata_accepted_count():
+        return 3
+    if ata.ata_slave_eoi_count() != ata.ata_irq_count():
+        return 4
+    if ata.ata_master_eoi_count() != ata.ata_irq_count():
+        return 5
+    if scheduler.eoi_count() != (scheduler.tick_count() as usize):
+        return 6
+    if PROGRESS == (0 as usize):
+        return 7
+    if PROGRESS_WHILE_BLOCKED == (0 as usize):
+        return 8
+    if cache.hit_count() == (0 as usize):
+        return 9
+    if cache.miss_count() == (0 as usize):
+        return 10
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        if scheduler.reap_exited() != 0:
+            return fail(401)
+        if PHASE == (0 as usize):
+            if FILESYSTEM_DONE != (0 as usize):
+                if PROGRESS_DONE != (0 as usize):
+                    if scheduler.live_count() == (1 as usize):
+                        if scheduler.spawn(task_address(cleanup_probe)) == (0 as usize):
+                            return fail(402)
+                        PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.live_count() == (1 as usize):
+                    if CLEANUP_PROVEN != (0 as usize):
+                        let status: int = validate()
+                        if status != 0:
+                            emit()
+                            return fail(403)
+                        emit()
+                        line("FILESYSTEM RUNTIME CHECK OK", 27 as usize)
+                        native.cpu_cli()
+                        while true:
+                            native.cpu_hlt()
+    return 0

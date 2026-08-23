@@ -1,0 +1,114 @@
+pub struct PathCursor:
+    path: str
+    length: usize
+    index: usize
+    depth: usize
+    component_offset: usize
+    component_length: usize
+    done: u32
+
+const OK: int = 0
+const PATH_INVALID: int = 14
+const PATH_TOO_DEEP: int = 15
+const COMPONENT_TOO_LONG: int = 16
+const MAX_PATH_BYTES: usize = 255 as usize
+const MAX_COMPONENT_BYTES: usize = 31 as usize
+const MAX_PATH_DEPTH: usize = 8 as usize
+
+fn valid_component(path: str, offset: usize, length: usize) -> int:
+    if length == (0 as usize):
+        return PATH_INVALID
+    if length > MAX_COMPONENT_BYTES:
+        return COMPONENT_TOO_LONG
+    if length == (1 as usize):
+        if (path[offset] as u8) == (46 as u8):
+            return PATH_INVALID
+    if length == (2 as usize):
+        if (path[offset] as u8) == (46 as u8):
+            if (path[offset + (1 as usize)] as u8) == (46 as u8):
+                return PATH_INVALID
+    let index: usize = 0 as usize
+    while index < length:
+        let value: u8 = path[offset + index] as u8
+        if value == (0 as u8):
+            return PATH_INVALID
+        if value == (47 as u8):
+            return PATH_INVALID
+        if value > (127 as u8):
+            return PATH_INVALID
+        index = index + (1 as usize)
+    return OK
+
+pub fn path_cursor_initialize(cursor: ptr[PathCursor], path_value: str, path_length: usize) -> int:
+    if cursor as usize == (0 as usize):
+        return PATH_INVALID
+    if path_length == (0 as usize):
+        return PATH_INVALID
+    if path_length > MAX_PATH_BYTES:
+        return PATH_INVALID
+    if (path_value[0] as u8) != (47 as u8):
+        return PATH_INVALID
+    (*cursor).path = path_value
+    (*cursor).length = path_length
+    (*cursor).index = 1 as usize
+    (*cursor).depth = 0 as usize
+    (*cursor).component_offset = 0 as usize
+    (*cursor).component_length = 0 as usize
+    (*cursor).done = 0 as u32
+    if path_length == (1 as usize):
+        (*cursor).done = 1 as u32
+    else:
+        if (path_value[path_length - (1 as usize)] as u8) == (47 as u8):
+            return PATH_INVALID
+    return OK
+
+pub fn path_next(cursor: ptr[PathCursor]) -> int:
+    if cursor as usize == (0 as usize):
+        return PATH_INVALID
+    if (*cursor).done != (0 as u32):
+        return PATH_INVALID
+    if (*cursor).index >= (*cursor).length:
+        return PATH_INVALID
+    let start: usize = (*cursor).index
+    let index: usize = start
+    let scanning: u32 = 1 as u32
+    while scanning != (0 as u32):
+        if index >= (*cursor).length:
+            scanning = 0 as u32
+        else:
+            if ((*cursor).path[index] as u8) == (47 as u8):
+                scanning = 0 as u32
+            else:
+                index = index + (1 as usize)
+    let length: usize = index - start
+    let status: int = valid_component((*cursor).path, start, length)
+    if status != OK:
+        return status
+    let depth: usize = (*cursor).depth + (1 as usize)
+    if depth > MAX_PATH_DEPTH:
+        return PATH_TOO_DEEP
+    (*cursor).depth = depth
+    (*cursor).component_offset = start
+    (*cursor).component_length = length
+    if index == (*cursor).length:
+        (*cursor).index = index
+        (*cursor).done = 1 as u32
+    else:
+        if (index + (1 as usize)) >= (*cursor).length:
+            return PATH_INVALID
+        if ((*cursor).path[index + (1 as usize)] as u8) == (47 as u8):
+            return PATH_INVALID
+        (*cursor).index = index + (1 as usize)
+    return OK
+
+pub fn path_is_root(cursor: ptr[PathCursor]) -> bool:
+    return (*cursor).length == (1 as usize)
+
+pub fn path_done(cursor: ptr[PathCursor]) -> bool:
+    return (*cursor).done != (0 as u32)
+
+pub fn component_offset(cursor: ptr[PathCursor]) -> usize:
+    return (*cursor).component_offset
+
+pub fn component_length(cursor: ptr[PathCursor]) -> usize:
+    return (*cursor).component_length

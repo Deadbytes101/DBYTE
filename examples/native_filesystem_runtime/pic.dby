@@ -1,0 +1,79 @@
+import "arch_x86.dby" as arch
+
+const MASTER_COMMAND: u16 = 0x20 as u16
+const MASTER_DATA: u16 = 0x21 as u16
+const SLAVE_COMMAND: u16 = 0xa0 as u16
+const SLAVE_DATA: u16 = 0xa1 as u16
+
+fn wait() -> int:
+    arch.out8(0x80 as u16, 0 as u8)
+    return 0
+
+pub fn remap_masked() -> int:
+    arch.out8(MASTER_COMMAND, 0x11 as u8)
+    wait()
+    arch.out8(SLAVE_COMMAND, 0x11 as u8)
+    wait()
+    arch.out8(MASTER_DATA, 0x20 as u8)
+    wait()
+    arch.out8(SLAVE_DATA, 0x28 as u8)
+    wait()
+    arch.out8(MASTER_DATA, 0x04 as u8)
+    wait()
+    arch.out8(SLAVE_DATA, 0x02 as u8)
+    wait()
+    arch.out8(MASTER_DATA, 0x01 as u8)
+    wait()
+    arch.out8(SLAVE_DATA, 0x01 as u8)
+    wait()
+    arch.out8(MASTER_DATA, 0xff as u8)
+    arch.out8(SLAVE_DATA, 0xff as u8)
+    if arch.in8(MASTER_DATA) == (0xff as u8):
+        if arch.in8(SLAVE_DATA) == (0xff as u8):
+            return 0
+    return 1
+
+pub fn unmask_irq0() -> int:
+    arch.out8(MASTER_DATA, 0xfe as u8)
+    if arch.in8(MASTER_DATA) == (0xfe as u8):
+        if arch.in8(SLAVE_DATA) == (0xff as u8):
+            return 0
+    return 1
+
+pub fn unmask_irq0_irq1() -> int:
+    let master: u8 = arch.in8(MASTER_DATA)
+    let slave: u8 = arch.in8(SLAVE_DATA)
+    let updated: u8 = master & (0xfc as u8)
+    arch.out8(MASTER_DATA, updated)
+    if arch.in8(MASTER_DATA) == updated:
+        if arch.in8(SLAVE_DATA) == slave:
+            return 0
+    return 1
+
+pub fn unmask_irq0_irq1_irq14() -> int:
+    arch.out8(MASTER_DATA, 0xf8 as u8)
+    arch.out8(SLAVE_DATA, 0xbf as u8)
+    if arch.in8(MASTER_DATA) == (0xf8 as u8):
+        if arch.in8(SLAVE_DATA) == (0xbf as u8):
+            return 0
+    return 1
+
+pub fn master_mask() -> u8:
+    return arch.in8(MASTER_DATA)
+
+pub fn slave_mask() -> u8:
+    return arch.in8(SLAVE_DATA)
+
+pub fn mask_all() -> int:
+    arch.out8(MASTER_DATA, 0xff as u8)
+    arch.out8(SLAVE_DATA, 0xff as u8)
+    return 0
+
+pub fn eoi_master() -> int:
+    arch.out8(MASTER_COMMAND, 0x20 as u8)
+    return 0
+
+pub fn eoi_slave_then_master() -> int:
+    arch.out8(SLAVE_COMMAND, 0x20 as u8)
+    arch.out8(MASTER_COMMAND, 0x20 as u8)
+    return 0

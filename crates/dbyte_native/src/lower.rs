@@ -394,6 +394,20 @@ fn lower_instruction(
             push_eax(encoder, span)?;
             *evaluation_depth += 1;
         }
+        IrInst::DivI32 | IrInst::RemI32 => {
+            consume(evaluation_depth, 2, function, "division")?;
+            pop(encoder, span, Register::Ecx)?;
+            pop(encoder, span, Register::Eax)?;
+            emit(encoder, span, |encoder| encoder.cdq())?;
+            emit(encoder, span, |encoder| encoder.idiv_reg(Register::Ecx))?;
+            if matches!(instruction, IrInst::RemI32) {
+                emit(encoder, span, |encoder| {
+                    encoder.mov_reg_reg(Register::Eax, Register::Edx)
+                })?;
+            }
+            push_eax(encoder, span)?;
+            *evaluation_depth += 1;
+        }
         IrInst::NegI32 => {
             consume(evaluation_depth, 1, function, "neg.i32")?;
             pop(encoder, span, Register::Eax)?;

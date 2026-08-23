@@ -536,6 +536,7 @@ impl FunctionCompiler {
                     (true, BinOp::Sub) => Op::SubI64,
                     (true, BinOp::Mul) => Op::MulI64,
                     (true, BinOp::Div) => Op::DivI64,
+                    (true, BinOp::Rem) => Op::RemI64,
                     (true, BinOp::Lt) => Op::LtI64,
                     (true, BinOp::LtEq) => Op::LeI64,
                     (true, BinOp::Gt) => Op::GtI64,
@@ -544,6 +545,7 @@ impl FunctionCompiler {
                     (_, BinOp::Sub) => Op::Sub,
                     (_, BinOp::Mul) => Op::Mul,
                     (_, BinOp::Div) => Op::Div,
+                    (_, BinOp::Rem) => Op::Rem,
                     (_, BinOp::EqEq) => Op::Eq,
                     (_, BinOp::NotEq) => Op::Ne,
                     (_, BinOp::Lt) => Op::Lt,
@@ -1002,8 +1004,10 @@ impl FunctionCompiler {
             Expr::Binary {
                 left, op, right, ..
             } => {
-                matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div)
-                    && self.can_compile_i64_stack_expr(left)
+                matches!(
+                    op,
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem
+                ) && self.can_compile_i64_stack_expr(left)
                     && self.can_compile_i64_stack_expr(right)
             }
             Expr::Call { name, args, .. } => self.can_compile_i64_stack_call(name, args),
@@ -1052,6 +1056,7 @@ impl FunctionCompiler {
                     BinOp::Sub => Op::SubI64Stack,
                     BinOp::Mul => Op::MulI64Stack,
                     BinOp::Div => Op::DivI64Stack,
+                    BinOp::Rem => Op::RemI64Stack,
                     _ => {
                         return Err(CompileError {
                             msg: "unsupported i64 stack expression".into(),
@@ -1253,7 +1258,9 @@ impl FunctionCompiler {
                 let right = self.expr_type(right);
                 if left == ExprType::Int && right == ExprType::Int {
                     match op {
-                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => ExprType::Int,
+                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
+                            ExprType::Int
+                        }
                         BinOp::EqEq
                         | BinOp::NotEq
                         | BinOp::Lt

@@ -1,0 +1,116 @@
+import "dbfs_layout.dby" as layout
+
+pub fn dir_entry_offset(index: usize) -> usize:
+    return (index & (7 as usize)) * (64 as usize)
+
+pub fn dir_entry_sector(index: usize) -> usize:
+    return index >> (3 as usize)
+
+pub fn dir_is_free(buffer: ptr[u8], offset: usize) -> bool:
+    return layout.get32(buffer, offset) == (0 as u32)
+
+pub fn dir_inode_number(buffer: ptr[u8], offset: usize) -> u32:
+    return layout.get32(buffer, offset)
+
+pub fn dir_entry_type(buffer: ptr[u8], offset: usize) -> u32:
+    return layout.get32(buffer, offset + (4 as usize))
+
+pub fn dir_name_length(buffer: ptr[u8], offset: usize) -> usize:
+    return layout.get32(buffer, offset + (8 as usize)) as usize
+
+pub fn dir_valid_name(name: str, length: usize) -> bool:
+    if length == (0 as usize):
+        return false
+    if length > (31 as usize):
+        return false
+    let index: usize = 0 as usize
+    while index < length:
+        let value: u8 = name[index] as u8
+        if value == (0 as u8):
+            return false
+        if value == (47 as u8):
+            return false
+        if value > (127 as u8):
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn dir_name_equals(buffer: ptr[u8], offset: usize, name: str, length: usize) -> bool:
+    if dir_name_length(buffer, offset) != length:
+        return false
+    let index: usize = 0 as usize
+    while index < length:
+        if layout.get8(buffer, offset + (12 as usize) + index) != (name[index] as u8):
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn dir_name_equals_at(buffer: ptr[u8], offset: usize, path: str, path_offset: usize, length: usize) -> bool:
+    if dir_name_length(buffer, offset) != length:
+        return false
+    let index: usize = 0 as usize
+    while index < length:
+        if layout.get8(buffer, offset + (12 as usize) + index) != (path[path_offset + index] as u8):
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn dir_encode(buffer: ptr[u8], offset: usize, inode_value: u32, kind: u32, name: str, length: usize) -> int:
+    layout.zero(((buffer as usize) + offset) as ptr[u8], 64 as usize)
+    layout.put32(buffer, offset, inode_value)
+    layout.put32(buffer, offset + (4 as usize), kind)
+    layout.put32(buffer, offset + (8 as usize), length as u32)
+    let index: usize = 0 as usize
+    while index < length:
+        layout.put8(buffer, offset + (12 as usize) + index, name[index] as u8)
+        index = index + (1 as usize)
+    return 0
+
+pub fn dir_encode_at(buffer: ptr[u8], offset: usize, inode_value: u32, kind: u32, path: str, path_offset: usize, length: usize) -> int:
+    layout.zero(((buffer as usize) + offset) as ptr[u8], 64 as usize)
+    layout.put32(buffer, offset, inode_value)
+    layout.put32(buffer, offset + (4 as usize), kind)
+    layout.put32(buffer, offset + (8 as usize), length as u32)
+    let index: usize = 0 as usize
+    while index < length:
+        layout.put8(buffer, offset + (12 as usize) + index, path[path_offset + index] as u8)
+        index = index + (1 as usize)
+    return 0
+
+pub fn dir_clear(buffer: ptr[u8], offset: usize) -> int:
+    layout.zero(((buffer as usize) + offset) as ptr[u8], 64 as usize)
+    return 0
+
+pub fn dir_validate(buffer: ptr[u8], offset: usize) -> bool:
+    if dir_is_free(buffer, offset):
+        let index: usize = 0 as usize
+        while index < (64 as usize):
+            if layout.get8(buffer, offset + index) != (0 as u8):
+                return false
+            index = index + (1 as usize)
+        return true
+    let length: usize = dir_name_length(buffer, offset)
+    if length == (0 as usize):
+        return false
+    if length > (31 as usize):
+        return false
+    let index: usize = 0 as usize
+    while index < (32 as usize):
+        let value: u8 = layout.get8(buffer, offset + (12 as usize) + index)
+        if index < length:
+            if value == (0 as u8):
+                return false
+            if value == (47 as u8):
+                return false
+            if value > (127 as u8):
+                return false
+        else:
+            if value != (0 as u8):
+                return false
+        index = index + (1 as usize)
+    let reserved: usize = 44 as usize
+    while reserved < (64 as usize):
+        if layout.get8(buffer, offset + reserved) != (0 as u8):
+            return false
+        reserved = reserved + (1 as usize)
+    return true

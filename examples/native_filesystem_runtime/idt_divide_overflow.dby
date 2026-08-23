@@ -1,0 +1,24 @@
+import "arch_x86.dby" as arch
+import "divide_fault.dby" as fault
+
+packed struct OverflowIdtEntry:
+    offset_low: u16
+    selector: u16
+    zero: u8
+    flags: u8
+    offset_high: u16
+
+static mut IDT_OVERFLOW: array[OverflowIdtEntry, 256]
+static mut IDTR_OVERFLOW: arch.DescriptorTablePointer
+
+pub fn install_divide_overflow() -> int:
+    let address: usize = interrupt_address(0, fault.divide_overflow)
+    IDT_OVERFLOW[0].offset_low = (address & (0xffff as usize)) as u16
+    IDT_OVERFLOW[0].selector = 0x08 as u16
+    IDT_OVERFLOW[0].zero = 0 as u8
+    IDT_OVERFLOW[0].flags = 0x8e as u8
+    IDT_OVERFLOW[0].offset_high = (address >> (16 as usize)) as u16
+    IDTR_OVERFLOW.limit = 2047 as u16
+    IDTR_OVERFLOW.base = (&IDT_OVERFLOW) as usize as u32
+    native.cpu_lidt((&IDTR_OVERFLOW) as usize)
+    return 0

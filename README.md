@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.9.0**
+- Snapshot version: **v11.10.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -160,6 +160,15 @@ the same disk and reads `PERSIST.TXT` back without formatting or host repair.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_filesystem_core.ps1
+```
+
+The `v11.10.0` native filesystem-runtime proof keeps DBFS1 byte-compatible and
+adds hierarchical paths, generation-safe task-owned handles, a write-through
+sector cache, native integer division/remainder, typed pointer-field access,
+and persistent kernel configuration/log state across three boots:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_filesystem_runtime.ps1
 ```
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,

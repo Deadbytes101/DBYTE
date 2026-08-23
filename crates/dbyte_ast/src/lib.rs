@@ -77,6 +77,7 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    Rem,
     EqEq,
     NotEq,
     Lt,
@@ -97,6 +98,7 @@ impl std::fmt::Display for BinOp {
             BinOp::Sub => "-",
             BinOp::Mul => "*",
             BinOp::Div => "/",
+            BinOp::Rem => "%",
             BinOp::EqEq => "==",
             BinOp::NotEq => "!=",
             BinOp::Lt => "<",
@@ -356,5 +358,6 @@ mod tests {
         assert_eq!(BinOp::BitXor.to_string(), "^");
         assert_eq!(BinOp::Shl.to_string(), "<<");
         assert_eq!(BinOp::Shr.to_string(), ">>");
+        assert_eq!(BinOp::Rem.to_string(), "%");
     }
 }

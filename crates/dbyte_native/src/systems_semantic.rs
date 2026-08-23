@@ -1298,12 +1298,46 @@ fn evaluate_constant_binary(
                 bits: u32::from(result),
             })
         }
-        BinOp::Div => Err(module_diagnostic(
-            module,
-            DiagnosticCategory::UnsupportedFeature,
-            "integer division is unsupported in the native systems foundation",
-            span,
-        )),
+        BinOp::Div | BinOp::Rem if ty.is_integer() => {
+            if right.bits == 0 {
+                return Err(module_diagnostic(
+                    module,
+                    DiagnosticCategory::InvalidType,
+                    if matches!(operator, BinOp::Div) {
+                        "division by zero in compile-time native expression"
+                    } else {
+                        "remainder by zero in compile-time native expression"
+                    },
+                    span,
+                ));
+            }
+            let raw = if ty.is_signed_integer() {
+                let dividend = signed_integer_value(left.bits, &ty);
+                let divisor = signed_integer_value(right.bits, &ty);
+                let minimum = -(1_i64 << (u32::from(ty.bit_width().expect("integer width")) - 1));
+                if dividend == minimum && divisor == -1 {
+                    return Err(module_diagnostic(
+                        module,
+                        DiagnosticCategory::InvalidType,
+                        "signed division overflow in compile-time native expression",
+                        span,
+                    ));
+                }
+                if matches!(operator, BinOp::Div) {
+                    (dividend / divisor) as u32
+                } else {
+                    (dividend % divisor) as u32
+                }
+            } else if matches!(operator, BinOp::Div) {
+                left.bits / right.bits
+            } else {
+                left.bits % right.bits
+            };
+            Ok(ConstantValue {
+                bits: normalize_integer_bits(raw, &ty),
+                ty,
+            })
+        }
         _ => Err(module_diagnostic(
             module,
             DiagnosticCategory::InvalidType,
@@ -2470,14 +2504,13 @@ impl<'a> FunctionAnalyzer<'a> {
         expected: Option<&SystemType>,
         span: Span,
     ) -> NativeResult<ExprResult> {
-        if matches!(operator, BinOp::Div) {
-            return Err(self.unsupported("integer division", span));
-        }
         let operand_expected = if matches!(
             operator,
             BinOp::Add
                 | BinOp::Sub
                 | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
                 | BinOp::BitAnd
                 | BinOp::BitOr
                 | BinOp::BitXor
@@ -2512,6 +2545,8 @@ impl<'a> FunctionAnalyzer<'a> {
             BinOp::Add
             | BinOp::Sub
             | BinOp::Mul
+            | BinOp::Div
+            | BinOp::Rem
             | BinOp::BitAnd
             | BinOp::BitOr
             | BinOp::BitXor
@@ -2528,6 +2563,8 @@ impl<'a> FunctionAnalyzer<'a> {
                     BinOp::Add => SystemsInst::Add(left_ty.clone()),
                     BinOp::Sub => SystemsInst::Sub(left_ty.clone()),
                     BinOp::Mul => SystemsInst::Mul(left_ty.clone()),
+                    BinOp::Div => SystemsInst::Div(left_ty.clone()),
+                    BinOp::Rem => SystemsInst::Rem(left_ty.clone()),
                     BinOp::BitAnd => SystemsInst::BitAnd(left_ty.clone()),
                     BinOp::BitOr => SystemsInst::BitOr(left_ty.clone()),
                     BinOp::BitXor => SystemsInst::BitXor(left_ty.clone()),
@@ -2576,7 +2613,6 @@ impl<'a> FunctionAnalyzer<'a> {
                 });
                 Ok(ExprResult::Value(SystemType::Bool))
             }
-            BinOp::Div => unreachable!(),
         }
     }
 
@@ -2590,6 +2626,13 @@ impl<'a> FunctionAnalyzer<'a> {
         match operator {
             UnaryOp::AddressOf => {
                 let lvalue = self.compile_lvalue(expression)?;
+                if !lvalue.mutable {
+                    return Err(self.error(
+                        DiagnosticCategory::InvalidPointerOperation,
+                        "cannot form a mutable native pointer to immutable storage",
+                        span,
+                    ));
+                }
                 Ok(ExprResult::Value(SystemType::Pointer(Box::new(lvalue.ty))))
             }
             UnaryOp::Deref => {
@@ -4036,6 +4079,40 @@ mod tests {
         let second = analyze_systems_project(&graph).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.dump(), second.dump());
+    }
+
+    #[test]
+    fn division_remainder_and_pointer_aggregate_fields_are_typed() {
+        let graph = one_module(
+            "struct Record:\n    tag: u8\n    value: u32\n\n\
+             packed struct PackedRecord:\n    tag: u8\n    value: u32\n\n\
+             static mut ITEM: Record\n\
+             static mut PACKED_ITEM: PackedRecord\n\n\
+             fn update(record: ptr[Record], packed_record: ptr[PackedRecord], divisor: u32) -> u32:\n    (*record).value = (100 as u32) / divisor\n    (*packed_record).value = (*record).value % (7 as u32)\n    return (*packed_record).value\n\n\
+             fn kernel_main() -> int:\n    return update(&ITEM, &PACKED_ITEM, 4 as u32) as i32\n",
+        );
+        let project = analyze_systems_project(&graph).expect("systems operations analyze");
+        let dump = project.dump();
+        for required in [
+            "div.u32",
+            "rem.u32",
+            "address.field +4",
+            "address.field +1",
+            "store.u32",
+            "load.u32",
+        ] {
+            assert!(dump.contains(required), "missing {required} in IR:\n{dump}");
+        }
+    }
+
+    #[test]
+    fn immutable_storage_cannot_form_a_mutable_pointer() {
+        let graph = one_module(
+            "static ITEM: u32 = 1 as u32\n\nfn kernel_main() -> int:\n    let pointer: ptr[u32] = &ITEM\n    return 0\n",
+        );
+        let error = analyze_systems_project(&graph).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidPointerOperation);
+        assert!(error.message.contains("immutable storage"));
     }
 
     #[test]

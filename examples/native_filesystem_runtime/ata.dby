@@ -1,0 +1,486 @@
+import "arch_x86.dby" as arch
+import "pic.dby" as pic
+import "scheduler.dby" as scheduler
+
+const DATA_PORT: u16 = 0x1f0 as u16
+const ERROR_PORT: u16 = 0x1f1 as u16
+const FEATURES_PORT: u16 = 0x1f1 as u16
+const SECTOR_COUNT_PORT: u16 = 0x1f2 as u16
+const LBA0_PORT: u16 = 0x1f3 as u16
+const LBA1_PORT: u16 = 0x1f4 as u16
+const LBA2_PORT: u16 = 0x1f5 as u16
+const DRIVE_PORT: u16 = 0x1f6 as u16
+const STATUS_PORT: u16 = 0x1f7 as u16
+const COMMAND_PORT: u16 = 0x1f7 as u16
+const ALT_STATUS_PORT: u16 = 0x3f6 as u16
+const DEVICE_CONTROL_PORT: u16 = 0x3f6 as u16
+
+const STATUS_ERR: u8 = 0x01 as u8
+const STATUS_DRQ: u8 = 0x08 as u8
+const STATUS_DF: u8 = 0x20 as u8
+const STATUS_BSY: u8 = 0x80 as u8
+const COMMAND_READ: u8 = 0x20 as u8
+const COMMAND_WRITE: u8 = 0x30 as u8
+const COMMAND_IDENTIFY: u8 = 0xec as u8
+const DEVICE_MASTER: u8 = 0xa0 as u8
+const DEVICE_MASTER_LBA: u8 = 0xe0 as u8
+const CONTROL_NIEN: u8 = 0x02 as u8
+const ATA_POLL_LIMIT: usize = 1000000 as usize
+const SECTOR_WORDS: usize = 256 as usize
+const SECTOR_BYTES: usize = 512 as usize
+const MAX_LBA28: u32 = 0x0fffffff as u32
+const IF_BIT: u32 = 0x200 as u32
+
+const ATA_OK: u32 = 0 as u32
+const ATA_INVALID: u32 = 1 as u32
+const ATA_BUSY: u32 = 2 as u32
+const ATA_WRONG_CONTEXT: u32 = 3 as u32
+const ATA_TIMEOUT: u32 = 4 as u32
+const ATA_NO_DEVICE: u32 = 5 as u32
+const ATA_UNSUPPORTED: u32 = 6 as u32
+const ATA_DEVICE_ERR: u32 = 7 as u32
+const ATA_DEVICE_FAULT: u32 = 8 as u32
+const ATA_PROTOCOL: u32 = 9 as u32
+const ATA_CORRUPT: u32 = 10 as u32
+
+const STATE_IDLE: u32 = 0 as u32
+const STATE_READ_PENDING: u32 = 1 as u32
+const STATE_WRITE_PENDING: u32 = 2 as u32
+const STATE_COMPLETE: u32 = 3 as u32
+const STATE_ERROR: u32 = 4 as u32
+const REQUEST_COOKIE: u32 = 0xa7a14c3d as u32
+
+static mut IDENTIFY_WORDS: array[u16, 256]
+static mut COMPLETION: scheduler.Semaphore
+static mut INITIALIZED: usize
+static mut SECTOR_COUNT: u32
+static mut LAST_ERROR: u32
+static mut REQUEST_STATE: u32
+static mut REQUEST_LBA: u32
+static mut REQUEST_BUFFER: usize
+static mut REQUEST_GENERATION: u32
+static mut REQUEST_ERROR: u32
+static mut REQUEST_STATUS: u32
+static mut REQUEST_CHECKSUM: u32
+static mut IRQ14_ENTRIES: usize
+static mut IRQ14_ACCEPTED: usize
+static mut IRQ14_SPURIOUS: usize
+static mut IRQ14_SLAVE_EOI: usize
+static mut IRQ14_MASTER_EOI: usize
+static mut COMPLETION_POSTS: usize
+static mut READ_WORDS: usize
+static mut WRITE_WORDS: usize
+static mut READER_BLOCKS: usize
+static mut READER_WAKES: usize
+static mut EARLY_COMPLETIONS: usize
+static mut BLOCK_TICK: u32
+static mut WAKE_TICK: u32
+static mut RAW_ERROR: usize
+
+fn request_checksum() -> u32:
+    return REQUEST_COOKIE ^ REQUEST_STATE ^ REQUEST_LBA ^ (REQUEST_BUFFER as u32) ^ REQUEST_GENERATION ^ REQUEST_ERROR ^ REQUEST_STATUS
+
+fn seal_request() -> int:
+    REQUEST_CHECKSUM = request_checksum()
+    return 0
+
+fn valid_request() -> bool:
+    return REQUEST_CHECKSUM == request_checksum()
+
+fn fatal() -> int:
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 1
+
+fn delay_400ns() -> int:
+    arch.in8(ALT_STATUS_PORT)
+    arch.in8(ALT_STATUS_PORT)
+    arch.in8(ALT_STATUS_PORT)
+    arch.in8(ALT_STATUS_PORT)
+    return 0
+
+fn wait_not_busy() -> int:
+    let attempt: usize = 0 as usize
+    while attempt < ATA_POLL_LIMIT:
+        let status: u8 = arch.in8(ALT_STATUS_PORT)
+        if (status & STATUS_BSY) == (0 as u8):
+            if (status & STATUS_DF) != (0 as u8):
+                return ATA_DEVICE_FAULT as i32
+            if (status & STATUS_ERR) != (0 as u8):
+                RAW_ERROR = arch.in8(ERROR_PORT) as usize
+                return ATA_DEVICE_ERR as i32
+            return ATA_OK as i32
+        attempt = attempt + (1 as usize)
+    return ATA_TIMEOUT as i32
+
+fn wait_drq() -> int:
+    let attempt: usize = 0 as usize
+    while attempt < ATA_POLL_LIMIT:
+        let status: u8 = arch.in8(ALT_STATUS_PORT)
+        if (status & STATUS_BSY) == (0 as u8):
+            if (status & STATUS_DF) != (0 as u8):
+                return ATA_DEVICE_FAULT as i32
+            if (status & STATUS_ERR) != (0 as u8):
+                RAW_ERROR = arch.in8(ERROR_PORT) as usize
+                return ATA_DEVICE_ERR as i32
+            if (status & STATUS_DRQ) != (0 as u8):
+                return ATA_OK as i32
+        attempt = attempt + (1 as usize)
+    return ATA_TIMEOUT as i32
+
+fn valid_buffer(buffer: ptr[u8]) -> bool:
+    let address: usize = buffer as usize
+    if address == (0 as usize):
+        return false
+    if (address & (1 as usize)) != (0 as usize):
+        return false
+    return address <= (0xfffffe00 as usize)
+
+fn valid_lba(lba: u32) -> bool:
+    if lba > MAX_LBA28:
+        return false
+    return lba < SECTOR_COUNT
+
+fn program_lba(lba: u32, command: u8) -> int:
+    arch.out8(FEATURES_PORT, 0 as u8)
+    arch.out8(SECTOR_COUNT_PORT, 1 as u8)
+    arch.out8(LBA0_PORT, (lba & (0xff as u32)) as u8)
+    arch.out8(LBA1_PORT, ((lba >> (8 as u32)) & (0xff as u32)) as u8)
+    arch.out8(LBA2_PORT, ((lba >> (16 as u32)) & (0xff as u32)) as u8)
+    arch.out8(DRIVE_PORT, DEVICE_MASTER_LBA | ((lba >> (24 as u32)) as u8))
+    delay_400ns()
+    arch.out8(COMMAND_PORT, command)
+    return 0
+
+fn reset_request() -> int:
+    REQUEST_STATE = STATE_IDLE
+    REQUEST_LBA = 0 as u32
+    REQUEST_BUFFER = 0 as usize
+    REQUEST_ERROR = ATA_OK
+    REQUEST_STATUS = 0 as u32
+    seal_request()
+    return 0
+
+fn setup_failure(error: u32) -> bool:
+    LAST_ERROR = error
+    reset_request()
+    native.cpu_sti()
+    return false
+
+fn await_completion() -> bool:
+    READER_BLOCKS = READER_BLOCKS + (1 as usize)
+    BLOCK_TICK = scheduler.tick_count()
+    let wake_count_before: usize = scheduler.semaphore_wake_count()
+    if scheduler.semaphore_wait(&COMPLETION) != 0:
+        LAST_ERROR = ATA_CORRUPT
+        return fatal() == 0
+    READER_WAKES = READER_WAKES + (1 as usize)
+    if scheduler.semaphore_wake_count() == wake_count_before:
+        EARLY_COMPLETIONS = EARLY_COMPLETIONS + (1 as usize)
+    WAKE_TICK = scheduler.tick_count()
+    native.cpu_cli()
+    if valid_request() == false:
+        LAST_ERROR = ATA_CORRUPT
+        return fatal() == 0
+    let success: bool = REQUEST_STATE == STATE_COMPLETE
+    if success:
+        LAST_ERROR = ATA_OK
+    else:
+        if REQUEST_STATE == STATE_ERROR:
+            LAST_ERROR = REQUEST_ERROR
+        else:
+            LAST_ERROR = ATA_PROTOCOL
+    reset_request()
+    native.cpu_sti()
+    return success
+
+pub fn ata_initialize() -> int:
+    if scheduler.semaphore_initialize(&COMPLETION, 0 as usize, 1 as usize) != 0:
+        return ATA_CORRUPT as i32
+    INITIALIZED = 0 as usize
+    SECTOR_COUNT = 0 as u32
+    LAST_ERROR = ATA_OK
+    REQUEST_STATE = STATE_IDLE
+    REQUEST_LBA = 0 as u32
+    REQUEST_BUFFER = 0 as usize
+    REQUEST_GENERATION = 0 as u32
+    REQUEST_ERROR = ATA_OK
+    REQUEST_STATUS = 0 as u32
+    IRQ14_ENTRIES = 0 as usize
+    IRQ14_ACCEPTED = 0 as usize
+    IRQ14_SPURIOUS = 0 as usize
+    IRQ14_SLAVE_EOI = 0 as usize
+    IRQ14_MASTER_EOI = 0 as usize
+    COMPLETION_POSTS = 0 as usize
+    READ_WORDS = 0 as usize
+    WRITE_WORDS = 0 as usize
+    READER_BLOCKS = 0 as usize
+    READER_WAKES = 0 as usize
+    EARLY_COMPLETIONS = 0 as usize
+    BLOCK_TICK = 0 as u32
+    WAKE_TICK = 0 as u32
+    RAW_ERROR = 0 as usize
+    seal_request()
+    arch.out8(DEVICE_CONTROL_PORT, CONTROL_NIEN)
+    arch.out8(DRIVE_PORT, DEVICE_MASTER)
+    delay_400ns()
+    arch.out8(SECTOR_COUNT_PORT, 0 as u8)
+    arch.out8(LBA0_PORT, 0 as u8)
+    arch.out8(LBA1_PORT, 0 as u8)
+    arch.out8(LBA2_PORT, 0 as u8)
+    arch.out8(COMMAND_PORT, COMMAND_IDENTIFY)
+    let initial_status: u8 = arch.in8(STATUS_PORT)
+    if initial_status == (0 as u8):
+        LAST_ERROR = ATA_NO_DEVICE
+        return ATA_NO_DEVICE as i32
+    let ready: i32 = wait_not_busy()
+    if ready != 0:
+        LAST_ERROR = ready as u32
+        return ready
+    if arch.in8(LBA1_PORT) != (0 as u8):
+        LAST_ERROR = ATA_UNSUPPORTED
+        return ATA_UNSUPPORTED as i32
+    if arch.in8(LBA2_PORT) != (0 as u8):
+        LAST_ERROR = ATA_UNSUPPORTED
+        return ATA_UNSUPPORTED as i32
+    let data_ready: i32 = wait_drq()
+    if data_ready != 0:
+        LAST_ERROR = data_ready as u32
+        return data_ready
+    let word: usize = 0 as usize
+    while word < SECTOR_WORDS:
+        IDENTIFY_WORDS[word] = arch.in16(DATA_PORT)
+        word = word + (1 as usize)
+    arch.in8(STATUS_PORT)
+    if (IDENTIFY_WORDS[49] & (0x0200 as u16)) == (0 as u16):
+        LAST_ERROR = ATA_UNSUPPORTED
+        return ATA_UNSUPPORTED as i32
+    SECTOR_COUNT = (IDENTIFY_WORDS[60] as u32) | ((IDENTIFY_WORDS[61] as u32) << (16 as u32))
+    if SECTOR_COUNT == (0 as u32):
+        LAST_ERROR = ATA_UNSUPPORTED
+        return ATA_UNSUPPORTED as i32
+    if SECTOR_COUNT > (0x10000000 as u32):
+        SECTOR_COUNT = 0x10000000 as u32
+    if SECTOR_COUNT <= (9 as u32):
+        LAST_ERROR = ATA_UNSUPPORTED
+        return ATA_UNSUPPORTED as i32
+    arch.out8(DEVICE_CONTROL_PORT, 0 as u8)
+    delay_400ns()
+    INITIALIZED = 1 as usize
+    LAST_ERROR = ATA_OK
+    return ATA_OK as i32
+
+pub fn ata_read_sector(lba: u32, destination: ptr[u8]) -> bool:
+    if INITIALIZED == (0 as usize):
+        LAST_ERROR = ATA_NO_DEVICE
+        return false
+    if valid_buffer(destination) == false:
+        LAST_ERROR = ATA_INVALID
+        return false
+    if valid_lba(lba) == false:
+        LAST_ERROR = ATA_INVALID
+        return false
+    if (native.cpu_read_eflags() & IF_BIT) == (0 as u32):
+        LAST_ERROR = ATA_WRONG_CONTEXT
+        return false
+    native.cpu_cli()
+    if valid_request() == false:
+        LAST_ERROR = ATA_CORRUPT
+        native.cpu_sti()
+        return false
+    if REQUEST_STATE != STATE_IDLE:
+        LAST_ERROR = ATA_BUSY
+        native.cpu_sti()
+        return false
+    let ready: i32 = wait_not_busy()
+    if ready != 0:
+        return setup_failure(ready as u32)
+    REQUEST_GENERATION = REQUEST_GENERATION + (1 as u32)
+    REQUEST_STATE = STATE_READ_PENDING
+    REQUEST_LBA = lba
+    REQUEST_BUFFER = destination as usize
+    REQUEST_ERROR = ATA_OK
+    REQUEST_STATUS = 0 as u32
+    seal_request()
+    program_lba(lba, COMMAND_READ)
+    native.cpu_sti()
+    return await_completion()
+
+pub fn ata_write_sector(lba: u32, source: ptr[u8]) -> bool:
+    if INITIALIZED == (0 as usize):
+        LAST_ERROR = ATA_NO_DEVICE
+        return false
+    if valid_buffer(source) == false:
+        LAST_ERROR = ATA_INVALID
+        return false
+    if valid_lba(lba) == false:
+        LAST_ERROR = ATA_INVALID
+        return false
+    if (native.cpu_read_eflags() & IF_BIT) == (0 as u32):
+        LAST_ERROR = ATA_WRONG_CONTEXT
+        return false
+    native.cpu_cli()
+    if valid_request() == false:
+        LAST_ERROR = ATA_CORRUPT
+        native.cpu_sti()
+        return false
+    if REQUEST_STATE != STATE_IDLE:
+        LAST_ERROR = ATA_BUSY
+        native.cpu_sti()
+        return false
+    let ready: i32 = wait_not_busy()
+    if ready != 0:
+        return setup_failure(ready as u32)
+    REQUEST_GENERATION = REQUEST_GENERATION + (1 as u32)
+    REQUEST_STATE = STATE_WRITE_PENDING
+    REQUEST_LBA = lba
+    REQUEST_BUFFER = source as usize
+    REQUEST_ERROR = ATA_OK
+    REQUEST_STATUS = 0 as u32
+    seal_request()
+    program_lba(lba, COMMAND_WRITE)
+    let data_ready: i32 = wait_drq()
+    if data_ready != 0:
+        return setup_failure(data_ready as u32)
+    let word: usize = 0 as usize
+    while word < SECTOR_WORDS:
+        let address: usize = (source as usize) + (word << (1 as usize))
+        arch.out16(DATA_PORT, native.volatile_load16(address as ptr[u16]))
+        WRITE_WORDS = WRITE_WORDS + (1 as usize)
+        word = word + (1 as usize)
+    native.cpu_sti()
+    return await_completion()
+
+fn complete_read(status: u8) -> bool:
+    REQUEST_STATUS = status as u32
+    if (status & STATUS_DF) != (0 as u8):
+        REQUEST_STATE = STATE_ERROR
+        REQUEST_ERROR = ATA_DEVICE_FAULT
+    else:
+        if (status & STATUS_ERR) != (0 as u8):
+            RAW_ERROR = arch.in8(ERROR_PORT) as usize
+            REQUEST_STATE = STATE_ERROR
+            REQUEST_ERROR = ATA_DEVICE_ERR
+        else:
+            if (status & STATUS_BSY) != (0 as u8):
+                REQUEST_STATE = STATE_ERROR
+                REQUEST_ERROR = ATA_PROTOCOL
+            else:
+                if (status & STATUS_DRQ) == (0 as u8):
+                    REQUEST_STATE = STATE_ERROR
+                    REQUEST_ERROR = ATA_PROTOCOL
+                else:
+                    let word: usize = 0 as usize
+                    while word < SECTOR_WORDS:
+                        let address: usize = REQUEST_BUFFER + (word << (1 as usize))
+                        native.volatile_store16(address as ptr[u16], arch.in16(DATA_PORT))
+                        READ_WORDS = READ_WORDS + (1 as usize)
+                        word = word + (1 as usize)
+                    REQUEST_STATE = STATE_COMPLETE
+    seal_request()
+    if scheduler.semaphore_post(&COMPLETION):
+        COMPLETION_POSTS = COMPLETION_POSTS + (1 as usize)
+        return true
+    return false
+
+fn complete_write(status: u8) -> bool:
+    REQUEST_STATUS = status as u32
+    if (status & STATUS_DF) != (0 as u8):
+        REQUEST_STATE = STATE_ERROR
+        REQUEST_ERROR = ATA_DEVICE_FAULT
+    else:
+        if (status & STATUS_ERR) != (0 as u8):
+            RAW_ERROR = arch.in8(ERROR_PORT) as usize
+            REQUEST_STATE = STATE_ERROR
+            REQUEST_ERROR = ATA_DEVICE_ERR
+        else:
+            if (status & (STATUS_BSY | STATUS_DRQ)) != (0 as u8):
+                REQUEST_STATE = STATE_ERROR
+                REQUEST_ERROR = ATA_PROTOCOL
+            else:
+                REQUEST_STATE = STATE_COMPLETE
+    seal_request()
+    if scheduler.semaphore_post(&COMPLETION):
+        COMPLETION_POSTS = COMPLETION_POSTS + (1 as usize)
+        return true
+    return false
+
+pub interrupt(no_error_code) fn ata_irq14(frame: ptr[arch.InterruptFrame]):
+    IRQ14_ENTRIES = IRQ14_ENTRIES + (1 as usize)
+    let status: u8 = arch.in8(STATUS_PORT)
+    let fatal_after_eoi: bool = false
+    if valid_request() == false:
+        fatal_after_eoi = true
+    else:
+        if REQUEST_STATE == STATE_IDLE:
+            IRQ14_SPURIOUS = IRQ14_SPURIOUS + (1 as usize)
+        else:
+            if REQUEST_STATE == STATE_READ_PENDING:
+                IRQ14_ACCEPTED = IRQ14_ACCEPTED + (1 as usize)
+                if complete_read(status) == false:
+                    fatal_after_eoi = true
+            else:
+                if REQUEST_STATE == STATE_WRITE_PENDING:
+                    IRQ14_ACCEPTED = IRQ14_ACCEPTED + (1 as usize)
+                    if complete_write(status) == false:
+                        fatal_after_eoi = true
+                else:
+                    IRQ14_SPURIOUS = IRQ14_SPURIOUS + (1 as usize)
+    pic.eoi_slave_then_master()
+    IRQ14_SLAVE_EOI = IRQ14_SLAVE_EOI + (1 as usize)
+    IRQ14_MASTER_EOI = IRQ14_MASTER_EOI + (1 as usize)
+    if fatal_after_eoi:
+        fatal()
+    return
+
+pub fn ata_last_error() -> u32:
+    return LAST_ERROR
+
+pub fn ata_sector_count() -> u32:
+    return SECTOR_COUNT
+
+pub fn ata_irq_count() -> usize:
+    return IRQ14_ENTRIES
+
+pub fn ata_accepted_count() -> usize:
+    return IRQ14_ACCEPTED
+
+pub fn ata_spurious_count() -> usize:
+    return IRQ14_SPURIOUS
+
+pub fn ata_slave_eoi_count() -> usize:
+    return IRQ14_SLAVE_EOI
+
+pub fn ata_master_eoi_count() -> usize:
+    return IRQ14_MASTER_EOI
+
+pub fn ata_completion_post_count() -> usize:
+    return COMPLETION_POSTS
+
+pub fn ata_read_word_count() -> usize:
+    return READ_WORDS
+
+pub fn ata_write_word_count() -> usize:
+    return WRITE_WORDS
+
+pub fn ata_reader_block_count() -> usize:
+    return READER_BLOCKS
+
+pub fn ata_reader_wake_count() -> usize:
+    return READER_WAKES
+
+pub fn ata_early_completion_count() -> usize:
+    return EARLY_COMPLETIONS
+
+pub fn ata_block_tick() -> u32:
+    return BLOCK_TICK
+
+pub fn ata_wake_tick() -> u32:
+    return WAKE_TICK
+
+pub fn ata_request_state() -> u32:
+    return REQUEST_STATE
+
+pub fn ata_raw_error() -> usize:
+    return RAW_ERROR

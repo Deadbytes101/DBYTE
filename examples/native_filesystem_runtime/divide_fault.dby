@@ -1,0 +1,18 @@
+import "arch_x86.dby" as arch
+import "serial.dby" as serial
+
+fn halt_with(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 0
+
+pub interrupt(no_error_code) fn divide_zero(frame: ptr[arch.InterruptFrame]):
+    halt_with("DIVIDE ZERO #DE OK", 18 as usize)
+    return
+
+pub interrupt(no_error_code) fn divide_overflow(frame: ptr[arch.InterruptFrame]):
+    halt_with("DIVIDE OVERFLOW #DE OK", 22 as usize)
+    return

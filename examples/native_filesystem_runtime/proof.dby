@@ -1,0 +1,31 @@
+import "arch_x86.dby" as arch
+
+const DEBUG_PORT: u16 = 0xe9 as u16
+
+fn putc(value: u8) -> int:
+    arch.out8(DEBUG_PORT, value)
+    return 0
+
+fn write(text: str, length: usize) -> int:
+    let index: usize = 0 as usize
+    while index < length:
+        putc(text[index] as u8)
+        index = index + (1 as usize)
+    return 0
+
+fn hex_digit(value: u32) -> u8:
+    if value < (10 as u32):
+        return (48 as u8) + (value as u8)
+    return (65 as u8) + ((value - (10 as u32)) as u8)
+
+pub fn value(label: str, length: usize, number: usize) -> int:
+    write(label, length)
+    putc(61 as u8)
+    let index: usize = 0 as usize
+    while index < (8 as usize):
+        let shift: usize = ((7 as usize) - index) << (2 as usize)
+        putc(hex_digit(((number >> shift) & (15 as usize)) as u32))
+        index = index + (1 as usize)
+    putc(13 as u8)
+    putc(10 as u8)
+    return 0

@@ -1,0 +1,15 @@
+import "serial.dby" as serial
+import "gdt.dby" as gdt
+import "idt_divide_overflow.dby" as idt
+
+static mut NEGATIVE_ONE: i32 = -1
+
+pub fn kernel_main() -> int:
+    serial.init()
+    serial.write("DBYTE NATIVE DIVIDE FAULT", 25 as usize)
+    serial.newline()
+    gdt.gdt_install()
+    idt.install_divide_overflow()
+    let divisor: i32 = native.volatile_load32((&NEGATIVE_ONE) as usize as ptr[u32]) as i32
+    let result: i32 = (-2147483647 - 1) / divisor
+    return result
