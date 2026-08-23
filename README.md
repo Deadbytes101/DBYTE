@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.8.0**
+- Snapshot version: **v11.9.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -95,6 +95,7 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Put DByte tasks to sleep without spinning and wake fixed FIFO Event waiters from task or hardware IRQ context while preserving interrupt state.
 - Block a DByte keyboard reader on a counting semaphore, receive raw bytes from real emulated i8042 IRQ1 delivery, and resume through the existing scheduler context image.
 - Identify a QEMU ATA disk, transfer complete LBA28 sectors with 16-bit PIO, and wake blocked DByte tasks from real slave-PIC IRQ14 completion.
+- Format, mount, mutate, reboot, and independently verify a deterministic DBFS1 root filesystem through the IRQ-driven ATA path.
 - Boot the Kernel Lab in QEMU for controlled freestanding kernel experiments.
 
 ## Quick Commands
@@ -153,6 +154,14 @@ and verifies deterministic sector read/write data without a filesystem or host r
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_block_device_core.ps1
 ```
 
+The `v11.9.0` native persistent-filesystem proof formats DBFS1 on a disposable
+raw disk, writes and reuses real data blocks, then reboots the same ELF against
+the same disk and reads `PERSIST.TXT` back without formatting or host repair.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_filesystem_core.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
@@ -167,6 +176,8 @@ See [DByte Native Kernel IRQ I/O](docs/DBYTE_NATIVE_KERNEL_IRQ_IO.md) for
 counting semaphore semantics, the byte ring, i8042 setup, IRQ1 ownership, and raw-input proof.
 See [DByte Native Kernel Block Device](docs/DBYTE_NATIVE_KERNEL_BLOCK_DEVICE.md) for
 ATA IDENTIFY, LBA28 PIO, slave-PIC IRQ14 ownership, and disposable-disk verification.
+See [DByte Native Persistent Filesystem](docs/DBYTE_NATIVE_PERSISTENT_FILESYSTEM.md) for
+the DBFS1 disk layout, bounded root API, two-boot persistence, and host inspection contract.
 
 Launch the DByte shell with the DByteOS userland profile:
 

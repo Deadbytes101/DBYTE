@@ -1,0 +1,142 @@
+pub struct ByteRing:
+    magic: u32
+    version: u32
+    data: array[u8, 64]
+    head: usize
+    tail: usize
+    count: usize
+    dropped: usize
+    checksum: u32
+
+const RING_MAGIC: u32 = 0x4252494e as u32
+const RING_VERSION: u32 = 1 as u32
+const RING_COOKIE: u32 = 0x64b17e5a as u32
+const CAPACITY: usize = 64 as usize
+const DATA_OFFSET: usize = 8 as usize
+const HEAD_OFFSET: usize = 72 as usize
+const TAIL_OFFSET: usize = 76 as usize
+const COUNT_OFFSET: usize = 80 as usize
+const DROPPED_OFFSET: usize = 84 as usize
+const CHECKSUM_OFFSET: usize = 88 as usize
+const IF_BIT: u32 = 0x200 as u32
+
+fn load(address: usize) -> usize:
+    return native.volatile_load32(address as ptr[u32]) as usize
+
+fn store(address: usize, value: usize) -> int:
+    native.volatile_store32(address as ptr[u32], value as u32)
+    return 0
+
+fn checksum(address: usize) -> u32:
+    let value: u32 = RING_COOKIE
+    let offset: usize = 0 as usize
+    while offset < CHECKSUM_OFFSET:
+        value = value ^ (load(address + offset) as u32)
+        offset = offset + (4 as usize)
+    return value
+
+fn seal(address: usize) -> int:
+    store(address + CHECKSUM_OFFSET, checksum(address) as usize)
+    return 0
+
+fn valid(address: usize) -> bool:
+    if address == (0 as usize):
+        return false
+    if (address & (3 as usize)) != (0 as usize):
+        return false
+    if (load(address) as u32) != RING_MAGIC:
+        return false
+    if (load(address + (4 as usize)) as u32) != RING_VERSION:
+        return false
+    if load(address + HEAD_OFFSET) >= CAPACITY:
+        return false
+    if load(address + TAIL_OFFSET) >= CAPACITY:
+        return false
+    if load(address + COUNT_OFFSET) > CAPACITY:
+        return false
+    return load(address + CHECKSUM_OFFSET) == (checksum(address) as usize)
+
+fn next(index: usize) -> usize:
+    let result: usize = index + (1 as usize)
+    if result == CAPACITY:
+        return 0 as usize
+    return result
+
+pub fn byte_ring_initialize(ring: ptr[ByteRing]) -> int:
+    let address: usize = ring as usize
+    if address == (0 as usize):
+        return 1
+    if (address & (3 as usize)) != (0 as usize):
+        return 1
+    if load(address) != (0 as usize):
+        return 1
+    let offset: usize = 0 as usize
+    while offset <= CHECKSUM_OFFSET:
+        store(address + offset, 0 as usize)
+        offset = offset + (4 as usize)
+    store(address, RING_MAGIC as usize)
+    store(address + (4 as usize), RING_VERSION as usize)
+    seal(address)
+    return 0
+
+pub fn byte_ring_push(ring: ptr[ByteRing], value: u8) -> bool:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let address: usize = ring as usize
+    let result: bool = false
+    if valid(address):
+        let count: usize = load(address + COUNT_OFFSET)
+        if count == CAPACITY:
+            store(address + DROPPED_OFFSET, load(address + DROPPED_OFFSET) + (1 as usize))
+            seal(address)
+        else:
+            let tail: usize = load(address + TAIL_OFFSET)
+            native.volatile_store8((address + DATA_OFFSET + tail) as ptr[u8], value)
+            store(address + TAIL_OFFSET, next(tail))
+            store(address + COUNT_OFFSET, count + (1 as usize))
+            seal(address)
+            result = true
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn byte_ring_pop(ring: ptr[ByteRing], output: ptr[u8]) -> bool:
+    if (output as usize) == (0 as usize):
+        return false
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let address: usize = ring as usize
+    let result: bool = false
+    if valid(address):
+        let count: usize = load(address + COUNT_OFFSET)
+        if count != (0 as usize):
+            let head: usize = load(address + HEAD_OFFSET)
+            let value: u8 = native.volatile_load8((address + DATA_OFFSET + head) as ptr[u8])
+            store(address + HEAD_OFFSET, next(head))
+            store(address + COUNT_OFFSET, count - (1 as usize))
+            seal(address)
+            native.volatile_store8(output, value)
+            result = true
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn byte_ring_count(ring: ptr[ByteRing]) -> usize:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let result: usize = 0 as usize
+    if valid(ring as usize):
+        result = load((ring as usize) + COUNT_OFFSET)
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn byte_ring_dropped(ring: ptr[ByteRing]) -> usize:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let result: usize = 0 as usize
+    if valid(ring as usize):
+        result = load((ring as usize) + DROPPED_OFFSET)
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result

@@ -1,0 +1,31 @@
+import "dbfs_layout.dby" as layout
+
+pub fn sector_for(block: u32) -> u32:
+    return block >> (12 as u32)
+
+pub fn byte_for(block: u32) -> usize:
+    return ((block & (4095 as u32)) >> (3 as u32)) as usize
+
+pub fn mask_for(block: u32) -> u8:
+    return ((1 as u8) << ((block & (7 as u32)) as u8)) as u8
+
+pub fn bitmap_test(buffer: ptr[u8], block: u32) -> bool:
+    return (layout.get8(buffer, byte_for(block)) & mask_for(block)) != (0 as u8)
+
+pub fn bitmap_set(buffer: ptr[u8], block: u32) -> bool:
+    let offset: usize = byte_for(block)
+    let mask: u8 = mask_for(block)
+    let before: u8 = layout.get8(buffer, offset)
+    if (before & mask) != (0 as u8):
+        return false
+    layout.put8(buffer, offset, before | mask)
+    return true
+
+pub fn bitmap_clear(buffer: ptr[u8], block: u32) -> bool:
+    let offset: usize = byte_for(block)
+    let mask: u8 = mask_for(block)
+    let before: u8 = layout.get8(buffer, offset)
+    if (before & mask) == (0 as u8):
+        return false
+    layout.put8(buffer, offset, before & ((0xff as u8) ^ mask))
+    return true

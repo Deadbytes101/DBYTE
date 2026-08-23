@@ -1,0 +1,275 @@
+import "scheduler.dby" as scheduler
+import "serial.dby" as serial
+import "proof.dby" as proof
+import "pic.dby" as pic
+import "ata.dby" as ata
+import "dbfs.dby" as dbfs
+import "dbfs_layout.dby" as layout
+
+static mut PAYLOAD: array[u8, 128]
+static mut READBACK: array[u8, 128]
+static mut BLOCK_BUFFER: array[u16, 256]
+static mut STAT: dbfs.DbfsStat
+static mut FILESYSTEM_DONE: usize
+static mut PROGRESS_DONE: usize
+static mut PROGRESS: usize
+static mut PROGRESS_WHILE_BLOCKED: usize
+static mut BOOT_PHASE: usize
+static mut PROBE_SLOT: usize
+static mut PHASE: usize
+static mut FAILURE: i32
+static mut IO_START: usize
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(status: i32) -> int:
+    FAILURE = status
+    proof.value("FS_FAILURE", 10 as usize, status as usize)
+    proof.value("FS_LAST", 7 as usize, dbfs.dbfs_last_error() as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn fill_payload() -> int:
+    let prefix: str = "DBYTEFS1\n"
+    let index: usize = 0 as usize
+    while index < (9 as usize):
+        PAYLOAD[index] = prefix[index] as u8
+        index = index + (1 as usize)
+    let value: usize = (40 as usize) + (2 as usize)
+    let tens: usize = 0 as usize
+    let remainder: usize = value
+    while remainder >= (10 as usize):
+        remainder = remainder - (10 as usize)
+        tens = tens + (1 as usize)
+    PAYLOAD[9] = (48 as u8) + (tens as u8)
+    PAYLOAD[10] = (48 as u8) + (remainder as u8)
+    PAYLOAD[11] = 10 as u8
+    index = 12 as usize
+    while index < (128 as usize):
+        PAYLOAD[index] = (((index * (31 as usize)) + (0x5d as usize)) & (0xff as usize)) as u8
+        index = index + (1 as usize)
+    return 0
+
+fn payload_matches() -> bool:
+    let index: usize = 0 as usize
+    while index < (128 as usize):
+        if READBACK[index] != PAYLOAD[index]:
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn fill_block() -> int:
+    let bytes: ptr[u8] = (&BLOCK_BUFFER[0]) as usize as ptr[u8]
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        layout.put8(bytes, index, (((index * (17 as usize)) + (0x39 as usize)) & (0xff as usize)) as u8)
+        index = index + (1 as usize)
+    return 0
+
+pub fn tasks_initialize() -> int:
+    FILESYSTEM_DONE = 0 as usize
+    PROGRESS_DONE = 0 as usize
+    PROGRESS = 0 as usize
+    PROGRESS_WHILE_BLOCKED = 0 as usize
+    BOOT_PHASE = 0 as usize
+    PROBE_SLOT = 0xffffffff as usize
+    PHASE = 0 as usize
+    FAILURE = 0
+    IO_START = 0 as usize
+    fill_payload()
+    return dbfs.dbfs_initialize()
+
+fn boot_one() -> int:
+    if dbfs.dbfs_format() != 0:
+        return fail(11)
+    line("DBFS FORMAT ONLINE", 18 as usize)
+    if dbfs.dbfs_mount() != 0:
+        return fail(12)
+    line("DBFS MOUNT ONLINE", 17 as usize)
+    line("ROOT DIRECTORY ONLINE", 21 as usize)
+    if dbfs.dbfs_create("PERSIST.TXT", 11 as usize) != 0:
+        return fail(13)
+    line("FILE CREATE OK", 14 as usize)
+    if dbfs.dbfs_write("PERSIST.TXT", 11 as usize, 0 as usize, (&PAYLOAD[0]) as usize as ptr[u8], 128 as usize) != 0:
+        return fail(14)
+    line("FILE WRITE OK", 13 as usize)
+    let bytes_read: usize = 0 as usize
+    if dbfs.dbfs_read("PERSIST.TXT", 11 as usize, 0 as usize, (&READBACK[0]) as usize as ptr[u8], 128 as usize, &bytes_read) != 0:
+        return fail(15)
+    if bytes_read != (128 as usize):
+        return fail(16)
+    if payload_matches() == false:
+        return fail(17)
+    line("FILE READBACK OK", 16 as usize)
+    fill_block()
+    if dbfs.dbfs_create("TEMP.BIN", 8 as usize) != 0:
+        return fail(18)
+    if dbfs.dbfs_write("TEMP.BIN", 8 as usize, 0 as usize, (&BLOCK_BUFFER[0]) as usize as ptr[u8], 512 as usize) != 0:
+        return fail(19)
+    let released: u32 = dbfs.inode_first_block("TEMP.BIN", 8 as usize)
+    if released == (0xffffffff as u32):
+        return fail(20)
+    if dbfs.dbfs_delete("TEMP.BIN", 8 as usize) != 0:
+        return fail(21)
+    if dbfs.dbfs_create("REUSE.BIN", 9 as usize) != 0:
+        return fail(22)
+    if dbfs.dbfs_write("REUSE.BIN", 9 as usize, 0 as usize, (&BLOCK_BUFFER[0]) as usize as ptr[u8], 512 as usize) != 0:
+        return fail(23)
+    let reused: u32 = dbfs.inode_first_block("REUSE.BIN", 9 as usize)
+    dbfs.note_reused_block(reused)
+    if reused != released:
+        return fail(24)
+    if dbfs.dbfs_delete("REUSE.BIN", 9 as usize) != 0:
+        return fail(25)
+    if dbfs.dbfs_mount() != 0:
+        return fail(26)
+    line("BLOCK REUSE OK", 14 as usize)
+    line("PERSISTENCE ARMED", 17 as usize)
+    BOOT_PHASE = 1 as usize
+    return 0
+
+fn boot_two() -> int:
+    line("DBFS MOUNT ONLINE", 17 as usize)
+    if dbfs.dbfs_stat("PERSIST.TXT", 11 as usize, &STAT) != 0:
+        return fail(31)
+    if STAT.inode_number != (2 as u32):
+        return fail(32)
+    if STAT.size_bytes != (128 as u32):
+        return fail(33)
+    if STAT.direct_blocks != (1 as u32):
+        return fail(34)
+    line("PERSISTENT FILE FOUND", 21 as usize)
+    let bytes_read: usize = 0 as usize
+    if dbfs.dbfs_read("PERSIST.TXT", 11 as usize, 0 as usize, (&READBACK[0]) as usize as ptr[u8], 128 as usize, &bytes_read) != 0:
+        return fail(35)
+    if bytes_read != (128 as usize):
+        return fail(36)
+    if payload_matches() == false:
+        return fail(37)
+    line("FILE CONTENT OK", 15 as usize)
+    line("DIRECTORY STATE OK", 18 as usize)
+    line("PERSISTENCE CHECK OK", 20 as usize)
+    BOOT_PHASE = 2 as usize
+    return 0
+
+pub fn filesystem_worker() -> int:
+    IO_START = ata.ata_reader_block_count()
+    let status: i32 = dbfs.dbfs_mount()
+    if status == (3 as i32):
+        boot_one()
+    else:
+        if status == 0:
+            boot_two()
+        else:
+            return fail(41)
+    FILESYSTEM_DONE = 1 as usize
+    return 0
+
+pub fn progress_worker() -> int:
+    while FILESYSTEM_DONE == (0 as usize):
+        PROGRESS = PROGRESS + (1 as usize)
+        if ata.ata_reader_block_count() != ata.ata_reader_wake_count():
+            PROGRESS_WHILE_BLOCKED = PROGRESS_WHILE_BLOCKED + (1 as usize)
+    PROGRESS_DONE = 1 as usize
+    return 0
+
+pub fn reuse_probe() -> int:
+    PROBE_SLOT = scheduler.current_slot()
+    return 0
+
+fn emit() -> int:
+    proof.value("BOOT_PHASE", 10 as usize, BOOT_PHASE)
+    proof.value("FS_READS", 8 as usize, dbfs.read_count())
+    proof.value("FS_WRITES", 9 as usize, dbfs.write_count())
+    proof.value("FS_RELEASED", 11 as usize, dbfs.released_block() as usize)
+    proof.value("FS_REUSED", 9 as usize, dbfs.reused_block() as usize)
+    proof.value("DATA_START", 10 as usize, dbfs.data_start() as usize)
+    proof.value("DATA_BLOCKS", 11 as usize, dbfs.data_blocks() as usize)
+    proof.value("IRQ14", 5 as usize, ata.ata_irq_count())
+    proof.value("IRQ14_ACCEPT", 12 as usize, ata.ata_accepted_count())
+    proof.value("IRQ14_SPURIOUS", 14 as usize, ata.ata_spurious_count())
+    proof.value("IRQ14_SLAVE_EOI", 15 as usize, ata.ata_slave_eoi_count())
+    proof.value("IRQ14_MASTER_EOI", 16 as usize, ata.ata_master_eoi_count())
+    proof.value("ATA_POSTS", 9 as usize, ata.ata_completion_post_count())
+    proof.value("READER_BLOCK", 12 as usize, ata.ata_reader_block_count())
+    proof.value("READER_WAKE", 11 as usize, ata.ata_reader_wake_count())
+    proof.value("PROGRESS", 8 as usize, PROGRESS)
+    proof.value("PROGRESS_BLOCKED", 16 as usize, PROGRESS_WHILE_BLOCKED)
+    proof.value("PIC_MASTER", 10 as usize, pic.master_mask() as usize)
+    proof.value("PIC_SLAVE", 9 as usize, pic.slave_mask() as usize)
+    proof.value("REUSE_SLOT", 10 as usize, PROBE_SLOT)
+    scheduler.emit_state()
+    return 0
+
+fn validate() -> int:
+    if FAILURE != 0:
+        return 1
+    if dbfs.dbfs_last_error() != (0 as u32):
+        return 2
+    if ata.ata_last_error() != (0 as u32):
+        return 3
+    if ata.ata_irq_count() != ata.ata_accepted_count():
+        return 4
+    if ata.ata_spurious_count() != (0 as usize):
+        return 5
+    if ata.ata_slave_eoi_count() != ata.ata_irq_count():
+        return 6
+    if ata.ata_master_eoi_count() != ata.ata_irq_count():
+        return 7
+    if ata.ata_completion_post_count() != ata.ata_irq_count():
+        return 8
+    if ata.ata_reader_block_count() != ata.ata_irq_count():
+        return 9
+    if ata.ata_reader_wake_count() != ata.ata_irq_count():
+        return 10
+    if PROGRESS == (0 as usize):
+        return 11
+    if PROGRESS_WHILE_BLOCKED == (0 as usize):
+        return 12
+    if pic.master_mask() != (0xf8 as u8):
+        return 13
+    if pic.slave_mask() != (0xbf as u8):
+        return 14
+    if scheduler.eoi_count() != (scheduler.tick_count() as usize):
+        return 15
+    if BOOT_PHASE == (1 as usize):
+        if dbfs.released_block() != (9 as u32):
+            return 16
+        if dbfs.reused_block() != (9 as u32):
+            return 17
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        if scheduler.reap_exited() != 0:
+            return fail(51)
+        if PHASE == (0 as usize):
+            if FILESYSTEM_DONE != (0 as usize):
+                if PROGRESS_DONE != (0 as usize):
+                    if scheduler.live_count() == (1 as usize):
+                        if scheduler.spawn(task_address(reuse_probe)) == (0 as usize):
+                            return fail(52)
+                        PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.live_count() == (1 as usize):
+                    if scheduler.exit_count() >= (3 as usize):
+                        let status: i32 = validate()
+                        if status != 0:
+                            proof.value("VALIDATION", 10 as usize, status as usize)
+                            emit()
+                            return fail(53)
+                        emit()
+                        line("FILESYSTEM CHECK OK", 19 as usize)
+                        native.cpu_cli()
+                        while true:
+                            native.cpu_hlt()
+    return 0

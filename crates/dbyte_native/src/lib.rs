@@ -10,6 +10,8 @@ mod blocking_contract;
 pub mod cli;
 pub mod diagnostics;
 pub mod elf32;
+#[cfg(test)]
+mod filesystem_contract;
 pub mod ir;
 #[cfg(test)]
 mod irq_io_contract;

@@ -1,0 +1,68 @@
+fn range_overflows(address: usize, count: usize) -> bool:
+    if count == (0 as usize):
+        return false
+    return (address + count) < address
+
+pub fn memset(destination: ptr[u8], value: u8, count: usize) -> int:
+    if count == (0 as usize):
+        return 0
+    let address: usize = destination as usize
+    if address == (0 as usize):
+        return 1
+    if range_overflows(address, count):
+        return 2
+    let index: usize = 0 as usize
+    while index < count:
+        native.volatile_store8((address + index) as ptr[u8], value)
+        index = index + (1 as usize)
+    return 0
+
+pub fn memcpy(destination: ptr[u8], source: ptr[u8], count: usize) -> int:
+    if count == (0 as usize):
+        return 0
+    let destination_address: usize = destination as usize
+    let source_address: usize = source as usize
+    if destination_address == (0 as usize):
+        return 1
+    if source_address == (0 as usize):
+        return 1
+    if range_overflows(destination_address, count):
+        return 2
+    if range_overflows(source_address, count):
+        return 2
+    if destination_address < (source_address + count):
+        if source_address < (destination_address + count):
+            return 3
+    let index: usize = 0 as usize
+    while index < count:
+        let value: u8 = native.volatile_load8((source_address + index) as ptr[u8])
+        native.volatile_store8((destination_address + index) as ptr[u8], value)
+        index = index + (1 as usize)
+    return 0
+
+pub fn memmove(destination: ptr[u8], source: ptr[u8], count: usize) -> int:
+    if count == (0 as usize):
+        return 0
+    let destination_address: usize = destination as usize
+    let source_address: usize = source as usize
+    if destination_address == (0 as usize):
+        return 1
+    if source_address == (0 as usize):
+        return 1
+    if range_overflows(destination_address, count):
+        return 2
+    if range_overflows(source_address, count):
+        return 2
+    if destination_address > source_address:
+        let remaining: usize = count
+        while remaining > (0 as usize):
+            remaining = remaining - (1 as usize)
+            let value: u8 = native.volatile_load8((source_address + remaining) as ptr[u8])
+            native.volatile_store8((destination_address + remaining) as ptr[u8], value)
+        return 0
+    let index: usize = 0 as usize
+    while index < count:
+        let value: u8 = native.volatile_load8((source_address + index) as ptr[u8])
+        native.volatile_store8((destination_address + index) as ptr[u8], value)
+        index = index + (1 as usize)
+    return 0
