@@ -1,10 +1,12 @@
 //! Deterministic in-process static linker for DByte ELF32/i386 objects.
 
+use crate::archive::parse_archive;
 use crate::diagnostics::{Diagnostic, DiagnosticCategory};
 use crate::elf32::{
     write_linked_executable, write_user_executable, ElfLayout, ExecutableSymbol,
     LinkedExecutableImage, BOOTSTRAP_STACK_SIZE, MAX_ELF_SIZE,
 };
+use crate::external_elf::parse_external_i386_object;
 use crate::object::{
     parse_relocatable, write_relocatable, ObjectImage, ObjectRelocation, ObjectSection,
     RelocationKind, SectionContents, SymbolBinding, SymbolDefinition, SymbolKind,
@@ -108,18 +110,7 @@ pub fn link_object_bytes(inputs: &[LinkInput]) -> Result<LinkArtifact, Diagnosti
     if inputs.is_empty() {
         return Err(link_error("cannot link an empty object set"));
     }
-    let mut parsed = Vec::with_capacity(inputs.len());
-    for input in inputs {
-        let name = canonical_input_name(&input.name)?;
-        let image = parse_relocatable(&input.bytes).map_err(|error| {
-            if error.path.is_some() {
-                error
-            } else {
-                error.with_path(name.clone())
-            }
-        })?;
-        parsed.push(ParsedInput { name, image });
-    }
+    let mut parsed = parse_inputs_and_archives(inputs, LINK_ENTRY_SYMBOL)?;
     parsed.sort_by(|left, right| left.name.cmp(&right.name));
     for pair in parsed.windows(2) {
         if pair[0].name == pair[1].name {
@@ -136,18 +127,7 @@ pub fn link_user_object_bytes(inputs: &[LinkInput]) -> Result<LinkArtifact, Diag
     if inputs.is_empty() {
         return Err(link_error("cannot link an empty object set"));
     }
-    let mut parsed = Vec::with_capacity(inputs.len());
-    for input in inputs {
-        let name = canonical_input_name(&input.name)?;
-        let image = parse_relocatable(&input.bytes).map_err(|error| {
-            if error.path.is_some() {
-                error
-            } else {
-                error.with_path(name.clone())
-            }
-        })?;
-        parsed.push(ParsedInput { name, image });
-    }
+    let mut parsed = parse_inputs_and_archives(inputs, LINK_USER_ENTRY_SYMBOL)?;
     parsed.sort_by(|left, right| left.name.cmp(&right.name));
     for pair in parsed.windows(2) {
         if pair[0].name == pair[1].name {
@@ -158,6 +138,123 @@ pub fn link_user_object_bytes(inputs: &[LinkInput]) -> Result<LinkArtifact, Diag
         }
     }
     link_parsed(&parsed, LinkProfile::User)
+}
+
+fn parse_inputs_and_archives(
+    inputs: &[LinkInput],
+    entry_symbol: &str,
+) -> Result<Vec<ParsedInput>, Diagnostic> {
+    let mut parsed = Vec::new();
+    let mut archives = Vec::<(String, Vec<ParsedInput>)>::new();
+    for input in inputs {
+        let name = canonical_input_name(&input.name)?;
+        if input.bytes.starts_with(b"!<arch>\n") {
+            let members = parse_archive(&input.bytes).map_err(|error| {
+                if error.path.is_some() {
+                    error
+                } else {
+                    error.with_path(name.clone())
+                }
+            })?;
+            let mut parsed_members = Vec::with_capacity(members.len());
+            for member in members {
+                let member_name = format!("{}__{}", name.replace('.', "_"), member.name);
+                let image = parse_input_object(&member.bytes)
+                    .map_err(|error| error.with_path(format!("{name}({})", member.name)))?;
+                parsed_members.push(ParsedInput {
+                    name: member_name,
+                    image,
+                });
+            }
+            parsed_members.sort_by(|left, right| left.name.cmp(&right.name));
+            archives.push((name, parsed_members));
+        } else {
+            let image = parse_input_object(&input.bytes).map_err(|error| {
+                if error.path.is_some() {
+                    error
+                } else {
+                    error.with_path(name.clone())
+                }
+            })?;
+            parsed.push(ParsedInput { name, image });
+        }
+    }
+    archives.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut selected = BTreeSet::<(usize, usize)>::new();
+    loop {
+        let mut defined = BTreeSet::new();
+        let mut unresolved = BTreeSet::from([entry_symbol.to_owned()]);
+        for input in &parsed {
+            collect_symbol_sets(&input.image, &mut defined, &mut unresolved);
+        }
+        unresolved.retain(|symbol| !defined.contains(symbol));
+        let mut changed = false;
+        for (archive_index, (_, members)) in archives.iter().enumerate() {
+            for (member_index, member) in members.iter().enumerate() {
+                if selected.contains(&(archive_index, member_index)) {
+                    continue;
+                }
+                let satisfies = member.image.symbols.iter().any(|symbol| {
+                    symbol.binding == SymbolBinding::Global
+                        && matches!(symbol.definition, SymbolDefinition::Defined { .. })
+                        && unresolved.contains(&symbol.name)
+                });
+                if satisfies {
+                    selected.insert((archive_index, member_index));
+                    parsed.push(member.clone());
+                    changed = true;
+                    break;
+                }
+            }
+            if changed {
+                break;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    Ok(parsed)
+}
+
+fn parse_input_object(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
+    match parse_relocatable(bytes) {
+        Ok(image) => Ok(image),
+        Err(canonical) if canonical.category == DiagnosticCategory::InvalidObject => {
+            match parse_external_i386_object(bytes) {
+                Ok(image) => Ok(image),
+                Err(_)
+                    if bytes
+                        .windows(b".dbyte.".len())
+                        .any(|window| window == b".dbyte.") =>
+                {
+                    Err(canonical)
+                }
+                Err(external) => Err(external),
+            }
+        }
+        Err(canonical) => Err(canonical),
+    }
+}
+
+fn collect_symbol_sets(
+    image: &ObjectImage,
+    defined: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    for symbol in &image.symbols {
+        if symbol.binding != SymbolBinding::Global {
+            continue;
+        }
+        match symbol.definition {
+            SymbolDefinition::Undefined => {
+                unresolved.insert(symbol.name.clone());
+            }
+            SymbolDefinition::Defined { .. } => {
+                defined.insert(symbol.name.clone());
+            }
+        }
+    }
 }
 
 /// Serializes every image through the ET_REL seam before linking it. This
@@ -1309,6 +1406,7 @@ fn layout_error(message: impl Into<String>) -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::archive::{write_archive, ArchiveMember};
     use crate::object::{ObjectSectionData, ObjectSymbol, SymbolId};
 
     fn u16_at(bytes: &[u8], offset: usize) -> u16 {
@@ -1444,6 +1542,36 @@ mod tests {
         .unwrap();
         assert!(three.dump.contains("Pc32 middle"));
         assert!(three.dump.contains("Pc32 leaf"));
+    }
+
+    #[test]
+    fn archives_extract_only_members_needed_by_unresolved_symbols() {
+        let caller = calling_function(LINK_ENTRY_SYMBOL, "needed");
+        let caller = write_relocatable(&caller).unwrap().bytes;
+        let needed = write_relocatable(&function_object("needed", vec![0xc3]))
+            .unwrap()
+            .bytes;
+        let unused = write_relocatable(&function_object(LINK_ENTRY_SYMBOL, vec![0xc3]))
+            .unwrap()
+            .bytes;
+        let archive = write_archive(&[
+            ArchiveMember {
+                name: "need.o".into(),
+                bytes: needed,
+            },
+            ArchiveMember {
+                name: "unused.o".into(),
+                bytes: unused,
+            },
+        ])
+        .unwrap();
+        let linked = link_object_bytes(&[
+            LinkInput::new("main.o", caller),
+            LinkInput::new("libproof.a", archive),
+        ])
+        .unwrap();
+        assert!(linked.dump.contains("needed"));
+        assert!(!linked.dump.contains("unused.o"));
     }
 
     #[test]

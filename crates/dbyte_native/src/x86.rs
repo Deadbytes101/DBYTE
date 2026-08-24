@@ -645,6 +645,12 @@ impl Encoder {
         self.emit_raw(&[0xf3, 0xaa])
     }
 
+    /// Deterministic compiler-generated trap for an unreachable canonical HIR
+    /// edge. This is not exposed as a source intrinsic.
+    pub fn ud2(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x0b])
+    }
+
     pub fn movzx_reg_from_base_index8(
         &mut self,
         destination: Register,
@@ -891,6 +897,12 @@ impl Encoder {
 
     pub fn sub_reg_imm32(&mut self, register: Register, value: i32) -> Result<(), EncoderError> {
         let mut instruction = vec![0x81, modrm(0b11, 5, register.code())];
+        instruction.extend_from_slice(&value.to_le_bytes());
+        self.emit_raw(&instruction)
+    }
+
+    pub fn and_reg_imm32(&mut self, register: Register, value: u32) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x81, modrm(0b11, 4, register.code())];
         instruction.extend_from_slice(&value.to_le_bytes());
         self.emit_raw(&instruction)
     }
@@ -1195,6 +1207,18 @@ mod tests {
             finish(encoder),
             vec![0x01, 0xc8, 0x29, 0xc8, 0x0f, 0xaf, 0xc1, 0x39, 0xc8]
         );
+    }
+
+    #[test]
+    fn c_abi_stack_alignment_mask_is_exact_and_transactional() {
+        let mut encoder = Encoder::new(6);
+        encoder.and_reg_imm32(Register::Esp, 0xfffffff0).unwrap();
+        assert_eq!(finish(encoder), vec![0x81, 0xe4, 0xf0, 0xff, 0xff, 0xff]);
+
+        let mut encoder = Encoder::new(5);
+        let before = encoder.bytes().to_vec();
+        assert!(encoder.and_reg_imm32(Register::Esp, 0xfffffff0).is_err());
+        assert_eq!(encoder.bytes(), before);
     }
 
     #[test]

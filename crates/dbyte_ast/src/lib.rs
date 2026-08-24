@@ -36,11 +36,28 @@ pub enum TypeAnnotation {
     Buffer,
     List(Box<TypeAnnotation>),
     Pointer(Box<TypeAnnotation>),
+    ConstPointer(Box<TypeAnnotation>),
+    Slice(Box<TypeAnnotation>),
+    MutSlice(Box<TypeAnnotation>),
+    StringView,
     Array {
         element: Box<TypeAnnotation>,
         length: u32,
     },
     Named(String),
+    Generic {
+        base: String,
+        args: Vec<TypeAnnotation>,
+    },
+    Function {
+        convention: CallConvention,
+        params: Vec<TypeAnnotation>,
+        ret: Box<TypeAnnotation>,
+    },
+    Closure {
+        params: Vec<TypeAnnotation>,
+        ret: Box<TypeAnnotation>,
+    },
     Inferred,
 }
 
@@ -62,13 +79,90 @@ impl std::fmt::Display for TypeAnnotation {
             TypeAnnotation::Buffer => write!(f, "buffer"),
             TypeAnnotation::List(inner) => write!(f, "list[{}]", inner),
             TypeAnnotation::Pointer(inner) => write!(f, "ptr[{}]", inner),
+            TypeAnnotation::ConstPointer(inner) => write!(f, "const_ptr[{}]", inner),
+            TypeAnnotation::Slice(inner) => write!(f, "slice[{}]", inner),
+            TypeAnnotation::MutSlice(inner) => write!(f, "mut_slice[{}]", inner),
+            TypeAnnotation::StringView => write!(f, "StringView"),
             TypeAnnotation::Array { element, length } => {
                 write!(f, "array[{}, {}]", element, length)
             }
             TypeAnnotation::Named(name) => f.write_str(name),
+            TypeAnnotation::Generic { base, args } => {
+                write!(f, "{base}[")?;
+                for (index, arg) in args.iter().enumerate() {
+                    if index != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                write!(f, "]")
+            }
+            TypeAnnotation::Function {
+                convention,
+                params,
+                ret,
+            } => {
+                if *convention == CallConvention::C {
+                    write!(f, "extern \"C\" ")?;
+                }
+                write!(f, "fn(")?;
+                for (index, param) in params.iter().enumerate() {
+                    if index != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{param}")?;
+                }
+                write!(f, ") -> {ret}")
+            }
+            TypeAnnotation::Closure { params, ret } => {
+                write!(f, "closure(")?;
+                for (index, param) in params.iter().enumerate() {
+                    if index != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{param}")?;
+                }
+                write!(f, ") -> {ret}")
+            }
             TypeAnnotation::Inferred => write!(f, "<inferred>"),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CallConvention {
+    DByte,
+    C,
+}
+
+impl std::fmt::Display for CallConvention {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::DByte => "DByte",
+            Self::C => "C",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureMode {
+    Borrow,
+    BorrowMut,
+    Move,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Capture {
+    pub mode: CaptureMode,
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NamedArgument {
+    pub name: String,
+    pub value: Expr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,6 +232,7 @@ pub enum Expr {
     StrLit(String, Span),
     BytesLit(Vec<u8>, Span),
     FStr(Vec<FStrPart>, Span),
+    NullLit(Span),
     Ident(String, Span),
     List(Vec<Expr>, Span),
     Binary {
@@ -172,6 +267,33 @@ pub enum Expr {
         args: Vec<Expr>,
         span: Span,
     },
+    GenericApply {
+        target: Box<Expr>,
+        args: Vec<TypeAnnotation>,
+        span: Span,
+    },
+    Invoke {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+        named_args: Vec<NamedArgument>,
+        span: Span,
+    },
+    Borrow {
+        mutable: bool,
+        expr: Box<Expr>,
+        span: Span,
+    },
+    Try {
+        expr: Box<Expr>,
+        span: Span,
+    },
+    Closure {
+        captures: Vec<Capture>,
+        params: Vec<Param>,
+        ret_ty: TypeAnnotation,
+        body: Vec<Stmt>,
+        span: Span,
+    },
     Cast {
         expr: Box<Expr>,
         ty: TypeAnnotation,
@@ -188,11 +310,17 @@ impl Expr {
             | Expr::StrLit(_, s)
             | Expr::BytesLit(_, s)
             | Expr::FStr(_, s)
+            | Expr::NullLit(s)
             | Expr::Ident(_, s)
             | Expr::List(_, s) => *s,
             Expr::Binary { span, .. }
             | Expr::Unary { span, .. }
             | Expr::Call { span, .. }
+            | Expr::GenericApply { span, .. }
+            | Expr::Invoke { span, .. }
+            | Expr::Borrow { span, .. }
+            | Expr::Try { span, .. }
+            | Expr::Closure { span, .. }
             | Expr::Index { span, .. }
             | Expr::Member { span, .. }
             | Expr::MemberCall { span, .. }
@@ -213,6 +341,44 @@ pub struct StructField {
     pub name: String,
     pub ty: TypeAnnotation,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    pub name: String,
+    pub payload: Vec<TypeAnnotation>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Wildcard(Span),
+    Variant {
+        path: String,
+        bindings: Vec<String>,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchMode {
+    Move,
+    Borrow,
+    BorrowMut,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Repr {
+    DByte,
+    C,
+    CPacked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,7 +438,9 @@ pub enum Stmt {
     FnDef {
         is_pub: bool,
         interrupt: Option<InterruptClass>,
+        call_convention: CallConvention,
         name: String,
+        generic_params: Vec<String>,
         params: Vec<Param>,
         ret_ty: TypeAnnotation,
         body: Vec<Stmt>,
@@ -307,8 +475,34 @@ pub enum Stmt {
     StructDef {
         is_pub: bool,
         is_packed: bool,
+        repr: Repr,
         name: String,
+        generic_params: Vec<String>,
         fields: Vec<StructField>,
+        span: Span,
+    },
+    EnumDef {
+        is_pub: bool,
+        name: String,
+        generic_params: Vec<String>,
+        variants: Vec<EnumVariant>,
+        span: Span,
+    },
+    Match {
+        mode: MatchMode,
+        value: Expr,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
+    Defer {
+        captures: Vec<Capture>,
+        body: Vec<Stmt>,
+        span: Span,
+    },
+    Break {
+        span: Span,
+    },
+    Continue {
         span: Span,
     },
     Const {
@@ -342,6 +536,11 @@ impl Stmt {
             Stmt::For { span, .. } => *span,
             Stmt::Import { span, .. } => *span,
             Stmt::StructDef { span, .. } => *span,
+            Stmt::EnumDef { span, .. } => *span,
+            Stmt::Match { span, .. } => *span,
+            Stmt::Defer { span, .. } => *span,
+            Stmt::Break { span } => *span,
+            Stmt::Continue { span } => *span,
             Stmt::Const { span, .. } => *span,
             Stmt::Static { span, .. } => *span,
             Stmt::Expr(e) => e.span(),

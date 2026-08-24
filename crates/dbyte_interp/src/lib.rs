@@ -5,7 +5,7 @@ use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
 use memchr::memmem;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -21,7 +21,10 @@ pub struct ModuleLexical {
 type NativeFn = fn(&[Value]) -> Result<Value, String>;
 // Keep this below the host thread stack ceiling so recursion fails as a DByte
 // RuntimeError instead of aborting the Rust process.
-const MAX_CALL_DEPTH: usize = 32;
+// V12 aggregate/closure values make each tree-interpreter Rust frame larger.
+// Keep the language guard below the host thread-stack ceiling so hostile
+// recursion still returns a deterministic DByte error instead of aborting.
+const MAX_CALL_DEPTH: usize = 16;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -32,8 +35,37 @@ pub enum Value {
     Bytes(Vec<u8>),
     Buffer(Rc<RefCell<Vec<u8>>>),
     List(Vec<Value>),
+    Struct(Rc<RefCell<StructValue>>),
+    Enum(EnumValue),
+    Function(String),
+    Closure(Rc<ClosureValue>),
+    StructConstructor(String),
+    EnumType(String),
+    VariantConstructor { enum_name: String, variant: String },
+    EarlyReturn(Box<Value>),
+    Null,
     Module(ModuleValue),
     Void,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructValue {
+    pub type_name: String,
+    pub fields: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumValue {
+    pub enum_name: String,
+    pub variant: String,
+    pub payload: Vec<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClosureValue {
+    pub captures: HashMap<String, Value>,
+    pub params: Vec<Param>,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +103,17 @@ impl std::fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Struct(value) => write!(f, "<{}>", value.borrow().type_name),
+            Value::Enum(value) => write!(f, "{}.{}", value.enum_name, value.variant),
+            Value::Function(name) => write!(f, "<fn {name}>"),
+            Value::Closure(_) => write!(f, "<closure>"),
+            Value::StructConstructor(name) => write!(f, "<struct {name}>"),
+            Value::EnumType(name) => write!(f, "<enum {name}>"),
+            Value::VariantConstructor { enum_name, variant } => {
+                write!(f, "<variant {enum_name}.{variant}>")
+            }
+            Value::EarlyReturn(_) => write!(f, "<early return>"),
+            Value::Null => write!(f, "null"),
             Value::Module(m) => write!(f, "<module {}>", m.alias),
             Value::Void => write!(f, ""),
         }
@@ -87,6 +130,15 @@ impl Value {
             Value::Bytes(_) => "bytes",
             Value::Buffer(_) => "buffer",
             Value::List(_) => "list",
+            Value::Struct(_) => "struct",
+            Value::Enum(_) => "enum",
+            Value::Function(_) => "function",
+            Value::Closure(_) => "closure",
+            Value::StructConstructor(_) => "struct constructor",
+            Value::EnumType(_) => "enum type",
+            Value::VariantConstructor { .. } => "enum variant constructor",
+            Value::EarlyReturn(_) => "early return",
+            Value::Null => "null",
             Value::Module(_) => "module",
             Value::Void => "void",
         }
@@ -108,6 +160,8 @@ impl std::fmt::Display for RuntimeError {
 #[derive(Debug)]
 enum Signal {
     Return(Value),
+    Break(Span),
+    Continue(Span),
     Error(RuntimeError),
 }
 
@@ -121,6 +175,8 @@ enum OutputSink {
 pub struct Interpreter {
     env: Vec<HashMap<String, Value>>,
     fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
+    structs: HashMap<String, Vec<StructField>>,
+    enums: HashMap<String, Vec<EnumVariant>>,
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
     loading_stack: Vec<String>,
@@ -141,9 +197,42 @@ impl Default for Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut enums = HashMap::new();
+        enums.insert(
+            "Option".into(),
+            vec![
+                EnumVariant {
+                    name: "None".into(),
+                    payload: Vec::new(),
+                    span: Span::zero(),
+                },
+                EnumVariant {
+                    name: "Some".into(),
+                    payload: vec![TypeAnnotation::Inferred],
+                    span: Span::zero(),
+                },
+            ],
+        );
+        enums.insert(
+            "Result".into(),
+            vec![
+                EnumVariant {
+                    name: "Ok".into(),
+                    payload: vec![TypeAnnotation::Inferred],
+                    span: Span::zero(),
+                },
+                EnumVariant {
+                    name: "Err".into(),
+                    payload: vec![TypeAnnotation::Inferred],
+                    span: Span::zero(),
+                },
+            ],
+        );
         Self {
             env: vec![HashMap::new()],
             fns: HashMap::new(),
+            structs: HashMap::new(),
+            enums,
             current_file: None,
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
@@ -454,6 +543,8 @@ impl Interpreter {
 
         let saved_env = std::mem::replace(&mut self.env, vec![HashMap::new()]);
         let saved_fns = std::mem::take(&mut self.fns);
+        let saved_structs = std::mem::take(&mut self.structs);
+        let saved_enums = std::mem::take(&mut self.enums);
         let saved_file = self.current_file.replace(path.to_path_buf());
         let saved_in_function = self.in_function;
         let saved_call_depth = self.call_depth;
@@ -497,6 +588,8 @@ impl Interpreter {
 
         self.env = saved_env;
         self.fns = saved_fns;
+        self.structs = saved_structs;
+        self.enums = saved_enums;
         self.current_file = saved_file;
         self.in_function = saved_in_function;
         self.call_depth = saved_call_depth;
@@ -512,31 +605,12 @@ impl Interpreter {
                 msg: "return outside function".into(),
                 span,
             }),
-        }
-    }
-
-    fn eval_member(
-        &mut self,
-        object: &Expr,
-        property: &str,
-        span: Span,
-    ) -> Result<ModuleMember, RuntimeError> {
-        match self.eval_expr(object)? {
-            Value::Module(module) => {
-                module
-                    .members
-                    .get(property)
-                    .cloned()
-                    .ok_or_else(|| RuntimeError {
-                        msg: format!(
-                            "module '{}' has no public member '{}'",
-                            module.alias, property
-                        ),
-                        span,
-                    })
-            }
-            other => Err(RuntimeError {
-                msg: format!("member access not supported for `{}`", other),
+            Err(Signal::Break(span)) => Err(RuntimeError {
+                msg: "break outside loop".into(),
+                span,
+            }),
+            Err(Signal::Continue(span)) => Err(RuntimeError {
+                msg: "continue outside loop".into(),
                 span,
             }),
         }
@@ -568,11 +642,91 @@ impl Interpreter {
                 }
                 Ok(Value::Str(result))
             }
+            Expr::NullLit(_) => Ok(Value::Null),
+            Expr::GenericApply { target, .. } => self.eval_expr(target),
+            Expr::Borrow { expr, .. } => self.eval_expr(expr),
+            Expr::Try { expr, span } => match self.eval_expr(expr)? {
+                Value::Enum(value)
+                    if value.enum_name == "Result"
+                        && value.variant == "Ok"
+                        && value.payload.len() == 1 =>
+                {
+                    Ok(value.payload[0].clone())
+                }
+                Value::Enum(value)
+                    if value.enum_name == "Result"
+                        && value.variant == "Err"
+                        && value.payload.len() == 1 =>
+                {
+                    Ok(Value::EarlyReturn(Box::new(Value::Enum(value))))
+                }
+                _ => Err(RuntimeError {
+                    msg: "operator `?` requires canonical Result with one payload value".into(),
+                    span: *span,
+                }),
+            },
+            Expr::Closure {
+                captures,
+                params,
+                body,
+                span,
+                ..
+            } => {
+                let mut captured = HashMap::new();
+                for capture in captures {
+                    let value = self.get(&capture.name).ok_or_else(|| RuntimeError {
+                        msg: format!("undefined closure capture `{}`", capture.name),
+                        span: capture.span,
+                    })?;
+                    captured.insert(capture.name.clone(), value);
+                }
+                if captures
+                    .iter()
+                    .any(|capture| capture.mode == CaptureMode::BorrowMut)
+                {
+                    return Err(RuntimeError {
+                        msg: "borrow-mut closure execution requires canonical reference cells"
+                            .into(),
+                        span: *span,
+                    });
+                }
+                Ok(Value::Closure(Rc::new(ClosureValue {
+                    captures: captured,
+                    params: params.clone(),
+                    body: body.clone(),
+                })))
+            }
+            Expr::Invoke {
+                callee,
+                args,
+                named_args,
+                span,
+            } => {
+                let callee = self.eval_expr(callee)?;
+                self.invoke_value(callee, args, named_args, *span)
+            }
 
-            Expr::Ident(name, span) => self.get(name).ok_or_else(|| RuntimeError {
-                msg: format!("undefined variable `{}`", name),
-                span: *span,
-            }),
+            Expr::Ident(name, span) => {
+                if let Some(value) = self.get(name) {
+                    Ok(value)
+                } else if self.fns.contains_key(name)
+                    || self
+                        .active_module_lexical
+                        .as_ref()
+                        .is_some_and(|lexical| lexical.fns.contains_key(name))
+                {
+                    Ok(Value::Function(name.clone()))
+                } else if self.structs.contains_key(name) {
+                    Ok(Value::StructConstructor(name.clone()))
+                } else if self.enums.contains_key(name) {
+                    Ok(Value::EnumType(name.clone()))
+                } else {
+                    Err(RuntimeError {
+                        msg: format!("undefined variable `{}`", name),
+                        span: *span,
+                    })
+                }
+            }
 
             Expr::List(elems, _) => {
                 let vals: Result<Vec<_>, _> = elems.iter().map(|e| self.eval_expr(e)).collect();
@@ -788,6 +942,18 @@ impl Interpreter {
                     return Ok(Value::Int(length as i64));
                 }
 
+                if let Some(value) = self.get(name) {
+                    if matches!(
+                        value,
+                        Value::Function(_)
+                            | Value::Closure(_)
+                            | Value::StructConstructor(_)
+                            | Value::VariantConstructor { .. }
+                    ) {
+                        return self.invoke_value(value, args, &[], *span);
+                    }
+                }
+
                 let (params, body) = if let Some(ref lex) = self.active_module_lexical {
                     lex.fns
                         .get(name)
@@ -807,15 +973,58 @@ impl Interpreter {
                 object,
                 property,
                 span,
-            } => match self.eval_member(object, property, *span)? {
-                ModuleMember::Value(value) => Ok(value),
-                ModuleMember::Function(_, _) | ModuleMember::Native(_) | ModuleMember::EnvArgs => {
-                    Err(RuntimeError {
-                        msg: format!("module member `{}` is callable", property),
+            } => {
+                match self.eval_expr(object)? {
+                    Value::Struct(value) => value
+                        .borrow()
+                        .fields
+                        .get(property)
+                        .cloned()
+                        .ok_or_else(|| RuntimeError {
+                            msg: format!("struct has no field `{property}`"),
+                            span: *span,
+                        }),
+                    Value::EnumType(enum_name) => {
+                        let variants = self.enums.get(&enum_name).ok_or_else(|| RuntimeError {
+                            msg: format!("unknown enum `{enum_name}`"),
+                            span: *span,
+                        })?;
+                        if variants.iter().any(|variant| variant.name == *property) {
+                            Ok(Value::VariantConstructor {
+                                enum_name,
+                                variant: property.clone(),
+                            })
+                        } else {
+                            Err(RuntimeError {
+                                msg: format!("enum has no variant `{property}`"),
+                                span: *span,
+                            })
+                        }
+                    }
+                    Value::Module(module) => match module.members.get(property).cloned() {
+                        Some(ModuleMember::Value(value)) => Ok(value),
+                        Some(
+                            ModuleMember::Function(_, _)
+                            | ModuleMember::Native(_)
+                            | ModuleMember::EnvArgs,
+                        ) => Err(RuntimeError {
+                            msg: format!("module member `{property}` is callable"),
+                            span: *span,
+                        }),
+                        None => Err(RuntimeError {
+                            msg: format!(
+                                "module '{}' has no public member '{}'",
+                                module.alias, property
+                            ),
+                            span: *span,
+                        }),
+                    },
+                    other => Err(RuntimeError {
+                        msg: format!("member access not supported for `{}`", other.kind_name()),
                         span: *span,
-                    })
+                    }),
                 }
-            },
+            }
 
             Expr::MemberCall {
                 object,
@@ -823,6 +1032,15 @@ impl Interpreter {
                 args,
                 span,
             } => match self.eval_expr(object)? {
+                Value::EnumType(enum_name) => self.invoke_value(
+                    Value::VariantConstructor {
+                        enum_name,
+                        variant: property.clone(),
+                    },
+                    args,
+                    &[],
+                    *span,
+                ),
                 Value::Module(module) => {
                     let module_entry = module.lexical.clone();
                     let member =
@@ -944,19 +1162,193 @@ impl Interpreter {
         match result {
             Ok(_) => Ok(Value::Void),
             Err(Signal::Return(v)) => Ok(v),
+            Err(Signal::Break(span)) => Err(RuntimeError {
+                msg: "break outside loop".into(),
+                span,
+            }),
+            Err(Signal::Continue(span)) => Err(RuntimeError {
+                msg: "continue outside loop".into(),
+                span,
+            }),
             Err(Signal::Error(e)) => Err(e),
+        }
+    }
+
+    fn invoke_value(
+        &mut self,
+        callee: Value,
+        args: &[Expr],
+        named_args: &[NamedArgument],
+        span: Span,
+    ) -> Result<Value, RuntimeError> {
+        match callee {
+            Value::Function(name) => {
+                if !named_args.is_empty() {
+                    return Err(RuntimeError {
+                        msg: "function calls do not accept named arguments".into(),
+                        span,
+                    });
+                }
+                let (params, body) = if let Some(ref lexical) = self.active_module_lexical {
+                    lexical
+                        .fns
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| self.fns.get(&name).cloned())
+                } else {
+                    self.fns.get(&name).cloned()
+                }
+                .ok_or_else(|| RuntimeError {
+                    msg: format!("undefined function `{name}`"),
+                    span,
+                })?;
+                self.call_user_function(&name, &params, &body, args, span, None)
+            }
+            Value::Closure(closure) => {
+                if !named_args.is_empty() || args.len() != closure.params.len() {
+                    return Err(RuntimeError {
+                        msg: format!(
+                            "closure expects {} positional arguments, found {}",
+                            closure.params.len(),
+                            args.len()
+                        ),
+                        span,
+                    });
+                }
+                let values: Result<Vec<_>, _> = args
+                    .iter()
+                    .map(|argument| self.eval_expr(argument))
+                    .collect();
+                let values = values?;
+                if self.call_depth >= MAX_CALL_DEPTH {
+                    return Err(RuntimeError {
+                        msg: "maximum call depth exceeded".into(),
+                        span,
+                    });
+                }
+                self.push_scope();
+                for (name, value) in &closure.captures {
+                    self.define(name, value.clone());
+                }
+                for (parameter, value) in closure.params.iter().zip(values) {
+                    self.define(&parameter.name, value);
+                }
+                self.in_function += 1;
+                self.call_depth += 1;
+                let result = self.exec_stmts(&closure.body);
+                self.call_depth -= 1;
+                self.in_function -= 1;
+                self.pop_scope();
+                match result {
+                    Ok(()) => Ok(Value::Void),
+                    Err(Signal::Return(value)) => Ok(value),
+                    Err(Signal::Break(span)) => Err(RuntimeError {
+                        msg: "break outside loop".into(),
+                        span,
+                    }),
+                    Err(Signal::Continue(span)) => Err(RuntimeError {
+                        msg: "continue outside loop".into(),
+                        span,
+                    }),
+                    Err(Signal::Error(error)) => Err(error),
+                }
+            }
+            Value::StructConstructor(name) => {
+                if !args.is_empty() {
+                    return Err(RuntimeError {
+                        msg: "struct construction requires named fields".into(),
+                        span,
+                    });
+                }
+                let definitions = self
+                    .structs
+                    .get(&name)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError {
+                        msg: format!("unknown struct `{name}`"),
+                        span,
+                    })?;
+                let mut fields = BTreeMap::new();
+                for argument in named_args {
+                    if fields.contains_key(&argument.name) {
+                        return Err(RuntimeError {
+                            msg: format!("duplicate field `{}`", argument.name),
+                            span: argument.span,
+                        });
+                    }
+                    if !definitions.iter().any(|field| field.name == argument.name) {
+                        return Err(RuntimeError {
+                            msg: format!("unknown field `{}`", argument.name),
+                            span: argument.span,
+                        });
+                    }
+                    fields.insert(argument.name.clone(), self.eval_expr(&argument.value)?);
+                }
+                if let Some(missing) = definitions
+                    .iter()
+                    .find(|field| !fields.contains_key(&field.name))
+                {
+                    return Err(RuntimeError {
+                        msg: format!("missing field `{}`", missing.name),
+                        span,
+                    });
+                }
+                Ok(Value::Struct(Rc::new(RefCell::new(StructValue {
+                    type_name: name,
+                    fields,
+                }))))
+            }
+            Value::VariantConstructor { enum_name, variant } => {
+                if !named_args.is_empty() {
+                    return Err(RuntimeError {
+                        msg: "enum tuple payload does not accept named arguments".into(),
+                        span,
+                    });
+                }
+                let expected = self
+                    .enums
+                    .get(&enum_name)
+                    .and_then(|variants| variants.iter().find(|item| item.name == variant))
+                    .map(|item| item.payload.len())
+                    .ok_or_else(|| RuntimeError {
+                        msg: format!("unknown variant `{enum_name}.{variant}`"),
+                        span,
+                    })?;
+                if args.len() != expected {
+                    return Err(RuntimeError {
+                        msg: format!(
+                            "variant `{enum_name}.{variant}` expects {expected} payload values, found {}",
+                            args.len()
+                        ),
+                        span,
+                    });
+                }
+                let payload: Result<Vec<_>, _> = args
+                    .iter()
+                    .map(|argument| self.eval_expr(argument))
+                    .collect();
+                Ok(Value::Enum(EnumValue {
+                    enum_name,
+                    variant,
+                    payload: payload?,
+                }))
+            }
+            other => Err(RuntimeError {
+                msg: format!("{} is not callable", other.kind_name()),
+                span,
+            }),
         }
     }
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), Signal> {
         match stmt {
             Stmt::Let { name, value, .. } => {
-                let v = self.eval_expr(value).map_err(Signal::Error)?;
+                let v = Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
                 self.define(name, v);
             }
 
             Stmt::Assign { name, value, span } => {
-                let v = self.eval_expr(value).map_err(Signal::Error)?;
+                let v = Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
                 if !self.set(name, v) {
                     return Err(Signal::Error(RuntimeError {
                         msg: format!("undefined variable `{}`", name),
@@ -972,6 +1364,47 @@ impl Interpreter {
                     .insert(name.clone(), (params.clone(), body.clone()));
             }
 
+            Stmt::StructDef { name, fields, .. } => {
+                self.structs.insert(name.clone(), fields.clone());
+            }
+
+            Stmt::EnumDef { name, variants, .. } => {
+                self.enums.insert(name.clone(), variants.clone());
+            }
+
+            Stmt::Store {
+                target,
+                value,
+                span,
+            } => {
+                let Expr::Member {
+                    object, property, ..
+                } = target
+                else {
+                    return Err(Signal::Error(RuntimeError {
+                        msg: "hosted v12 store currently requires a struct field lvalue".into(),
+                        span: *span,
+                    }));
+                };
+                let object = self.eval_expr(object).map_err(Signal::Error)?;
+                let new_value =
+                    Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
+                let Value::Struct(object) = object else {
+                    return Err(Signal::Error(RuntimeError {
+                        msg: "field store requires a struct value".into(),
+                        span: *span,
+                    }));
+                };
+                let mut object = object.borrow_mut();
+                let Some(field) = object.fields.get_mut(property) else {
+                    return Err(Signal::Error(RuntimeError {
+                        msg: format!("struct has no field `{property}`"),
+                        span: *span,
+                    }));
+                };
+                *field = new_value;
+            }
+
             Stmt::Return { value, span } => {
                 if self.in_function == 0 {
                     return Err(Signal::Error(RuntimeError {
@@ -980,7 +1413,7 @@ impl Interpreter {
                     }));
                 }
                 let v = match value {
-                    Some(e) => self.eval_expr(e).map_err(Signal::Error)?,
+                    Some(e) => Self::complete_value(self.eval_expr(e).map_err(Signal::Error)?)?,
                     None => Value::Void,
                 };
                 return Err(Signal::Return(v));
@@ -992,7 +1425,7 @@ impl Interpreter {
                 else_body,
                 span,
             } => {
-                let cv = self.eval_expr(cond).map_err(Signal::Error)?;
+                let cv = Self::complete_value(self.eval_expr(cond).map_err(Signal::Error)?)?;
                 match cv {
                     Value::Bool(true) => {
                         self.push_scope();
@@ -1016,13 +1449,17 @@ impl Interpreter {
             }
 
             Stmt::While { cond, body, span } => loop {
-                let cv = self.eval_expr(cond).map_err(Signal::Error)?;
+                let cv = Self::complete_value(self.eval_expr(cond).map_err(Signal::Error)?)?;
                 match cv {
                     Value::Bool(true) => {
                         self.push_scope();
                         let r = self.exec_stmts(body);
                         self.pop_scope();
-                        r?;
+                        match r {
+                            Ok(()) | Err(Signal::Continue(_)) => {}
+                            Err(Signal::Break(_)) => break,
+                            Err(other) => return Err(other),
+                        }
                     }
                     Value::Bool(false) => break,
                     _ => {
@@ -1040,7 +1477,8 @@ impl Interpreter {
                 body,
                 span,
             } => {
-                let iter_val = self.eval_expr(iterable).map_err(Signal::Error)?;
+                let iter_val =
+                    Self::complete_value(self.eval_expr(iterable).map_err(Signal::Error)?)?;
                 let items = match iter_val {
                     Value::List(vs) => vs,
                     Value::Str(s) => s.chars().map(|c| Value::Str(c.to_string())).collect(),
@@ -1056,9 +1494,48 @@ impl Interpreter {
                     self.define(var, item);
                     let r = self.exec_stmts(body);
                     self.pop_scope();
-                    r?;
+                    match r {
+                        Ok(()) | Err(Signal::Continue(_)) => {}
+                        Err(Signal::Break(_)) => break,
+                        Err(other) => return Err(other),
+                    }
                 }
             }
+
+            Stmt::Match {
+                value, arms, span, ..
+            } => {
+                let value = Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
+                let selected = arms.iter().find_map(|arm| match (&arm.pattern, &value) {
+                    (Pattern::Wildcard(_), _) => Some((arm, Vec::new())),
+                    (Pattern::Variant { path, bindings, .. }, Value::Enum(value))
+                        if path.rsplit_once('.').is_some_and(|(owner, variant)| {
+                            owner == value.enum_name && variant == value.variant
+                        }) =>
+                    {
+                        Some((arm, bindings.clone()))
+                    }
+                    _ => None,
+                });
+                let Some((arm, bindings)) = selected else {
+                    return Err(Signal::Error(RuntimeError {
+                        msg: "non-exhaustive match reached at runtime".into(),
+                        span: *span,
+                    }));
+                };
+                self.push_scope();
+                if let Value::Enum(value) = &value {
+                    for (binding, payload) in bindings.iter().zip(&value.payload) {
+                        self.define(binding, payload.clone());
+                    }
+                }
+                let result = self.exec_stmts(&arm.body);
+                self.pop_scope();
+                result?;
+            }
+
+            Stmt::Break { span } => return Err(Signal::Break(*span)),
+            Stmt::Continue { span } => return Err(Signal::Continue(*span)),
 
             Stmt::Import { path, alias, span } => {
                 let module = self
@@ -1066,11 +1543,13 @@ impl Interpreter {
                     .map_err(Signal::Error)?;
                 self.define(alias, Value::Module(module));
             }
-
-            Stmt::Store { span, .. }
-            | Stmt::StructDef { span, .. }
-            | Stmt::Const { span, .. }
-            | Stmt::Static { span, .. } => {
+            Stmt::Defer { span, .. } => {
+                return Err(Signal::Error(RuntimeError {
+                    msg: "internal defer scheduling error".into(),
+                    span: *span,
+                }));
+            }
+            Stmt::Const { span, .. } | Stmt::Static { span, .. } => {
                 return Err(Signal::Error(RuntimeError {
                     msg: "native systems statements are unavailable in the hosted interpreter"
                         .into(),
@@ -1079,17 +1558,40 @@ impl Interpreter {
             }
 
             Stmt::Expr(e) => {
-                self.eval_expr(e).map_err(Signal::Error)?;
+                Self::complete_value(self.eval_expr(e).map_err(Signal::Error)?)?;
             }
         }
         Ok(())
     }
 
-    fn exec_stmts(&mut self, stmts: &[Stmt]) -> Result<(), Signal> {
-        for s in stmts {
-            self.exec_stmt(s)?;
+    fn complete_value(value: Value) -> Result<Value, Signal> {
+        match value {
+            Value::EarlyReturn(value) => Err(Signal::Return(*value)),
+            value => Ok(value),
         }
-        Ok(())
+    }
+
+    fn exec_stmts(&mut self, stmts: &[Stmt]) -> Result<(), Signal> {
+        let mut defers: Vec<&[Stmt]> = Vec::new();
+        let mut outcome = Ok(());
+        for statement in stmts {
+            if let Stmt::Defer { body, .. } = statement {
+                defers.push(body);
+                continue;
+            }
+            if let Err(signal) = self.exec_stmt(statement) {
+                outcome = Err(signal);
+                break;
+            }
+        }
+        for body in defers.into_iter().rev() {
+            if let Err(signal) = self.exec_stmts(body) {
+                if outcome.is_ok() {
+                    outcome = Err(signal);
+                }
+            }
+        }
+        outcome
     }
 
     pub fn run(&mut self, program: &Program) -> Result<(), RuntimeError> {
@@ -1098,6 +1600,14 @@ impl Interpreter {
             Err(Signal::Return(_)) => Err(RuntimeError {
                 msg: "return outside function".into(),
                 span: Span::zero(),
+            }),
+            Err(Signal::Break(span)) => Err(RuntimeError {
+                msg: "break outside loop".into(),
+                span,
+            }),
+            Err(Signal::Continue(span)) => Err(RuntimeError {
+                msg: "continue outside loop".into(),
+                span,
             }),
             Err(Signal::Error(e)) => Err(e),
         }
@@ -1722,5 +2232,41 @@ mod remainder_tests {
             .run(&parse("let value: int = 1 % 0\n"))
             .unwrap_err();
         assert_eq!(error.msg, "remainder by zero");
+    }
+
+    #[test]
+    fn hosted_v12_executes_erased_generics_aggregates_match_closures_and_defer() {
+        let source = "struct Pair[A, B]:\n    first: A\n    second: B\n\nfn id[T](value: T) -> T:\n    return value\n\nlet pair = Pair[i32, u8](first = id[i32](40), second = 2)\npair.first = pair.first + pair.second\nlet result = Result[i32, u8].Ok(pair.first)\nmatch result:\n    case Result.Ok(value):\n        print(value)\n    case Result.Err(error):\n        print(error)\nlet factor = 2\nlet add = fn [borrow factor](value: i32) -> i32:\n    return value + factor\nprint(add(40))\ndefer []:\n    print(9)\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "42\n42\n9\n");
+    }
+
+    #[test]
+    fn hosted_defer_runs_on_return_and_loop_control() {
+        let source = "fn work() -> i32:\n    defer []:\n        print(3)\n    return 7\n\nlet count = 0\nwhile count < 2:\n    defer []:\n        print(count)\n    count = count + 1\n    continue\nprint(work())\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "1\n2\n3\n7\n");
+    }
+
+    #[test]
+    fn hosted_result_question_mark_returns_err_and_runs_defer() {
+        let source = "fn unwrap(input: Result[i32, u8]) -> Result[i32, u8]:\n    defer []:\n        print(5)\n    let value = input?\n    return Result[i32, u8].Ok(value + 1)\n\nlet failed = unwrap(Result[i32, u8].Err(7))\nmatch failed:\n    case Result.Ok(value):\n        print(value)\n    case Result.Err(error):\n        print(error)\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "5\n7\n");
+    }
+
+    #[test]
+    fn hosted_v12_parity_corpus_has_exact_tree_output() {
+        let source = "struct Pair[A, B]:\n    first: A\n    second: B\n\nfn id[T](value: T) -> T:\n    return value\n\nfn attempt(input: Result[int, int]) -> Result[int, int]:\n    defer []:\n        print(\"CLEAN\")\n    let value = input?\n    return Result[int, int].Ok(value)\n\nlet pair = Pair[int, int](first = id[int](40), second = 2)\nprint(pair.first + pair.second)\nlet factor: int = 2\nlet add = fn [borrow factor](value: int) -> int:\n    return value + factor\nprint(add(40))\nlet result = attempt(Result[int, int].Err(7))\nmatch result:\n    case Result.Ok(value):\n        print(value)\n    case Result.Err(error):\n        print(error)\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "42\n42\nCLEAN\n7\n");
     }
 }

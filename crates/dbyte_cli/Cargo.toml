@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 dbyte_ast.workspace = true
+dbyte_hir.workspace = true
 dbyte_bytecode.workspace = true
 dbyte_compiler.workspace = true
 dbyte_native.workspace = true

@@ -323,6 +323,11 @@ impl<'a> FunctionAnalyzer<'a> {
             }
             Stmt::Store { span, .. }
             | Stmt::StructDef { span, .. }
+            | Stmt::EnumDef { span, .. }
+            | Stmt::Match { span, .. }
+            | Stmt::Defer { span, .. }
+            | Stmt::Break { span }
+            | Stmt::Continue { span }
             | Stmt::Const { span, .. }
             | Stmt::Static { span, .. } => {
                 return Err(unsupported(
@@ -457,6 +462,14 @@ impl<'a> FunctionAnalyzer<'a> {
             }
             Expr::BytesLit(_, span) => Err(unsupported("byte literals", *span)),
             Expr::FStr(_, span) => Err(unsupported("formatted strings", *span)),
+            Expr::NullLit(span)
+            | Expr::GenericApply { span, .. }
+            | Expr::Invoke { span, .. }
+            | Expr::Borrow { span, .. }
+            | Expr::Try { span, .. }
+            | Expr::Closure { span, .. } => {
+                Err(unsupported("v12 canonical HIR expressions", *span))
+            }
             Expr::Ident(name, span) => {
                 let binding = self.lookup(name).ok_or_else(|| {
                     Diagnostic::new(
@@ -885,8 +898,15 @@ fn explicit_native_type(
         | TypeAnnotation::U32
         | TypeAnnotation::Usize
         | TypeAnnotation::Pointer(_)
+        | TypeAnnotation::ConstPointer(_)
+        | TypeAnnotation::Slice(_)
+        | TypeAnnotation::MutSlice(_)
+        | TypeAnnotation::StringView
         | TypeAnnotation::Array { .. }
-        | TypeAnnotation::Named(_) => Err(Diagnostic::new(
+        | TypeAnnotation::Named(_)
+        | TypeAnnotation::Generic { .. }
+        | TypeAnnotation::Function { .. }
+        | TypeAnnotation::Closure { .. } => Err(Diagnostic::new(
             DiagnosticCategory::InvalidType,
             format!("{owner} uses systems type `{annotation}` outside the v11.1 systems pipeline"),
             span,

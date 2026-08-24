@@ -18,7 +18,17 @@ pub enum TokenKind {
     Static,
     Mut,
     Struct,
+    Enum,
     Packed,
+    Match,
+    Case,
+    Borrow,
+    Move,
+    Defer,
+    Break,
+    Continue,
+    Extern,
+    Null,
     True,
     False,
 
@@ -56,6 +66,8 @@ pub enum TokenKind {
     LBracket,
     RBracket,
     Dot,
+    Question,
+    At,
 
     Newline,
     Indent,
@@ -82,7 +94,17 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Static => write!(f, "static"),
             TokenKind::Mut => write!(f, "mut"),
             TokenKind::Struct => write!(f, "struct"),
+            TokenKind::Enum => write!(f, "enum"),
             TokenKind::Packed => write!(f, "packed"),
+            TokenKind::Match => write!(f, "match"),
+            TokenKind::Case => write!(f, "case"),
+            TokenKind::Borrow => write!(f, "borrow"),
+            TokenKind::Move => write!(f, "move"),
+            TokenKind::Defer => write!(f, "defer"),
+            TokenKind::Break => write!(f, "break"),
+            TokenKind::Continue => write!(f, "continue"),
+            TokenKind::Extern => write!(f, "extern"),
+            TokenKind::Null => write!(f, "null"),
             TokenKind::True => write!(f, "true"),
             TokenKind::False => write!(f, "false"),
             TokenKind::Ident(s) => write!(f, "{}", s),
@@ -117,6 +139,8 @@ impl std::fmt::Display for TokenKind {
             TokenKind::LBracket => write!(f, "["),
             TokenKind::RBracket => write!(f, "]"),
             TokenKind::Dot => write!(f, "."),
+            TokenKind::Question => write!(f, "?"),
+            TokenKind::At => write!(f, "@"),
             TokenKind::Newline => write!(f, "<newline>"),
             TokenKind::Indent => write!(f, "<indent>"),
             TokenKind::Dedent => write!(f, "<dedent>"),
@@ -395,7 +419,17 @@ impl<'src> Lexer<'src> {
             "static" => TokenKind::Static,
             "mut" => TokenKind::Mut,
             "struct" => TokenKind::Struct,
+            "enum" => TokenKind::Enum,
             "packed" => TokenKind::Packed,
+            "match" => TokenKind::Match,
+            "case" => TokenKind::Case,
+            "borrow" => TokenKind::Borrow,
+            "move" => TokenKind::Move,
+            "defer" => TokenKind::Defer,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
+            "extern" => TokenKind::Extern,
+            "null" => TokenKind::Null,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             _ => TokenKind::Ident(s),
@@ -525,6 +559,16 @@ impl<'src> Lexer<'src> {
                     let sp = self.span();
                     self.advance();
                     tokens.push(Token::new(TokenKind::Dot, sp));
+                }
+                '?' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::Question, sp));
+                }
+                '@' => {
+                    let sp = self.span();
+                    self.advance();
+                    tokens.push(Token::new(TokenKind::At, sp));
                 }
                 ':' => {
                     let sp = self.span();

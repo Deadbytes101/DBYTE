@@ -3,6 +3,7 @@
 //! This crate reuses DByte's lexer, parser, and AST. It does not invoke the
 //! hosted interpreter/VM or any external compiler, linker, or assembler.
 
+pub mod archive;
 #[cfg(test)]
 mod block_device_contract;
 #[cfg(test)]
@@ -11,13 +12,17 @@ pub mod cli;
 pub mod dbup;
 pub mod diagnostics;
 pub mod elf32;
+pub mod external_elf;
 #[cfg(test)]
 mod filesystem_contract;
 #[cfg(test)]
 mod filesystem_runtime_contract;
+pub mod hir_native;
+pub mod inspection;
 pub mod ir;
 #[cfg(test)]
 mod irq_io_contract;
+pub mod legacy_hir;
 pub mod linker;
 pub mod lower;
 #[cfg(test)]
@@ -26,20 +31,27 @@ pub mod modules;
 pub mod object;
 #[cfg(test)]
 mod scheduler_contract;
+#[cfg(test)]
 pub mod semantic;
 pub mod system_types;
 pub mod systems_compiler;
 pub mod systems_ir;
 pub mod systems_lower;
+
+pub use inspection::inspect_elf;
+#[cfg(test)]
 pub mod systems_semantic;
 pub mod types;
 #[cfg(test)]
 mod user_process_contract;
 pub mod x86;
 
+#[cfg(test)]
 use std::fmt::Write;
 
+#[cfg(test)]
 use dbyte_lexer::Lexer;
+#[cfg(test)]
 use dbyte_parser::Parser;
 
 pub use diagnostics::{Diagnostic, DiagnosticCategory};
@@ -53,6 +65,7 @@ pub enum EmitKind {
     Elf,
     Bin,
     Obj,
+    StaticLib,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +80,7 @@ pub struct NativeArtifact {
 
 /// Compile DByte source completely in memory through the freestanding native
 /// pipeline. No output file is touched by this function.
+#[cfg(test)]
 pub fn compile_source(path: &str, source: &str) -> Result<NativeArtifact, Diagnostic> {
     let tokens = Lexer::new(source).tokenize().map_err(|error| {
         Diagnostic::new(DiagnosticCategory::Lex, error.msg, error.span).with_path(path)
@@ -101,6 +115,7 @@ pub fn compile_source(path: &str, source: &str) -> Result<NativeArtifact, Diagno
     })
 }
 
+#[cfg(test)]
 fn attach_path(error: Diagnostic, path: &str) -> Diagnostic {
     if error.path.is_some() {
         error
@@ -109,6 +124,7 @@ fn attach_path(error: Diagnostic, path: &str) -> Diagnostic {
     }
 }
 
+#[cfg(test)]
 fn append_hex_dump(output: &mut String, bytes: &[u8]) {
     for (row, chunk) in bytes.chunks(16).enumerate() {
         let _ = write!(output, "{:08x}:", row * 16);
@@ -147,7 +163,7 @@ mod tests {
 
     #[test]
     fn frontend_failure_keeps_category_path_and_span() {
-        let error = compile_source("bad.dby", "@").unwrap_err();
+        let error = compile_source("bad.dby", "`").unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::Lex);
         assert_eq!(error.path.as_deref(), Some("bad.dby"));
         assert!(error.span.is_some());

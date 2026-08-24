@@ -1,0 +1,47 @@
+fn id[T](value: T) -> T:
+    return value
+
+fn compute(input: Result[u32, u32]) -> Result[u32, u32]:
+    let value = input?
+    return Result[u32, u32].Ok(id[u32](value) + (2 as u32))
+
+pub fn user_main() -> int:
+    let bytes: array[u8, 2] = [40 as u8, 2 as u8]
+    let view: slice[u8] = borrow bytes
+    let factor: u32 = view[1] as u32
+    let add = fn [borrow factor](value: u32) -> u32:
+        return value + factor
+    let result = compute(Result[u32, u32].Ok(add(view[0] as u32) - (2 as u32)))
+    match result:
+        case Result.Ok(value):
+            if value != (42 as u32):
+                return 1
+        case Result.Err(error):
+            return error as int
+    let message: str = "HELLO FROM DBYTE USER\r\n"
+    let written: int = user.syscall3(1 as u32, 1 as u32, message, 23 as usize)
+    if written < 0:
+        return written
+    let path: str = "/SYSTEM/CONFIG.TXT"
+    let fd: i32 = user.syscall2(3 as u32, path, 1 as usize)
+    if fd < 3:
+        return 2
+    let count: i32 = user.syscall3(4 as u32, fd as usize, (&CONFIG[0]) as usize, 64 as usize)
+    if count != 9:
+        return 3
+    if user.syscall1(5 as u32, fd as usize) != 0:
+        return 4
+    if CONFIG[0] != (0x56 as u8):
+        return 5
+    if CONFIG[5] != (0x3d as u8):
+        return 5
+    let prefix: str = "CONFIG VALUE "
+    if user.syscall3(1 as u32, 1 as usize, prefix, 13 as usize) != 13:
+        return 6
+    if user.syscall3(1 as u32, 1 as usize, ((&CONFIG[0]) as usize) + (6 as usize), 2 as usize) != 2:
+        return 6
+    let newline: str = "\r\n"
+    if user.syscall3(1 as u32, 1 as usize, newline, 2 as usize) != 2:
+        return 6
+    return 0
+static mut CONFIG: array[u8, 64]

@@ -1,7 +1,8 @@
 use byteorder::{ByteOrder, BE, LE};
 use dbyte_ast::{FStrPart, Span};
 use dbyte_bytecode::{
-    format_op, BytecodeFunction, Chunk, LocalKind, ModuleMember, ModuleValue, NativeFn, Op, Value,
+    format_op, BytecodeFunction, Chunk, ClosureValue, EnumValue, LocalKind, ModuleMember,
+    ModuleValue, NativeFn, Op, StructValue, Value,
 };
 use dbyte_compiler::{CompileError, Compiler};
 use dbyte_lexer::Lexer;
@@ -16,6 +17,11 @@ use std::rc::Rc;
 // Keep this below the host thread stack ceiling so recursion fails as a DByte
 // RuntimeError instead of aborting the Rust process.
 const MAX_CALL_DEPTH: usize = 32;
+
+enum OutputSink {
+    Stdout,
+    Capture(Rc<RefCell<String>>),
+}
 
 #[derive(Debug)]
 pub struct VmError {
@@ -221,6 +227,7 @@ pub struct Vm {
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
     loading_stack: Vec<String>,
     active_function_tables: Vec<Vec<Rc<BytecodeFunction>>>,
+    output: OutputSink,
 }
 
 impl Vm {
@@ -237,6 +244,7 @@ impl Vm {
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
             active_function_tables: Vec::new(),
+            output: OutputSink::Stdout,
         }
     }
 
@@ -252,6 +260,17 @@ impl Vm {
 
     pub fn set_script_args(&mut self, args: Vec<String>) {
         self.script_args = args;
+    }
+
+    pub fn capture_output(&mut self) {
+        self.output = OutputSink::Capture(Rc::new(RefCell::new(String::new())));
+    }
+
+    pub fn take_captured_output(&mut self) -> String {
+        match &self.output {
+            OutputSink::Capture(output) => std::mem::take(&mut *output.borrow_mut()),
+            OutputSink::Stdout => String::new(),
+        }
     }
 
     pub fn script_args(&self) -> &[String] {
@@ -374,6 +393,130 @@ impl Vm {
                     Op::Neg => self.unary_neg()?,
                     Op::Not => self.unary_not()?,
                     Op::MakeList(count) => self.make_list(count)?,
+                    Op::MakeStruct { name, fields } => {
+                        if self.stack.len() < fields.len() {
+                            return Err(VmError::new("stack underflow constructing struct"));
+                        }
+                        let start = self.stack.len() - fields.len();
+                        let values = self.stack.split_off(start);
+                        let fields = fields.into_iter().zip(values).collect();
+                        self.push(Value::Struct(Rc::new(RefCell::new(StructValue {
+                            type_name: name,
+                            fields,
+                        }))));
+                    }
+                    Op::MakeEnum {
+                        enum_name,
+                        variant,
+                        payload_count,
+                    } => {
+                        if self.stack.len() < payload_count {
+                            return Err(VmError::new("stack underflow constructing enum"));
+                        }
+                        let start = self.stack.len() - payload_count;
+                        let payload = self.stack.split_off(start);
+                        self.push(Value::Enum(EnumValue {
+                            enum_name,
+                            variant,
+                            payload,
+                        }));
+                    }
+                    Op::IsVariant { enum_name, variant } => {
+                        let value = self.pop()?;
+                        let matches = matches!(
+                            value,
+                            Value::Enum(value)
+                                if value.enum_name == enum_name && value.variant == variant
+                        );
+                        self.push(Value::Bool(matches));
+                    }
+                    Op::EnumPayload { slot, index } => {
+                        let value = self.current_frame()?.get_value(chunk, slot)?;
+                        let Value::Enum(value) = value else {
+                            return Err(VmError::new("enum payload source is not an enum"));
+                        };
+                        let payload = value.payload.get(index).cloned().ok_or_else(|| {
+                            VmError::new(format!("enum payload index {index} is out of range"))
+                        })?;
+                        self.push(payload);
+                    }
+                    Op::StoreField(property) => {
+                        let value = self.pop()?;
+                        let object = self.pop()?;
+                        let Value::Struct(object) = object else {
+                            return Err(VmError::new("field store requires a struct"));
+                        };
+                        let mut object = object.borrow_mut();
+                        let field = object.fields.get_mut(&property).ok_or_else(|| {
+                            VmError::new(format!("struct has no field '{property}'"))
+                        })?;
+                        *field = value;
+                    }
+                    Op::MakeClosure {
+                        function,
+                        capture_count,
+                    } => {
+                        if self.stack.len() < capture_count {
+                            return Err(VmError::new("stack underflow capturing closure"));
+                        }
+                        let start = self.stack.len() - capture_count;
+                        let captures = self.stack.split_off(start);
+                        self.push(Value::Closure(ClosureValue { function, captures }));
+                    }
+                    Op::CallValue(argc) => {
+                        if self.stack.len() < argc + 1 {
+                            return Err(VmError::new("stack underflow calling closure"));
+                        }
+                        let closure_index = self.stack.len() - argc - 1;
+                        let closure = match self.stack.get(closure_index).cloned() {
+                            Some(Value::Closure(closure)) => closure,
+                            Some(other) => {
+                                return Err(VmError::new(format!(
+                                    "{} is not callable",
+                                    other.kind_name()
+                                )))
+                            }
+                            None => return Err(VmError::new("missing callable value")),
+                        };
+                        let arguments = self.stack.split_off(closure_index + 1);
+                        self.stack.pop();
+                        let value_stack_base = self.stack.len();
+                        self.stack.extend(closure.captures);
+                        self.stack.extend(arguments);
+                        let i64_stack_base = self.i64_stack.len();
+                        self.push_call_frame(
+                            Rc::new(*closure.function),
+                            value_stack_base,
+                            ReturnMode::Push {
+                                value_stack_base,
+                                i64_stack_base,
+                            },
+                        )?;
+                        continue 'dispatch;
+                    }
+                    Op::TryResult => {
+                        let value = self.pop()?;
+                        let Value::Enum(result) = value else {
+                            return Err(VmError::new("operator '?' requires Result"));
+                        };
+                        if result.enum_name != "Result" || result.payload.len() != 1 {
+                            return Err(VmError::new(
+                                "operator '?' requires canonical Result payload",
+                            ));
+                        }
+                        match result.variant.as_str() {
+                            "Ok" => self.push(result.payload[0].clone()),
+                            "Err" => {
+                                self.finish_frame(Value::Enum(result))?;
+                                continue 'dispatch;
+                            }
+                            _ => {
+                                return Err(VmError::new(
+                                    "operator '?' encountered an invalid Result tag",
+                                ))
+                            }
+                        }
+                    }
                     Op::Index => self.index()?,
                     Op::LoadLocal(slot) => {
                         let value = self.current_frame()?.get_value(chunk, slot)?;
@@ -521,24 +664,39 @@ impl Vm {
                             Value::Module(Rc::new(module)),
                         )?;
                     }
-                    Op::Member(property) => {
-                        let module = self.pop_module()?;
-                        let member = module.members.get(&property).cloned().ok_or_else(|| {
-                            VmError::new(format!(
-                                "module '{}' has no public member '{}'",
-                                module.alias, property
-                            ))
-                        })?;
-                        match member {
-                            ModuleMember::Value(value) => self.push(value),
-                            ModuleMember::Function(_) | ModuleMember::Native(_) => {
-                                return Err(VmError::new(format!(
-                                    "module member '{}' is callable",
-                                    property
-                                )));
+                    Op::Member(property) => match self.pop()? {
+                        Value::Struct(value) => {
+                            let field =
+                                value
+                                    .borrow()
+                                    .fields
+                                    .get(&property)
+                                    .cloned()
+                                    .ok_or_else(|| {
+                                        VmError::new(format!("struct has no field '{property}'"))
+                                    })?;
+                            self.push(field);
+                        }
+                        Value::Module(module) => {
+                            let member =
+                                module.members.get(&property).cloned().ok_or_else(|| {
+                                    VmError::new(format!(
+                                        "module '{}' has no public member '{}'",
+                                        module.alias, property
+                                    ))
+                                })?;
+                            match member {
+                                ModuleMember::Value(value) => self.push(value),
+                                ModuleMember::Function(_) | ModuleMember::Native(_) => {
+                                    return Err(VmError::new(format!(
+                                        "module member '{}' is callable",
+                                        property
+                                    )));
+                                }
                             }
                         }
-                    }
+                        _ => return Err(VmError::new("member access requires an aggregate")),
+                    },
                     Op::MemberCall(property, argc) => {
                         let args_start = self.stack.len() - argc;
                         let module = match self.stack.get(args_start - 1) {
@@ -616,7 +774,8 @@ impl Vm {
                     Op::Call(name, argc) => {
                         let args_start = self.stack.len() - argc;
                         if name == "print" || name == "len" {
-                            let value = self.call_builtin(&name, &self.stack[args_start..])?;
+                            let arguments = self.stack[args_start..].to_vec();
+                            let value = self.call_builtin(&name, &arguments)?;
                             self.stack.truncate(args_start);
                             self.push(value);
                         } else {
@@ -1353,10 +1512,18 @@ impl Vm {
         Ok(true)
     }
 
-    fn call_builtin(&self, name: &str, args: &[Value]) -> Result<Value, VmError> {
+    fn call_builtin(&mut self, name: &str, args: &[Value]) -> Result<Value, VmError> {
         if name == "print" {
             let rendered: Vec<String> = args.iter().map(|v| format!("{}", v)).collect();
-            println!("{}", rendered.join(" "));
+            let line = rendered.join(" ");
+            match &self.output {
+                OutputSink::Stdout => println!("{line}"),
+                OutputSink::Capture(output) => {
+                    let mut output = output.borrow_mut();
+                    output.push_str(&line);
+                    output.push('\n');
+                }
+            }
             return Ok(Value::Void);
         }
         if name == "len" {
@@ -1373,16 +1540,6 @@ impl Vm {
             return Ok(Value::Int(length as i64));
         }
         Err(VmError::new(format!("undefined builtin `{}`", name)))
-    }
-
-    fn pop_module(&mut self) -> Result<Rc<ModuleValue>, VmError> {
-        match self.pop()? {
-            Value::Module(module) => Ok(module),
-            other => Err(VmError::new(format!(
-                "member access not supported for `{}`",
-                other
-            ))),
-        }
     }
 
     fn call_native(&self, id: NativeFn, args: &[Value]) -> Result<Value, VmError> {
@@ -2227,6 +2384,73 @@ impl Vm {
 mod tests {
     use super::*;
     use dbyte_bytecode::{BytecodeFunction, Chunk, Op, Value};
+    use dbyte_compiler::Compiler;
+    use dbyte_lexer::Lexer;
+    use dbyte_parser::Parser;
+
+    #[test]
+    fn canonical_generic_call_executes_on_the_vm() {
+        let source =
+            "fn id[T](value: T) -> T:\n    return value\n\nlet answer: int = id[int](42)\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        Vm::new().run(&chunk).unwrap();
+    }
+
+    #[test]
+    fn canonical_struct_enum_and_match_execute_on_the_vm() {
+        let source = "struct Pair[A, B]:\n    first: A\n    second: B\n\nenum Choice[T]:\n    Some(T)\n    None\n\nlet pair = Pair[int, int](first = 40, second = 2)\npair.first = pair.first + pair.second\nlet result = Choice[int].Some(pair.first)\nmatch result:\n    case Choice.Some(value):\n        let observed = value\n    case Choice.None:\n        let observed = 0\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        Vm::new().run(&chunk).unwrap();
+    }
+
+    #[test]
+    fn explicit_capture_closure_executes_on_the_vm() {
+        let source = "let factor: int = 2\nlet add = fn [borrow factor](value: int) -> int:\n    return value + factor\nlet answer: int = add(40)\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        Vm::new().run(&chunk).unwrap();
+    }
+
+    #[test]
+    fn result_question_mark_returns_err_from_the_current_vm_frame() {
+        let source = "fn unwrap(input: Result[int, int]) -> Result[int, int]:\n    let value = input?\n    return Result[int, int].Ok(value + 1)\n\nlet result = unwrap(Result[int, int].Err(7))\nmatch result:\n    case Result.Ok(value):\n        let observed = value\n    case Result.Err(error):\n        let observed = error\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        Vm::new().run(&chunk).unwrap();
+    }
+
+    #[test]
+    fn lexical_defer_lowers_across_continue_break_and_result_propagation() {
+        let source = "fn fail(input: Result[int, int]) -> Result[int, int]:\n    defer []:\n        let cleaned = 1\n    let value = input?\n    return Result[int, int].Ok(value)\n\nlet count: int = 0\nwhile count < 2:\n    defer []:\n        let cleaned = 1\n    count = count + 1\n    if count < 2:\n        continue\n    break\nlet result = fail(Result[int, int].Err(7))\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        Vm::new().run(&chunk).unwrap();
+    }
+
+    #[test]
+    fn hosted_v12_parity_corpus_has_exact_vm_output() {
+        let source = "struct Pair[A, B]:\n    first: A\n    second: B\n\nfn id[T](value: T) -> T:\n    return value\n\nfn attempt(input: Result[int, int]) -> Result[int, int]:\n    defer []:\n        print(\"CLEAN\")\n    let value = input?\n    return Result[int, int].Ok(value)\n\nlet pair = Pair[int, int](first = id[int](40), second = 2)\nprint(pair.first + pair.second)\nlet factor: int = 2\nlet add = fn [borrow factor](value: int) -> int:\n    return value + factor\nprint(add(40))\nlet result = attempt(Result[int, int].Err(7))\nmatch result:\n    case Result.Ok(value):\n        print(value)\n    case Result.Err(error):\n        print(error)\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        let mut vm = Vm::new();
+        vm.capture_output();
+        vm.run(&chunk).unwrap();
+        assert_eq!(vm.take_captured_output(), "42\n42\nCLEAN\n7\n");
+    }
 
     #[test]
     fn signed_remainder_and_zero_failure_are_deterministic() {

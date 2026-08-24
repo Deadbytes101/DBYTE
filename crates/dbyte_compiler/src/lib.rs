@@ -52,11 +52,22 @@ struct FunctionCompiler {
     local_types: HashMap<String, ExprType>,
     function_return_types: HashMap<String, ExprType>,
     function_param_types: HashMap<String, Vec<ExprType>>,
+    struct_defs: HashMap<String, Vec<String>>,
+    enum_defs: HashMap<String, HashMap<String, usize>>,
     imports: HashMap<String, String>,
     return_type: ExprType,
     inlining_stack: Vec<usize>,
     inlining_counter: usize,
     current_function_name: String,
+    active_defers: Vec<Vec<Stmt>>,
+    compiling_cleanup: bool,
+    loops: Vec<LoopContext>,
+}
+
+struct LoopContext {
+    continue_target: usize,
+    cleanup_base: usize,
+    break_jumps: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,17 +95,32 @@ impl FunctionCompiler {
     }
 
     fn new_with_return(name: String, return_type: ExprType) -> Self {
+        let enum_defs = HashMap::from([
+            (
+                "Option".into(),
+                HashMap::from([("None".into(), 0), ("Some".into(), 1)]),
+            ),
+            (
+                "Result".into(),
+                HashMap::from([("Ok".into(), 1), ("Err".into(), 1)]),
+            ),
+        ]);
         Self {
             chunk: Chunk::new(name.clone()),
             locals: HashMap::new(),
             local_types: HashMap::new(),
             function_return_types: HashMap::new(),
             function_param_types: HashMap::new(),
+            struct_defs: HashMap::new(),
+            enum_defs,
             imports: HashMap::new(),
             return_type,
             inlining_stack: Vec::new(),
             inlining_counter: 0,
             current_function_name: name,
+            active_defers: Vec::new(),
+            compiling_cleanup: false,
+            loops: Vec::new(),
         }
     }
 
@@ -230,12 +256,69 @@ impl FunctionCompiler {
         }
     }
 
+    fn reserve_types(&mut self, stmts: &[Stmt]) {
+        for statement in stmts {
+            match statement {
+                Stmt::StructDef { name, fields, .. } => {
+                    self.struct_defs.insert(
+                        name.clone(),
+                        fields.iter().map(|field| field.name.clone()).collect(),
+                    );
+                }
+                Stmt::EnumDef { name, variants, .. } => {
+                    self.enum_defs.insert(
+                        name.clone(),
+                        variants
+                            .iter()
+                            .map(|variant| (variant.name.clone(), variant.payload.len()))
+                            .collect(),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn compile_stmts(&mut self, stmts: &[Stmt]) -> Result<(), CompileError> {
         self.reserve_functions(stmts);
+        self.reserve_types(stmts);
+        let defer_base = self.active_defers.len();
         for stmt in stmts {
-            self.compile_stmt(stmt)?;
+            if let Stmt::Defer { body, .. } = stmt {
+                self.active_defers.push(body.clone());
+            } else {
+                self.compile_stmt(stmt)?;
+            }
         }
+        if !self.compiling_cleanup {
+            self.compile_deferred_from(defer_base)?;
+        }
+        self.active_defers.truncate(defer_base);
         Ok(())
+    }
+
+    fn compile_deferred_from(&mut self, base: usize) -> Result<(), CompileError> {
+        let bodies: Vec<_> = self.active_defers[base..].iter().rev().cloned().collect();
+        let previous = self.compiling_cleanup;
+        self.compiling_cleanup = true;
+        let result = (|| {
+            for body in bodies {
+                for statement in &body {
+                    if matches!(statement, Stmt::Defer { .. }) {
+                        return Err(CompileError {
+                            msg:
+                                "nested defer inside cleanup is not yet available in the hosted VM"
+                                    .into(),
+                            span: statement.span(),
+                        });
+                    }
+                    self.compile_stmt(statement)?;
+                }
+            }
+            Ok(())
+        })();
+        self.compiling_cleanup = previous;
+        result
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), CompileError> {
@@ -316,6 +399,8 @@ impl FunctionCompiler {
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 child.function_return_types = self.function_return_types.clone();
                 child.function_param_types = self.function_param_types.clone();
+                child.struct_defs = self.struct_defs.clone();
+                child.enum_defs = self.enum_defs.clone();
                 child.imports = self.imports.clone();
                 child.inlining_counter = self.inlining_counter;
 
@@ -339,6 +424,34 @@ impl FunctionCompiler {
                 }
             }
             Stmt::Return { value, .. } => {
+                if !self.active_defers.is_empty() && !self.compiling_cleanup {
+                    if let Some(value) = value {
+                        self.compile_expr(value)?;
+                        let temporary = format!("__v12_return_{}", self.inlining_counter);
+                        self.inlining_counter += 1;
+                        let slot = self.local_slot(&temporary);
+                        self.set_local_type(&temporary, self.return_type);
+                        if self.return_type == ExprType::Int {
+                            self.emit(Op::StoreLocalI64(slot));
+                        } else {
+                            self.emit(Op::StoreLocal(slot));
+                        }
+                        self.compile_deferred_from(0)?;
+                        if self.return_type == ExprType::Int {
+                            self.emit(Op::LoadLocalI64(slot));
+                            self.emit(Op::ReturnI64);
+                        } else {
+                            self.emit(Op::LoadLocal(slot));
+                            self.emit(Op::Return);
+                        }
+                    } else {
+                        self.compile_deferred_from(0)?;
+                        let index = self.add_const(Value::Void);
+                        self.emit(Op::Const(index));
+                        self.emit(Op::Return);
+                    }
+                    return Ok(());
+                }
                 if let Some(value) = value {
                     if self.return_type == ExprType::Int && self.can_compile_i64_stack_expr(value) {
                         self.compile_i64_stack_expr(value)?;
@@ -390,10 +503,19 @@ impl FunctionCompiler {
                     }
                     self.emit(Op::JumpIfFalse(usize::MAX))
                 };
+                self.loops.push(LoopContext {
+                    continue_target: loop_start,
+                    cleanup_base: self.active_defers.len(),
+                    break_jumps: Vec::new(),
+                });
                 self.compile_stmts(body)?;
+                let loop_context = self.loops.pop().expect("active while context");
                 self.emit(Op::Jump(loop_start));
                 let end = self.chunk.code.len();
                 self.patch_jump(exit, end);
+                for jump in loop_context.break_jumps {
+                    self.patch_jump(jump, end);
+                }
             }
             Stmt::For {
                 var,
@@ -409,10 +531,19 @@ impl FunctionCompiler {
                     slot,
                     jump: usize::MAX,
                 });
+                self.loops.push(LoopContext {
+                    continue_target: loop_start,
+                    cleanup_base: self.active_defers.len(),
+                    break_jumps: Vec::new(),
+                });
                 self.compile_stmts(body)?;
+                let loop_context = self.loops.pop().expect("active for context");
                 self.emit(Op::Jump(loop_start));
                 let end = self.chunk.code.len();
                 self.patch_jump(next, end);
+                for jump in loop_context.break_jumps {
+                    self.patch_jump(jump, end);
+                }
             }
             Stmt::Import { path, alias, .. } => {
                 let slot = self.local_slot(alias);
@@ -420,10 +551,114 @@ impl FunctionCompiler {
                 self.set_local_type(alias, ExprType::Module);
                 self.emit(Op::Import(path.clone(), slot));
             }
-            Stmt::Store { span, .. }
-            | Stmt::StructDef { span, .. }
-            | Stmt::Const { span, .. }
-            | Stmt::Static { span, .. } => {
+            Stmt::Store {
+                target,
+                value,
+                span,
+            } => {
+                let Expr::Member {
+                    object, property, ..
+                } = target
+                else {
+                    return Err(CompileError {
+                        msg: "hosted VM store currently requires a struct field lvalue".into(),
+                        span: *span,
+                    });
+                };
+                self.compile_expr(object)?;
+                self.compile_expr(value)?;
+                self.emit(Op::StoreField(property.clone()));
+            }
+            Stmt::StructDef { .. } | Stmt::EnumDef { .. } => {}
+            Stmt::Match {
+                value, arms, span, ..
+            } => {
+                self.compile_expr(value)?;
+                let temporary_name = format!("__v12_match_{}", self.inlining_counter);
+                self.inlining_counter += 1;
+                let value_slot = self.local_slot(&temporary_name);
+                self.emit(Op::StoreLocal(value_slot));
+                let mut end_jumps = Vec::new();
+                for arm in arms {
+                    let next = match &arm.pattern {
+                        Pattern::Wildcard(_) => None,
+                        Pattern::Variant { path, bindings, .. } => {
+                            let Some((enum_name, variant)) = path.rsplit_once('.') else {
+                                return Err(CompileError {
+                                    msg: "variant pattern must be qualified".into(),
+                                    span: arm.span,
+                                });
+                            };
+                            self.emit(Op::LoadLocal(value_slot));
+                            self.emit(Op::IsVariant {
+                                enum_name: enum_name.to_string(),
+                                variant: variant.to_string(),
+                            });
+                            let jump = self.emit(Op::JumpIfFalse(usize::MAX));
+                            for (index, binding) in bindings.iter().enumerate() {
+                                self.emit(Op::EnumPayload {
+                                    slot: value_slot,
+                                    index,
+                                });
+                                let slot = self.local_slot(binding);
+                                self.emit(Op::StoreLocal(slot));
+                            }
+                            Some(jump)
+                        }
+                    };
+                    self.compile_stmts(&arm.body)?;
+                    end_jumps.push(self.emit(Op::Jump(usize::MAX)));
+                    if let Some(next) = next {
+                        let target = self.chunk.code.len();
+                        self.patch_jump(next, target);
+                    }
+                }
+                if arms.is_empty() {
+                    return Err(CompileError {
+                        msg: "match requires at least one arm".into(),
+                        span: *span,
+                    });
+                }
+                let end = self.chunk.code.len();
+                for jump in end_jumps {
+                    self.patch_jump(jump, end);
+                }
+            }
+            Stmt::Defer { .. } => {}
+            Stmt::Break { span } => {
+                let Some((cleanup_base, _)) = self
+                    .loops
+                    .last()
+                    .map(|context| (context.cleanup_base, context.continue_target))
+                else {
+                    return Err(CompileError {
+                        msg: "break outside loop".into(),
+                        span: *span,
+                    });
+                };
+                self.compile_deferred_from(cleanup_base)?;
+                let jump = self.emit(Op::Jump(usize::MAX));
+                self.loops
+                    .last_mut()
+                    .expect("active loop context")
+                    .break_jumps
+                    .push(jump);
+            }
+            Stmt::Continue { span } => {
+                let Some((cleanup_base, continue_target)) = self
+                    .loops
+                    .last()
+                    .map(|context| (context.cleanup_base, context.continue_target))
+                else {
+                    return Err(CompileError {
+                        msg: "continue outside loop".into(),
+                        span: *span,
+                    });
+                };
+                self.compile_deferred_from(cleanup_base)?;
+                self.emit(Op::Jump(continue_target));
+            }
+            Stmt::Const { span, .. } | Stmt::Static { span, .. } => {
                 return Err(CompileError {
                     msg: "native systems statements are unavailable in the hosted VM compiler"
                         .into(),
@@ -509,6 +744,167 @@ impl FunctionCompiler {
             Expr::FStr(parts, _) => {
                 self.emit(Op::FStr(parts.clone()));
             }
+            Expr::NullLit(span) | Expr::GenericApply { span, .. } => {
+                return Err(CompileError {
+                    msg: "v12 expression requires canonical HIR lowering".into(),
+                    span: *span,
+                });
+            }
+            Expr::Borrow { expr, .. } => self.compile_expr(expr)?,
+            Expr::Try { expr, .. } => {
+                self.compile_expr(expr)?;
+                if self.active_defers.is_empty() || self.compiling_cleanup {
+                    self.emit(Op::TryResult);
+                } else {
+                    let temporary = format!("__v12_try_{}", self.inlining_counter);
+                    self.inlining_counter += 1;
+                    let slot = self.local_slot(&temporary);
+                    self.emit(Op::StoreLocal(slot));
+                    self.emit(Op::LoadLocal(slot));
+                    self.emit(Op::IsVariant {
+                        enum_name: "Result".into(),
+                        variant: "Err".into(),
+                    });
+                    let ok = self.emit(Op::JumpIfFalse(usize::MAX));
+                    self.compile_deferred_from(0)?;
+                    self.emit(Op::LoadLocal(slot));
+                    self.emit(Op::Return);
+                    let ok_target = self.chunk.code.len();
+                    self.patch_jump(ok, ok_target);
+                    self.emit(Op::EnumPayload { slot, index: 0 });
+                }
+            }
+            Expr::Closure {
+                captures,
+                params,
+                ret_ty,
+                body,
+                span,
+            } => {
+                if captures
+                    .iter()
+                    .any(|capture| capture.mode == CaptureMode::BorrowMut)
+                {
+                    return Err(CompileError {
+                        msg: "borrow-mut closure requires reference-cell VM lowering".into(),
+                        span: *span,
+                    });
+                }
+                let closure_name = format!("__closure_{}", self.inlining_counter);
+                self.inlining_counter += 1;
+                let mut child = FunctionCompiler::new_with_return(
+                    closure_name.clone(),
+                    expr_type_from_annotation(ret_ty),
+                );
+                child.chunk.functions = self.chunk.functions.clone();
+                child.chunk.function_ids = self.chunk.function_ids.clone();
+                child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
+                child.function_return_types = self.function_return_types.clone();
+                child.function_param_types = self.function_param_types.clone();
+                child.struct_defs = self.struct_defs.clone();
+                child.enum_defs = self.enum_defs.clone();
+                for capture in captures {
+                    child.local_slot(&capture.name);
+                    child.set_local_type(&capture.name, self.local_type(&capture.name));
+                }
+                for parameter in params {
+                    child.local_slot(&parameter.name);
+                    child.set_local_type(&parameter.name, expr_type_from_annotation(&parameter.ty));
+                }
+                child.compile_stmts(body)?;
+                let void = child.add_const(Value::Void);
+                child.emit(Op::Const(void));
+                child.emit(Op::Return);
+                for capture in captures {
+                    let slot = self.existing_slot(&capture.name, capture.span)?;
+                    if self.local_type(&capture.name) == ExprType::Int {
+                        self.emit(Op::LoadLocalI64(slot));
+                    } else {
+                        self.emit(Op::LoadLocal(slot));
+                    }
+                }
+                self.emit(Op::MakeClosure {
+                    function: Box::new(BytecodeFunction {
+                        name: closure_name,
+                        params: captures
+                            .iter()
+                            .map(|capture| capture.name.clone())
+                            .chain(params.iter().map(|parameter| parameter.name.clone()))
+                            .collect(),
+                        chunk: child.finish(),
+                    }),
+                    capture_count: captures.len(),
+                });
+            }
+            Expr::Invoke {
+                callee,
+                args,
+                named_args,
+                span,
+            } => {
+                let name = match callee.as_ref() {
+                    Expr::Ident(name, _) => Some(name.as_str()),
+                    Expr::GenericApply { target, .. } => match target.as_ref() {
+                        Expr::Ident(name, _) => Some(name.as_str()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let Some(name) = name else {
+                    if !named_args.is_empty() {
+                        return Err(CompileError {
+                            msg: "indirect calls do not accept named arguments".into(),
+                            span: *span,
+                        });
+                    }
+                    self.compile_expr(callee)?;
+                    for argument in args {
+                        self.compile_expr(argument)?;
+                    }
+                    self.emit(Op::CallValue(args.len()));
+                    return Ok(());
+                };
+                if let Some(fields) = self.struct_defs.get(name).cloned() {
+                    if !args.is_empty() || named_args.len() != fields.len() {
+                        return Err(CompileError {
+                            msg: format!("struct `{name}` requires every named field once"),
+                            span: *span,
+                        });
+                    }
+                    for field in &fields {
+                        let argument = named_args
+                            .iter()
+                            .find(|argument| argument.name == *field)
+                            .ok_or_else(|| CompileError {
+                            msg: format!("struct `{name}` is missing field `{field}`"),
+                            span: *span,
+                        })?;
+                        self.compile_expr(&argument.value)?;
+                    }
+                    self.emit(Op::MakeStruct {
+                        name: name.to_string(),
+                        fields,
+                    });
+                    return Ok(());
+                }
+                if !named_args.is_empty() {
+                    return Err(CompileError {
+                        msg: "function calls do not accept named arguments".into(),
+                        span: *span,
+                    });
+                }
+                for argument in args {
+                    self.compile_expr(argument)?;
+                }
+                if let Some(id) = self.chunk.function_ids.get(name).copied() {
+                    self.emit(Op::CallFn {
+                        id,
+                        argc: args.len(),
+                    });
+                } else {
+                    self.emit(Op::Call(name.to_string(), args.len()));
+                }
+            }
             Expr::Ident(name, span) => {
                 let slot = self.existing_slot(name, *span)?;
                 if self.local_type(name) == ExprType::Int {
@@ -577,6 +973,15 @@ impl FunctionCompiler {
                 });
             }
             Expr::Call { name, args, .. } => {
+                if self.locals.contains_key(name) && !self.chunk.function_ids.contains_key(name) {
+                    let slot = self.locals[name];
+                    self.emit(Op::LoadLocal(slot));
+                    for argument in args {
+                        self.compile_expr(argument)?;
+                    }
+                    self.emit(Op::CallValue(args.len()));
+                    return Ok(());
+                }
                 if self.try_inline_function(name, args, InlineReturn::ValueStack)? {
                     return Ok(());
                 }
@@ -609,6 +1014,40 @@ impl FunctionCompiler {
                 args,
                 ..
             } => {
+                let enum_name = match object.as_ref() {
+                    Expr::Ident(name, _) => Some(name.as_str()),
+                    Expr::GenericApply { target, .. } => match target.as_ref() {
+                        Expr::Ident(name, _) => Some(name.as_str()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(enum_name) = enum_name {
+                    if let Some(expected) = self
+                        .enum_defs
+                        .get(enum_name)
+                        .and_then(|variants| variants.get(property))
+                        .copied()
+                    {
+                        if args.len() != expected {
+                            return Err(CompileError {
+                                msg: format!(
+                                    "variant `{enum_name}.{property}` expects {expected} payload values"
+                                ),
+                                span: expr.span(),
+                            });
+                        }
+                        for argument in args {
+                            self.compile_expr(argument)?;
+                        }
+                        self.emit(Op::MakeEnum {
+                            enum_name: enum_name.to_string(),
+                            variant: property.clone(),
+                            payload_count: args.len(),
+                        });
+                        return Ok(());
+                    }
+                }
                 if self.compile_intrinsic_member_call(object, property, args)? {
                     return Ok(());
                 }
@@ -710,7 +1149,17 @@ impl FunctionCompiler {
         // Reject if it contains complex operations or loops.
         for op in callee.chunk.code.iter() {
             match op {
-                Op::Call(..) | Op::MemberCall(..) | Op::Import(..) => {
+                Op::Call(..)
+                | Op::MemberCall(..)
+                | Op::Import(..)
+                | Op::MakeStruct { .. }
+                | Op::MakeEnum { .. }
+                | Op::IsVariant { .. }
+                | Op::EnumPayload { .. }
+                | Op::StoreField(..)
+                | Op::MakeClosure { .. }
+                | Op::CallValue(..)
+                | Op::TryResult => {
                     self.inlining_stack.pop();
                     return Ok(false);
                 }
@@ -1282,6 +1731,19 @@ impl FunctionCompiler {
                 .get(name)
                 .copied()
                 .unwrap_or(ExprType::Unknown),
+            Expr::Invoke { callee, .. } => {
+                let name = match callee.as_ref() {
+                    Expr::Ident(name, _) => Some(name),
+                    Expr::GenericApply { target, .. } => match target.as_ref() {
+                        Expr::Ident(name, _) => Some(name),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                name.and_then(|name| self.function_return_types.get(name).copied())
+                    .unwrap_or(ExprType::Unknown)
+            }
+            Expr::Borrow { expr, .. } => self.expr_type(expr),
             Expr::MemberCall {
                 object, property, ..
             } => self.intrinsic_return_type(object, property),
@@ -1383,5 +1845,26 @@ fn expr_type_from_annotation(ty: &TypeAnnotation) -> ExprType {
         TypeAnnotation::Bytes => ExprType::Bytes,
         TypeAnnotation::Buffer => ExprType::Buffer,
         _ => ExprType::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod v12_tests {
+    use super::*;
+    use dbyte_lexer::Lexer;
+    use dbyte_parser::Parser;
+
+    #[test]
+    fn generic_direct_invocation_erases_to_an_ordinary_vm_call() {
+        let source =
+            "fn id[T](value: T) -> T:\n    return value\n\nlet answer: int = id[int](42)\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        assert!(chunk
+            .code
+            .iter()
+            .any(|operation| { matches!(operation, Op::CallFn { argc: 1, .. } | Op::Call(_, 1)) }));
     }
 }

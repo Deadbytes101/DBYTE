@@ -79,8 +79,15 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         | TypeAnnotation::U32
         | TypeAnnotation::Usize
         | TypeAnnotation::Pointer(_)
+        | TypeAnnotation::ConstPointer(_)
+        | TypeAnnotation::Slice(_)
+        | TypeAnnotation::MutSlice(_)
+        | TypeAnnotation::StringView
         | TypeAnnotation::Array { .. }
         | TypeAnnotation::Named(_)
+        | TypeAnnotation::Generic { .. }
+        | TypeAnnotation::Function { .. }
+        | TypeAnnotation::Closure { .. }
         | TypeAnnotation::Inferred => None,
     }
 }
@@ -324,6 +331,15 @@ impl TypeChecker {
             Expr::BoolLit(..) => Ok(ResolvedType::Bool),
             Expr::StrLit(..) => Ok(ResolvedType::Str),
             Expr::BytesLit(..) => Ok(ResolvedType::Bytes),
+            Expr::NullLit(span)
+            | Expr::GenericApply { span, .. }
+            | Expr::Invoke { span, .. }
+            | Expr::Borrow { span, .. }
+            | Expr::Try { span, .. }
+            | Expr::Closure { span, .. } => Err(TypeError {
+                msg: "v12 expression requires canonical HIR checking".into(),
+                span: *span,
+            }),
 
             Expr::FStr(parts, span) => {
                 for part in parts {
@@ -783,6 +799,11 @@ impl TypeChecker {
 
             Stmt::Store { span, .. }
             | Stmt::StructDef { span, .. }
+            | Stmt::EnumDef { span, .. }
+            | Stmt::Match { span, .. }
+            | Stmt::Defer { span, .. }
+            | Stmt::Break { span }
+            | Stmt::Continue { span }
             | Stmt::Const { span, .. }
             | Stmt::Static { span, .. } => {
                 return Err(TypeError {
@@ -800,8 +821,126 @@ impl TypeChecker {
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), TypeError> {
+        if program_uses_v12(program) {
+            return dbyte_hir::analyze(
+                program,
+                dbyte_hir::Profile::Hosted,
+                dbyte_hir::TargetDataLayout::I686,
+            )
+            .map(|_| ())
+            .map_err(|mut diagnostics| {
+                let diagnostic = diagnostics.remove(0);
+                TypeError {
+                    msg: format!("{}: {}", diagnostic.code, diagnostic.message),
+                    span: diagnostic.span,
+                }
+            });
+        }
         self.check_stmts(&program.stmts)
     }
+}
+
+fn program_uses_v12(program: &Program) -> bool {
+    fn expression_uses_v12(expression: &Expr) -> bool {
+        match expression {
+            Expr::NullLit(_)
+            | Expr::GenericApply { .. }
+            | Expr::Invoke { .. }
+            | Expr::Borrow { .. }
+            | Expr::Try { .. }
+            | Expr::Closure { .. } => true,
+            Expr::Binary { left, right, .. } => {
+                expression_uses_v12(left) || expression_uses_v12(right)
+            }
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => expression_uses_v12(expr),
+            Expr::List(values, _) => values.iter().any(expression_uses_v12),
+            Expr::Call { args, .. } | Expr::MemberCall { args, .. } => {
+                args.iter().any(expression_uses_v12)
+            }
+            Expr::Index { target, index, .. } => {
+                expression_uses_v12(target) || expression_uses_v12(index)
+            }
+            Expr::Member { object, .. } => expression_uses_v12(object),
+            Expr::IntLit(..)
+            | Expr::FloatLit(..)
+            | Expr::BoolLit(..)
+            | Expr::StrLit(..)
+            | Expr::BytesLit(..)
+            | Expr::FStr(..)
+            | Expr::Ident(..) => false,
+        }
+    }
+    fn statement_uses_v12(statement: &Stmt) -> bool {
+        match statement {
+            Stmt::EnumDef { .. }
+            | Stmt::Match { .. }
+            | Stmt::Defer { .. }
+            | Stmt::Break { .. }
+            | Stmt::Continue { .. } => true,
+            Stmt::StructDef {
+                generic_params,
+                repr,
+                ..
+            } => !generic_params.is_empty() || *repr != Repr::DByte,
+            Stmt::FnDef {
+                generic_params,
+                call_convention,
+                body,
+                ..
+            } => {
+                !generic_params.is_empty()
+                    || *call_convention != CallConvention::DByte
+                    || body.iter().any(statement_uses_v12)
+            }
+            Stmt::Let { value, ty, .. } => annotation_uses_v12(ty) || expression_uses_v12(value),
+            Stmt::Assign { value, .. } => expression_uses_v12(value),
+            Stmt::Store { target, value, .. } => {
+                expression_uses_v12(target) || expression_uses_v12(value)
+            }
+            Stmt::Return { value, .. } => value.as_ref().is_some_and(expression_uses_v12),
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+                ..
+            } => {
+                expression_uses_v12(cond)
+                    || then_body.iter().any(statement_uses_v12)
+                    || else_body
+                        .as_ref()
+                        .is_some_and(|body| body.iter().any(statement_uses_v12))
+            }
+            Stmt::While { cond, body, .. } => {
+                expression_uses_v12(cond) || body.iter().any(statement_uses_v12)
+            }
+            Stmt::For { iterable, body, .. } => {
+                expression_uses_v12(iterable) || body.iter().any(statement_uses_v12)
+            }
+            Stmt::Const { ty, value, .. } => annotation_uses_v12(ty) || expression_uses_v12(value),
+            Stmt::Static { ty, value, .. } => {
+                annotation_uses_v12(ty) || value.as_ref().is_some_and(expression_uses_v12)
+            }
+            Stmt::Expr(expression) => expression_uses_v12(expression),
+            Stmt::Import { .. } => false,
+        }
+    }
+    fn annotation_uses_v12(annotation: &TypeAnnotation) -> bool {
+        match annotation {
+            TypeAnnotation::ConstPointer(_)
+            | TypeAnnotation::Slice(_)
+            | TypeAnnotation::MutSlice(_)
+            | TypeAnnotation::StringView
+            | TypeAnnotation::Generic { .. }
+            | TypeAnnotation::Function { .. }
+            | TypeAnnotation::Closure { .. } => true,
+            TypeAnnotation::List(inner) | TypeAnnotation::Pointer(inner) => {
+                annotation_uses_v12(inner)
+            }
+            TypeAnnotation::Array { element, .. } => annotation_uses_v12(element),
+            _ => false,
+        }
+    }
+    program.stmts.iter().any(statement_uses_v12)
 }
 
 fn format_module_error(error: &ModuleError) -> String {

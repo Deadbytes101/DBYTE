@@ -16,7 +16,9 @@ use crate::systems_ir::{
     SystemsFunction, SystemsGlobal, SystemsInst, SystemsModuleIr, SystemsParam, SystemsSlot,
     Visibility,
 };
-use dbyte_ast::{BinOp, Expr, Param, Span, Stmt, StructField, TypeAnnotation, UnaryOp};
+use dbyte_ast::{
+    BinOp, CallConvention, Expr, Param, Span, Stmt, StructField, TypeAnnotation, UnaryOp,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 const ENTRY_FUNCTION: &str = "kernel_main";
@@ -70,6 +72,8 @@ struct RawFunction {
     interrupt: Option<InterruptClass>,
     params: Vec<Param>,
     return_type: TypeAnnotation,
+    call_convention: CallConvention,
+    declaration_only: bool,
     span: Span,
 }
 
@@ -106,6 +110,8 @@ struct FunctionSignature {
     symbol: String,
     params: Vec<SystemType>,
     return_type: SystemType,
+    call_convention: CallConvention,
+    declaration_only: bool,
     span: Span,
 }
 
@@ -306,6 +312,7 @@ fn collect_headers(graph: &NativeModuleGraph) -> NativeResult<Vec<ModuleHeader>>
                     name,
                     fields,
                     span,
+                    ..
                 } => {
                     insert_module_name(
                         module,
@@ -338,9 +345,11 @@ fn collect_headers(graph: &NativeModuleGraph) -> NativeResult<Vec<ModuleHeader>>
                 Stmt::FnDef {
                     is_pub,
                     interrupt,
+                    call_convention,
                     name,
                     params,
                     ret_ty,
+                    body,
                     span,
                     ..
                 } => {
@@ -352,6 +361,9 @@ fn collect_headers(graph: &NativeModuleGraph) -> NativeResult<Vec<ModuleHeader>>
                             interrupt: *interrupt,
                             params: params.clone(),
                             return_type: ret_ty.clone(),
+                            call_convention: *call_convention,
+                            declaration_only: body.is_empty()
+                                && *call_convention == CallConvention::C,
                             span: *span,
                         },
                     );
@@ -528,12 +540,29 @@ fn resolve_module_symbols(
                 FunctionSignature {
                     public: raw.public,
                     interrupt: raw.interrupt,
-                    symbol: emitted_symbol(graph, module.id, name, raw.public),
+                    symbol: if raw.call_convention == CallConvention::C {
+                        name.clone()
+                    } else {
+                        emitted_symbol(graph, module.id, name, raw.public)
+                    },
                     params,
                     return_type,
+                    call_convention: raw.call_convention,
+                    declaration_only: raw.declaration_only,
                     span: raw.span,
                 },
             );
+            if raw.call_convention == CallConvention::C {
+                for (index, ty) in symbols.functions[name].params.iter().enumerate() {
+                    require_c_abi_type(module, ty, raw.params[index].span, "parameter")?;
+                }
+                require_c_abi_type(
+                    module,
+                    &symbols.functions[name].return_type,
+                    raw.span,
+                    "return type",
+                )?;
+            }
         }
         for (name, raw) in &header.constants {
             let ty = resolve_annotation(graph, headers, module.id, &raw.ty, raw.span)?;
@@ -774,6 +803,13 @@ fn resolve_annotation(
         | TypeAnnotation::Bytes
         | TypeAnnotation::Buffer
         | TypeAnnotation::List(_)
+        | TypeAnnotation::ConstPointer(_)
+        | TypeAnnotation::Slice(_)
+        | TypeAnnotation::MutSlice(_)
+        | TypeAnnotation::StringView
+        | TypeAnnotation::Generic { .. }
+        | TypeAnnotation::Function { .. }
+        | TypeAnnotation::Closure { .. }
         | TypeAnnotation::Inferred => Err(module_diagnostic(
             &graph.modules[module_id],
             DiagnosticCategory::InvalidType,
@@ -858,6 +894,34 @@ fn require_abi_scalar(
             module,
             DiagnosticCategory::InvalidType,
             format!("native ABI {role} must be scalar, found {ty}"),
+            span,
+        ))
+    }
+}
+
+fn require_c_abi_type(
+    module: &NativeSourceModule,
+    ty: &SystemType,
+    span: Span,
+    role: &str,
+) -> NativeResult<()> {
+    if matches!(
+        ty,
+        SystemType::I8
+            | SystemType::U8
+            | SystemType::I16
+            | SystemType::U16
+            | SystemType::I32
+            | SystemType::U32
+            | SystemType::Usize
+            | SystemType::Pointer(_)
+    ) {
+        Ok(())
+    } else {
+        Err(module_diagnostic(
+            module,
+            DiagnosticCategory::InvalidType,
+            format!("i686 C ABI {role} has unsupported type {ty}"),
             span,
         ))
     }
@@ -1538,6 +1602,18 @@ fn compile_module(
             .get(name)
             .expect("function header was collected")
             .clone();
+        if signature.declaration_only {
+            external_functions.insert(
+                signature.symbol.clone(),
+                ExternalFunction {
+                    symbol: signature.symbol,
+                    parameter_types: signature.params,
+                    return_type: signature.return_type,
+                    call_convention: signature.call_convention,
+                },
+            );
+            continue;
+        }
         let analyzer = FunctionAnalyzer::new(
             context,
             module.id,
@@ -1979,6 +2055,7 @@ impl<'a> FunctionAnalyzer<'a> {
             symbol: self.signature.symbol.clone(),
             visibility: visibility(self.signature.public),
             interrupt: self.signature.interrupt,
+            call_convention: self.signature.call_convention,
             parameter_types: self.signature.params.clone(),
             params: self.params,
             return_type: self.signature.return_type.clone(),
@@ -2189,6 +2266,11 @@ impl<'a> FunctionAnalyzer<'a> {
             Stmt::FnDef { span, .. }
             | Stmt::Import { span, .. }
             | Stmt::StructDef { span, .. }
+            | Stmt::EnumDef { span, .. }
+            | Stmt::Match { span, .. }
+            | Stmt::Defer { span, .. }
+            | Stmt::Break { span }
+            | Stmt::Continue { span }
             | Stmt::Const { span, .. }
             | Stmt::Static { span, .. } => {
                 return Err(self.error(
@@ -2507,6 +2589,14 @@ impl<'a> FunctionAnalyzer<'a> {
             Expr::FloatLit(_, span) => Err(self.unsupported("float literals", *span)),
             Expr::BytesLit(_, span) => Err(self.unsupported("byte-string literals", *span)),
             Expr::FStr(_, span) => Err(self.unsupported("formatted strings", *span)),
+            Expr::NullLit(span)
+            | Expr::GenericApply { span, .. }
+            | Expr::Invoke { span, .. }
+            | Expr::Borrow { span, .. }
+            | Expr::Try { span, .. }
+            | Expr::Closure { span, .. } => {
+                Err(self.unsupported("v12 canonical HIR expressions", *span))
+            }
         }
     }
 
@@ -2934,7 +3024,8 @@ impl<'a> FunctionAnalyzer<'a> {
                     span,
                 )
             })?;
-        self.emit_call(name, args, &signature, span, false)
+        let external = signature.declaration_only;
+        self.emit_call(name, args, &signature, span, external)
     }
 
     fn compile_member_call(
@@ -3050,7 +3141,12 @@ impl<'a> FunctionAnalyzer<'a> {
                 span,
             ));
         }
-        for (index, (argument, expected)) in args.iter().zip(&signature.params).enumerate() {
+        let ordered_arguments: Vec<_> = if signature.call_convention == CallConvention::C {
+            args.iter().zip(&signature.params).rev().collect()
+        } else {
+            args.iter().zip(&signature.params).collect()
+        };
+        for (index, (argument, expected)) in ordered_arguments.into_iter().enumerate() {
             let actual = self.compile_value_expected(
                 argument,
                 Some(expected),
@@ -3062,7 +3158,11 @@ impl<'a> FunctionAnalyzer<'a> {
                     DiagnosticCategory::InvalidType,
                     format!(
                         "argument {} to '{source_name}' expects {expected}, found {actual}",
-                        index + 1
+                        if signature.call_convention == CallConvention::C {
+                            args.len() - index
+                        } else {
+                            index + 1
+                        }
                     ),
                     argument.span(),
                 ));
@@ -3075,12 +3175,14 @@ impl<'a> FunctionAnalyzer<'a> {
                     symbol: signature.symbol.clone(),
                     parameter_types: signature.params.clone(),
                     return_type: signature.return_type.clone(),
+                    call_convention: signature.call_convention,
                 });
         }
         self.instructions.push(SystemsInst::Call {
             symbol: signature.symbol.clone(),
             argument_count: args.len(),
             result: signature.return_type.clone(),
+            call_convention: signature.call_convention,
         });
         Ok(ExprResult::Value(signature.return_type.clone()))
     }
@@ -3521,6 +3623,7 @@ impl<'a> FunctionAnalyzer<'a> {
                     symbol: signature.symbol.clone(),
                     parameter_types: signature.params.clone(),
                     return_type: signature.return_type.clone(),
+                    call_convention: signature.call_convention,
                 });
         }
         self.instructions.push(SystemsInst::InterruptAddress {
@@ -3613,6 +3716,7 @@ impl<'a> FunctionAnalyzer<'a> {
                     symbol: signature.symbol.clone(),
                     parameter_types: Vec::new(),
                     return_type: SystemType::I32,
+                    call_convention: signature.call_convention,
                 });
         }
         self.instructions.push(SystemsInst::TaskAddress {
@@ -4381,6 +4485,44 @@ mod tests {
         let second = analyze_systems_project(&graph).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.dump(), second.dump());
+    }
+
+    #[test]
+    fn c_abi_declarations_and_definitions_are_canonical_native_symbols() {
+        let graph = one_module(
+            "extern \"C\" fn c_add(left: i32, right: i32) -> i32\n\npub extern \"C\" fn d_call(value: i32) -> i32:\n    return c_add(value, 5)\n",
+        );
+        let project = analyze_systems_objects(&graph).expect("C ABI module analyzes");
+        let module = project.root_module();
+        let function = module.function("d_call").expect("exported C function");
+        assert_eq!(function.call_convention, CallConvention::C);
+        assert_eq!(module.external_functions.len(), 1);
+        assert_eq!(module.external_functions[0].symbol, "c_add");
+        assert_eq!(
+            module.external_functions[0].call_convention,
+            CallConvention::C
+        );
+        assert!(function.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::Call {
+                symbol,
+                call_convention: CallConvention::C,
+                ..
+            } if symbol == "c_add"
+        )));
+        assert!(module.dump().contains("call.C c_add 2 -> i32"));
+        let lowered = crate::systems_lower::lower_systems_module(module)
+            .expect("C ABI module reaches machine code");
+        let crate::object::SectionContents::Bytes(text) =
+            &lowered.image.sections[&crate::object::ObjectSection::Text].contents
+        else {
+            panic!("text is initialized")
+        };
+        assert!(text
+            .windows(6)
+            .any(|window| window == [0x81, 0xe4, 0xf0, 0xff, 0xff, 0xff]));
+        assert!(text.windows(3).any(|window| window == [0x53, 0x56, 0x57]));
+        assert!(text.windows(3).any(|window| window == [0x5f, 0x5e, 0x5b]));
     }
 
     #[test]

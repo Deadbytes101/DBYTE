@@ -2,6 +2,7 @@
 
 use crate::ir::{CompareOp, LabelId, LocalId, StringId};
 use crate::system_types::SystemType;
+use dbyte_ast::CallConvention;
 pub use dbyte_ast::InterruptClass;
 use dbyte_ast::Span;
 use std::fmt::{self, Write};
@@ -262,7 +263,11 @@ impl SystemsModuleIr {
         let mut output = String::new();
         let _ = writeln!(output, "native-systems-ir module {}", self.module_name);
         for external in &self.external_functions {
-            let _ = write!(output, "extern fn {}(", external.symbol);
+            if external.call_convention == CallConvention::C {
+                let _ = write!(output, "extern \"C\" fn {}(", external.symbol);
+            } else {
+                let _ = write!(output, "extern fn {}(", external.symbol);
+            }
             write_types(&mut output, &external.parameter_types);
             let _ = writeln!(output, ") -> {}", external.return_type);
         }
@@ -290,7 +295,15 @@ impl SystemsModuleIr {
             let _ = writeln!(output, "private string @str{index} bytes={}", bytes.len());
         }
         for function in &self.functions {
-            let _ = write!(output, "{} fn {}(", function.visibility, function.symbol);
+            if function.call_convention == CallConvention::C {
+                let _ = write!(
+                    output,
+                    "{} extern \"C\" fn {}(",
+                    function.visibility, function.symbol
+                );
+            } else {
+                let _ = write!(output, "{} fn {}(", function.visibility, function.symbol);
+            }
             write_types(&mut output, &function.parameter_types);
             let _ = writeln!(output, ") -> {} {{", function.return_type);
             for slot in &function.slots {
@@ -319,6 +332,7 @@ pub struct ExternalFunction {
     pub symbol: String,
     pub parameter_types: Vec<SystemType>,
     pub return_type: SystemType,
+    pub call_convention: CallConvention,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -334,6 +348,7 @@ pub struct SystemsFunction {
     pub symbol: String,
     pub visibility: Visibility,
     pub interrupt: Option<InterruptClass>,
+    pub call_convention: CallConvention,
     pub parameter_types: Vec<SystemType>,
     pub params: Vec<SystemsParam>,
     pub return_type: SystemType,
@@ -394,8 +409,21 @@ pub enum SystemsInst {
         symbol: String,
         pointee: SystemType,
     },
+    FunctionAddress {
+        symbol: String,
+    },
     Load(SystemType),
     Store(SystemType),
+    /// Copy `size` bytes from a source address to a destination address.
+    /// Stack contract before the instruction is `[... destination source]`.
+    AggregateCopy {
+        size: u32,
+    },
+    /// Zero `size` bytes at the address on top of the evaluation stack.
+    AggregateZero {
+        size: u32,
+    },
+    Trap,
     Add(SystemType),
     Sub(SystemType),
     Mul(SystemType),
@@ -430,6 +458,20 @@ pub enum SystemsInst {
         symbol: String,
         argument_count: usize,
         result: SystemType,
+        call_convention: CallConvention,
+    },
+    /// Call using an already materialized DBYTE32 argument image. The stack
+    /// contains one pointer to `argument_bytes` in exact callee-visible order.
+    CallPacked {
+        symbol: String,
+        argument_bytes: u32,
+        result: SystemType,
+        call_convention: CallConvention,
+    },
+    CallIndirect {
+        argument_count: usize,
+        result: SystemType,
+        call_convention: CallConvention,
     },
     InterruptAddress {
         vector: u8,
@@ -467,8 +509,12 @@ impl fmt::Display for SystemsInst {
             Self::GlobalAddress { symbol, pointee } => {
                 write!(formatter, "address.global {symbol}: ptr[{pointee}]")
             }
+            Self::FunctionAddress { symbol } => write!(formatter, "address.function {symbol}"),
             Self::Load(ty) => write!(formatter, "load.{ty}"),
             Self::Store(ty) => write!(formatter, "store.{ty}"),
+            Self::AggregateCopy { size } => write!(formatter, "aggregate.copy {size}"),
+            Self::AggregateZero { size } => write!(formatter, "aggregate.zero {size}"),
+            Self::Trap => formatter.write_str("trap.ud2"),
             Self::Add(ty) => write!(formatter, "add.{ty}"),
             Self::Sub(ty) => write!(formatter, "sub.{ty}"),
             Self::Mul(ty) => write!(formatter, "mul.{ty}"),
@@ -497,7 +543,31 @@ impl fmt::Display for SystemsInst {
                 symbol,
                 argument_count,
                 result,
-            } => write!(formatter, "call {symbol} {argument_count} -> {result}"),
+                call_convention,
+            } => {
+                if *call_convention == CallConvention::C {
+                    write!(formatter, "call.C {symbol} {argument_count} -> {result}")
+                } else {
+                    write!(formatter, "call {symbol} {argument_count} -> {result}")
+                }
+            }
+            Self::CallPacked {
+                symbol,
+                argument_bytes,
+                result,
+                call_convention,
+            } => write!(
+                formatter,
+                "call.packed.{call_convention} {symbol} bytes={argument_bytes} -> {result}"
+            ),
+            Self::CallIndirect {
+                argument_count,
+                result,
+                call_convention,
+            } => write!(
+                formatter,
+                "call.indirect.{call_convention} {argument_count} -> {result}"
+            ),
             Self::InterruptAddress {
                 vector,
                 symbol,
@@ -555,6 +625,7 @@ mod tests {
                 symbol: "check".into(),
                 visibility: Visibility::Public,
                 interrupt: None,
+                call_convention: CallConvention::DByte,
                 parameter_types: vec![],
                 params: vec![],
                 return_type: SystemType::U32,
@@ -585,6 +656,7 @@ mod tests {
                 symbol: "add".into(),
                 parameter_types: vec![SystemType::U32, SystemType::U32],
                 return_type: SystemType::U32,
+                call_convention: CallConvention::DByte,
             }],
             external_globals: vec![],
         };

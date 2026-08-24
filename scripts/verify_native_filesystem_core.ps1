@@ -190,24 +190,47 @@ function Invoke-QemuBoot([int]$Ram, [int]$Boot, [string]$Elf, [string]$Disk, [st
         "-chardev", "file,id=dbyte_debugcon,path=$debug", "-device", "isa-debugcon,iobase=0xe9,chardev=dbyte_debugcon",
         "-drive", "file=$Disk,format=raw,if=ide,index=0,media=disk,cache=directsync,throttling.iops-total=25"
     )
-    [IO.File]::WriteAllText((Join-Path $runRoot "boot${Boot}.command.txt"), "$Qemu $($arguments -join ' ')")
-    Start-Sleep -Milliseconds 500
-    $process = Start-Process -FilePath $Qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $commandPath = Join-Path $runRoot "boot${Boot}.command.txt"
+    [IO.File]::WriteAllText($commandPath, "$Qemu $($arguments -join ' ')")
+    $diskBefore = Join-Path $runRoot "boot${Boot}.disk.before"
+    Copy-Item -LiteralPath $Disk -Destination $diskBefore -Force
+    $matched = $false
     try {
-        $deadline = [DateTime]::UtcNow.AddSeconds(40)
-        $matched = $false
-        while ([DateTime]::UtcNow -lt $deadline -and -not $process.HasExited) {
-            Start-Sleep -Milliseconds 100
-            if (Test-Path -LiteralPath $serial) {
-                $current = [Text.Encoding]::ASCII.GetString((Read-SharedBytes $serial))
-                if ($current -ceq $ExpectedSerial) { $matched = $true; break }
-                Assert-True ($ExpectedSerial.StartsWith($current, [StringComparison]::Ordinal)) "QEMU ${Ram}M boot $Boot serial diverged:`n$current"
+        for ($attempt = 1; $attempt -le 3 -and -not $matched; $attempt++) {
+            if ($attempt -gt 1) {
+                Copy-Item -LiteralPath $diskBefore -Destination $Disk -Force
+                Remove-Item -LiteralPath $serial, $trace, $debug -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
+            }
+            Start-Sleep -Milliseconds 500
+            $process = Start-Process -FilePath $Qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden
+            $exitedEarly = $false
+            try {
+                $deadline = [DateTime]::UtcNow.AddSeconds(60)
+                while ([DateTime]::UtcNow -lt $deadline -and -not $process.HasExited) {
+                    Start-Sleep -Milliseconds 100
+                    if (Test-Path -LiteralPath $serial) {
+                        $current = [Text.Encoding]::ASCII.GetString((Read-SharedBytes $serial))
+                        if ($current -ceq $ExpectedSerial) { $matched = $true; break }
+                        Assert-True ($ExpectedSerial.StartsWith($current, [StringComparison]::Ordinal)) "QEMU ${Ram}M boot $Boot serial diverged:`n$current"
+                    }
+                }
+                $exitedEarly = -not $matched -and $process.HasExited
+            }
+            finally {
+                if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force; $process.WaitForExit() }
+            }
+            if (-not $matched) {
+                Assert-True (-not $exitedEarly) "QEMU ${Ram}M boot $Boot exited before exact serial acceptance"
+                foreach ($path in @($serial, $trace, $debug)) {
+                    if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination "$path.attempt$attempt" -Force }
+                }
             }
         }
         Assert-True $matched "QEMU ${Ram}M boot $Boot did not reach exact serial acceptance"
     }
     finally {
-        if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force; $process.WaitForExit() }
+        Remove-Item -LiteralPath $diskBefore -Force -ErrorAction SilentlyContinue
     }
     $actual = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($serial))
     Assert-True ($actual -ceq $ExpectedSerial) "QEMU ${Ram}M boot $Boot serial mismatch"

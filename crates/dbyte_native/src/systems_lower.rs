@@ -614,6 +614,24 @@ fn lower_function(
     emit(encoder, function, |encoder| {
         encoder.mov_reg_reg(Register::Ebp, Register::Esp)
     })?;
+    let uses_c_abi = function.call_convention == dbyte_ast::CallConvention::C
+        || function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                SystemsInst::Call {
+                    call_convention: dbyte_ast::CallConvention::C,
+                    ..
+                } | SystemsInst::CallPacked {
+                    call_convention: dbyte_ast::CallConvention::C,
+                    ..
+                }
+            )
+        });
+    if uses_c_abi {
+        emit(encoder, function, |encoder| {
+            encoder.and_reg_imm32(Register::Esp, 0xfffffff0)
+        })?;
+    }
     if frame.size != 0 {
         emit(encoder, function, |encoder| {
             encoder.sub_esp_imm32(frame.size)
@@ -626,33 +644,70 @@ fn lower_function(
             })?;
         }
     }
+    if function.call_convention == dbyte_ast::CallConvention::C {
+        emit(encoder, function, |encoder| encoder.push_reg(Register::Ebx))?;
+        emit(encoder, function, |encoder| encoder.push_reg(Register::Esi))?;
+        emit(encoder, function, |encoder| encoder.push_reg(Register::Edi))?;
+    }
     let multiboot_entry = function.symbol == "kernel_main"
         && function.parameter_types == [SystemType::U32, SystemType::Usize];
     for (index, parameter) in function.params.iter().enumerate() {
-        let incoming_index = if multiboot_entry {
-            index
-        } else {
-            function.params.len() - 1 - index
-        };
+        let incoming_payload =
+            if multiboot_entry || function.call_convention == dbyte_ast::CallConvention::C {
+                function.params[..index]
+                    .iter()
+                    .map(|parameter| function.slots[parameter.slot.index()].storage_size.max(4))
+                    .try_fold(0usize, |total, size| total.checked_add(size as usize))
+            } else {
+                function.params[index + 1..]
+                    .iter()
+                    .map(|parameter| {
+                        align_u32(
+                            function.slots[parameter.slot.index()].storage_size,
+                            4,
+                            "native aggregate parameter",
+                        )
+                    })
+                    .collect::<NativeResult<Vec<_>>>()?
+                    .into_iter()
+                    .try_fold(0usize, |total, size| total.checked_add(size as usize))
+            }
+            .ok_or_else(|| function_error(function, "native incoming parameter offset overflow"))?;
         let incoming = 8usize
-            .checked_add(incoming_index.checked_mul(4).ok_or_else(|| {
-                function_error(function, "native incoming parameter offset overflow")
-            })?)
+            .checked_add(incoming_payload)
             .ok_or_else(|| function_error(function, "native incoming parameter offset overflow"))?;
         let incoming = i32::try_from(incoming).map_err(|_| {
             function_error(function, "native incoming parameter offset exceeds i32")
         })?;
         let destination = frame.offset(parameter.slot, function)?;
-        emit(encoder, function, |encoder| {
-            encoder.mov_reg_from_ebp_disp32(Register::Eax, incoming)
-        })?;
-        store_memory(
-            encoder,
-            function,
-            MemoryOperand::new(Register::Ebp, destination),
-            Register::Eax,
-            &parameter.ty,
-        )?;
+        if parameter.ty.is_scalar() {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_from_ebp_disp32(Register::Eax, incoming)
+            })?;
+            store_memory(
+                encoder,
+                function,
+                MemoryOperand::new(Register::Ebp, destination),
+                Register::Eax,
+                &parameter.ty,
+            )?;
+        } else {
+            let size = function.slots[parameter.slot.index()].storage_size;
+            emit(encoder, function, |encoder| {
+                encoder
+                    .lea_reg_from_memory(Register::Esi, MemoryOperand::new(Register::Ebp, incoming))
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.lea_reg_from_memory(
+                    Register::Edi,
+                    MemoryOperand::new(Register::Ebp, destination),
+                )
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_imm32(Register::Ecx, size)
+            })?;
+            emit(encoder, function, Encoder::rep_movsb)?;
+        }
     }
 
     let mut labels = BTreeMap::<LabelId, Label>::new();
@@ -792,6 +847,11 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
+        SystemsInst::FunctionAddress { symbol } => {
+            emit_absolute_address(encoder, function, symbols, relocations, symbol)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
         SystemsInst::Load(ty) => {
             consume(depth, 1, function, "load")?;
             pop(encoder, function, Register::Edx)?;
@@ -817,6 +877,27 @@ fn lower_instruction(
                 ty,
             )?;
         }
+        SystemsInst::AggregateCopy { size } => {
+            consume(depth, 2, function, "aggregate.copy")?;
+            pop(encoder, function, Register::Esi)?;
+            pop(encoder, function, Register::Edi)?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_imm32(Register::Ecx, *size)
+            })?;
+            emit(encoder, function, Encoder::rep_movsb)?;
+        }
+        SystemsInst::AggregateZero { size } => {
+            consume(depth, 1, function, "aggregate.zero")?;
+            pop(encoder, function, Register::Edi)?;
+            emit(encoder, function, |encoder| {
+                encoder.xor_reg_reg(Register::Eax, Register::Eax)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_imm32(Register::Ecx, *size)
+            })?;
+            emit(encoder, function, Encoder::rep_stosb)?;
+        }
+        SystemsInst::Trap => emit(encoder, function, Encoder::ud2)?,
         SystemsInst::Add(ty)
         | SystemsInst::Sub(ty)
         | SystemsInst::Mul(ty)
@@ -1008,9 +1089,49 @@ fn lower_instruction(
         SystemsInst::Call {
             symbol,
             argument_count,
+            call_convention,
             ..
         } => {
+            let depth_before = *depth;
             consume(depth, *argument_count, function, "call")?;
+            let padding = if *call_convention == dbyte_ast::CallConvention::C {
+                let saved = if function.call_convention == dbyte_ast::CallConvention::C {
+                    12usize
+                } else {
+                    0
+                };
+                (16 - ((frame.size as usize + saved + depth_before * 4) & 15)) & 15
+            } else {
+                0
+            };
+            if padding != 0 {
+                emit(encoder, function, |encoder| {
+                    encoder.sub_esp_imm32(padding as u32)
+                })?;
+                for index in 0..*argument_count {
+                    let destination = i32::try_from(index * 4).map_err(|_| {
+                        function_error(function, "C ABI argument destination exceeds i32")
+                    })?;
+                    let source = i32::try_from(padding + index * 4).map_err(|_| {
+                        function_error(function, "C ABI argument source exceeds i32")
+                    })?;
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_reg_from_memory(
+                            Register::Eax,
+                            MemoryOperand::new(Register::Esp, source),
+                            OperandWidth::Dword,
+                            None,
+                        )
+                    })?;
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_memory_from_reg(
+                            MemoryOperand::new(Register::Esp, destination),
+                            Register::Eax,
+                            OperandWidth::Dword,
+                        )
+                    })?;
+                }
+            }
             let symbol_id = lookup_symbol(symbols, symbol)?;
             let immediate = encoder
                 .call_rel32_placeholder()
@@ -1022,9 +1143,10 @@ fn lower_instruction(
                 kind: RelocationKind::Pc32,
                 addend: -4,
             });
-            if *argument_count != 0 {
+            if *argument_count != 0 || padding != 0 {
                 let cleanup = argument_count
                     .checked_mul(4)
+                    .and_then(|cleanup| cleanup.checked_add(padding))
                     .ok_or_else(|| function_error(function, "native caller cleanup overflow"))?;
                 emit(encoder, function, |encoder| {
                     encoder.add_esp_imm32(
@@ -1033,6 +1155,123 @@ fn lower_instruction(
                     )
                 })?;
             }
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
+        SystemsInst::CallPacked {
+            symbol,
+            argument_bytes,
+            call_convention,
+            ..
+        } => {
+            if *call_convention == dbyte_ast::CallConvention::C {
+                return Err(function_error(
+                    function,
+                    "packed aggregate calls are unavailable for the C ABI",
+                ));
+            }
+            consume(depth, 1, function, "call.packed")?;
+            pop(encoder, function, Register::Esi)?;
+            if *argument_bytes != 0 {
+                emit(encoder, function, |encoder| {
+                    encoder.sub_esp_imm32(*argument_bytes)
+                })?;
+                emit(encoder, function, |encoder| {
+                    encoder.mov_reg_reg(Register::Edi, Register::Esp)
+                })?;
+                emit(encoder, function, |encoder| {
+                    encoder.mov_reg_imm32(Register::Ecx, *argument_bytes)
+                })?;
+                emit(encoder, function, Encoder::rep_movsb)?;
+            }
+            let symbol_id = lookup_symbol(symbols, symbol)?;
+            let immediate = encoder
+                .call_rel32_placeholder()
+                .map_err(|error| encoder_error(error, Some(function)))?;
+            relocations.push(ObjectRelocation {
+                section: ObjectSection::Text,
+                offset: checked_u32(immediate, "packed call relocation offset")?,
+                symbol: symbol_id,
+                kind: RelocationKind::Pc32,
+                addend: -4,
+            });
+            if *argument_bytes != 0 {
+                emit(encoder, function, |encoder| {
+                    encoder.add_esp_imm32(*argument_bytes)
+                })?;
+            }
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+        }
+        SystemsInst::CallIndirect {
+            argument_count,
+            call_convention,
+            ..
+        } => {
+            let depth_before = *depth;
+            consume(depth, argument_count + 1, function, "call.indirect")?;
+            let padding = if *call_convention == dbyte_ast::CallConvention::C {
+                let saved = if function.call_convention == dbyte_ast::CallConvention::C {
+                    12usize
+                } else {
+                    0
+                };
+                (16 - ((frame.size as usize + saved + depth_before * 4) & 15)) & 15
+            } else {
+                0
+            };
+            if padding != 0 {
+                emit(encoder, function, |encoder| {
+                    encoder.sub_esp_imm32(padding as u32)
+                })?;
+                for index in 0..*argument_count {
+                    let destination = i32::try_from(index * 4).map_err(|_| {
+                        function_error(function, "indirect C argument destination exceeds i32")
+                    })?;
+                    let source = i32::try_from(padding + index * 4).map_err(|_| {
+                        function_error(function, "indirect C argument source exceeds i32")
+                    })?;
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_reg_from_memory(
+                            Register::Eax,
+                            MemoryOperand::new(Register::Esp, source),
+                            OperandWidth::Dword,
+                            None,
+                        )
+                    })?;
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_memory_from_reg(
+                            MemoryOperand::new(Register::Esp, destination),
+                            Register::Eax,
+                            OperandWidth::Dword,
+                        )
+                    })?;
+                }
+            }
+            let displacement = i32::try_from(
+                padding
+                    + argument_count
+                        .checked_mul(4)
+                        .ok_or_else(|| function_error(function, "indirect call offset overflow"))?,
+            )
+            .map_err(|_| function_error(function, "indirect call offset exceeds i32"))?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_from_memory(
+                    Register::Eax,
+                    MemoryOperand::new(Register::Esp, displacement),
+                    OperandWidth::Dword,
+                    None,
+                )
+            })?;
+            emit(encoder, function, |encoder| encoder.call_reg(Register::Eax))?;
+            let cleanup = u32::try_from(
+                (argument_count + 1)
+                    .checked_mul(4)
+                    .and_then(|bytes| bytes.checked_add(padding))
+                    .ok_or_else(|| function_error(function, "indirect cleanup overflow"))?,
+            )
+            .map_err(|_| function_error(function, "indirect cleanup exceeds u32"))?;
+            emit(encoder, function, |encoder| encoder.add_esp_imm32(cleanup))?;
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
@@ -1092,6 +1331,11 @@ fn lower_instruction(
         SystemsInst::Return => {
             consume(depth, 1, function, "return")?;
             pop(encoder, function, Register::Eax)?;
+            if function.call_convention == dbyte_ast::CallConvention::C {
+                emit(encoder, function, |encoder| encoder.pop_reg(Register::Edi))?;
+                emit(encoder, function, |encoder| encoder.pop_reg(Register::Esi))?;
+                emit(encoder, function, |encoder| encoder.pop_reg(Register::Ebx))?;
+            }
             emit(encoder, function, |encoder| {
                 encoder.mov_reg_reg(Register::Esp, Register::Ebp)
             })?;
@@ -1535,10 +1779,12 @@ fn validate_module(module: &SystemsModuleIr) -> NativeResult<()> {
                 "DBYTE32 object functions must return a scalar",
             ));
         }
-        if function.parameter_types.iter().any(|ty| !ty.is_scalar()) {
+        if function.call_convention == dbyte_ast::CallConvention::C
+            && function.parameter_types.iter().any(|ty| !ty.is_scalar())
+        {
             return Err(function_error(
                 function,
-                "DBYTE32 object function parameters must be scalar",
+                "i686 C object function parameters must be scalar",
             ));
         }
         validate_function_storage(function)?;
@@ -1856,7 +2102,7 @@ fn backend_error(category: DiagnosticCategory, message: impl Into<String>) -> Di
 mod tests {
     use super::*;
     use crate::systems_ir::{ExternalFunction, ExternalGlobal, SystemsParam};
-    use dbyte_ast::Span;
+    use dbyte_ast::{CallConvention, Span};
 
     fn function(instructions: Vec<SystemsInst>) -> SystemsFunction {
         SystemsFunction {
@@ -1864,6 +2110,7 @@ mod tests {
             symbol: "kernel_main".into(),
             visibility: Visibility::Private,
             interrupt: None,
+            call_convention: CallConvention::DByte,
             parameter_types: vec![],
             params: vec![],
             return_type: SystemType::I32,
@@ -1897,6 +2144,7 @@ mod tests {
                 symbol: "external_fn".into(),
                 argument_count: 0,
                 result: SystemType::I32,
+                call_convention: CallConvention::DByte,
             },
             SystemsInst::Return,
         ])]);
@@ -1904,6 +2152,7 @@ mod tests {
             symbol: "external_fn".into(),
             parameter_types: vec![],
             return_type: SystemType::I32,
+            call_convention: CallConvention::DByte,
         });
         ir.external_globals.push(ExternalGlobal {
             symbol: "external_data".into(),
@@ -2014,6 +2263,7 @@ mod tests {
             symbol: "helper".into(),
             visibility: Visibility::Public,
             interrupt: None,
+            call_convention: CallConvention::DByte,
             parameter_types: vec![SystemType::U8, SystemType::U32],
             params: vec![
                 SystemsParam {
@@ -2122,6 +2372,7 @@ mod tests {
             symbol: "narrow_mix".into(),
             visibility: Visibility::Public,
             interrupt: None,
+            call_convention: CallConvention::DByte,
             parameter_types: vec![SystemType::U16, SystemType::U8],
             params: vec![
                 SystemsParam {
@@ -2198,6 +2449,7 @@ mod tests {
                 symbol: "narrow_mix".into(),
                 argument_count: 2,
                 result: SystemType::I32,
+                call_convention: CallConvention::DByte,
             },
             SystemsInst::Return,
         ])]);
@@ -2205,6 +2457,7 @@ mod tests {
             symbol: "narrow_mix".into(),
             parameter_types: vec![SystemType::U16, SystemType::U8],
             return_type: SystemType::I32,
+            call_convention: CallConvention::DByte,
         });
         let caller = lower_systems_module(&caller).unwrap();
         let linked = crate::linker::link_images(&[
@@ -2226,6 +2479,7 @@ mod tests {
             symbol: symbol.into(),
             visibility: Visibility::Public,
             interrupt: None,
+            call_convention: CallConvention::DByte,
             parameter_types: vec![ty.clone()],
             params: vec![SystemsParam {
                 name: "value".into(),

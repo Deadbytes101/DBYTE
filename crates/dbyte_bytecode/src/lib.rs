@@ -112,8 +112,30 @@ pub enum Value {
     Bytes(Vec<u8>),
     Buffer(Rc<RefCell<Vec<u8>>>),
     List(Vec<Value>),
+    Struct(Rc<RefCell<StructValue>>),
+    Enum(EnumValue),
+    Closure(ClosureValue),
     Module(Rc<ModuleValue>),
     Void,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructValue {
+    pub type_name: String,
+    pub fields: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumValue {
+    pub enum_name: String,
+    pub variant: String,
+    pub payload: Vec<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureValue {
+    pub function: Box<BytecodeFunction>,
+    pub captures: Vec<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,6 +170,9 @@ impl std::fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Struct(value) => write!(f, "<{}>", value.borrow().type_name),
+            Value::Enum(value) => write!(f, "{}.{}", value.enum_name, value.variant),
+            Value::Closure(_) => write!(f, "<closure>"),
             Value::Module(m) => write!(f, "<module {}>", m.alias),
             Value::Void => write!(f, ""),
         }
@@ -164,6 +189,9 @@ impl Value {
             Value::Bytes(_) => "bytes",
             Value::Buffer(_) => "buffer",
             Value::List(_) => "list",
+            Value::Struct(_) => "struct",
+            Value::Enum(_) => "enum",
+            Value::Closure(_) => "closure",
             Value::Module(_) => "module",
             Value::Void => "void",
         }
@@ -206,6 +234,30 @@ pub enum Op {
     Neg,
     Not,
     MakeList(usize),
+    MakeStruct {
+        name: String,
+        fields: Vec<String>,
+    },
+    MakeEnum {
+        enum_name: String,
+        variant: String,
+        payload_count: usize,
+    },
+    IsVariant {
+        enum_name: String,
+        variant: String,
+    },
+    EnumPayload {
+        slot: usize,
+        index: usize,
+    },
+    StoreField(String),
+    MakeClosure {
+        function: Box<BytecodeFunction>,
+        capture_count: usize,
+    },
+    CallValue(usize),
+    TryResult,
     Index,
     LoadLocal(usize),
     LoadLocalI64(usize),
@@ -422,6 +474,23 @@ pub fn format_op(op: &Op, chunk: &Chunk) -> String {
         Op::Neg => "NEG".into(),
         Op::Not => "NOT".into(),
         Op::MakeList(n) => format!("MAKE_LIST {}", n),
+        Op::MakeStruct { name, fields } => format!("MAKE_STRUCT {name} {}", fields.len()),
+        Op::MakeEnum {
+            enum_name,
+            variant,
+            payload_count,
+        } => format!("MAKE_ENUM {enum_name}.{variant} {payload_count}"),
+        Op::IsVariant { enum_name, variant } => {
+            format!("IS_VARIANT {enum_name}.{variant}")
+        }
+        Op::EnumPayload { slot, index } => format!("ENUM_PAYLOAD {slot} {index}"),
+        Op::StoreField(field) => format!("STORE_FIELD {field}"),
+        Op::MakeClosure {
+            function,
+            capture_count,
+        } => format!("MAKE_CLOSURE {} {capture_count}", function.name),
+        Op::CallValue(argc) => format!("CALL_VALUE {argc}"),
+        Op::TryResult => "TRY_RESULT".into(),
         Op::Index => "INDEX".into(),
         Op::LoadLocal(slot) => format!("LOAD_LOCAL {} ; {}", slot, local_name(chunk, *slot)),
         Op::LoadLocalI64(slot) => format!("LOAD_LOCAL_I64 {} ; {}", slot, local_name(chunk, *slot)),

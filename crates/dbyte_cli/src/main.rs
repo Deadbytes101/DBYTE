@@ -1171,6 +1171,95 @@ fn cmd_ast(path: &Path) {
     println!("{:#?}", program);
 }
 
+fn cmd_inspect(path: &Path, flags: &[String]) {
+    let bytes = fs::read(path).unwrap_or_else(|error| {
+        eprintln!("InspectError: cannot read `{}`: {error}", path.display());
+        process::exit(1);
+    });
+    if bytes.starts_with(b"\x7fELF") {
+        let show_all = flags.is_empty() || flags.iter().any(|flag| flag == "--all");
+        let symbols = show_all || flags.iter().any(|flag| flag == "--symbols");
+        let relocations = show_all || flags.iter().any(|flag| flag == "--relocations");
+        let disassembly = show_all || flags.iter().any(|flag| flag == "--disasm");
+        let output = dbyte_native::inspect_elf(&bytes, symbols, relocations, disassembly)
+            .unwrap_or_else(|diagnostic| {
+                eprintln!("{diagnostic}");
+                process::exit(1);
+            });
+        print!("{output}");
+        return;
+    }
+    let (_src, program) = parse_file(path);
+    let profile = if program.stmts.iter().any(|statement| {
+        matches!(
+            statement,
+            dbyte_ast::Stmt::FnDef {
+                interrupt: Some(_),
+                ..
+            } | dbyte_ast::Stmt::FnDef {
+                call_convention: dbyte_ast::CallConvention::C,
+                ..
+            } | dbyte_ast::Stmt::Static { .. }
+        )
+    }) {
+        dbyte_hir::Profile::I686None
+    } else {
+        dbyte_hir::Profile::Hosted
+    };
+    let hir = dbyte_hir::analyze(&program, profile, dbyte_hir::TargetDataLayout::I686)
+        .unwrap_or_else(|diagnostics| {
+            for diagnostic in diagnostics {
+                eprintln!("{}", diagnostic);
+            }
+            process::exit(1);
+        });
+    let show_hir = flags.is_empty() || flags.iter().any(|flag| flag == "--hir" || flag == "--all");
+    if show_hir {
+        print!("{}", hir.dump());
+    }
+    if flags
+        .iter()
+        .any(|flag| flag == "--generics" || flag == "--all")
+    {
+        for specialization in &hir.specializations {
+            println!(
+                "GENERIC g{} {:?}",
+                specialization.definition.0, specialization.arguments
+            );
+        }
+    }
+    if flags
+        .iter()
+        .any(|flag| flag == "--layout" || flag == "--all")
+    {
+        for (index, ty) in hir.types.iter().enumerate() {
+            if let Ok(layout) = dbyte_hir::layout_of(&hir, dbyte_hir::TypeId(index as u32)) {
+                println!(
+                    "LAYOUT t{index} {:?} size={} align={}",
+                    ty, layout.size, layout.align
+                );
+            }
+        }
+        for definition in &hir.definitions {
+            if let dbyte_hir::TypeDefKind::Struct { fields, .. } = &definition.kind {
+                if definition.generic_params.is_empty() {
+                    if let Ok((layout, offsets)) =
+                        dbyte_hir::layout_struct(&hir, definition.symbol, &[])
+                    {
+                        println!(
+                            "STRUCT {} size={} align={}",
+                            definition.name, layout.size, layout.align
+                        );
+                        for (field, offset) in fields.iter().zip(offsets) {
+                            println!("FIELD {}.{} offset={offset}", definition.name, field.name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn usage() {
     println!(
         "DByte - low-level scripting language\n\n\
@@ -1185,6 +1274,8 @@ fn usage() {
          dbyte disasm <file>\n  \
          dbyte tokens <file>\n  \
          dbyte ast <file>\n  \
+         dbyte inspect <source.dby> [--hir] [--generics] [--layout] [--all]\n  \
+         dbyte inspect <artifact.elf|object.o> [--symbols] [--relocations] [--disasm] [--all]\n  \
          dbyte new <name>\n  \
          dbyte --version"
     );
@@ -1617,6 +1708,13 @@ fn main() {
                 process::exit(1);
             });
             cmd_ast(&path);
+        }
+        "inspect" => {
+            let path = args.get(2).map(PathBuf::from).unwrap_or_else(|| {
+                usage();
+                process::exit(1);
+            });
+            cmd_inspect(&path, &args[3..]);
         }
         _ => {
             usage();

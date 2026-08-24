@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.11.0**
+- Snapshot version: **v12.0.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -70,7 +70,8 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 
 | Layer | Path | Purpose |
 | --- | --- | --- |
-| AST | `crates/dbyte_ast` | Shared syntax and typed node structures |
+| AST | `crates/dbyte_ast` | Shared syntax nodes |
+| Canonical HIR | `crates/dbyte_hir` | Project resolution, canonical types and IDs, ownership, monomorphization, profile validation, executable HIR |
 | Lexer and parser | `crates/dbyte_lexer`, `crates/dbyte_parser` | Source tokenization and grammar parsing |
 | Type checker | `crates/dbyte_typeck` | Static checks for DByte programs |
 | Tree runtime | `crates/dbyte_interp` | Direct interpreter runtime |
@@ -90,6 +91,8 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 - Execute tests with `dbyte test`.
 - Launch a DByte REPL or shell.
 - Embed DByte in Rust applications.
+- Compile generic functions and named generic structs, payload enums and exhaustive matches, `Result` propagation, borrowed slices and `StringView`, explicit-capture closures, lexical `defer`, function pointers, and the supported i686 C ABI through canonical typed HIR.
+- Emit deterministic ELF32 objects, static Unix archives, and linked Multiboot or compact user executables with DByte's in-process toolchain.
 - Compile and boot a multi-module DByteOS core that releases physical frames, maps and unmaps kernel pages, grows and decommits a checked heap, and executes memory operations in DByte machine code.
 - Boot a preemptive ring-0 DByte scheduler whose non-yielding tasks switch from real IRQ0 resume images and whose page-backed stacks have unmapped guards.
 - Put DByte tasks to sleep without spinning and wake fixed FIFO Event waiters from task or hardware IRQ context while preserving interrupt state.
@@ -180,6 +183,18 @@ worker-backed file syscalls, per-process descriptors, and contained #GP/#PF exit
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_user_process_core.ps1
 ```
 
+The `v12.0.0` language proof freezes DByteOS and exercises the general-purpose
+language foundation through canonical typed HIR. Its multi-module QEMU image
+executes generics, payload enums and `match`, `Result` propagation, borrowed
+views, closures, lexical cleanup, DByte function pointers, and bidirectional
+i686 C calls. The same verifier builds a supported v12 user program and runs it
+in the frozen Ring3 process core while checking deterministic archives and
+non-loadable public-generic metadata.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_v12_hir.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
@@ -198,6 +213,9 @@ See [DByte Native Persistent Filesystem](docs/DBYTE_NATIVE_PERSISTENT_FILESYSTEM
 the DBFS1 disk layout, bounded root API, two-boot persistence, and host inspection contract.
 See [DByte Native User Process](docs/DBYTE_NATIVE_USER_PROCESS.md) for the user ELF profile,
 DBUP1 transport, Ring3/TSS ABI, private CR3 mappings, syscall worker, and fault containment.
+See [DByte 12 Language Contract](docs/DBYTE_V12_LANGUAGE_CONTRACT.md) for the
+normative canonical HIR, type/layout, ownership, generic, enum, closure, defer,
+C ABI, grammar, compatibility, and target-matrix contracts.
 
 Launch the DByte shell with the DByteOS userland profile:
 

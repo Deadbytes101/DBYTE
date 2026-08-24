@@ -4,13 +4,320 @@
 use crate::diagnostics::{Diagnostic, NativeResult};
 use crate::linker::{link_object_bytes, link_user_object_bytes, LinkArtifact, LinkInput};
 use crate::modules::load_native_module_graph;
-use crate::object::write_relocatable;
+use crate::object::{
+    write_relocatable, ObjectSection, ObjectSymbol, SymbolBinding, SymbolDefinition, SymbolKind,
+    GENERIC_METADATA_PREFIX,
+};
 use crate::systems_lower::lower_systems_module;
+#[cfg(test)]
 use crate::systems_semantic::{
     analyze_systems_objects, analyze_systems_project, analyze_user_objects, analyze_user_project,
     SystemsProfile,
 };
 use std::path::{Path, PathBuf};
+
+pub fn compile_canonical_legacy_single_image(
+    root: &Path,
+) -> NativeResult<Option<crate::NativeArtifact>> {
+    let graph = load_native_module_graph(root)?;
+    if graph.modules.len() != 1 || !graph.modules[0].imports.is_empty() {
+        return Ok(None);
+    }
+    let input = dbyte_hir::ProjectInput {
+        root: dbyte_hir::ModuleId(graph.root as u32),
+        modules: graph
+            .modules
+            .iter()
+            .map(|module| dbyte_hir::ProjectModuleInput {
+                id: dbyte_hir::ModuleId(module.id as u32),
+                name: module.name.clone(),
+                program: module.program.clone(),
+                imports: Vec::new(),
+            })
+            .collect(),
+    };
+    let analyzed = dbyte_hir::analyze_project(
+        &input,
+        dbyte_hir::Profile::I686None,
+        dbyte_hir::TargetDataLayout::I686,
+    )
+    .map_err(|errors| canonical_project_diagnostics(errors, &graph))?;
+    let concrete = dbyte_hir::monomorphize(&analyzed.executable)
+        .map_err(|error| canonical_project_diagnostic(error, &graph))?;
+    validate_canonical_entry(&analyzed, &concrete, dbyte_hir::Profile::I686None)?;
+    let Some(ir) = crate::legacy_hir::lower_legacy_single_image(&analyzed, &concrete)? else {
+        return Ok(None);
+    };
+    let ir_dump = ir.dump();
+    let lowered = crate::lower::lower_program(&ir)?;
+    let elf = crate::elf32::write_executable(&ir, &lowered)?;
+    let mut machine_dump = lowered.dump;
+    if !machine_dump.ends_with('\n') {
+        machine_dump.push('\n');
+    }
+    machine_dump.push_str(&elf.dump);
+    Ok(Some(crate::NativeArtifact {
+        elf: elf.elf,
+        bin: elf.bin,
+        machine_code: elf.machine_code,
+        layout: elf.layout,
+        ir_dump,
+        machine_dump,
+    }))
+}
+
+/// Compile one already-loaded module through the canonical executable HIR
+/// seam. This is the staging entry used while project-wide canonical module
+/// ownership is brought online; it deliberately has no legacy fallback.
+pub fn compile_canonical_module_object(
+    module_name: &str,
+    program: &dbyte_ast::Program,
+    profile: dbyte_hir::Profile,
+) -> NativeResult<CompiledModuleObject> {
+    let executable =
+        dbyte_hir::analyze_executable(program, profile, dbyte_hir::TargetDataLayout::I686)
+            .map_err(canonical_diagnostics)?;
+    let concrete = dbyte_hir::monomorphize(&executable).map_err(canonical_diagnostic)?;
+    let ir_module = crate::hir_native::lower_hir_module_to_native_ir(module_name, &concrete)?;
+    let lowered = lower_systems_module(&ir_module)?;
+    let object = write_relocatable(&lowered.image)?;
+    Ok(CompiledModuleObject {
+        module_id: 0,
+        module_name: module_name.to_owned(),
+        source_path: PathBuf::new(),
+        display_path: module_name.to_owned(),
+        bytes: object.bytes,
+        ir_dump: ir_module.dump(),
+        machine_dump: lowered.machine_dump,
+        object_dump: object.dump,
+    })
+}
+
+pub fn compile_canonical_project_objects(
+    root: &Path,
+    profile: dbyte_hir::Profile,
+) -> NativeResult<CompiledProjectObjects> {
+    compile_canonical_project_objects_with_entry(root, profile, false)
+}
+
+fn compile_canonical_project_objects_with_entry(
+    root: &Path,
+    profile: dbyte_hir::Profile,
+    require_entry: bool,
+) -> NativeResult<CompiledProjectObjects> {
+    let graph = load_native_module_graph(root)?;
+    let input = dbyte_hir::ProjectInput {
+        root: dbyte_hir::ModuleId(graph.root as u32),
+        modules: graph
+            .modules
+            .iter()
+            .map(|module| dbyte_hir::ProjectModuleInput {
+                id: dbyte_hir::ModuleId(module.id as u32),
+                name: module.name.clone(),
+                program: module.program.clone(),
+                imports: module
+                    .imports
+                    .iter()
+                    .map(|import| {
+                        (
+                            import.alias.clone(),
+                            dbyte_hir::ModuleId(import.target as u32),
+                        )
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    let analyzed = dbyte_hir::analyze_project(&input, profile, dbyte_hir::TargetDataLayout::I686)
+        .map_err(|errors| canonical_project_diagnostics(errors, &graph))?;
+    let concrete = dbyte_hir::monomorphize(&analyzed.executable)
+        .map_err(|error| canonical_project_diagnostic(error, &graph))?;
+    if require_entry {
+        validate_canonical_entry(&analyzed, &concrete, profile)?;
+    }
+    let names = graph
+        .modules
+        .iter()
+        .map(|module| (dbyte_hir::ModuleId(module.id as u32), module.name.clone()))
+        .collect();
+    let ir_modules =
+        crate::hir_native::lower_hir_project_to_native_ir(&analyzed, &concrete, &names)?;
+    let mut modules = Vec::with_capacity(ir_modules.len());
+    for (module_id, ir_module) in ir_modules {
+        let source_module = &graph.modules[module_id.0 as usize];
+        let mut lowered = lower_systems_module(&ir_module)
+            .map_err(|error| attach_path(error, &source_module.display_path))?;
+        for marker in generic_metadata_markers(&analyzed, module_id) {
+            lowered.image.symbols.push(ObjectSymbol {
+                name: marker,
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            });
+        }
+        let object = write_relocatable(&lowered.image)
+            .map_err(|error| attach_path(error, &source_module.display_path))?;
+        modules.push(CompiledModuleObject {
+            module_id: source_module.id,
+            module_name: source_module.name.clone(),
+            source_path: source_module.path.clone(),
+            display_path: source_module.display_path.clone(),
+            bytes: object.bytes,
+            ir_dump: ir_module.dump(),
+            machine_dump: lowered.machine_dump,
+            object_dump: object.dump,
+        });
+    }
+    Ok(CompiledProjectObjects {
+        root_module: graph.root,
+        modules,
+    })
+}
+
+fn generic_metadata_markers(
+    project: &dbyte_hir::CanonicalHirProject,
+    module: dbyte_hir::ModuleId,
+) -> Vec<String> {
+    let mut markers = Vec::new();
+    for function in &project.executable.semantic.functions {
+        if let Some(generic) = function.generic.filter(|_| {
+            function.public && project.symbol_owners.get(&function.symbol) == Some(&module)
+        }) {
+            markers.push(format!(
+                "{GENERIC_METADATA_PREFIX}fn:{}:{}:{}",
+                project
+                    .link_names
+                    .get(&function.symbol)
+                    .unwrap_or(&function.name),
+                generic.0,
+                function.generic_params.len()
+            ));
+        }
+    }
+    for definition in &project.executable.semantic.definitions {
+        if let Some(generic) = definition.generic.filter(|_| {
+            definition.public && project.symbol_owners.get(&definition.symbol) == Some(&module)
+        }) {
+            markers.push(format!(
+                "{GENERIC_METADATA_PREFIX}type:{}:{}:{}",
+                project
+                    .link_names
+                    .get(&definition.symbol)
+                    .unwrap_or(&definition.name),
+                generic.0,
+                definition.generic_params.len()
+            ));
+        }
+    }
+    markers.sort();
+    markers.dedup();
+    markers
+}
+
+fn validate_canonical_entry(
+    project: &dbyte_hir::CanonicalHirProject,
+    concrete: &dbyte_hir::ConcreteHirProgram,
+    profile: dbyte_hir::Profile,
+) -> NativeResult<()> {
+    let name = if profile == dbyte_hir::Profile::I686User {
+        "user_main"
+    } else {
+        "kernel_main"
+    };
+    let Some(function) = concrete.functions.iter().find(|function| {
+        project.symbol_owners.get(&function.key.symbol) == Some(&project.root)
+            && project
+                .link_names
+                .get(&function.key.symbol)
+                .is_some_and(|value| value == name)
+    }) else {
+        return Err(Diagnostic::without_span(
+            crate::diagnostics::DiagnosticCategory::InvalidEntryPoint,
+            format!("canonical project is missing `{name}`"),
+        ));
+    };
+    let result_ok = matches!(
+        concrete.semantic.type_of(function.result),
+        dbyte_hir::CanonicalType::Integer(
+            dbyte_hir::IntegerType::LegacyInt | dbyte_hir::IntegerType::I32
+        )
+    );
+    let params_ok = if profile == dbyte_hir::Profile::I686User {
+        function.parameters.is_empty()
+    } else {
+        function.parameters.is_empty()
+            || matches!(
+                function.parameters.as_slice(),
+                [magic, info]
+                    if matches!(
+                        concrete.semantic.type_of(magic.ty),
+                        dbyte_hir::CanonicalType::Integer(dbyte_hir::IntegerType::U32)
+                    ) && matches!(
+                        concrete.semantic.type_of(info.ty),
+                        dbyte_hir::CanonicalType::Integer(dbyte_hir::IntegerType::Usize)
+                    )
+            )
+    };
+    if !result_ok || !params_ok || function.interrupt.is_some() {
+        return Err(Diagnostic::new(
+            crate::diagnostics::DiagnosticCategory::InvalidEntryPoint,
+            format!("`{name}` has an invalid canonical entry signature"),
+            function.span,
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_diagnostics(errors: Vec<dbyte_hir::Diagnostic>) -> Diagnostic {
+    canonical_diagnostic(errors.into_iter().next().unwrap_or(dbyte_hir::Diagnostic {
+        code: "E_HIR_ANALYSIS",
+        message: "canonical analysis failed without a diagnostic".into(),
+        span: dbyte_ast::Span::zero(),
+    }))
+}
+
+fn canonical_project_diagnostics(
+    errors: Vec<dbyte_hir::Diagnostic>,
+    graph: &crate::modules::NativeModuleGraph,
+) -> Diagnostic {
+    canonical_project_diagnostic(
+        errors.into_iter().next().unwrap_or(dbyte_hir::Diagnostic {
+            code: "E_HIR_ANALYSIS",
+            message: "canonical analysis failed without a diagnostic".into(),
+            span: dbyte_ast::Span::zero(),
+        }),
+        graph,
+    )
+}
+
+fn canonical_project_diagnostic(
+    mut error: dbyte_hir::Diagnostic,
+    graph: &crate::modules::NativeModuleGraph,
+) -> Diagnostic {
+    let module = error.span.line / 1_000_000;
+    if module < graph.modules.len() && error.span.line >= 1_000_000 {
+        error.span.line %= 1_000_000;
+    }
+    let diagnostic = canonical_diagnostic(error);
+    graph
+        .modules
+        .get(module)
+        .map_or(diagnostic.clone(), |source| {
+            attach_path(diagnostic, &source.display_path)
+        })
+}
+
+fn canonical_diagnostic(error: dbyte_hir::Diagnostic) -> Diagnostic {
+    Diagnostic::new(
+        crate::diagnostics::DiagnosticCategory::InvalidType,
+        format!("{}: {}", error.code, error.message),
+        error.span,
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledModuleObject {
@@ -81,14 +388,15 @@ pub struct SystemsBuildArtifact {
 }
 
 pub fn compile_systems_objects(root: &Path) -> NativeResult<CompiledProjectObjects> {
-    compile_systems_objects_with_mode(root, false, SystemsProfile::Kernel)
+    compile_canonical_project_objects(root, dbyte_hir::Profile::I686None)
 }
 
 pub fn compile_user_objects(root: &Path) -> NativeResult<CompiledProjectObjects> {
-    compile_systems_objects_with_mode(root, false, SystemsProfile::User)
+    compile_canonical_project_objects(root, dbyte_hir::Profile::I686User)
 }
 
-fn compile_systems_objects_with_mode(
+#[cfg(test)]
+fn compile_legacy_systems_objects_with_mode(
     root: &Path,
     require_entry: bool,
     profile: SystemsProfile,
@@ -144,7 +452,8 @@ pub fn link_compiled_project(objects: &CompiledProjectObjects) -> NativeResult<L
 }
 
 pub fn compile_systems_project(root: &Path) -> NativeResult<SystemsBuildArtifact> {
-    let objects = compile_systems_objects_with_mode(root, true, SystemsProfile::Kernel)?;
+    let objects =
+        compile_canonical_project_objects_with_entry(root, dbyte_hir::Profile::I686None, true)?;
     let ir_dump = objects.combined_ir_dump();
     let mut machine_dump = objects.combined_machine_dump();
     let linked = link_compiled_project(&objects)?;
@@ -161,7 +470,8 @@ pub fn compile_systems_project(root: &Path) -> NativeResult<SystemsBuildArtifact
 }
 
 pub fn compile_user_project(root: &Path) -> NativeResult<SystemsBuildArtifact> {
-    let objects = compile_systems_objects_with_mode(root, true, SystemsProfile::User)?;
+    let objects =
+        compile_canonical_project_objects_with_entry(root, dbyte_hir::Profile::I686User, true)?;
     let ir_dump = objects.combined_ir_dump();
     let mut machine_dump = objects.combined_machine_dump();
     let linked = link_user_object_bytes(&objects.link_inputs())?;
@@ -188,6 +498,101 @@ fn attach_path(error: Diagnostic, path: &str) -> Diagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dbyte_lexer::Lexer;
+    use dbyte_parser::Parser;
+
+    #[test]
+    fn staged_canonical_pipeline_emits_a_linkable_real_object() {
+        let source = "fn id[T](value: T) -> T:\n    return value\n\npub fn kernel_main() -> int:\n    native.io_out8(1016 as u16, id[u8](65 as u8))\n    return 0\n";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let object =
+            compile_canonical_module_object("kernel", &program, dbyte_hir::Profile::I686None)
+                .unwrap();
+        assert!(object.bytes.starts_with(b"\x7fELF"));
+        assert!(object.ir_dump.contains("__dbyte_mono_id"));
+        let linked = link_object_bytes(&[LinkInput {
+            name: "kernel.o".into(),
+            bytes: object.bytes,
+        }])
+        .unwrap();
+        assert!(linked.elf.starts_with(b"\x7fELF"));
+    }
+
+    #[test]
+    fn canonical_project_pipeline_resolves_and_links_real_module_graph() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_kernel_multimodule/kernel.dby");
+        let objects =
+            compile_canonical_project_objects(&root, dbyte_hir::Profile::I686None).unwrap();
+        assert_eq!(objects.modules.len(), 5);
+        let linked = link_compiled_project(&objects).unwrap();
+        assert!(linked.elf.starts_with(b"\x7fELF"));
+        assert!(objects.combined_ir_dump().contains("call add 2 -> u32"));
+        let legacy =
+            compile_legacy_systems_objects_with_mode(&root, false, SystemsProfile::Kernel).unwrap();
+        for (canonical, legacy) in objects.modules.iter().zip(&legacy.modules) {
+            assert_eq!(
+                canonical.bytes, legacy.bytes,
+                "canonical object drifted for {}",
+                canonical.module_name
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_project_preserves_frozen_interrupt_core_objects() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_kernel_core/kernel.dby");
+        let canonical =
+            compile_canonical_project_objects(&root, dbyte_hir::Profile::I686None).unwrap();
+        assert_eq!(canonical.modules.len(), 8);
+        assert!(canonical
+            .modules
+            .iter()
+            .any(|module| module.object_dump.contains(".dbyte.interrupts")));
+        let linked = link_compiled_project(&canonical).unwrap();
+        assert!(linked.elf.starts_with(b"\x7fELF"));
+        let idt = canonical
+            .modules
+            .iter()
+            .find(|module| module.module_name == "idt")
+            .expect("IDT object");
+        assert_eq!(
+            crate::dbup::sha256(&idt.bytes),
+            [
+                0x63, 0x58, 0x9f, 0x4b, 0x77, 0x33, 0x54, 0x1e, 0x24, 0xa4, 0xae, 0x96, 0x2d, 0x44,
+                0xc1, 0x4a, 0x2a, 0x69, 0x11, 0xd3, 0xdd, 0x8a, 0x75, 0x18, 0x46, 0x62, 0x2d, 0x48,
+                0xef, 0x59, 0x83, 0x2b,
+            ],
+            "canonical IDT object must retain the frozen v11.2 bytes"
+        );
+    }
+
+    #[test]
+    fn canonical_project_accepts_every_frozen_kernel_root() {
+        for directory in [
+            "native_memory_core",
+            "native_runtime_core",
+            "native_scheduler_core",
+            "native_blocking_core",
+            "native_irq_io_core",
+            "native_block_device_core",
+            "native_filesystem_core",
+            "native_filesystem_runtime",
+            "native_user_process_core",
+        ] {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples")
+                .join(directory)
+                .join("kernel.dby");
+            let objects = compile_canonical_project_objects(&root, dbyte_hir::Profile::I686None)
+                .unwrap_or_else(|error| panic!("canonical {directory} failed: {error}"));
+            let linked = link_compiled_project(&objects)
+                .unwrap_or_else(|error| panic!("canonical {directory} link failed: {error}"));
+            assert!(linked.elf.starts_with(b"\x7fELF"), "{directory}");
+        }
+    }
 
     #[test]
     fn real_project_emits_one_object_per_module_and_links_same_bytes_twice() {

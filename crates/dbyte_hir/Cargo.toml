@@ -1,0 +1,12 @@
+[package]
+name = "dbyte_hir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbyte_ast.workspace = true
+
+[dev-dependencies]
+dbyte_lexer.workspace = true
+dbyte_parser.workspace = true

@@ -1,0 +1,82 @@
+import "serial.dby" as serial
+
+extern "C" fn c_roundtrip(callback: extern "C" fn(i32) -> i32, value: i32) -> i32
+
+pub struct Pair[A, B]:
+    first: A
+    second: B
+
+static mut DEFER_MARK: u32
+
+pub fn id[T](value: T) -> T:
+    return value
+
+fn add_two(input: Result[u32, u32]) -> Result[u32, u32]:
+    let cleanup_token: u32 = 1 as u32
+    defer [borrow cleanup_token]:
+        DEFER_MARK = cleanup_token
+    let value = input?
+    return Result[u32, u32].Ok(id[u32](value) + (2 as u32))
+
+fn first(data: slice[u8]) -> u8:
+    return data[0]
+
+fn plus_one(value: u32) -> u32:
+    return value + (1 as u32)
+
+pub extern "C" fn dbyte_c_callback(value: i32) -> i32:
+    return value + (1 as i32)
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+pub fn kernel_main() -> int:
+    serial.init()
+    line("DBYTE GENERAL PURPOSE V12", 25 as usize)
+    line("CANONICAL HIR ONLINE", 20 as usize)
+    let bytes: array[u8, 2] = [40 as u8, 2 as u8]
+    let view: slice[u8] = borrow bytes
+    let text: StringView = "V12"
+    let factor: u32 = bytes[1] as u32
+    let callback = fn [borrow factor](value: u32) -> u32:
+        return value + factor
+    let indirect: fn(u32) -> u32 = plus_one
+    let candidate: u32 = callback(first(view) as u32)
+    let pair = Pair[u32, u8](first = candidate, second = text[0])
+    if pair.second != (86 as u8):
+        return 1
+    if indirect(41 as u32) != pair.first:
+        return 1
+    let failed = add_two(Result[u32, u32].Err(7 as u32))
+    match failed:
+        case Result.Ok(value):
+            return value as int
+        case Result.Err(error):
+            if error != (7 as u32):
+                return 1
+    if DEFER_MARK != (1 as u32):
+        return 1
+    DEFER_MARK = 0 as u32
+    let seed = Result[u32, u32].Ok(pair.first - (2 as u32))
+    line("GENERICS ONLINE", 15 as usize)
+    line("ENUM MATCH ONLINE", 17 as usize)
+    let result = add_two(seed)
+    match result:
+        case Result.Ok(value):
+            if value != (42 as u32):
+                return 1
+        case Result.Err(error):
+            return error as int
+    if DEFER_MARK != (1 as u32):
+        return 1
+    line("OWNERSHIP ONLINE", 16 as usize)
+    line("CLOSURES ONLINE", 15 as usize)
+    line("DEFER ONLINE", 12 as usize)
+    let c_value: i32 = c_roundtrip(dbyte_c_callback, 36 as i32)
+    if c_value != (42 as i32):
+        return 1
+    line("C ABI ONLINE", 12 as usize)
+    line("V12 CHECK OK", 12 as usize)
+    return 0

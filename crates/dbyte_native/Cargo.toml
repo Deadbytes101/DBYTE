@@ -7,5 +7,6 @@ license.workspace = true
 
 [dependencies]
 dbyte_ast.workspace = true
+dbyte_hir.workspace = true
 dbyte_lexer.workspace = true
 dbyte_parser.workspace = true

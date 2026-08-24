@@ -46,6 +46,8 @@ const TASK_METADATA_SECTION: &str = ".dbyte.tasks";
 pub const TASK_METADATA_PREFIX: &str = "__dbyte_task:";
 const PROFILE_METADATA_SECTION: &str = ".dbyte.profile";
 pub const PROFILE_METADATA_PREFIX: &str = "__dbyte_profile:";
+const GENERIC_METADATA_SECTION: &str = ".dbyte.generics";
+pub const GENERIC_METADATA_PREFIX: &str = "__dbyte_generic:";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectSection {
@@ -292,6 +294,7 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     let entry_metadata = build_entry_metadata(image)?;
     let task_metadata = build_task_metadata(image)?;
     let profile_metadata = build_profile_metadata(image)?;
+    let generic_metadata = build_generic_metadata(image)?;
     let has_task_metadata = image
         .symbols
         .iter()
@@ -300,8 +303,14 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         .symbols
         .iter()
         .any(|symbol| symbol.name.starts_with(PROFILE_METADATA_PREFIX));
-    let metadata_section_count =
-        7u16 + u16::from(has_task_metadata) + u16::from(has_profile_metadata);
+    let has_generic_metadata = image
+        .symbols
+        .iter()
+        .any(|symbol| symbol.name.starts_with(GENERIC_METADATA_PREFIX));
+    let metadata_section_count = 7u16
+        + u16::from(has_task_metadata)
+        + u16::from(has_profile_metadata)
+        + u16::from(has_generic_metadata);
     let symtab_index = metadata_section_count
         .checked_add(
             u16::try_from(relocation_sections.len())
@@ -326,6 +335,9 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     }
     if has_profile_metadata {
         section_names.push(PROFILE_METADATA_SECTION);
+    }
+    if has_generic_metadata {
+        section_names.push(GENERIC_METADATA_SECTION);
     }
     for section in &relocation_sections {
         section_names.push(
@@ -485,6 +497,30 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         )?;
     }
 
+    let generic_metadata_offset = cursor;
+    if has_generic_metadata {
+        let generic_metadata_size =
+            checked_usize_u32(generic_metadata.len(), "generic metadata size")?;
+        let name_index = 7 + usize::from(has_task_metadata) + usize::from(has_profile_metadata);
+        headers.push(SectionHeader {
+            name: section_name_offsets[name_index],
+            section_type: SHT_PROGBITS,
+            flags: 0,
+            address: 0,
+            offset: generic_metadata_offset,
+            size: generic_metadata_size,
+            link: 0,
+            info: 0,
+            alignment: 1,
+            entry_size: 0,
+        });
+        cursor = checked_add(
+            cursor,
+            generic_metadata_size,
+            "generic metadata section end",
+        )?;
+    }
+
     for (relocation_position, section) in relocation_sections.iter().copied().enumerate() {
         cursor = align_up(cursor, 4)?;
         let table = &relocation_tables[&section];
@@ -618,6 +654,13 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
             &mut bytes,
             profile_metadata_offset as usize,
             &profile_metadata,
+        )?;
+    }
+    if has_generic_metadata {
+        copy_bytes(
+            &mut bytes,
+            generic_metadata_offset as usize,
+            &generic_metadata,
         )?;
     }
     copy_bytes(&mut bytes, symtab_offset as usize, &symtab)?;
@@ -811,6 +854,22 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
         }
         validate_profile_metadata(
             section_file_bytes(bytes, profile_header, PROFILE_METADATA_SECTION)?,
+            &symbols,
+        )?;
+    }
+    if let Some(generic_index) = by_name.get(GENERIC_METADATA_SECTION).copied() {
+        let generic_header = &parsed[generic_index as usize].header;
+        if generic_header.section_type != SHT_PROGBITS
+            || generic_header.flags != 0
+            || generic_header.link != 0
+            || generic_header.info != 0
+            || generic_header.alignment != 1
+            || generic_header.entry_size != 0
+        {
+            return Err(invalid_object("invalid .dbyte.generics section contract"));
+        }
+        validate_generic_metadata(
+            section_file_bytes(bytes, generic_header, GENERIC_METADATA_SECTION)?,
             &symbols,
         )?;
     }
@@ -1325,6 +1384,7 @@ fn validate_allowed_sections(sections: &[ParsedSection]) -> Result<(), Diagnosti
         ".dbyte.entry",
         ".dbyte.tasks",
         ".dbyte.profile",
+        ".dbyte.generics",
         ".rel.text",
         ".rel.rodata",
         ".rel.data",
@@ -1795,6 +1855,53 @@ fn validate_profile_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(
     Ok(())
 }
 
+fn build_generic_metadata(image: &ObjectImage) -> Result<Vec<u8>, Diagnostic> {
+    let mut records: Vec<&str> = image
+        .symbols
+        .iter()
+        .filter_map(|symbol| {
+            symbol
+                .name
+                .strip_prefix(GENERIC_METADATA_PREFIX)
+                .map(|_| symbol.name.as_str())
+        })
+        .collect();
+    records.sort_unstable();
+    records.dedup();
+    let mut bytes = b"DBYTEGEN\0\x01\0".to_vec();
+    for record in records {
+        let tail = record
+            .strip_prefix(GENERIC_METADATA_PREFIX)
+            .ok_or_else(|| object_error("generic metadata prefix is missing"))?;
+        let fields = tail.split(':').collect::<Vec<_>>();
+        let valid = matches!(fields.as_slice(), ["fn" | "type", name, id, arity]
+            if !name.is_empty()
+                && name.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                && id.parse::<u32>().is_ok()
+                && arity.parse::<u32>().is_ok());
+        if !valid || !record.is_ascii() || record.contains('\n') {
+            return Err(object_error("generic metadata symbol is not canonical"));
+        }
+        bytes.extend_from_slice(record.as_bytes());
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn validate_generic_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(), Diagnostic> {
+    let expected = build_generic_metadata(&ObjectImage {
+        sections: BTreeMap::new(),
+        symbols: symbols.to_vec(),
+        relocations: Vec::new(),
+    })?;
+    if bytes != expected {
+        return Err(invalid_object(
+            "non-canonical .dbyte.generics metadata does not match symbols",
+        ));
+    }
+    Ok(())
+}
+
 fn align_up(value: u32, alignment: u32) -> Result<u32, Diagnostic> {
     validate_alignment(alignment)?;
     value
@@ -2134,6 +2241,40 @@ mod tests {
         let error = parse_relocatable(&corrupt).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidObject);
         assert!(error.message.contains(".dbyte.tasks"));
+    }
+
+    #[test]
+    fn generic_metadata_is_optional_canonical_and_fail_closed() {
+        let legacy = write_relocatable(&sample_object()).unwrap();
+        assert!(!legacy
+            .bytes
+            .windows(GENERIC_METADATA_SECTION.len())
+            .any(|window| window == GENERIC_METADATA_SECTION.as_bytes()));
+
+        let mut image = sample_object();
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_generic:fn:id:3:1".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let artifact = write_relocatable(&image).unwrap();
+        assert!(section_data_offset(&artifact.bytes, GENERIC_METADATA_SECTION) > 0);
+        parse_relocatable(&artifact.bytes).unwrap();
+
+        let mut corrupt = artifact.bytes;
+        let at = corrupt
+            .windows(b"DBYTEGEN".len())
+            .position(|window| window == b"DBYTEGEN")
+            .unwrap();
+        corrupt[at] = b'X';
+        let error = parse_relocatable(&corrupt).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidObject);
+        assert!(error.message.contains(GENERIC_METADATA_SECTION));
     }
 
     #[test]

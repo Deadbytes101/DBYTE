@@ -1,10 +1,12 @@
+use crate::archive::{write_archive, ArchiveMember};
 use crate::dbup::{pack_user_bundle, BundleInput};
 use crate::linker::{link_object_bytes, LinkInput};
 use crate::object::parse_relocatable;
 use crate::systems_compiler::{
-    compile_systems_objects, compile_systems_project, compile_user_objects, compile_user_project,
+    compile_canonical_legacy_single_image, compile_systems_objects, compile_systems_project,
+    compile_user_objects, compile_user_project,
 };
-use crate::{compile_source, Diagnostic, EmitKind, TARGET, USER_TARGET};
+use crate::{Diagnostic, EmitKind, TARGET, USER_TARGET};
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -12,7 +14,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link <object.o>... -o <output.elf>";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link <object.o|archive.a>... -o <output.elf>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -211,12 +213,15 @@ pub fn run_link_args(args: &[String]) -> Result<(), CliError> {
 
 fn compile_build_product(
     options: &BuildOptions,
-    source_text: &str,
+    _source_text: &str,
 ) -> Result<BuildProduct, CliError> {
     if options.target == BuildTarget::User {
         return match options.emit {
             EmitKind::Bin => Err(CliError::argument(
                 "i686-dbyte-user does not support --emit bin",
+            )),
+            EmitKind::StaticLib => Err(CliError::argument(
+                "i686-dbyte-user does not support --emit staticlib",
             )),
             EmitKind::Obj => {
                 let objects = compile_user_objects(&options.source)
@@ -254,15 +259,33 @@ fn compile_build_product(
                 machine_dump,
             })
         }
+        EmitKind::StaticLib => {
+            let objects = compile_systems_objects(&options.source)
+                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+            let members: Vec<_> = objects
+                .modules
+                .iter()
+                .map(|module| ArchiveMember {
+                    name: format!("m{:04}.o", module.module_id),
+                    bytes: module.bytes.clone(),
+                })
+                .collect();
+            let bytes = write_archive(&members)
+                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+            Ok(BuildProduct {
+                bytes,
+                ir_dump: objects.combined_ir_dump(),
+                machine_dump: objects.combined_machine_dump(),
+            })
+        }
         EmitKind::Elf | EmitKind::Bin => {
-            if !requires_systems_pipeline(source_text) {
-                let path_label = options.source.to_string_lossy();
-                let artifact = compile_source(path_label.as_ref(), source_text)
-                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+            if let Some(artifact) = compile_canonical_legacy_single_image(&options.source)
+                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?
+            {
                 let bytes = match options.emit {
                     EmitKind::Elf => artifact.elf,
                     EmitKind::Bin => artifact.bin,
-                    EmitKind::Obj => unreachable!("object emission handled above"),
+                    EmitKind::Obj | EmitKind::StaticLib => unreachable!(),
                 };
                 return Ok(BuildProduct {
                     bytes,
@@ -276,6 +299,7 @@ fn compile_build_product(
                 EmitKind::Elf => artifact.linked.elf,
                 EmitKind::Bin => artifact.linked.bin,
                 EmitKind::Obj => unreachable!("object emission handled above"),
+                EmitKind::StaticLib => unreachable!("archive emission handled above"),
             };
             Ok(BuildProduct {
                 bytes,
@@ -284,40 +308,6 @@ fn compile_build_product(
             })
         }
     }
-}
-
-/// Keep the proven v11.0.0 i32/bool single-image profile source-compatible,
-/// while selecting the object/linker pipeline whenever source opts into the
-/// v11.1 systems surface. Object emission always uses the systems pipeline.
-fn requires_systems_pipeline(source: &str) -> bool {
-    const SYSTEMS_MARKERS: [&str; 25] = [
-        "import \"",
-        "pub fn ",
-        "pub const ",
-        "pub static ",
-        "struct ",
-        "packed struct ",
-        "const ",
-        "static ",
-        "ptr[",
-        "array[",
-        ": i8",
-        ": u8",
-        ": i16",
-        ": u16",
-        ": i32",
-        ": u32",
-        ": usize",
-        "-> i8",
-        "-> u8",
-        "-> i16",
-        "-> u16",
-        "-> i32",
-        "-> u32",
-        "-> usize",
-        " as ",
-    ];
-    SYSTEMS_MARKERS.iter().any(|marker| source.contains(marker))
 }
 
 fn compile_diagnostic(source: &Path, diagnostic: Diagnostic) -> CliError {
@@ -529,6 +519,7 @@ fn parse_emit(value: &str) -> Result<EmitKind, CliError> {
         "elf" => Ok(EmitKind::Elf),
         "bin" => Ok(EmitKind::Bin),
         "obj" => Ok(EmitKind::Obj),
+        "staticlib" => Ok(EmitKind::StaticLib),
         _ => Err(CliError::argument(format!(
             "unsupported emit kind '{value}'; expected 'elf', 'bin', or 'obj'"
         ))),
@@ -560,6 +551,11 @@ fn validate_selected_output(source: &Path, emit: &EmitKind, bytes: &[u8]) -> Res
                 .map(|_| ())
                 .map_err(|diagnostic| compile_diagnostic(source, diagnostic))
         }
+        EmitKind::StaticLib => crate::archive::parse_archive(bytes)
+            .map(|_| ())
+            .map_err(|error| {
+                CliError::compile(source, format!("compiler emitted invalid archive: {error}"))
+            }),
     }
 }
 
@@ -1086,14 +1082,10 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_selection_preserves_legacy_and_selects_systems_sources() {
-        let legacy = include_str!("../../../examples/native_kernel/kernel.dby");
-        let systems = include_str!("../../../examples/native_kernel_multimodule/kernel.dby");
-        assert!(!requires_systems_pipeline(legacy));
-        assert!(requires_systems_pipeline(systems));
-        assert!(requires_systems_pipeline(
-            "fn kernel_main() -> u32:\n    return 0 as u32\n"
-        ));
+    fn production_build_has_no_legacy_ast_pipeline_selector() {
+        let source = include_str!("cli.rs");
+        assert!(!source.contains(&["fn requires_", "systems_pipeline"].concat()));
+        assert!(!source.contains(&["compile_source", "(path_label"].concat()));
     }
 
     #[test]
