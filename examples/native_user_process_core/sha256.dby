@@ -1,0 +1,105 @@
+static mut WORDS: array[u32, 64]
+static mut STATE: array[u32, 8]
+
+static K: array[u32, 64] = [0x428a2f98 as u32, 0x71374491 as u32, 0xb5c0fbcf as u32, 0xe9b5dba5 as u32, 0x3956c25b as u32, 0x59f111f1 as u32, 0x923f82a4 as u32, 0xab1c5ed5 as u32, 0xd807aa98 as u32, 0x12835b01 as u32, 0x243185be as u32, 0x550c7dc3 as u32, 0x72be5d74 as u32, 0x80deb1fe as u32, 0x9bdc06a7 as u32, 0xc19bf174 as u32, 0xe49b69c1 as u32, 0xefbe4786 as u32, 0x0fc19dc6 as u32, 0x240ca1cc as u32, 0x2de92c6f as u32, 0x4a7484aa as u32, 0x5cb0a9dc as u32, 0x76f988da as u32, 0x983e5152 as u32, 0xa831c66d as u32, 0xb00327c8 as u32, 0xbf597fc7 as u32, 0xc6e00bf3 as u32, 0xd5a79147 as u32, 0x06ca6351 as u32, 0x14292967 as u32, 0x27b70a85 as u32, 0x2e1b2138 as u32, 0x4d2c6dfc as u32, 0x53380d13 as u32, 0x650a7354 as u32, 0x766a0abb as u32, 0x81c2c92e as u32, 0x92722c85 as u32, 0xa2bfe8a1 as u32, 0xa81a664b as u32, 0xc24b8b70 as u32, 0xc76c51a3 as u32, 0xd192e819 as u32, 0xd6990624 as u32, 0xf40e3585 as u32, 0x106aa070 as u32, 0x19a4c116 as u32, 0x1e376c08 as u32, 0x2748774c as u32, 0x34b0bcb5 as u32, 0x391c0cb3 as u32, 0x4ed8aa4a as u32, 0x5b9cca4f as u32, 0x682e6ff3 as u32, 0x748f82ee as u32, 0x78a5636f as u32, 0x84c87814 as u32, 0x8cc70208 as u32, 0x90befffa as u32, 0xa4506ceb as u32, 0xbef9a3f7 as u32, 0xc67178f2 as u32]
+
+fn byte(address: usize) -> u32:
+    return native.volatile_load8(address as ptr[u8]) as u32
+
+fn rotate_right(value: u32, count: u32) -> u32:
+    return (value >> count) | (value << ((32 as u32) - count))
+
+fn padded_byte(address: usize, length: usize, index: usize, total: usize) -> u32:
+    if index < length:
+        return byte(address + index)
+    if index == length:
+        return 0x80 as u32
+    if index >= total - (8 as usize):
+        let tail: usize = index - (total - (8 as usize))
+        if tail < (4 as usize):
+            return 0 as u32
+        let bit_length: u32 = (length as u32) << (3 as u32)
+        let shift: u32 = ((7 as u32) - (tail as u32)) << (3 as u32)
+        return (bit_length >> shift) & (0xff as u32)
+    return 0 as u32
+
+fn compress(address: usize, length: usize, block: usize, total: usize) -> int:
+    let index: usize = 0 as usize
+    while index < (16 as usize):
+        let base: usize = block + (index << (2 as usize))
+        WORDS[index] = (padded_byte(address, length, base, total) << (24 as u32)) | (padded_byte(address, length, base + (1 as usize), total) << (16 as u32)) | (padded_byte(address, length, base + (2 as usize), total) << (8 as u32)) | padded_byte(address, length, base + (3 as usize), total)
+        index = index + (1 as usize)
+    while index < (64 as usize):
+        let x: u32 = WORDS[index - (15 as usize)]
+        let y: u32 = WORDS[index - (2 as usize)]
+        let s0: u32 = rotate_right(x, 7 as u32) ^ rotate_right(x, 18 as u32) ^ (x >> (3 as u32))
+        let s1: u32 = rotate_right(y, 17 as u32) ^ rotate_right(y, 19 as u32) ^ (y >> (10 as u32))
+        WORDS[index] = WORDS[index - (16 as usize)] + s0 + WORDS[index - (7 as usize)] + s1
+        index = index + (1 as usize)
+    let a: u32 = STATE[0]
+    let b: u32 = STATE[1]
+    let c: u32 = STATE[2]
+    let d: u32 = STATE[3]
+    let e: u32 = STATE[4]
+    let f: u32 = STATE[5]
+    let g: u32 = STATE[6]
+    let h: u32 = STATE[7]
+    index = 0 as usize
+    while index < (64 as usize):
+        let s1: u32 = rotate_right(e, 6 as u32) ^ rotate_right(e, 11 as u32) ^ rotate_right(e, 25 as u32)
+        let choice: u32 = (e & f) ^ ((~e) & g)
+        let temporary1: u32 = h + s1 + choice + K[index] + WORDS[index]
+        let s0: u32 = rotate_right(a, 2 as u32) ^ rotate_right(a, 13 as u32) ^ rotate_right(a, 22 as u32)
+        let majority: u32 = (a & b) ^ (a & c) ^ (b & c)
+        let temporary2: u32 = s0 + majority
+        h = g
+        g = f
+        f = e
+        e = d + temporary1
+        d = c
+        c = b
+        b = a
+        a = temporary1 + temporary2
+        index = index + (1 as usize)
+    STATE[0] = STATE[0] + a
+    STATE[1] = STATE[1] + b
+    STATE[2] = STATE[2] + c
+    STATE[3] = STATE[3] + d
+    STATE[4] = STATE[4] + e
+    STATE[5] = STATE[5] + f
+    STATE[6] = STATE[6] + g
+    STATE[7] = STATE[7] + h
+    return 0
+
+pub fn matches(address: usize, length: usize, expected: usize) -> bool:
+    if length > (65536 as usize):
+        return false
+    let with_marker: usize = length + (1 as usize)
+    if with_marker <= length:
+        return false
+    let total: usize = (with_marker + (8 as usize) + (63 as usize)) & (0xffffffc0 as usize)
+    if total < with_marker:
+        return false
+    STATE[0] = 0x6a09e667 as u32
+    STATE[1] = 0xbb67ae85 as u32
+    STATE[2] = 0x3c6ef372 as u32
+    STATE[3] = 0xa54ff53a as u32
+    STATE[4] = 0x510e527f as u32
+    STATE[5] = 0x9b05688c as u32
+    STATE[6] = 0x1f83d9ab as u32
+    STATE[7] = 0x5be0cd19 as u32
+    let block: usize = 0 as usize
+    while block < total:
+        compress(address, length, block, total)
+        block = block + (64 as usize)
+    let word_index: usize = 0 as usize
+    while word_index < (8 as usize):
+        let value: u32 = STATE[word_index]
+        let byte_index: usize = 0 as usize
+        while byte_index < (4 as usize):
+            let shift: u32 = ((3 as u32) - (byte_index as u32)) << (3 as u32)
+            if native.volatile_load8((expected + (word_index << (2 as usize)) + byte_index) as ptr[u8]) != ((value >> shift) & (0xff as u32)) as u8:
+                return false
+            byte_index = byte_index + (1 as usize)
+        word_index = word_index + (1 as usize)
+    return true

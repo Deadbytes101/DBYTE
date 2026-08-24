@@ -2,19 +2,20 @@
 
 use crate::diagnostics::{Diagnostic, DiagnosticCategory};
 use crate::elf32::{
-    write_linked_executable, ElfLayout, ExecutableSymbol, LinkedExecutableImage,
-    BOOTSTRAP_STACK_SIZE, MAX_ELF_SIZE,
+    write_linked_executable, write_user_executable, ElfLayout, ExecutableSymbol,
+    LinkedExecutableImage, BOOTSTRAP_STACK_SIZE, MAX_ELF_SIZE,
 };
 use crate::object::{
     parse_relocatable, write_relocatable, ObjectImage, ObjectRelocation, ObjectSection,
     RelocationKind, SectionContents, SymbolBinding, SymbolDefinition, SymbolKind,
-    ENTRY_METADATA_PREFIX, TASK_METADATA_PREFIX,
+    ENTRY_METADATA_PREFIX, PROFILE_METADATA_PREFIX, TASK_METADATA_PREFIX,
 };
 use crate::x86::{Encoder, Register};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 pub const LINK_ENTRY_SYMBOL: &str = "kernel_main";
+pub const LINK_USER_ENTRY_SYMBOL: &str = "user_main";
 pub const LINK_START_SYMBOL: &str = "_start";
 pub const LINK_STACK_BOTTOM_SYMBOL: &str = "__dbyte_stack_bottom";
 pub const LINK_STACK_TOP_SYMBOL: &str = "__dbyte_stack_top";
@@ -60,9 +61,25 @@ struct ParsedInput {
 
 #[derive(Clone, Copy, Debug)]
 struct Bootstrap {
-    stack_immediate: u32,
+    stack_immediate: Option<u32>,
     entry_immediate: u32,
     size: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExecutableSymbolLayout {
+    bootstrap: Bootstrap,
+    stack_bottom_offset: u32,
+    stack_top_offset: u32,
+    image_end_offset: u32,
+    task_trampoline: Option<u32>,
+    profile: LinkProfile,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LinkProfile {
+    Kernel,
+    User,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -112,7 +129,35 @@ pub fn link_object_bytes(inputs: &[LinkInput]) -> Result<LinkArtifact, Diagnosti
             )));
         }
     }
-    link_parsed(&parsed)
+    link_parsed(&parsed, LinkProfile::Kernel)
+}
+
+pub fn link_user_object_bytes(inputs: &[LinkInput]) -> Result<LinkArtifact, Diagnostic> {
+    if inputs.is_empty() {
+        return Err(link_error("cannot link an empty object set"));
+    }
+    let mut parsed = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        let name = canonical_input_name(&input.name)?;
+        let image = parse_relocatable(&input.bytes).map_err(|error| {
+            if error.path.is_some() {
+                error
+            } else {
+                error.with_path(name.clone())
+            }
+        })?;
+        parsed.push(ParsedInput { name, image });
+    }
+    parsed.sort_by(|left, right| left.name.cmp(&right.name));
+    for pair in parsed.windows(2) {
+        if pair[0].name == pair[1].name {
+            return Err(link_error(format!(
+                "duplicate linker input name '{}'",
+                pair[0].name
+            )));
+        }
+    }
+    link_parsed(&parsed, LinkProfile::User)
 }
 
 /// Serializes every image through the ET_REL seam before linking it. This
@@ -127,15 +172,32 @@ pub fn link_images(inputs: &[(String, ObjectImage)]) -> Result<LinkArtifact, Dia
     link_object_bytes(&serialized)
 }
 
-fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
-    validate_interrupt_metadata(inputs)?;
-    let needs_task_trampoline = validate_task_metadata(inputs)?;
-    let entry_abi = validate_entry_metadata(inputs)?;
-    let mut merged = merge_sections(inputs, entry_abi, needs_task_trampoline)?;
-    let definitions = collect_definitions(inputs, &merged)?;
+fn link_parsed(inputs: &[ParsedInput], profile: LinkProfile) -> Result<LinkArtifact, Diagnostic> {
+    validate_profiles(inputs, profile)?;
+    let (entry_abi, needs_task_trampoline) = if profile == LinkProfile::Kernel {
+        validate_interrupt_metadata(inputs)?;
+        (
+            validate_entry_metadata(inputs)?,
+            validate_task_metadata(inputs)?,
+        )
+    } else {
+        (EntryAbi::Legacy, false)
+    };
+    let entry_symbol = if profile == LinkProfile::Kernel {
+        LINK_ENTRY_SYMBOL
+    } else {
+        LINK_USER_ENTRY_SYMBOL
+    };
+    let mut merged = merge_sections(inputs, entry_abi, needs_task_trampoline, profile)?;
+    let definitions = collect_definitions(inputs, &merged, entry_symbol, profile)?;
     validate_undefined_symbols(inputs, &definitions)?;
 
-    let preliminary = write_linked_executable(&merged.executable).map_err(map_elf_layout_error)?;
+    let writer = if profile == LinkProfile::Kernel {
+        write_linked_executable
+    } else {
+        write_user_executable
+    };
+    let preliminary = writer(&merged.executable).map_err(map_elf_layout_error)?;
     let mut relocation_dump = String::new();
     apply_bootstrap_relocations(
         &mut merged,
@@ -143,6 +205,7 @@ fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
         &definitions,
         inputs,
         &mut relocation_dump,
+        entry_symbol,
     )?;
     apply_input_relocations(
         &mut merged,
@@ -152,7 +215,7 @@ fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
         &mut relocation_dump,
     )?;
 
-    let final_elf = write_linked_executable(&merged.executable).map_err(map_elf_layout_error)?;
+    let final_elf = writer(&merged.executable).map_err(map_elf_layout_error)?;
     let mut dump = link_dump(inputs, &merged, &definitions);
     dump.push_str(&relocation_dump);
     dump.push_str(&final_elf.dump);
@@ -165,12 +228,44 @@ fn link_parsed(inputs: &[ParsedInput]) -> Result<LinkArtifact, Diagnostic> {
     })
 }
 
+fn validate_profiles(inputs: &[ParsedInput], profile: LinkProfile) -> Result<(), Diagnostic> {
+    for input in inputs {
+        let records: Vec<&str> = input
+            .image
+            .symbols
+            .iter()
+            .filter_map(|symbol| symbol.name.strip_prefix(PROFILE_METADATA_PREFIX))
+            .collect();
+        match profile {
+            LinkProfile::Kernel if !records.is_empty() => {
+                return Err(invalid_object(format!(
+                    "kernel link rejects user-profile object '{}'",
+                    input.name
+                )))
+            }
+            LinkProfile::User if records.as_slice() != ["user"] => {
+                return Err(invalid_object(format!(
+                    "user link requires canonical user profile metadata in '{}'",
+                    input.name
+                )))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn merge_sections(
     inputs: &[ParsedInput],
     entry_abi: EntryAbi,
     needs_task_trampoline: bool,
+    profile: LinkProfile,
 ) -> Result<MergedImage, Diagnostic> {
-    let (bootstrap_bytes, bootstrap) = build_bootstrap(entry_abi)?;
+    let (bootstrap_bytes, bootstrap) = if profile == LinkProfile::Kernel {
+        build_bootstrap(entry_abi)?
+    } else {
+        build_user_bootstrap()?
+    };
     let mut text = bootstrap_bytes;
     let task_trampoline = if needs_task_trampoline {
         let offset = usize_u32(text.len(), "task trampoline offset")?;
@@ -247,23 +342,27 @@ fn merge_sections(
             alignments[&ObjectSection::Bss].max(source.alignment),
         );
     }
-    let stack_bottom_offset = align_u32(bss_size, 16, "bootstrap stack placement")?;
-    let stack_top_offset = checked_add(
-        stack_bottom_offset,
-        BOOTSTRAP_STACK_SIZE,
-        "bootstrap stack top",
-    )?;
-    bss_size = stack_top_offset;
-    alignments.insert(ObjectSection::Bss, alignments[&ObjectSection::Bss].max(16));
+    let (stack_bottom_offset, stack_top_offset) = if profile == LinkProfile::Kernel {
+        let bottom = align_u32(bss_size, 16, "bootstrap stack placement")?;
+        let top = checked_add(bottom, BOOTSTRAP_STACK_SIZE, "bootstrap stack top")?;
+        bss_size = top;
+        alignments.insert(ObjectSection::Bss, alignments[&ObjectSection::Bss].max(16));
+        (bottom, top)
+    } else {
+        (0, 0)
+    };
 
     let symbols = build_executable_symbols(
         inputs,
         &placements,
-        bootstrap,
-        stack_bottom_offset,
-        stack_top_offset,
-        bss_size,
-        task_trampoline,
+        ExecutableSymbolLayout {
+            bootstrap,
+            stack_bottom_offset,
+            stack_top_offset,
+            image_end_offset: bss_size,
+            task_trampoline,
+            profile,
+        },
     )?;
     Ok(MergedImage {
         executable: LinkedExecutableImage {
@@ -318,7 +417,35 @@ fn build_bootstrap(entry_abi: EntryAbi) -> Result<(Vec<u8>, Bootstrap), Diagnost
     Ok((
         encoded.bytes,
         Bootstrap {
-            stack_immediate,
+            stack_immediate: Some(stack_immediate),
+            entry_immediate,
+            size,
+        },
+    ))
+}
+
+fn build_user_bootstrap() -> Result<(Vec<u8>, Bootstrap), Diagnostic> {
+    let mut encoder = Encoder::new(32);
+    let entry_immediate = usize_u32(
+        encoder.call_rel32_placeholder().map_err(encoder_error)?,
+        "user entry relocation offset",
+    )?;
+    encoder
+        .mov_reg_reg(Register::Ebx, Register::Eax)
+        .map_err(encoder_error)?;
+    encoder
+        .xor_reg_reg(Register::Eax, Register::Eax)
+        .map_err(encoder_error)?;
+    encoder.software_interrupt(0x80).map_err(encoder_error)?;
+    let stopped = encoder.new_label().map_err(encoder_error)?;
+    encoder.bind_label(stopped).map_err(encoder_error)?;
+    encoder.jump(stopped).map_err(encoder_error)?;
+    let encoded = encoder.finish().map_err(encoder_error)?;
+    let size = usize_u32(encoded.bytes.len(), "user bootstrap size")?;
+    Ok((
+        encoded.bytes,
+        Bootstrap {
+            stack_immediate: None,
             entry_immediate,
             size,
         },
@@ -328,55 +455,53 @@ fn build_bootstrap(entry_abi: EntryAbi) -> Result<(Vec<u8>, Bootstrap), Diagnost
 fn build_executable_symbols(
     inputs: &[ParsedInput],
     placements: &BTreeMap<(usize, ObjectSection), u32>,
-    bootstrap: Bootstrap,
-    stack_bottom_offset: u32,
-    stack_top_offset: u32,
-    image_end_offset: u32,
-    task_trampoline: Option<u32>,
+    layout: ExecutableSymbolLayout,
 ) -> Result<Vec<ExecutableSymbol>, Diagnostic> {
-    let mut symbols = vec![
-        ExecutableSymbol {
-            name: LINK_START_SYMBOL.to_owned(),
-            binding: SymbolBinding::Global,
-            kind: SymbolKind::Function,
-            section: ObjectSection::Text,
-            offset: 0,
-            size: bootstrap.size,
-        },
-        ExecutableSymbol {
-            name: LINK_STACK_BOTTOM_SYMBOL.to_owned(),
-            binding: SymbolBinding::Global,
-            kind: SymbolKind::Object,
-            section: ObjectSection::Bss,
-            offset: stack_bottom_offset,
-            size: BOOTSTRAP_STACK_SIZE,
-        },
-        ExecutableSymbol {
-            name: LINK_STACK_TOP_SYMBOL.to_owned(),
-            binding: SymbolBinding::Global,
-            kind: SymbolKind::Object,
-            section: ObjectSection::Bss,
-            offset: stack_top_offset,
-            size: 0,
-        },
-        ExecutableSymbol {
-            name: LINK_IMAGE_START_SYMBOL.to_owned(),
-            binding: SymbolBinding::Global,
-            kind: SymbolKind::Object,
-            section: ObjectSection::Text,
-            offset: 0,
-            size: 0,
-        },
-        ExecutableSymbol {
-            name: LINK_IMAGE_END_SYMBOL.to_owned(),
-            binding: SymbolBinding::Global,
-            kind: SymbolKind::Object,
-            section: ObjectSection::Bss,
-            offset: image_end_offset,
-            size: 0,
-        },
-    ];
-    if let Some(offset) = task_trampoline {
+    let mut symbols = vec![ExecutableSymbol {
+        name: LINK_START_SYMBOL.to_owned(),
+        binding: SymbolBinding::Global,
+        kind: SymbolKind::Function,
+        section: ObjectSection::Text,
+        offset: 0,
+        size: layout.bootstrap.size,
+    }];
+    if layout.profile == LinkProfile::Kernel {
+        symbols.extend([
+            ExecutableSymbol {
+                name: LINK_STACK_BOTTOM_SYMBOL.to_owned(),
+                binding: SymbolBinding::Global,
+                kind: SymbolKind::Object,
+                section: ObjectSection::Bss,
+                offset: layout.stack_bottom_offset,
+                size: BOOTSTRAP_STACK_SIZE,
+            },
+            ExecutableSymbol {
+                name: LINK_STACK_TOP_SYMBOL.to_owned(),
+                binding: SymbolBinding::Global,
+                kind: SymbolKind::Object,
+                section: ObjectSection::Bss,
+                offset: layout.stack_top_offset,
+                size: 0,
+            },
+            ExecutableSymbol {
+                name: LINK_IMAGE_START_SYMBOL.to_owned(),
+                binding: SymbolBinding::Global,
+                kind: SymbolKind::Object,
+                section: ObjectSection::Text,
+                offset: 0,
+                size: 0,
+            },
+            ExecutableSymbol {
+                name: LINK_IMAGE_END_SYMBOL.to_owned(),
+                binding: SymbolBinding::Global,
+                kind: SymbolKind::Object,
+                section: ObjectSection::Bss,
+                offset: layout.image_end_offset,
+                size: 0,
+            },
+        ]);
+    }
+    if let Some(offset) = layout.task_trampoline {
         symbols.push(ExecutableSymbol {
             name: LINK_TASK_TRAMPOLINE_SYMBOL.to_owned(),
             binding: SymbolBinding::Global,
@@ -399,6 +524,7 @@ fn build_executable_symbols(
                 || symbol.name.starts_with("__dbyte_interrupt:")
                 || symbol.name.starts_with(ENTRY_METADATA_PREFIX)
                 || symbol.name.starts_with(TASK_METADATA_PREFIX)
+                || symbol.name.starts_with(PROFILE_METADATA_PREFIX)
             {
                 continue;
             }
@@ -441,7 +567,13 @@ fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic>
             let parts: Vec<&str> = record.split(':').collect();
             match parts.as_slice() {
                 ["def", class, handler]
-                    if matches!(*class, "no_error_code" | "error_code") && !handler.is_empty() =>
+                    if matches!(
+                        *class,
+                        "no_error_code"
+                            | "error_code"
+                            | "no_error_code,cpl3_transition"
+                            | "error_code,cpl3_transition"
+                    ) && !handler.is_empty() =>
                 {
                     if !definitions.insert((class.to_string(), handler.to_string())) {
                         return Err(Diagnostic::without_span(
@@ -451,7 +583,13 @@ fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic>
                     }
                 }
                 ["use", vector, class, handler]
-                    if matches!(*class, "no_error_code" | "error_code") && !handler.is_empty() =>
+                    if matches!(
+                        *class,
+                        "no_error_code"
+                            | "error_code"
+                            | "no_error_code,cpl3_transition"
+                            | "error_code,cpl3_transition"
+                    ) && !handler.is_empty() =>
                 {
                     let vector: u8 = vector.parse().map_err(|_| {
                         Diagnostic::without_span(
@@ -459,16 +597,20 @@ fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic>
                             format!("invalid interrupt vector metadata '{}'", symbol.name),
                         )
                     })?;
-                    let required = if matches!(vector, 8 | 10 | 11 | 12 | 13 | 14 | 17) {
+                    let base_required = if matches!(vector, 8 | 10 | 11 | 12 | 13 | 14 | 17) {
                         "error_code"
                     } else {
                         "no_error_code"
                     };
-                    if *class != required {
+                    let class_error = class.starts_with("error_code");
+                    let class_transition = class.ends_with(",cpl3_transition");
+                    let transition_valid = vector != 128 || class_transition;
+                    if class_error != (base_required == "error_code") || !transition_valid {
                         return Err(Diagnostic::without_span(
                             DiagnosticCategory::InterruptClassMismatch,
                             format!(
-                                "vector {vector} requires {required} handler, metadata names {class}"
+                                "vector {vector} requires {base_required}{} handler, metadata names {class}",
+                                if vector == 128 { ",cpl3_transition" } else { "" }
                             ),
                         ));
                     }
@@ -646,59 +788,63 @@ fn validate_entry_metadata(inputs: &[ParsedInput]) -> Result<EntryAbi, Diagnosti
 fn collect_definitions(
     inputs: &[ParsedInput],
     merged: &MergedImage,
+    entry_symbol: &str,
+    profile: LinkProfile,
 ) -> Result<BTreeMap<String, GlobalDefinition>, Diagnostic> {
-    let mut definitions = BTreeMap::from([
-        (
-            LINK_START_SYMBOL.to_owned(),
-            GlobalDefinition {
-                kind: SymbolKind::Function,
-                location: DefinitionLocation::Synthetic {
-                    section: ObjectSection::Text,
-                    offset: 0,
-                },
+    let mut definitions = BTreeMap::from([(
+        LINK_START_SYMBOL.to_owned(),
+        GlobalDefinition {
+            kind: SymbolKind::Function,
+            location: DefinitionLocation::Synthetic {
+                section: ObjectSection::Text,
+                offset: 0,
             },
-        ),
-        (
-            LINK_STACK_BOTTOM_SYMBOL.to_owned(),
-            GlobalDefinition {
-                kind: SymbolKind::Object,
-                location: DefinitionLocation::Synthetic {
-                    section: ObjectSection::Bss,
-                    offset: merged.executable.stack_bottom_offset,
+        },
+    )]);
+    if profile == LinkProfile::Kernel {
+        definitions.extend([
+            (
+                LINK_STACK_BOTTOM_SYMBOL.to_owned(),
+                GlobalDefinition {
+                    kind: SymbolKind::Object,
+                    location: DefinitionLocation::Synthetic {
+                        section: ObjectSection::Bss,
+                        offset: merged.executable.stack_bottom_offset,
+                    },
                 },
-            },
-        ),
-        (
-            LINK_STACK_TOP_SYMBOL.to_owned(),
-            GlobalDefinition {
-                kind: SymbolKind::Object,
-                location: DefinitionLocation::Synthetic {
-                    section: ObjectSection::Bss,
-                    offset: merged.executable.stack_top_offset,
+            ),
+            (
+                LINK_STACK_TOP_SYMBOL.to_owned(),
+                GlobalDefinition {
+                    kind: SymbolKind::Object,
+                    location: DefinitionLocation::Synthetic {
+                        section: ObjectSection::Bss,
+                        offset: merged.executable.stack_top_offset,
+                    },
                 },
-            },
-        ),
-        (
-            LINK_IMAGE_START_SYMBOL.to_owned(),
-            GlobalDefinition {
-                kind: SymbolKind::Object,
-                location: DefinitionLocation::Synthetic {
-                    section: ObjectSection::Text,
-                    offset: 0,
+            ),
+            (
+                LINK_IMAGE_START_SYMBOL.to_owned(),
+                GlobalDefinition {
+                    kind: SymbolKind::Object,
+                    location: DefinitionLocation::Synthetic {
+                        section: ObjectSection::Text,
+                        offset: 0,
+                    },
                 },
-            },
-        ),
-        (
-            LINK_IMAGE_END_SYMBOL.to_owned(),
-            GlobalDefinition {
-                kind: SymbolKind::Object,
-                location: DefinitionLocation::Synthetic {
-                    section: ObjectSection::Bss,
-                    offset: merged.executable.bss_size,
+            ),
+            (
+                LINK_IMAGE_END_SYMBOL.to_owned(),
+                GlobalDefinition {
+                    kind: SymbolKind::Object,
+                    location: DefinitionLocation::Synthetic {
+                        section: ObjectSection::Bss,
+                        offset: merged.executable.bss_size,
+                    },
                 },
-            },
-        ),
-    ]);
+            ),
+        ]);
+    }
     if let Some(offset) = merged.task_trampoline {
         definitions.insert(
             LINK_TASK_TRAMPOLINE_SYMBOL.to_owned(),
@@ -736,16 +882,16 @@ fn collect_definitions(
             }
         }
     }
-    let entry = definitions.get(LINK_ENTRY_SYMBOL).ok_or_else(|| {
+    let entry = definitions.get(entry_symbol).ok_or_else(|| {
         Diagnostic::without_span(
             DiagnosticCategory::UndefinedSymbol,
-            format!("undefined entry symbol '{LINK_ENTRY_SYMBOL}'"),
+            format!("undefined entry symbol '{entry_symbol}'"),
         )
     })?;
     if entry.kind != SymbolKind::Function {
         return Err(Diagnostic::without_span(
             DiagnosticCategory::UndefinedSymbol,
-            format!("entry symbol '{LINK_ENTRY_SYMBOL}' is not a function"),
+            format!("entry symbol '{entry_symbol}' is not a function"),
         ));
     }
     Ok(definitions)
@@ -789,34 +935,37 @@ fn apply_bootstrap_relocations(
     definitions: &BTreeMap<String, GlobalDefinition>,
     inputs: &[ParsedInput],
     dump: &mut String,
+    entry_symbol: &str,
 ) -> Result<(), Diagnostic> {
-    let stack = definitions
-        .get(LINK_STACK_TOP_SYMBOL)
-        .expect("linker always defines stack top");
-    let stack_address = definition_address(*stack, inputs, merged, layout)?;
-    apply_relocation_value(
-        &mut merged.executable.text,
-        merged.bootstrap.stack_immediate,
-        RelocationKind::Abs32,
-        stack_address,
-        0,
-        checked_add(
-            layout.text_address,
-            merged.bootstrap.stack_immediate,
-            "bootstrap stack relocation place",
-        )?,
-        LINK_STACK_TOP_SYMBOL,
-    )?;
-    let _ = writeln!(
-        dump,
-        "apply bootstrap .text+0x{:08x} Abs32 {} S=0x{:08x} A=0",
-        merged.bootstrap.stack_immediate, LINK_STACK_TOP_SYMBOL, stack_address
-    );
+    if let Some(stack_immediate) = merged.bootstrap.stack_immediate {
+        let stack = definitions
+            .get(LINK_STACK_TOP_SYMBOL)
+            .expect("kernel linker always defines stack top");
+        let stack_address = definition_address(*stack, inputs, merged, layout)?;
+        apply_relocation_value(
+            &mut merged.executable.text,
+            stack_immediate,
+            RelocationKind::Abs32,
+            stack_address,
+            0,
+            checked_add(
+                layout.text_address,
+                stack_immediate,
+                "bootstrap stack relocation place",
+            )?,
+            LINK_STACK_TOP_SYMBOL,
+        )?;
+        let _ = writeln!(
+            dump,
+            "apply bootstrap .text+0x{stack_immediate:08x} Abs32 {} S=0x{stack_address:08x} A=0",
+            LINK_STACK_TOP_SYMBOL
+        );
+    }
 
-    let entry = *definitions.get(LINK_ENTRY_SYMBOL).ok_or_else(|| {
+    let entry = *definitions.get(entry_symbol).ok_or_else(|| {
         Diagnostic::without_span(
             DiagnosticCategory::UndefinedSymbol,
-            format!("undefined entry symbol '{LINK_ENTRY_SYMBOL}'"),
+            format!("undefined entry symbol '{entry_symbol}'"),
         )
     })?;
     let entry_address = definition_address(entry, inputs, merged, layout)?;
@@ -832,12 +981,12 @@ fn apply_bootstrap_relocations(
         entry_address,
         -4,
         place,
-        LINK_ENTRY_SYMBOL,
+        entry_symbol,
     )?;
     let _ = writeln!(
         dump,
         "apply bootstrap .text+0x{:08x} Pc32 {} S=0x{:08x} A=-4 P=0x{:08x}",
-        merged.bootstrap.entry_immediate, LINK_ENTRY_SYMBOL, entry_address, place
+        merged.bootstrap.entry_immediate, entry_symbol, entry_address, place
     );
     Ok(())
 }
@@ -1595,5 +1744,45 @@ mod tests {
 
         let error = align_u32(u32::MAX, 4096, "test layout").unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::LayoutOverflow);
+    }
+
+    #[test]
+    fn user_link_is_profile_separated_and_emits_compact_two_segment_elf() {
+        let mut user = function_object(LINK_USER_ENTRY_SYMBOL, vec![0xc3]);
+        user.symbols.push(ObjectSymbol {
+            name: "__dbyte_profile:user".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let object = write_relocatable(&user).unwrap();
+        let linked = link_user_object_bytes(&[LinkInput::new("user.o", object.bytes)]).unwrap();
+        assert!(linked.elf.len() <= 4096);
+        assert_eq!(u16_at(&linked.elf, 16), 2);
+        assert_eq!(u16_at(&linked.elf, 18), 3);
+        assert_eq!(u16_at(&linked.elf, 44), 2);
+        assert_eq!(u16_at(&linked.elf, 48), 0);
+        assert_eq!(u32_at(&linked.elf, 52 + 24), 5);
+        assert_eq!(u32_at(&linked.elf, 52 + 32 + 24), 6);
+        assert!(linked.elf.windows(2).any(|bytes| bytes == [0xcd, 0x80]));
+
+        let user_object = write_relocatable(&user).unwrap();
+        assert_eq!(
+            link_object_bytes(&[LinkInput::new("user.o", user_object.bytes)])
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::InvalidObject
+        );
+        let kernel = write_relocatable(&function_object(LINK_ENTRY_SYMBOL, vec![0xc3])).unwrap();
+        assert_eq!(
+            link_user_object_bytes(&[LinkInput::new("kernel.o", kernel.bytes)])
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::InvalidObject
+        );
     }
 }

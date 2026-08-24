@@ -219,6 +219,21 @@ pub struct StructField {
 pub enum InterruptClass {
     NoErrorCode,
     ErrorCode,
+    NoErrorCodeCpl3Transition,
+    ErrorCodeCpl3Transition,
+}
+
+impl InterruptClass {
+    pub const fn has_error_code(self) -> bool {
+        matches!(self, Self::ErrorCode | Self::ErrorCodeCpl3Transition)
+    }
+
+    pub const fn cpl3_transition(self) -> bool {
+        matches!(
+            self,
+            Self::NoErrorCodeCpl3Transition | Self::ErrorCodeCpl3Transition
+        )
+    }
 }
 
 impl std::fmt::Display for InterruptClass {
@@ -226,6 +241,8 @@ impl std::fmt::Display for InterruptClass {
         formatter.write_str(match self {
             Self::NoErrorCode => "no_error_code",
             Self::ErrorCode => "error_code",
+            Self::NoErrorCodeCpl3Transition => "no_error_code,cpl3_transition",
+            Self::ErrorCodeCpl3Transition => "error_code,cpl3_transition",
         })
     }
 }

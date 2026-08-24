@@ -370,6 +370,8 @@ pub fn explicit_cast_allowed(from: &SystemType, to: &SystemType) -> bool {
     (from.is_integer() && to.is_integer())
         || (matches!(from, SystemType::Usize) && to.is_pointer())
         || (from.is_pointer() && matches!(to, SystemType::Usize))
+        || (matches!(from, SystemType::Usize) && matches!(to, SystemType::Str))
+        || (matches!(from, SystemType::Str) && matches!(to, SystemType::Usize))
         || from == to
 }
 

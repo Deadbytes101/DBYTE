@@ -63,8 +63,13 @@ pub enum SystemIntrinsic {
     CpuInvlpg,
     CpuLgdt,
     CpuLidt,
+    CpuLtr,
     TaskBlockTrap,
     InterruptResume,
+    UserSyscall0,
+    UserSyscall1,
+    UserSyscall2,
+    UserSyscall3,
 }
 
 impl SystemIntrinsic {
@@ -94,8 +99,13 @@ impl SystemIntrinsic {
             "cpu_invlpg" => Some(Self::CpuInvlpg),
             "cpu_lgdt" => Some(Self::CpuLgdt),
             "cpu_lidt" => Some(Self::CpuLidt),
+            "cpu_ltr" => Some(Self::CpuLtr),
             "task_block_trap" => Some(Self::TaskBlockTrap),
             "interrupt_resume" => Some(Self::InterruptResume),
+            "syscall0" => Some(Self::UserSyscall0),
+            "syscall1" => Some(Self::UserSyscall1),
+            "syscall2" => Some(Self::UserSyscall2),
+            "syscall3" => Some(Self::UserSyscall3),
             _ => None,
         }
     }
@@ -125,8 +135,13 @@ impl SystemIntrinsic {
             Self::CpuInvlpg => "native.cpu_invlpg",
             Self::CpuLgdt => "native.cpu_lgdt",
             Self::CpuLidt => "native.cpu_lidt",
+            Self::CpuLtr => "native.cpu_ltr",
             Self::TaskBlockTrap => "native.task_block_trap",
             Self::InterruptResume => "native.interrupt_resume",
+            Self::UserSyscall0 => "user.syscall0",
+            Self::UserSyscall1 => "user.syscall1",
+            Self::UserSyscall2 => "user.syscall2",
+            Self::UserSyscall3 => "user.syscall3",
         }
     }
 
@@ -163,8 +178,18 @@ impl SystemIntrinsic {
             Self::CpuWriteCr3 => vec![SystemType::Usize],
             Self::CpuInvlpg => vec![SystemType::Pointer(Box::new(SystemType::U8))],
             Self::CpuLgdt | Self::CpuLidt => vec![SystemType::Usize],
+            Self::CpuLtr => vec![SystemType::U16],
             Self::TaskBlockTrap => vec![SystemType::U32, SystemType::Usize],
             Self::InterruptResume => vec![SystemType::Usize],
+            Self::UserSyscall0 => vec![SystemType::U32],
+            Self::UserSyscall1 => vec![SystemType::U32, SystemType::Usize],
+            Self::UserSyscall2 => vec![SystemType::U32, SystemType::Usize, SystemType::Usize],
+            Self::UserSyscall3 => vec![
+                SystemType::U32,
+                SystemType::Usize,
+                SystemType::Usize,
+                SystemType::Usize,
+            ],
         }
     }
 
@@ -187,8 +212,12 @@ impl SystemIntrinsic {
             | Self::CpuInvlpg
             | Self::CpuLgdt
             | Self::CpuLidt => None,
+            Self::CpuLtr => None,
             Self::TaskBlockTrap => Some(SystemType::I32),
             Self::InterruptResume => None,
+            Self::UserSyscall0 | Self::UserSyscall1 | Self::UserSyscall2 | Self::UserSyscall3 => {
+                Some(SystemType::I32)
+            }
             Self::CpuReadEflags | Self::CpuReadCr0 => Some(SystemType::U32),
             Self::CpuReadCr2 | Self::CpuReadCr3 => Some(SystemType::Usize),
         }
@@ -204,6 +233,7 @@ impl fmt::Display for SystemIntrinsic {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SystemsModuleIr {
     pub module_name: String,
+    pub user_profile: bool,
     pub functions: Vec<SystemsFunction>,
     pub globals: Vec<SystemsGlobal>,
     pub strings: Vec<Vec<u8>>,
@@ -518,6 +548,7 @@ mod tests {
     #[test]
     fn dump_exposes_widths_addresses_aggregates_and_external_symbols() {
         let module = SystemsModuleIr {
+            user_profile: false,
             module_name: "memory".into(),
             functions: vec![SystemsFunction {
                 source_name: "check".into(),

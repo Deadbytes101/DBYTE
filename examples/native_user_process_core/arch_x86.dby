@@ -1,0 +1,41 @@
+pub struct InterruptFrame:
+    eip: u32
+    cs: u32
+    eflags: u32
+
+pub struct PrivilegeInterruptFrame:
+    eip: u32
+    cs: u32
+    eflags: u32
+    user_esp: u32
+    user_ss: u32
+
+pub packed struct DescriptorTablePointer:
+    limit: u16
+    base: u32
+
+pub fn out8(port: u16, value: u8) -> int:
+    native.io_out8(port, value)
+    return 0
+
+pub fn in8(port: u16) -> u8:
+    return native.io_in8(port)
+
+pub fn out16(port: u16, value: u16) -> int:
+    native.io_out16(port, value)
+    return 0
+
+pub fn in16(port: u16) -> u16:
+    return native.io_in16(port)
+
+pub fn cli() -> int:
+    native.cpu_cli()
+    return 0
+
+pub fn sti() -> int:
+    native.cpu_sti()
+    return 0
+
+pub fn hlt() -> int:
+    native.cpu_hlt()
+    return 0

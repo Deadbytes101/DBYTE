@@ -1,0 +1,1063 @@
+import "arch_x86.dby" as arch
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "heap.dby" as heap
+import "pic.dby" as pic
+import "proof.dby" as proof
+import "file_handles.dby" as file_handles
+import "process_context.dby" as process_context
+
+pub struct Event:
+    magic: u32
+    version: u32
+    head: usize
+    tail: usize
+    count: usize
+    waiters: array[usize, 8]
+    checksum: u32
+
+pub struct Semaphore:
+    magic: u32
+    version: u32
+    count: usize
+    maximum: usize
+    head: usize
+    tail: usize
+    waiter_count: usize
+    waiters: array[usize, 8]
+    checksum: u32
+
+const MAX_TASKS: usize = 8 as usize
+const SLOT_SIZE: usize = 0x5000 as usize
+const STACK_PAGES: usize = 4 as usize
+const STATE_READY: u32 = 1 as u32
+const STATE_RUNNING: u32 = 2 as u32
+const STATE_BLOCKED: u32 = 3 as u32
+const STATE_SLEEPING: u32 = 4 as u32
+const STATE_EXITED: u32 = 5 as u32
+const STATUS_OK: i32 = 0
+const STATUS_INVALID: i32 = 1
+const STATUS_WRONG_CONTEXT: i32 = 2
+const STATUS_CAPACITY: i32 = 3
+const STATUS_CORRUPT: i32 = 4
+const REQUEST_SLEEP: u32 = 1 as u32
+const REQUEST_EVENT_WAIT: u32 = 2 as u32
+const REQUEST_SEMAPHORE_WAIT: u32 = 3 as u32
+const WAIT_NONE: u32 = 0 as u32
+const WAIT_SLEEP: u32 = 1 as u32
+const WAIT_EVENT: u32 = 2 as u32
+const WAIT_SEMAPHORE: u32 = 3 as u32
+const TCB_COOKIE: u32 = 0x51ced00d as u32
+const EVENT_MAGIC: u32 = 0x45564e54 as u32
+const EVENT_VERSION: u32 = 1 as u32
+const EVENT_COOKIE: u32 = 0xb10c0e11 as u32
+const SEMAPHORE_MAGIC: u32 = 0x53454d41 as u32
+const SEMAPHORE_VERSION: u32 = 1 as u32
+const SEMAPHORE_COOKIE: u32 = 0x51a90f3d as u32
+const IF_BIT: u32 = 0x200 as u32
+const TCB_SIZE: usize = 64 as usize
+const EVENT_CHECKSUM_OFFSET: usize = 52 as usize
+const EVENT_WAITER_OFFSET: usize = 20 as usize
+const SEMAPHORE_WAITER_OFFSET: usize = 28 as usize
+const SEMAPHORE_CHECKSUM_OFFSET: usize = 60 as usize
+
+static mut QUEUE: array[usize, 8]
+static mut SLOT_OWNER: array[usize, 8]
+static mut TEMP_FRAMES: array[usize, 4]
+static mut DETACH_WAITERS: array[usize, 8]
+static mut CURRENT: usize
+static mut CURRENT_QUEUE: usize
+static mut NEXT_ID: usize
+static mut TICKS: u32
+static mut SWITCHES: usize
+static mut EXITS: usize
+static mut RECLAIMS: usize
+static mut EOI_COUNT: usize
+static mut SCHEDULER_ACTIVE: u32
+static mut WAIT_SEQUENCE: usize
+static mut WAKE_SEQUENCE: usize
+static mut LAST_RECLAIMED_SLOT: usize
+static mut FIRST_RECLAIMED_FRAME: usize
+static mut LAST_SPAWN_FIRST_FRAME: usize
+static mut IRQ_EVENT: usize
+static mut IRQ_EMPTY_TICK: u32
+static mut IRQ_WAKE_TICK: u32
+static mut IRQ_EMPTY_RESULT: i32
+static mut IRQ_WAKE_RESULT: i32
+static mut IRQ_IF_BEFORE: u32
+static mut IRQ_IF_AFTER: u32
+static mut TRAP_COUNT: usize
+static mut TRAP_EOI_COUNT: usize
+static mut SEMAPHORE_WAITS: usize
+static mut SEMAPHORE_POSTS: usize
+static mut SEMAPHORE_POST_SUCCESS: usize
+static mut SEMAPHORE_WAKES: usize
+static mut SEMAPHORE_OVERFLOWS: usize
+
+fn load(address: usize) -> usize:
+    return native.volatile_load32(address as ptr[u32]) as usize
+
+fn store(address: usize, value: usize) -> int:
+    native.volatile_store32(address as ptr[u32], value as u32)
+    return 0
+
+fn fatal() -> int:
+    proof.value("SCHED_FATAL", 11 as usize, CURRENT)
+    proof.value("SCHED_TICKS", 11 as usize, TICKS as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return STATUS_CORRUPT
+
+fn tcb_checksum(tcb: usize) -> u32:
+    let value: u32 = TCB_COOKIE
+    let offset: usize = 0 as usize
+    while offset < (36 as usize):
+        value = value ^ (load(tcb + offset) as u32)
+        offset = offset + (4 as usize)
+    value = value ^ (load(tcb + (40 as usize)) as u32)
+    value = value ^ (load(tcb + (44 as usize)) as u32)
+    value = value ^ (load(tcb + (48 as usize)) as u32)
+    value = value ^ (load(tcb + (52 as usize)) as u32)
+    value = value ^ (load(tcb + (56 as usize)) as u32)
+    value = value ^ (load(tcb + (60 as usize)) as u32)
+    return value
+
+fn seal_tcb(tcb: usize) -> int:
+    store(tcb + (36 as usize), tcb_checksum(tcb) as usize)
+    return 0
+
+fn valid_tcb(tcb: usize) -> bool:
+    if tcb == (0 as usize):
+        return false
+    return load(tcb + (36 as usize)) == (tcb_checksum(tcb) as usize)
+
+fn set_state(tcb: usize, state: u32) -> int:
+    store(tcb + (4 as usize), state as usize)
+    seal_tcb(tcb)
+    return 0
+
+fn set_resume(tcb: usize, resume: usize) -> int:
+    store(tcb + (8 as usize), resume)
+    seal_tcb(tcb)
+    return 0
+
+fn increment_switch(tcb: usize) -> int:
+    store(tcb + (16 as usize), load(tcb + (16 as usize)) + (1 as usize))
+    seal_tcb(tcb)
+    return 0
+
+fn event_checksum(address: usize) -> u32:
+    let value: u32 = EVENT_COOKIE
+    let offset: usize = 0 as usize
+    while offset < EVENT_CHECKSUM_OFFSET:
+        value = value ^ (load(address + offset) as u32)
+        offset = offset + (4 as usize)
+    return value
+
+fn seal_event(address: usize) -> int:
+    store(address + EVENT_CHECKSUM_OFFSET, event_checksum(address) as usize)
+    return 0
+
+fn valid_event(address: usize) -> bool:
+    if address == (0 as usize):
+        return false
+    if (address & (3 as usize)) != (0 as usize):
+        return false
+    if (load(address) as u32) != EVENT_MAGIC:
+        return false
+    if (load(address + (4 as usize)) as u32) != EVENT_VERSION:
+        return false
+    if load(address + (8 as usize)) >= MAX_TASKS:
+        return false
+    if load(address + (12 as usize)) >= MAX_TASKS:
+        return false
+    if load(address + (16 as usize)) > MAX_TASKS:
+        return false
+    return load(address + EVENT_CHECKSUM_OFFSET) == (event_checksum(address) as usize)
+
+fn next_index(index: usize) -> usize:
+    let result: usize = index + (1 as usize)
+    if result >= MAX_TASKS:
+        return 0 as usize
+    return result
+
+fn event_contains(address: usize, tcb: usize) -> bool:
+    let index: usize = load(address + (8 as usize))
+    let searched: usize = 0 as usize
+    let count: usize = load(address + (16 as usize))
+    while searched < count:
+        if load(address + EVENT_WAITER_OFFSET + (index << (2 as usize))) == tcb:
+            return true
+        index = next_index(index)
+        searched = searched + (1 as usize)
+    return false
+
+fn event_enqueue_locked(address: usize, tcb: usize) -> i32:
+    if valid_event(address) == false:
+        return STATUS_CORRUPT
+    if event_contains(address, tcb):
+        return STATUS_CAPACITY
+    let count: usize = load(address + (16 as usize))
+    if count >= MAX_TASKS:
+        return STATUS_CAPACITY
+    let tail: usize = load(address + (12 as usize))
+    let slot: usize = address + EVENT_WAITER_OFFSET + (tail << (2 as usize))
+    if load(slot) != (0 as usize):
+        return STATUS_CORRUPT
+    store(slot, tcb)
+    store(address + (12 as usize), next_index(tail))
+    store(address + (16 as usize), count + (1 as usize))
+    seal_event(address)
+    return STATUS_OK
+
+fn event_signal_locked(address: usize) -> i32:
+    if valid_event(address) == false:
+        return STATUS_CORRUPT
+    let count: usize = load(address + (16 as usize))
+    if count == (0 as usize):
+        return STATUS_OK
+    let head: usize = load(address + (8 as usize))
+    let slot: usize = address + EVENT_WAITER_OFFSET + (head << (2 as usize))
+    let tcb: usize = load(slot)
+    if valid_tcb(tcb) == false:
+        return STATUS_CORRUPT
+    if (load(tcb + (4 as usize)) as u32) != STATE_BLOCKED:
+        return STATUS_CORRUPT
+    if load(tcb + (24 as usize)) != address:
+        return STATUS_CORRUPT
+    if (load(tcb + (32 as usize)) as u32) != WAIT_EVENT:
+        return STATUS_CORRUPT
+    store(slot, 0 as usize)
+    store(address + (8 as usize), next_index(head))
+    store(address + (16 as usize), count - (1 as usize))
+    seal_event(address)
+    store(tcb + (24 as usize), 0 as usize)
+    store(tcb + (28 as usize), 0 as usize)
+    store(tcb + (32 as usize), WAIT_NONE as usize)
+    store(tcb + (44 as usize), load(tcb + (44 as usize)) + (1 as usize))
+    store(tcb + (4 as usize), STATE_READY as usize)
+    seal_tcb(tcb)
+    WAKE_SEQUENCE = WAKE_SEQUENCE + (1 as usize)
+    return STATUS_OK
+
+fn detach_waiter_locked(address: usize, tcb: usize) -> i32:
+    if valid_event(address) == false:
+        return STATUS_CORRUPT
+    let count: usize = load(address + (16 as usize))
+    let read_index: usize = load(address + (8 as usize))
+    let examined: usize = 0 as usize
+    let kept: usize = 0 as usize
+    let found: bool = false
+    while examined < count:
+        let candidate: usize = load(address + EVENT_WAITER_OFFSET + (read_index << (2 as usize)))
+        if candidate == tcb:
+            found = true
+        else:
+            DETACH_WAITERS[kept] = candidate
+            kept = kept + (1 as usize)
+        read_index = next_index(read_index)
+        examined = examined + (1 as usize)
+    if found == false:
+        return STATUS_CORRUPT
+    let clear: usize = 0 as usize
+    while clear < MAX_TASKS:
+        store(address + EVENT_WAITER_OFFSET + (clear << (2 as usize)), 0 as usize)
+        clear = clear + (1 as usize)
+    let copy: usize = 0 as usize
+    while copy < kept:
+        store(address + EVENT_WAITER_OFFSET + (copy << (2 as usize)), DETACH_WAITERS[copy])
+        copy = copy + (1 as usize)
+    store(address + (8 as usize), 0 as usize)
+    if kept == MAX_TASKS:
+        store(address + (12 as usize), 0 as usize)
+    else:
+        store(address + (12 as usize), kept)
+    store(address + (16 as usize), kept)
+    seal_event(address)
+    return STATUS_OK
+
+fn semaphore_checksum(address: usize) -> u32:
+    let value: u32 = SEMAPHORE_COOKIE
+    let offset: usize = 0 as usize
+    while offset < SEMAPHORE_CHECKSUM_OFFSET:
+        value = value ^ (load(address + offset) as u32)
+        offset = offset + (4 as usize)
+    return value
+
+fn seal_semaphore(address: usize) -> int:
+    store(address + SEMAPHORE_CHECKSUM_OFFSET, semaphore_checksum(address) as usize)
+    return 0
+
+fn valid_semaphore(address: usize) -> bool:
+    if address == (0 as usize):
+        return false
+    if (address & (3 as usize)) != (0 as usize):
+        return false
+    if (load(address) as u32) != SEMAPHORE_MAGIC:
+        return false
+    if (load(address + (4 as usize)) as u32) != SEMAPHORE_VERSION:
+        return false
+    let count: usize = load(address + (8 as usize))
+    let maximum: usize = load(address + (12 as usize))
+    if maximum == (0 as usize):
+        return false
+    if count > maximum:
+        return false
+    if load(address + (16 as usize)) >= MAX_TASKS:
+        return false
+    if load(address + (20 as usize)) >= MAX_TASKS:
+        return false
+    if load(address + (24 as usize)) > MAX_TASKS:
+        return false
+    return load(address + SEMAPHORE_CHECKSUM_OFFSET) == (semaphore_checksum(address) as usize)
+
+fn semaphore_contains(address: usize, tcb: usize) -> bool:
+    let index: usize = load(address + (16 as usize))
+    let searched: usize = 0 as usize
+    let count: usize = load(address + (24 as usize))
+    while searched < count:
+        if load(address + SEMAPHORE_WAITER_OFFSET + (index << (2 as usize))) == tcb:
+            return true
+        index = next_index(index)
+        searched = searched + (1 as usize)
+    return false
+
+fn semaphore_enqueue_locked(address: usize, tcb: usize) -> i32:
+    if valid_semaphore(address) == false:
+        return STATUS_CORRUPT
+    if semaphore_contains(address, tcb):
+        return STATUS_CAPACITY
+    let count: usize = load(address + (24 as usize))
+    if count >= MAX_TASKS:
+        return STATUS_CAPACITY
+    let tail: usize = load(address + (20 as usize))
+    let slot: usize = address + SEMAPHORE_WAITER_OFFSET + (tail << (2 as usize))
+    if load(slot) != (0 as usize):
+        return STATUS_CORRUPT
+    store(slot, tcb)
+    store(address + (20 as usize), next_index(tail))
+    store(address + (24 as usize), count + (1 as usize))
+    seal_semaphore(address)
+    return STATUS_OK
+
+fn semaphore_try_consume_locked(address: usize) -> i32:
+    if valid_semaphore(address) == false:
+        return STATUS_CORRUPT
+    let count: usize = load(address + (8 as usize))
+    if count == (0 as usize):
+        return STATUS_CAPACITY
+    store(address + (8 as usize), count - (1 as usize))
+    seal_semaphore(address)
+    return STATUS_OK
+
+fn semaphore_post_locked(address: usize) -> bool:
+    if valid_semaphore(address) == false:
+        return false
+    SEMAPHORE_POSTS = SEMAPHORE_POSTS + (1 as usize)
+    let waiter_count: usize = load(address + (24 as usize))
+    if waiter_count != (0 as usize):
+        let head: usize = load(address + (16 as usize))
+        let slot: usize = address + SEMAPHORE_WAITER_OFFSET + (head << (2 as usize))
+        let tcb: usize = load(slot)
+        if valid_tcb(tcb) == false:
+            return false
+        if (load(tcb + (4 as usize)) as u32) != STATE_BLOCKED:
+            return false
+        if load(tcb + (24 as usize)) != address:
+            return false
+        if (load(tcb + (32 as usize)) as u32) != WAIT_SEMAPHORE:
+            return false
+        store(slot, 0 as usize)
+        store(address + (16 as usize), next_index(head))
+        store(address + (24 as usize), waiter_count - (1 as usize))
+        seal_semaphore(address)
+        store(tcb + (24 as usize), 0 as usize)
+        store(tcb + (28 as usize), 0 as usize)
+        store(tcb + (32 as usize), WAIT_NONE as usize)
+        store(tcb + (44 as usize), load(tcb + (44 as usize)) + (1 as usize))
+        store(tcb + (4 as usize), STATE_READY as usize)
+        seal_tcb(tcb)
+        WAKE_SEQUENCE = WAKE_SEQUENCE + (1 as usize)
+        SEMAPHORE_WAKES = SEMAPHORE_WAKES + (1 as usize)
+        SEMAPHORE_POST_SUCCESS = SEMAPHORE_POST_SUCCESS + (1 as usize)
+        return true
+    let count: usize = load(address + (8 as usize))
+    if count >= load(address + (12 as usize)):
+        SEMAPHORE_OVERFLOWS = SEMAPHORE_OVERFLOWS + (1 as usize)
+        return false
+    store(address + (8 as usize), count + (1 as usize))
+    seal_semaphore(address)
+    SEMAPHORE_POST_SUCCESS = SEMAPHORE_POST_SUCCESS + (1 as usize)
+    return true
+
+fn detach_semaphore_waiter_locked(address: usize, tcb: usize) -> i32:
+    if valid_semaphore(address) == false:
+        return STATUS_CORRUPT
+    let count: usize = load(address + (24 as usize))
+    let read_index: usize = load(address + (16 as usize))
+    let examined: usize = 0 as usize
+    let kept: usize = 0 as usize
+    let found: bool = false
+    while examined < count:
+        let candidate: usize = load(address + SEMAPHORE_WAITER_OFFSET + (read_index << (2 as usize)))
+        if candidate == tcb:
+            found = true
+        else:
+            DETACH_WAITERS[kept] = candidate
+            kept = kept + (1 as usize)
+        read_index = next_index(read_index)
+        examined = examined + (1 as usize)
+    if found == false:
+        return STATUS_CORRUPT
+    let clear: usize = 0 as usize
+    while clear < MAX_TASKS:
+        store(address + SEMAPHORE_WAITER_OFFSET + (clear << (2 as usize)), 0 as usize)
+        clear = clear + (1 as usize)
+    let copy: usize = 0 as usize
+    while copy < kept:
+        store(address + SEMAPHORE_WAITER_OFFSET + (copy << (2 as usize)), DETACH_WAITERS[copy])
+        copy = copy + (1 as usize)
+    store(address + (16 as usize), 0 as usize)
+    if kept == MAX_TASKS:
+        store(address + (20 as usize), 0 as usize)
+    else:
+        store(address + (20 as usize), kept)
+    store(address + (24 as usize), kept)
+    seal_semaphore(address)
+    return STATUS_OK
+
+fn select_next() -> usize:
+    let index: usize = next_index(CURRENT_QUEUE)
+    let searched: usize = 0 as usize
+    while searched < MAX_TASKS:
+        let candidate: usize = QUEUE[index]
+        if candidate != (0 as usize):
+            if valid_tcb(candidate):
+                let state: u32 = load(candidate + (4 as usize)) as u32
+                if state == STATE_READY:
+                    CURRENT_QUEUE = index
+                    CURRENT = candidate
+                    set_state(candidate, STATE_RUNNING)
+                    increment_switch(candidate)
+                    process_context.activate_process_task(load(candidate), paging.scheduler_start() + ((load(candidate + (12 as usize)) + (1 as usize)) * SLOT_SIZE))
+                    return candidate
+                if state == STATE_RUNNING:
+                    CURRENT_QUEUE = index
+                    CURRENT = candidate
+                    increment_switch(candidate)
+                    process_context.activate_process_task(load(candidate), paging.scheduler_start() + ((load(candidate + (12 as usize)) + (1 as usize)) * SLOT_SIZE))
+                    return candidate
+        index = next_index(index)
+        searched = searched + (1 as usize)
+    return 0 as usize
+
+fn wake_sleepers_locked() -> int:
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        let tcb: usize = QUEUE[index]
+        if tcb != (0 as usize):
+            if valid_tcb(tcb) == false:
+                fatal()
+            if (load(tcb + (4 as usize)) as u32) == STATE_SLEEPING:
+                let deadline: u32 = load(tcb + (20 as usize)) as u32
+                if ((TICKS - deadline) as i32) >= 0:
+                    store(tcb + (20 as usize), 0 as usize)
+                    store(tcb + (32 as usize), WAIT_NONE as usize)
+                    store(tcb + (44 as usize), load(tcb + (44 as usize)) + (1 as usize))
+                    store(tcb + (4 as usize), STATE_READY as usize)
+                    seal_tcb(tcb)
+                    WAKE_SEQUENCE = WAKE_SEQUENCE + (1 as usize)
+        index = index + (1 as usize)
+    return 0
+
+fn rollback_spawn(slot: usize, mapped: usize, tcb: ptr[u8]) -> int:
+    let page: usize = 0 as usize
+    while page < mapped:
+        let address: usize = paging.scheduler_start() + (slot * SLOT_SIZE) + ((page + (1 as usize)) << (12 as usize))
+        let frame: usize = paging.unmap_kernel_page(address)
+        if frame != (0 as usize):
+            frames.release(frame)
+        page = page + (1 as usize)
+    heap.free(tcb)
+    return 0
+
+pub fn initialize() -> int:
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        QUEUE[index] = 0 as usize
+        SLOT_OWNER[index] = 0 as usize
+        index = index + (1 as usize)
+    CURRENT = 0 as usize
+    CURRENT_QUEUE = 7 as usize
+    NEXT_ID = 1 as usize
+    TICKS = 0 as u32
+    SWITCHES = 0 as usize
+    EXITS = 0 as usize
+    RECLAIMS = 0 as usize
+    EOI_COUNT = 0 as usize
+    SCHEDULER_ACTIVE = 0 as u32
+    WAIT_SEQUENCE = 0 as usize
+    WAKE_SEQUENCE = 0 as usize
+    LAST_RECLAIMED_SLOT = 0xffffffff as usize
+    FIRST_RECLAIMED_FRAME = 0 as usize
+    LAST_SPAWN_FIRST_FRAME = 0 as usize
+    IRQ_EVENT = 0 as usize
+    IRQ_EMPTY_TICK = 0 as u32
+    IRQ_WAKE_TICK = 0 as u32
+    IRQ_EMPTY_RESULT = STATUS_INVALID
+    IRQ_WAKE_RESULT = STATUS_INVALID
+    IRQ_IF_BEFORE = 0 as u32
+    IRQ_IF_AFTER = 0 as u32
+    TRAP_COUNT = 0 as usize
+    TRAP_EOI_COUNT = 0 as usize
+    SEMAPHORE_WAITS = 0 as usize
+    SEMAPHORE_POSTS = 0 as usize
+    SEMAPHORE_POST_SUCCESS = 0 as usize
+    SEMAPHORE_WAKES = 0 as usize
+    SEMAPHORE_OVERFLOWS = 0 as usize
+    if paging.heap_end() != paging.scheduler_start():
+        return STATUS_INVALID
+    return STATUS_OK
+
+pub fn event_initialize(event: ptr[Event]) -> int:
+    let address: usize = event as usize
+    if address == (0 as usize):
+        return STATUS_INVALID
+    if (address & (3 as usize)) != (0 as usize):
+        return STATUS_INVALID
+    if load(address) != (0 as usize):
+        return STATUS_INVALID
+    let offset: usize = 0 as usize
+    while offset <= EVENT_CHECKSUM_OFFSET:
+        store(address + offset, 0 as usize)
+        offset = offset + (4 as usize)
+    store(address, EVENT_MAGIC as usize)
+    store(address + (4 as usize), EVENT_VERSION as usize)
+    seal_event(address)
+    return STATUS_OK
+
+pub fn event_signal(event: ptr[Event]) -> int:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let result: i32 = event_signal_locked(event as usize)
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn event_wait(event: ptr[Event]) -> int:
+    if (native.cpu_read_eflags() & IF_BIT) == (0 as u32):
+        return STATUS_WRONG_CONTEXT
+    if valid_event(event as usize) == false:
+        return STATUS_CORRUPT
+    return native.task_block_trap(2 as u32, event as usize)
+
+pub fn semaphore_initialize(semaphore: ptr[Semaphore], initial: usize, maximum: usize) -> int:
+    let address: usize = semaphore as usize
+    if address == (0 as usize):
+        return STATUS_INVALID
+    if (address & (3 as usize)) != (0 as usize):
+        return STATUS_INVALID
+    if maximum == (0 as usize):
+        return STATUS_INVALID
+    if initial > maximum:
+        return STATUS_INVALID
+    if load(address) != (0 as usize):
+        return STATUS_INVALID
+    let offset: usize = 0 as usize
+    while offset <= SEMAPHORE_CHECKSUM_OFFSET:
+        store(address + offset, 0 as usize)
+        offset = offset + (4 as usize)
+    store(address, SEMAPHORE_MAGIC as usize)
+    store(address + (4 as usize), SEMAPHORE_VERSION as usize)
+    store(address + (8 as usize), initial)
+    store(address + (12 as usize), maximum)
+    seal_semaphore(address)
+    return STATUS_OK
+
+pub fn semaphore_wait(semaphore: ptr[Semaphore]) -> int:
+    if (native.cpu_read_eflags() & IF_BIT) == (0 as u32):
+        return STATUS_WRONG_CONTEXT
+    if valid_semaphore(semaphore as usize) == false:
+        return STATUS_CORRUPT
+    return native.task_block_trap(3 as u32, semaphore as usize)
+
+pub fn semaphore_post(semaphore: ptr[Semaphore]) -> bool:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let result: bool = semaphore_post_locked(semaphore as usize)
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn semaphore_count(semaphore: ptr[Semaphore]) -> usize:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let result: usize = 0 as usize
+    if valid_semaphore(semaphore as usize):
+        result = load((semaphore as usize) + (8 as usize))
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn semaphore_waiter_count(semaphore: ptr[Semaphore]) -> usize:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let result: usize = 0 as usize
+    if valid_semaphore(semaphore as usize):
+        result = load((semaphore as usize) + (24 as usize))
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return result
+
+pub fn task_sleep_ticks(interval: u32) -> int:
+    if (native.cpu_read_eflags() & IF_BIT) == (0 as u32):
+        return STATUS_WRONG_CONTEXT
+    if interval == (0 as u32):
+        return STATUS_OK
+    if interval >= (0x80000000 as u32):
+        return STATUS_INVALID
+    return native.task_block_trap(1 as u32, interval as usize)
+
+pub fn configure_irq_event(event: ptr[Event], empty_tick: u32, wake_tick: u32) -> int:
+    if valid_event(event as usize) == false:
+        return STATUS_CORRUPT
+    if empty_tick == (0 as u32):
+        return STATUS_INVALID
+    if wake_tick <= empty_tick:
+        return STATUS_INVALID
+    IRQ_EVENT = event as usize
+    IRQ_EMPTY_TICK = empty_tick
+    IRQ_WAKE_TICK = wake_tick
+    return STATUS_OK
+
+pub fn spawn(entry: usize) -> usize:
+    native.cpu_cli()
+    if entry == (0 as usize):
+        return 0 as usize
+    let slot: usize = 0 as usize
+    while slot < MAX_TASKS:
+        if SLOT_OWNER[slot] == (0 as usize):
+            let queue_index: usize = 0 as usize
+            while queue_index < MAX_TASKS:
+                if QUEUE[queue_index] == (0 as usize):
+                    let tcb: ptr[u8] = heap.alloc(TCB_SIZE, 16 as usize)
+                    if (tcb as usize) == (0 as usize):
+                        return 0 as usize
+                    let mapped: usize = 0 as usize
+                    while mapped < STACK_PAGES:
+                        let frame: usize = frames.allocate()
+                        if frame == (0 as usize):
+                            rollback_spawn(slot, mapped, tcb)
+                            return 0 as usize
+                        TEMP_FRAMES[mapped] = frame
+                        let virtual_address: usize = paging.scheduler_start() + (slot * SLOT_SIZE) + ((mapped + (1 as usize)) << (12 as usize))
+                        if paging.map_kernel_page(virtual_address, frame) != 0:
+                            frames.release(frame)
+                            rollback_spawn(slot, mapped, tcb)
+                            return 0 as usize
+                        mapped = mapped + (1 as usize)
+                    let stack_top: usize = paging.scheduler_start() + ((slot + (1 as usize)) * SLOT_SIZE)
+                    let resume: usize = stack_top - (48 as usize)
+                    let word: usize = 0 as usize
+                    while word < (12 as usize):
+                        store(resume + (word << (2 as usize)), 0 as usize)
+                        word = word + (1 as usize)
+                    store(resume + (28 as usize), entry)
+                    store(resume + (32 as usize), native.task_trampoline_address())
+                    store(resume + (36 as usize), 0x08 as usize)
+                    store(resume + (40 as usize), 0x202 as usize)
+                    store(resume + (44 as usize), task_address(task_returned))
+                    let offset: usize = 0 as usize
+                    while offset < TCB_SIZE:
+                        store((tcb as usize) + offset, 0 as usize)
+                        offset = offset + (4 as usize)
+                    store(tcb as usize, NEXT_ID)
+                    store((tcb as usize) + (4 as usize), STATE_READY as usize)
+                    store((tcb as usize) + (8 as usize), resume)
+                    store((tcb as usize) + (12 as usize), slot)
+                    seal_tcb(tcb as usize)
+                    SLOT_OWNER[slot] = tcb as usize
+                    QUEUE[queue_index] = tcb as usize
+                    LAST_SPAWN_FIRST_FRAME = TEMP_FRAMES[0]
+                    let result: usize = NEXT_ID
+                    NEXT_ID = NEXT_ID + (1 as usize)
+                    return result
+                queue_index = queue_index + (1 as usize)
+            return 0 as usize
+        slot = slot + (1 as usize)
+    return 0 as usize
+
+pub fn start() -> int:
+    let next: usize = select_next()
+    if next == (0 as usize):
+        return STATUS_INVALID
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub interrupt(no_error_code) fn block_trap(frame: ptr[arch.InterruptFrame]):
+    if SCHEDULER_ACTIVE != (0 as u32):
+        proof.value("FATAL_REASON", 12 as usize, 10 as usize)
+        fatal()
+    SCHEDULER_ACTIVE = 1 as u32
+    TRAP_COUNT = TRAP_COUNT + (1 as usize)
+    let resume: usize = (frame as usize) - (32 as usize)
+    let kind: u32 = load(resume + (28 as usize)) as u32
+    let payload: usize = load(resume + (20 as usize))
+    let old: usize = CURRENT
+    if valid_tcb(old) == false:
+        proof.value("FATAL_REASON", 12 as usize, 11 as usize)
+        fatal()
+    if (load(old + (4 as usize)) as u32) != STATE_RUNNING:
+        proof.value("FATAL_REASON", 12 as usize, 12 as usize)
+        fatal()
+    let result: i32 = STATUS_OK
+    if load(old + (20 as usize)) != (0 as usize):
+        result = STATUS_CORRUPT
+    else:
+        if load(old + (24 as usize)) != (0 as usize):
+            result = STATUS_CORRUPT
+        else:
+            if (load(old + (32 as usize)) as u32) != WAIT_NONE:
+                result = STATUS_CORRUPT
+    if result == STATUS_OK:
+        if kind == REQUEST_SLEEP:
+            if payload == (0 as usize):
+                result = STATUS_INVALID
+            else:
+                if payload >= (0x80000000 as usize):
+                    result = STATUS_INVALID
+                else:
+                    set_resume(old, resume)
+                    store(old + (20 as usize), (TICKS + (payload as u32)) as usize)
+                    store(old + (32 as usize), WAIT_SLEEP as usize)
+                    store(old + (40 as usize), load(old + (40 as usize)) + (1 as usize))
+                    store(resume + (28 as usize), STATUS_OK as usize)
+                    store(old + (4 as usize), STATE_SLEEPING as usize)
+                    seal_tcb(old)
+        else:
+            if kind == REQUEST_EVENT_WAIT:
+                let enqueue: i32 = event_enqueue_locked(payload, old)
+                if enqueue != STATUS_OK:
+                    result = enqueue
+                else:
+                    set_resume(old, resume)
+                    WAIT_SEQUENCE = WAIT_SEQUENCE + (1 as usize)
+                    store(old + (24 as usize), payload)
+                    store(old + (28 as usize), WAIT_SEQUENCE)
+                    store(old + (32 as usize), WAIT_EVENT as usize)
+                    store(old + (40 as usize), load(old + (40 as usize)) + (1 as usize))
+                    store(resume + (28 as usize), STATUS_OK as usize)
+                    store(old + (4 as usize), STATE_BLOCKED as usize)
+                    seal_tcb(old)
+            else:
+                if kind == REQUEST_SEMAPHORE_WAIT:
+                    SEMAPHORE_WAITS = SEMAPHORE_WAITS + (1 as usize)
+                    let consumed: i32 = semaphore_try_consume_locked(payload)
+                    if consumed == STATUS_OK:
+                        store(resume + (28 as usize), STATUS_OK as usize)
+                        SCHEDULER_ACTIVE = 0 as u32
+                        return
+                    else:
+                        if consumed == STATUS_CAPACITY:
+                            let enqueue: i32 = semaphore_enqueue_locked(payload, old)
+                            if enqueue != STATUS_OK:
+                                result = enqueue
+                            else:
+                                set_resume(old, resume)
+                                WAIT_SEQUENCE = WAIT_SEQUENCE + (1 as usize)
+                                store(old + (24 as usize), payload)
+                                store(old + (28 as usize), WAIT_SEQUENCE)
+                                store(old + (32 as usize), WAIT_SEMAPHORE as usize)
+                                store(old + (40 as usize), load(old + (40 as usize)) + (1 as usize))
+                                store(resume + (28 as usize), STATUS_OK as usize)
+                                store(old + (4 as usize), STATE_BLOCKED as usize)
+                                seal_tcb(old)
+                        else:
+                            result = consumed
+                else:
+                    result = STATUS_INVALID
+    if result != STATUS_OK:
+        store(resume + (28 as usize), result as usize)
+        SCHEDULER_ACTIVE = 0 as u32
+        return
+    let next: usize = select_next()
+    if next == (0 as usize):
+        proof.value("FATAL_REASON", 12 as usize, 13 as usize)
+        fatal()
+    SWITCHES = SWITCHES + (1 as usize)
+    SCHEDULER_ACTIVE = 0 as u32
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub interrupt(no_error_code, cpl3_transition) fn irq0(frame: ptr[arch.PrivilegeInterruptFrame]):
+    if SCHEDULER_ACTIVE != (0 as u32):
+        proof.value("FATAL_REASON", 12 as usize, 1 as usize)
+        fatal()
+    SCHEDULER_ACTIVE = 1 as u32
+    TICKS = TICKS + (1 as u32)
+    wake_sleepers_locked()
+    if IRQ_EVENT != (0 as usize):
+        if TICKS == IRQ_EMPTY_TICK:
+            IRQ_IF_BEFORE = native.cpu_read_eflags()
+            IRQ_EMPTY_RESULT = event_signal(IRQ_EVENT as ptr[Event])
+            IRQ_IF_AFTER = native.cpu_read_eflags()
+        if TICKS == IRQ_WAKE_TICK:
+            IRQ_WAKE_RESULT = event_signal(IRQ_EVENT as ptr[Event])
+    let old: usize = CURRENT
+    if old != (0 as usize):
+        if valid_tcb(old) == false:
+            proof.value("FATAL_REASON", 12 as usize, 2 as usize)
+            fatal()
+        set_resume(old, (frame as usize) - (32 as usize))
+        if (load(old + (4 as usize)) as u32) == STATE_RUNNING:
+            set_state(old, STATE_READY)
+    let next: usize = select_next()
+    pic.eoi_master()
+    EOI_COUNT = EOI_COUNT + (1 as usize)
+    SCHEDULER_ACTIVE = 0 as u32
+    if next != old:
+        SWITCHES = SWITCHES + (1 as usize)
+        native.interrupt_resume(load(next + (8 as usize)))
+    return
+
+pub fn task_exit() -> int:
+    native.cpu_cli()
+    let old: usize = CURRENT
+    if valid_tcb(old) == false:
+        proof.value("FATAL_REASON", 12 as usize, 20 as usize)
+        fatal()
+    if load(old + (20 as usize)) != (0 as usize):
+        proof.value("FATAL_REASON", 12 as usize, 21 as usize)
+        fatal()
+    if load(old + (24 as usize)) != (0 as usize):
+        proof.value("FATAL_REASON", 12 as usize, 22 as usize)
+        fatal()
+    if (load(old + (32 as usize)) as u32) != WAIT_NONE:
+        proof.value("FATAL_REASON", 12 as usize, 23 as usize)
+        fatal()
+    if file_handles.release_owner(load(old)) != 0:
+        proof.value("FATAL_REASON", 12 as usize, 24 as usize)
+        fatal()
+    set_state(old, STATE_EXITED)
+    EXITS = EXITS + (1 as usize)
+    let next: usize = select_next()
+    if next == (0 as usize):
+        proof.value("FATAL_REASON", 12 as usize, 25 as usize)
+        fatal()
+    SWITCHES = SWITCHES + (1 as usize)
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub fn block_current_syscall(resume: usize) -> int:
+    if SCHEDULER_ACTIVE != (0 as u32):
+        proof.value("FATAL_REASON", 12 as usize, 30 as usize)
+        fatal()
+    SCHEDULER_ACTIVE = 1 as u32
+    let old: usize = CURRENT
+    if valid_tcb(old) == false:
+        proof.value("FATAL_REASON", 12 as usize, 31 as usize)
+        fatal()
+    if (load(old + (4 as usize)) as u32) != STATE_RUNNING:
+        proof.value("FATAL_REASON", 12 as usize, 32 as usize)
+        fatal()
+    set_resume(old, resume)
+    set_state(old, STATE_BLOCKED)
+    let next: usize = select_next()
+    if next == (0 as usize):
+        proof.value("FATAL_REASON", 12 as usize, 33 as usize)
+        fatal()
+    SWITCHES = SWITCHES + (1 as usize)
+    SCHEDULER_ACTIVE = 0 as u32
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub fn complete_syscall(task_id: usize, result: i32) -> int:
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        let tcb: usize = QUEUE[index]
+        if tcb != (0 as usize):
+            if valid_tcb(tcb):
+                if load(tcb) == task_id:
+                    if (load(tcb + (4 as usize)) as u32) != STATE_BLOCKED:
+                        if (flags & IF_BIT) != (0 as u32):
+                            native.cpu_sti()
+                        return STATUS_CORRUPT
+                    let resume: usize = load(tcb + (8 as usize))
+                    store(resume + (28 as usize), result as usize)
+                    set_state(tcb, STATE_READY)
+                    if (flags & IF_BIT) != (0 as u32):
+                        native.cpu_sti()
+                    return STATUS_OK
+        index = index + (1 as usize)
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return STATUS_INVALID
+
+pub fn exit_current_from_interrupt(resume: usize) -> int:
+    if SCHEDULER_ACTIVE != (0 as u32):
+        proof.value("FATAL_REASON", 12 as usize, 40 as usize)
+        fatal()
+    SCHEDULER_ACTIVE = 1 as u32
+    let old: usize = CURRENT
+    if valid_tcb(old) == false:
+        proof.value("FATAL_REASON", 12 as usize, 41 as usize)
+        fatal()
+    set_resume(old, resume)
+    set_state(old, STATE_EXITED)
+    EXITS = EXITS + (1 as usize)
+    let next: usize = select_next()
+    if next == (0 as usize):
+        proof.value("FATAL_REASON", 12 as usize, 42 as usize)
+        fatal()
+    SWITCHES = SWITCHES + (1 as usize)
+    SCHEDULER_ACTIVE = 0 as u32
+    native.interrupt_resume(load(next + (8 as usize)))
+
+pub fn task_returned() -> int:
+    task_exit()
+    native.cpu_hlt()
+    return 0
+
+pub fn reap_exited() -> int:
+    native.cpu_cli()
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        let tcb: usize = QUEUE[index]
+        if tcb != (0 as usize):
+            if tcb != CURRENT:
+                if valid_tcb(tcb) == false:
+                    return STATUS_CORRUPT
+                if (load(tcb + (4 as usize)) as u32) == STATE_EXITED:
+                    let wait_object: usize = load(tcb + (24 as usize))
+                    let wait_kind: u32 = load(tcb + (32 as usize)) as u32
+                    if wait_object != (0 as usize):
+                        if wait_kind == WAIT_EVENT:
+                            if detach_waiter_locked(wait_object, tcb) != STATUS_OK:
+                                return STATUS_CORRUPT
+                        else:
+                            if wait_kind == WAIT_SEMAPHORE:
+                                if detach_semaphore_waiter_locked(wait_object, tcb) != STATUS_OK:
+                                    return STATUS_CORRUPT
+                            else:
+                                return STATUS_CORRUPT
+                        store(tcb + (24 as usize), 0 as usize)
+                        store(tcb + (28 as usize), 0 as usize)
+                        store(tcb + (32 as usize), WAIT_NONE as usize)
+                        seal_tcb(tcb)
+                    else:
+                        if wait_kind != WAIT_NONE:
+                            return STATUS_CORRUPT
+                    let slot: usize = load(tcb + (12 as usize))
+                    let page: usize = 0 as usize
+                    while page < STACK_PAGES:
+                        let address: usize = paging.scheduler_start() + (slot * SLOT_SIZE) + ((page + (1 as usize)) << (12 as usize))
+                        let frame: usize = paging.unmap_kernel_page(address)
+                        if FIRST_RECLAIMED_FRAME == (0 as usize):
+                            FIRST_RECLAIMED_FRAME = frame
+                        else:
+                            if frame < FIRST_RECLAIMED_FRAME:
+                                FIRST_RECLAIMED_FRAME = frame
+                        if frame == (0 as usize):
+                            return STATUS_CORRUPT
+                        if frames.release(frame) != 0:
+                            return STATUS_CORRUPT
+                        page = page + (1 as usize)
+                    if heap.free(tcb as ptr[u8]) != 0:
+                        return STATUS_CORRUPT
+                    QUEUE[index] = 0 as usize
+                    SLOT_OWNER[slot] = 0 as usize
+                    LAST_RECLAIMED_SLOT = slot
+                    RECLAIMS = RECLAIMS + (1 as usize)
+        index = index + (1 as usize)
+    return STATUS_OK
+
+pub fn live_count() -> usize:
+    let count: usize = 0 as usize
+    let index: usize = 0 as usize
+    while index < MAX_TASKS:
+        if QUEUE[index] != (0 as usize):
+            count = count + (1 as usize)
+        index = index + (1 as usize)
+    return count
+
+pub fn tick_count() -> u32:
+    return TICKS
+
+pub fn switch_count() -> usize:
+    return SWITCHES
+
+pub fn exit_count() -> usize:
+    return EXITS
+
+pub fn reclaim_count() -> usize:
+    return RECLAIMS
+
+pub fn eoi_count() -> usize:
+    return EOI_COUNT
+
+pub fn current_slot() -> usize:
+    return load(CURRENT + (12 as usize))
+
+pub fn current_task_id() -> usize:
+    if valid_tcb(CURRENT) == false:
+        return 0 as usize
+    return load(CURRENT)
+
+pub fn current_kernel_stack_top() -> usize:
+    if valid_tcb(CURRENT) == false:
+        return 0 as usize
+    return paging.scheduler_start() + ((load(CURRENT + (12 as usize)) + (1 as usize)) * SLOT_SIZE)
+
+pub fn current_switch_count() -> usize:
+    return load(CURRENT + (16 as usize))
+
+pub fn last_reclaimed_slot() -> usize:
+    return LAST_RECLAIMED_SLOT
+
+pub fn first_reclaimed_frame() -> usize:
+    return FIRST_RECLAIMED_FRAME
+
+pub fn last_spawn_first_frame() -> usize:
+    return LAST_SPAWN_FIRST_FRAME
+
+pub fn trap_count() -> usize:
+    return TRAP_COUNT
+
+pub fn semaphore_wait_count() -> usize:
+    return SEMAPHORE_WAITS
+
+pub fn semaphore_post_count() -> usize:
+    return SEMAPHORE_POSTS
+
+pub fn semaphore_post_success_count() -> usize:
+    return SEMAPHORE_POST_SUCCESS
+
+pub fn semaphore_wake_count() -> usize:
+    return SEMAPHORE_WAKES
+
+pub fn semaphore_overflow_count() -> usize:
+    return SEMAPHORE_OVERFLOWS
+
+pub fn emit_state() -> int:
+    proof.value("TICKS", 5 as usize, TICKS as usize)
+    proof.value("SWITCHES", 8 as usize, SWITCHES)
+    proof.value("EXITS", 5 as usize, EXITS)
+    proof.value("RECLAIMS", 8 as usize, RECLAIMS)
+    proof.value("EOI", 3 as usize, EOI_COUNT)
+    proof.value("LIVE", 4 as usize, live_count())
+    proof.value("WAIT_SEQ", 8 as usize, WAIT_SEQUENCE)
+    proof.value("WAKE_SEQ", 8 as usize, WAKE_SEQUENCE)
+    proof.value("TRAPS", 5 as usize, TRAP_COUNT)
+    proof.value("TRAP_EOI", 8 as usize, TRAP_EOI_COUNT)
+    proof.value("SEM_WAITS", 9 as usize, SEMAPHORE_WAITS)
+    proof.value("SEM_POSTS", 9 as usize, SEMAPHORE_POSTS)
+    proof.value("SEM_POST_OK", 11 as usize, SEMAPHORE_POST_SUCCESS)
+    proof.value("SEM_WAKES", 9 as usize, SEMAPHORE_WAKES)
+    proof.value("SEM_OVERFLOW", 12 as usize, SEMAPHORE_OVERFLOWS)
+    proof.value("IRQ_EMPTY", 9 as usize, IRQ_EMPTY_RESULT as usize)
+    proof.value("IRQ_WAKE", 8 as usize, IRQ_WAKE_RESULT as usize)
+    proof.value("IRQ_IF_BEFORE", 13 as usize, IRQ_IF_BEFORE as usize)
+    proof.value("IRQ_IF_AFTER", 12 as usize, IRQ_IF_AFTER as usize)
+    proof.value("SLOT", 4 as usize, LAST_RECLAIMED_SLOT)
+    proof.value("FRAME", 5 as usize, FIRST_RECLAIMED_FRAME)
+    proof.value("REUSED_FRAME", 12 as usize, LAST_SPAWN_FIRST_FRAME)
+    return 0

@@ -887,6 +887,27 @@ impl Parser {
             }
         };
         self.advance();
+        let class = if matches!(self.peek_kind(), TokenKind::Comma) {
+            self.advance();
+            match self.peek_kind().clone() {
+                TokenKind::Ident(name) if name == "cpl3_transition" => {
+                    self.advance();
+                }
+                _ => {
+                    return Err(ParseError {
+                        msg: "expected interrupt frame class `cpl3_transition`".into(),
+                        span: self.peek().span,
+                    })
+                }
+            }
+            match class {
+                InterruptClass::NoErrorCode => InterruptClass::NoErrorCodeCpl3Transition,
+                InterruptClass::ErrorCode => InterruptClass::ErrorCodeCpl3Transition,
+                _ => unreachable!(),
+            }
+        } else {
+            class
+        };
         self.expect(&TokenKind::RParen)?;
         if !matches!(self.peek_kind(), TokenKind::Fn) {
             return Err(ParseError {
@@ -1301,7 +1322,7 @@ mod tests {
     #[test]
     fn parses_explicit_interrupt_abi_classes() {
         let program = parse(
-            "pub interrupt(no_error_code) fn irq0(frame: ptr[InterruptFrame]):\n    return\ninterrupt(error_code) fn fault(frame: ptr[InterruptFrame], error_code: u32):\n    return\n",
+            "pub interrupt(no_error_code) fn irq0(frame: ptr[InterruptFrame]):\n    return\ninterrupt(error_code) fn fault(frame: ptr[InterruptFrame], error_code: u32):\n    return\npub interrupt(no_error_code, cpl3_transition) fn syscall(frame: ptr[PrivilegeInterruptFrame]):\n    return\n",
         );
         assert!(matches!(
             &program.stmts[0],
@@ -1316,6 +1337,14 @@ mod tests {
             &program.stmts[1],
             Stmt::FnDef {
                 interrupt: Some(InterruptClass::ErrorCode),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &program.stmts[2],
+            Stmt::FnDef {
+                is_pub: true,
+                interrupt: Some(InterruptClass::NoErrorCodeCpl3Transition),
                 ..
             }
         ));

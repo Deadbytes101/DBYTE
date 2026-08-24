@@ -390,8 +390,17 @@ impl Encoder {
         self.emit_raw(&[0xcd, vector])
     }
 
+    pub fn ltr_ax(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0x00, 0xd8])
+    }
+
     pub fn pushfd(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0x9c])
+    }
+
+    /// Emit `POPFD` (`9D`) — pop EFLAGS from the stack.
+    pub fn popfd(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x9d])
     }
 
     pub fn pushad(&mut self) -> Result<(), EncoderError> {
@@ -408,6 +417,14 @@ impl Encoder {
 
     pub fn hlt(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0xf4])
+    }
+
+    /// Emit `PAUSE` (`F3 90`) — spin-loop hint for busy-wait loops.
+    ///
+    /// On SMT processors this improves throughput by signalling a spin-wait;
+    /// on older processors it degrades to a harmless `NOP`.
+    pub fn pause(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf3, 0x90])
     }
 
     pub fn ret(&mut self) -> Result<(), EncoderError> {
@@ -583,6 +600,49 @@ impl Encoder {
         let mut instruction = vec![0x88];
         encode_base_operand(&mut instruction, source.code(), base);
         self.emit_raw(&instruction)
+    }
+
+    /// Zero-extend a 16-bit word from `[base]` into a 32-bit register.
+    ///
+    /// Emits `MOVZX r32, WORD PTR [base]` (opcode `0F B7 /r`).
+    pub fn movzx_reg_from_base16(
+        &mut self,
+        destination: Register,
+        base: Register,
+    ) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x0f, 0xb7];
+        encode_base_operand(&mut instruction, destination.code(), base);
+        self.emit_raw(&instruction)
+    }
+
+    /// Store the low 16 bits of `source` to `[base]`.
+    ///
+    /// Emits `MOV WORD PTR [base], r16` (operand-size prefix `66` + opcode `89 /r`).
+    /// Any 32-bit register is accepted; only its low 16 bits are written.
+    pub fn mov_base16_from_reg(
+        &mut self,
+        base: Register,
+        source: Register,
+    ) -> Result<(), EncoderError> {
+        let mut instruction = vec![0x66, 0x89];
+        encode_base_operand(&mut instruction, source.code(), base);
+        self.emit_raw(&instruction)
+    }
+
+    /// Emit `REP MOVSB` — copy `ECX` bytes from `[ESI]` to `[EDI]`.
+    ///
+    /// The caller is responsible for loading ESI, EDI, ECX and for preserving
+    /// any callee-saved registers that are clobbered.
+    pub fn rep_movsb(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf3, 0xa4])
+    }
+
+    /// Emit `REP STOSB` — fill `ECX` bytes at `[EDI]` with `AL`.
+    ///
+    /// The caller is responsible for loading AL, EDI, ECX and for preserving
+    /// any callee-saved registers that are clobbered.
+    pub fn rep_stosb(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf3, 0xaa])
     }
 
     pub fn movzx_reg_from_base_index8(
@@ -1511,6 +1571,23 @@ mod tests {
             Err(EncoderError::BufferOverflow {
                 limit: 1,
                 attempted_len: 2
+            })
+        ));
+        assert!(bounded.bytes().is_empty());
+    }
+
+    #[test]
+    fn ltr_has_exact_bytes_and_is_transactional() {
+        let mut encoder = Encoder::new(3);
+        encoder.ltr_ax().unwrap();
+        assert_eq!(finish(encoder), vec![0x0f, 0x00, 0xd8]);
+
+        let mut bounded = Encoder::new(2);
+        assert!(matches!(
+            bounded.ltr_ax(),
+            Err(EncoderError::BufferOverflow {
+                limit: 2,
+                attempted_len: 3
             })
         ));
         assert!(bounded.bytes().is_empty());

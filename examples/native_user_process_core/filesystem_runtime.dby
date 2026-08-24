@@ -1,0 +1,235 @@
+import "scheduler.dby" as scheduler
+import "dbfs.dby" as dbfs
+import "file_handles.dby" as handles
+
+pub const READ: u32 = 0x01 as u32
+pub const WRITE: u32 = 0x02 as u32
+pub const CREATE: u32 = 0x04 as u32
+pub const TRUNCATE: u32 = 0x08 as u32
+pub const APPEND: u32 = 0x10 as u32
+pub const SEEK_START: u32 = 0 as u32
+pub const SEEK_CURRENT: u32 = 1 as u32
+pub const SEEK_END: u32 = 2 as u32
+
+const OK: int = 0
+const INVALID: int = 1
+const NOT_FOUND: int = 7
+const EXISTS: int = 8
+const IS_DIRECTORY: int = 18
+const READ_DENIED: int = 24
+const WRITE_DENIED: int = 25
+const INVALID_SEEK: int = 26
+const ALL_FLAGS: u32 = 0x1f as u32
+
+static mut LAST_ERROR: u32
+static mut OPEN_COUNT: usize
+static mut CLOSE_COUNT: usize
+static mut READ_COUNT: usize
+static mut WRITE_COUNT: usize
+static mut SEEK_COUNT: usize
+static mut OPEN_STAT: dbfs.DbfsStat
+
+fn result(status: int) -> int:
+    LAST_ERROR = status as u32
+    return status
+
+fn owner() -> usize:
+    return scheduler.current_task_id()
+
+fn valid_flags(flags: u32) -> bool:
+    if (flags & (~ALL_FLAGS)) != (0 as u32):
+        return false
+    if (flags & (READ | WRITE)) == (0 as u32):
+        return false
+    if (flags & (CREATE | TRUNCATE | APPEND)) != (0 as u32):
+        if (flags & WRITE) == (0 as u32):
+            return false
+    if (flags & TRUNCATE) != (0 as u32):
+        if (flags & APPEND) != (0 as u32):
+            return false
+    return true
+
+pub fn runtime_initialize() -> int:
+    if handles.handles_initialize() != 0:
+        return result(INVALID)
+    LAST_ERROR = 0 as u32
+    OPEN_COUNT = 0 as usize
+    CLOSE_COUNT = 0 as usize
+    READ_COUNT = 0 as usize
+    WRITE_COUNT = 0 as usize
+    SEEK_COUNT = 0 as usize
+    return OK
+
+pub fn fs_open_owned(task: usize, source_path: str, source_length: usize, flags: u32, output: ptr[u32]) -> int:
+    if output as usize == (0 as usize):
+        return result(INVALID)
+    if valid_flags(flags) == false:
+        return result(INVALID)
+    if task == (0 as usize):
+        return result(INVALID)
+    let inode_number: u32 = 0 as u32
+    let status: int = dbfs.fs_lookup(source_path, source_length, &inode_number)
+    if status != OK:
+        if status != NOT_FOUND:
+            return result(status)
+        if (flags & CREATE) == (0 as u32):
+            return result(NOT_FOUND)
+    else:
+        if dbfs.fs_stat(source_path, source_length, &OPEN_STAT) != 0:
+            return result(dbfs.dbfs_last_error() as int)
+        if OPEN_STAT.entry_type == (2 as u32):
+            return result(IS_DIRECTORY)
+    let handle: u32 = 0 as u32
+    let reserve_status: int = handles.reserve_handle(task, inode_number, flags, 0 as usize, &handle)
+    if reserve_status != OK:
+        return result(reserve_status)
+    if status == NOT_FOUND:
+        let created_inode: u32 = 0 as u32
+        let create_status: int = dbfs.fs_create_file(source_path, source_length, &created_inode)
+        if create_status != OK:
+            handles.close_handle(handle, task)
+            return result(create_status)
+        if handles.update_inode(handle, task, created_inode) != OK:
+            handles.close_handle(handle, task)
+            return result(INVALID)
+        inode_number = created_inode
+    if (flags & TRUNCATE) != (0 as u32):
+        let truncate_status: int = dbfs.fs_truncate_inode(inode_number)
+        if truncate_status != OK:
+            handles.close_handle(handle, task)
+            return result(truncate_status)
+    (*output) = handle
+    OPEN_COUNT = OPEN_COUNT + (1 as usize)
+    return result(OK)
+
+pub fn fs_open(source_path: str, source_length: usize, flags: u32, output: ptr[u32]) -> int:
+    return fs_open_owned(owner(), source_path, source_length, flags, output)
+
+pub fn fs_close_owned(task: usize, handle: u32) -> int:
+    let status: int = handles.close_handle(handle, task)
+    if status == OK:
+        CLOSE_COUNT = CLOSE_COUNT + (1 as usize)
+    return result(status)
+
+pub fn fs_close(handle: u32) -> int:
+    return fs_close_owned(owner(), handle)
+
+pub fn fs_handle_read_owned(task: usize, handle: u32, destination: ptr[u8], length: usize, bytes_read: ptr[usize]) -> int:
+    let inode_number: u32 = 0 as u32
+    let offset: usize = 0 as usize
+    let flags: u32 = 0 as u32
+    let status: int = handles.validate_handle(handle, task, &inode_number, &offset, &flags)
+    if status != OK:
+        return result(status)
+    if (flags & READ) == (0 as u32):
+        return result(READ_DENIED)
+    let read_status: int = dbfs.fs_read_inode(inode_number, offset, destination, length, bytes_read)
+    if read_status != OK:
+        return result(read_status)
+    if (*bytes_read) > (0xffffffff as usize) - offset:
+        return result(INVALID)
+    if handles.update_offset(handle, task, offset + (*bytes_read)) != OK:
+        return result(INVALID)
+    READ_COUNT = READ_COUNT + (1 as usize)
+    return result(OK)
+
+pub fn fs_handle_read(handle: u32, destination: ptr[u8], length: usize, bytes_read: ptr[usize]) -> int:
+    return fs_handle_read_owned(owner(), handle, destination, length, bytes_read)
+
+pub fn fs_handle_write_owned(task: usize, handle: u32, source: ptr[u8], length: usize, bytes_written: ptr[usize]) -> int:
+    if bytes_written as usize == (0 as usize):
+        return result(INVALID)
+    (*bytes_written) = 0 as usize
+    let inode_number: u32 = 0 as u32
+    let offset: usize = 0 as usize
+    let flags: u32 = 0 as u32
+    let status: int = handles.validate_handle(handle, task, &inode_number, &offset, &flags)
+    if status != OK:
+        return result(status)
+    if (flags & WRITE) == (0 as u32):
+        return result(WRITE_DENIED)
+    let final_size: usize = 0 as usize
+    let append: bool = (flags & APPEND) != (0 as u32)
+    let write_status: int = dbfs.fs_write_inode(inode_number, offset, source, length, append, &final_size)
+    if write_status != OK:
+        return result(write_status)
+    let next_offset: usize = offset + length
+    if append:
+        next_offset = final_size
+    if handles.update_offset(handle, task, next_offset) != OK:
+        return result(INVALID)
+    (*bytes_written) = length
+    WRITE_COUNT = WRITE_COUNT + (1 as usize)
+    return result(OK)
+
+pub fn fs_handle_write(handle: u32, source: ptr[u8], length: usize, bytes_written: ptr[usize]) -> int:
+    return fs_handle_write_owned(owner(), handle, source, length, bytes_written)
+
+pub fn fs_release_owner(task: usize) -> int:
+    return handles.release_owner(task)
+
+pub fn fs_cleanup_count() -> usize:
+    return handles.handle_cleanup_count()
+
+pub fn fs_seek(handle: u32, origin: u32, signed_offset: i32, output: ptr[usize]) -> int:
+    if output as usize == (0 as usize):
+        return result(INVALID)
+    let inode_number: u32 = 0 as u32
+    let current: usize = 0 as usize
+    let flags: u32 = 0 as u32
+    let task: usize = owner()
+    let status: int = handles.validate_handle(handle, task, &inode_number, &current, &flags)
+    if status != OK:
+        return result(status)
+    let size: usize = 0 as usize
+    if dbfs.fs_inode_size(inode_number, &size) != 0:
+        return result(dbfs.dbfs_last_error() as int)
+    let base: usize = 0 as usize
+    if origin == SEEK_START:
+        base = 0 as usize
+    else:
+        if origin == SEEK_CURRENT:
+            base = current
+        else:
+            if origin == SEEK_END:
+                base = size
+            else:
+                return result(INVALID_SEEK)
+    let next: usize = base
+    if signed_offset < 0:
+        if signed_offset == (-2147483647 - 1):
+            return result(INVALID_SEEK)
+        let magnitude: usize = (-signed_offset) as usize
+        if magnitude > base:
+            return result(INVALID_SEEK)
+        next = base - magnitude
+    else:
+        let positive: usize = signed_offset as usize
+        if positive > (0xffffffff as usize) - base:
+            return result(INVALID_SEEK)
+        next = base + positive
+    if next > size:
+        return result(INVALID_SEEK)
+    if handles.update_offset(handle, task, next) != OK:
+        return result(INVALID)
+    (*output) = next
+    SEEK_COUNT = SEEK_COUNT + (1 as usize)
+    return result(OK)
+
+pub fn runtime_last_error() -> u32:
+    return LAST_ERROR
+
+pub fn runtime_open_count() -> usize:
+    return OPEN_COUNT
+
+pub fn runtime_close_count() -> usize:
+    return CLOSE_COUNT
+
+pub fn runtime_read_count() -> usize:
+    return READ_COUNT
+
+pub fn runtime_write_count() -> usize:
+    return WRITE_COUNT
+
+pub fn runtime_seek_count() -> usize:
+    return SEEK_COUNT

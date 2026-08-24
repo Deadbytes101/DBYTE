@@ -1,0 +1,204 @@
+const SECTOR_BYTES: usize = 512 as usize
+const FS_BASE: u32 = 64 as u32
+const VERSION: u32 = 1 as u32
+const MAX_INODES: u32 = 64 as u32
+const INODE_BYTES: u32 = 64 as u32
+const INODE_SECTORS: u32 = 8 as u32
+const DIR_ENTRY_BYTES: u32 = 64 as u32
+const DIRECT_BLOCKS: u32 = 8 as u32
+const ROOT_INODE: u32 = 1 as u32
+const FNV_OFFSET: u32 = 2166136261 as u32
+const FNV_PRIME: u32 = 16777619 as u32
+
+pub struct Layout:
+    total_sectors: u32
+    bitmap_start: u32
+    bitmap_sectors: u32
+    inode_start: u32
+    data_start: u32
+    data_blocks: u32
+
+static mut EXPECTED_LAYOUT: Layout
+
+pub fn sector_bytes() -> usize:
+    return SECTOR_BYTES
+
+pub fn fs_base() -> u32:
+    return FS_BASE
+
+pub fn max_inodes() -> u32:
+    return MAX_INODES
+
+pub fn inode_bytes() -> u32:
+    return INODE_BYTES
+
+pub fn inode_sectors() -> u32:
+    return INODE_SECTORS
+
+pub fn dir_entry_bytes() -> u32:
+    return DIR_ENTRY_BYTES
+
+pub fn direct_blocks() -> u32:
+    return DIRECT_BLOCKS
+
+pub fn root_inode() -> u32:
+    return ROOT_INODE
+
+pub fn get8(buffer: ptr[u8], offset: usize) -> u8:
+    return native.volatile_load8(((buffer as usize) + offset) as ptr[u8])
+
+pub fn put8(buffer: ptr[u8], offset: usize, value: u8) -> int:
+    native.volatile_store8(((buffer as usize) + offset) as ptr[u8], value)
+    return 0
+
+pub fn get32(buffer: ptr[u8], offset: usize) -> u32:
+    let address: usize = (buffer as usize) + offset
+    return native.volatile_load32(address as ptr[u32])
+
+pub fn put32(buffer: ptr[u8], offset: usize, value: u32) -> int:
+    let address: usize = (buffer as usize) + offset
+    native.volatile_store32(address as ptr[u32], value)
+    return 0
+
+fn layout_get(value: ptr[Layout], offset: usize) -> u32:
+    return native.volatile_load32(((value as usize) + offset) as ptr[u32])
+
+fn layout_put(value: ptr[Layout], offset: usize, field: u32) -> int:
+    native.volatile_store32(((value as usize) + offset) as ptr[u32], field)
+    return 0
+
+pub fn zero(buffer: ptr[u8], count: usize) -> int:
+    let index: usize = 0 as usize
+    while index < count:
+        put8(buffer, index, 0 as u8)
+        index = index + (1 as usize)
+    return 0
+
+pub fn fnv1a(buffer: ptr[u8], count: usize) -> u32:
+    let hash: u32 = FNV_OFFSET
+    let index: usize = 0 as usize
+    while index < count:
+        hash = (hash ^ (get8(buffer, index) as u32)) * FNV_PRIME
+        index = index + (1 as usize)
+    return hash
+
+pub fn calculate(disk_sectors: u32, output: ptr[Layout]) -> bool:
+    if disk_sectors <= (FS_BASE + (17 as u32)):
+        return false
+    let filesystem_sectors: u32 = disk_sectors - FS_BASE
+    let numerator: u32 = filesystem_sectors - (9 as u32)
+    let bitmap_count: u32 = 1 as u32
+    while (bitmap_count * (4097 as u32)) < numerator:
+        bitmap_count = bitmap_count + (1 as u32)
+    if bitmap_count == (0 as u32):
+        return false
+    if bitmap_count > (0xffffffff as u32) - (FS_BASE + (1 as u32)):
+        return false
+    let inode_start_value: u32 = FS_BASE + (1 as u32) + bitmap_count
+    if inode_start_value > (0xffffffff as u32) - INODE_SECTORS:
+        return false
+    let data_start_value: u32 = inode_start_value + INODE_SECTORS
+    if data_start_value >= disk_sectors:
+        return false
+    let data_count: u32 = disk_sectors - data_start_value
+    if data_count < DIRECT_BLOCKS:
+        return false
+    if (bitmap_count * (4096 as u32)) < data_count:
+        return false
+    layout_put(output, 0 as usize, filesystem_sectors)
+    layout_put(output, 4 as usize, FS_BASE + (1 as u32))
+    layout_put(output, 8 as usize, bitmap_count)
+    layout_put(output, 12 as usize, inode_start_value)
+    layout_put(output, 16 as usize, data_start_value)
+    layout_put(output, 20 as usize, data_count)
+    return true
+
+pub fn encode_superblock(buffer: ptr[u8], layout: ptr[Layout]) -> int:
+    zero(buffer, SECTOR_BYTES)
+    put8(buffer, 0 as usize, 68 as u8)
+    put8(buffer, 1 as usize, 66 as u8)
+    put8(buffer, 2 as usize, 70 as u8)
+    put8(buffer, 3 as usize, 83 as u8)
+    put8(buffer, 4 as usize, 49 as u8)
+    put32(buffer, 8 as usize, VERSION)
+    put32(buffer, 12 as usize, 512 as u32)
+    put32(buffer, 16 as usize, FS_BASE)
+    put32(buffer, 20 as usize, layout_get(layout, 0 as usize))
+    put32(buffer, 24 as usize, layout_get(layout, 4 as usize))
+    put32(buffer, 28 as usize, layout_get(layout, 8 as usize))
+    put32(buffer, 32 as usize, layout_get(layout, 12 as usize))
+    put32(buffer, 36 as usize, MAX_INODES)
+    put32(buffer, 40 as usize, INODE_SECTORS)
+    put32(buffer, 44 as usize, layout_get(layout, 16 as usize))
+    put32(buffer, 48 as usize, layout_get(layout, 20 as usize))
+    put32(buffer, 52 as usize, ROOT_INODE)
+    put32(buffer, 56 as usize, DIR_ENTRY_BYTES)
+    put32(buffer, 60 as usize, fnv1a(buffer, 60 as usize))
+    return 0
+
+pub fn is_blank(buffer: ptr[u8]) -> bool:
+    let index: usize = 0 as usize
+    while index < SECTOR_BYTES:
+        if get8(buffer, index) != (0 as u8):
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn validate_superblock(buffer: ptr[u8], disk_sectors: u32, output: ptr[Layout]) -> bool:
+    if get8(buffer, 0 as usize) != (68 as u8):
+        return false
+    if get8(buffer, 1 as usize) != (66 as u8):
+        return false
+    if get8(buffer, 2 as usize) != (70 as u8):
+        return false
+    if get8(buffer, 3 as usize) != (83 as u8):
+        return false
+    if get8(buffer, 4 as usize) != (49 as u8):
+        return false
+    let zero_index: usize = 5 as usize
+    while zero_index < (8 as usize):
+        if get8(buffer, zero_index) != (0 as u8):
+            return false
+        zero_index = zero_index + (1 as usize)
+    if get32(buffer, 8 as usize) != VERSION:
+        return false
+    if get32(buffer, 12 as usize) != (512 as u32):
+        return false
+    if get32(buffer, 16 as usize) != FS_BASE:
+        return false
+    if calculate(disk_sectors, &EXPECTED_LAYOUT) == false:
+        return false
+    if get32(buffer, 20 as usize) != EXPECTED_LAYOUT.total_sectors:
+        return false
+    if get32(buffer, 24 as usize) != EXPECTED_LAYOUT.bitmap_start:
+        return false
+    if get32(buffer, 28 as usize) != EXPECTED_LAYOUT.bitmap_sectors:
+        return false
+    if get32(buffer, 32 as usize) != EXPECTED_LAYOUT.inode_start:
+        return false
+    if get32(buffer, 36 as usize) != MAX_INODES:
+        return false
+    if get32(buffer, 40 as usize) != INODE_SECTORS:
+        return false
+    if get32(buffer, 44 as usize) != EXPECTED_LAYOUT.data_start:
+        return false
+    if get32(buffer, 48 as usize) != EXPECTED_LAYOUT.data_blocks:
+        return false
+    if get32(buffer, 52 as usize) != ROOT_INODE:
+        return false
+    if get32(buffer, 56 as usize) != DIR_ENTRY_BYTES:
+        return false
+    if get32(buffer, 60 as usize) != fnv1a(buffer, 60 as usize):
+        return false
+    let tail: usize = 64 as usize
+    while tail < SECTOR_BYTES:
+        if get8(buffer, tail) != (0 as u8):
+            return false
+        tail = tail + (1 as usize)
+    layout_put(output, 0 as usize, EXPECTED_LAYOUT.total_sectors)
+    layout_put(output, 4 as usize, EXPECTED_LAYOUT.bitmap_start)
+    layout_put(output, 8 as usize, EXPECTED_LAYOUT.bitmap_sectors)
+    layout_put(output, 12 as usize, EXPECTED_LAYOUT.inode_start)
+    layout_put(output, 16 as usize, EXPECTED_LAYOUT.data_start)
+    layout_put(output, 20 as usize, EXPECTED_LAYOUT.data_blocks)
+    return true

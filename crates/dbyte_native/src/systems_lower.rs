@@ -5,7 +5,7 @@ use crate::ir::{CompareOp, LabelId, LocalId};
 use crate::object::{
     ObjectImage, ObjectRelocation, ObjectSection, ObjectSectionData, ObjectSymbol, RelocationKind,
     SectionContents, SymbolBinding, SymbolDefinition, SymbolId, SymbolKind, ENTRY_METADATA_PREFIX,
-    TASK_METADATA_PREFIX,
+    PROFILE_METADATA_PREFIX, TASK_METADATA_PREFIX,
 };
 use crate::system_types::SystemType;
 use crate::systems_ir::{
@@ -118,6 +118,22 @@ pub fn lower_systems_module(module: &SystemsModuleIr) -> NativeResult<LoweredSys
                 binding: SymbolBinding::Local,
                 kind: SymbolKind::Section,
                 definition: SymbolDefinition::Defined { section, value: 0 },
+                size: 0,
+            },
+        )?;
+    }
+    if module.user_profile {
+        insert_named_symbol(
+            &mut symbols,
+            &mut symbol_ids,
+            ObjectSymbol {
+                name: format!("{PROFILE_METADATA_PREFIX}user"),
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
                 size: 0,
             },
         )?;
@@ -546,28 +562,25 @@ fn lower_interrupt_stub(
     relocations: &mut Vec<ObjectRelocation>,
 ) -> NativeResult<()> {
     emit(encoder, function, Encoder::pushad)?;
-    match class {
-        dbyte_ast::InterruptClass::NoErrorCode => {
-            emit(encoder, function, |encoder| {
-                encoder.lea_reg_from_memory(Register::Eax, MemoryOperand::new(Register::Esp, 32))
-            })?;
-            push(encoder, function, Register::Eax)?;
-        }
-        dbyte_ast::InterruptClass::ErrorCode => {
-            emit(encoder, function, |encoder| {
-                encoder.mov_reg_from_memory(
-                    Register::Eax,
-                    MemoryOperand::new(Register::Esp, 32),
-                    OperandWidth::Dword,
-                    None,
-                )
-            })?;
-            emit(encoder, function, |encoder| {
-                encoder.lea_reg_from_memory(Register::Edx, MemoryOperand::new(Register::Esp, 36))
-            })?;
-            push(encoder, function, Register::Edx)?;
-            push(encoder, function, Register::Eax)?;
-        }
+    if !class.has_error_code() {
+        emit(encoder, function, |encoder| {
+            encoder.lea_reg_from_memory(Register::Eax, MemoryOperand::new(Register::Esp, 32))
+        })?;
+        push(encoder, function, Register::Eax)?;
+    } else {
+        emit(encoder, function, |encoder| {
+            encoder.mov_reg_from_memory(
+                Register::Eax,
+                MemoryOperand::new(Register::Esp, 32),
+                OperandWidth::Dword,
+                None,
+            )
+        })?;
+        emit(encoder, function, |encoder| {
+            encoder.lea_reg_from_memory(Register::Edx, MemoryOperand::new(Register::Esp, 36))
+        })?;
+        push(encoder, function, Register::Edx)?;
+        push(encoder, function, Register::Eax)?;
     }
     let immediate = encoder
         .call_rel32_placeholder()
@@ -579,13 +592,10 @@ fn lower_interrupt_stub(
         kind: RelocationKind::Pc32,
         addend: -4,
     });
-    let cleanup = match class {
-        dbyte_ast::InterruptClass::NoErrorCode => 4,
-        dbyte_ast::InterruptClass::ErrorCode => 8,
-    };
+    let cleanup = if class.has_error_code() { 8 } else { 4 };
     emit(encoder, function, |encoder| encoder.add_esp_imm32(cleanup))?;
     emit(encoder, function, Encoder::popad)?;
-    if class == dbyte_ast::InterruptClass::ErrorCode {
+    if class.has_error_code() {
         emit(encoder, function, |encoder| encoder.add_esp_imm32(4))?;
     }
     emit(encoder, function, Encoder::iretd)
@@ -1238,6 +1248,11 @@ fn lower_intrinsic(
                 _ => unreachable!(),
             }
         }
+        SystemIntrinsic::CpuLtr => {
+            require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
+            pop(encoder, function, Register::Eax)?;
+            emit(encoder, function, Encoder::ltr_ax)?;
+        }
         SystemIntrinsic::TaskBlockTrap => {
             require_intrinsic_arity(intrinsic, argument_count, 2, function)?;
             pop(encoder, function, Register::Edx)?;
@@ -1256,6 +1271,34 @@ fn lower_intrinsic(
             })?;
             emit(encoder, function, Encoder::popad)?;
             emit(encoder, function, Encoder::iretd)?;
+        }
+        SystemIntrinsic::UserSyscall0
+        | SystemIntrinsic::UserSyscall1
+        | SystemIntrinsic::UserSyscall2
+        | SystemIntrinsic::UserSyscall3 => {
+            let expected = match intrinsic {
+                SystemIntrinsic::UserSyscall0 => 1,
+                SystemIntrinsic::UserSyscall1 => 2,
+                SystemIntrinsic::UserSyscall2 => 3,
+                SystemIntrinsic::UserSyscall3 => 4,
+                _ => unreachable!(),
+            };
+            require_intrinsic_arity(intrinsic, argument_count, expected, function)?;
+            if expected >= 4 {
+                pop(encoder, function, Register::Edx)?;
+            }
+            if expected >= 3 {
+                pop(encoder, function, Register::Ecx)?;
+            }
+            if expected >= 2 {
+                pop(encoder, function, Register::Ebx)?;
+            }
+            pop(encoder, function, Register::Eax)?;
+            emit(encoder, function, |encoder| {
+                encoder.software_interrupt(0x80)
+            })?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
         }
     }
     Ok(())
@@ -1832,6 +1875,7 @@ mod tests {
 
     fn module(functions: Vec<SystemsFunction>) -> SystemsModuleIr {
         SystemsModuleIr {
+            user_profile: false,
             module_name: "kernel".into(),
             functions,
             globals: vec![],
@@ -1913,6 +1957,54 @@ mod tests {
         };
         assert!(text.windows(2).any(|bytes| bytes == [0x0f, 0xb7]));
         assert!(text.windows(2).any(|bytes| bytes == [0xd3, 0xe8]));
+    }
+
+    #[test]
+    fn ltr_and_user_syscall_register_abi_reach_exact_machine_bytes() {
+        let ir = module(vec![function(vec![
+            SystemsInst::Const {
+                bits: 0x28,
+                ty: SystemType::U16,
+            },
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::CpuLtr,
+                argument_count: 1,
+                result: None,
+            },
+            SystemsInst::Const {
+                bits: 4,
+                ty: SystemType::U32,
+            },
+            SystemsInst::Const {
+                bits: 3,
+                ty: SystemType::Usize,
+            },
+            SystemsInst::Const {
+                bits: 0x401000,
+                ty: SystemType::Usize,
+            },
+            SystemsInst::Const {
+                bits: 512,
+                ty: SystemType::Usize,
+            },
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::UserSyscall3,
+                argument_count: 4,
+                result: Some(SystemType::I32),
+            },
+            SystemsInst::Return,
+        ])]);
+        let lowered = lower_systems_module(&ir).unwrap();
+        let SectionContents::Bytes(text) = &lowered.image.sections[&ObjectSection::Text].contents
+        else {
+            panic!("text must be file-backed")
+        };
+        assert!(text
+            .windows(4)
+            .any(|bytes| bytes == [0x58, 0x0f, 0x00, 0xd8]));
+        assert!(text
+            .windows(6)
+            .any(|bytes| bytes == [0x5a, 0x59, 0x5b, 0x58, 0xcd, 0x80]));
     }
 
     #[test]
@@ -2076,6 +2168,7 @@ mod tests {
             span: Span::new(1, 1),
         };
         let callee = lower_systems_module(&SystemsModuleIr {
+            user_profile: false,
             module_name: "callee".into(),
             functions: vec![callee],
             globals: vec![],

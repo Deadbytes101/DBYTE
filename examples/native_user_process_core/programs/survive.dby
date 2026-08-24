@@ -1,0 +1,13 @@
+pub fn user_main() -> int:
+    let unknown: i32 = user.syscall0(99 as u32)
+    let seed: usize = (unknown + 5) as usize
+    let high: usize = seed << (30 as usize)
+    let kernel_address: usize = high + high + high + (seed << (24 as usize))
+    if user.syscall3(1 as u32, 1 as usize, kernel_address, 1 as usize) != -3:
+        return 1
+    let wrapping: usize = (0 as usize) - (16 as usize)
+    if user.syscall3(1 as u32, 1 as usize, wrapping, 32 as usize) != -3:
+        return 2
+    if user.syscall3(1 as u32, 1 as usize, 0x006ffff0 as usize, 32 as usize) != -3:
+        return 3
+    return 0

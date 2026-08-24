@@ -1,0 +1,36 @@
+import "arch_x86.dby" as arch
+import "scheduler.dby" as scheduler
+import "keyboard.dby" as keyboard
+import "ata.dby" as ata
+import "processes.dby" as processes
+
+packed struct IdtEntry:
+    offset_low: u16
+    selector: u16
+    zero: u8
+    flags: u8
+    offset_high: u16
+
+static mut IDT: array[IdtEntry, 256]
+static mut IDTR: arch.DescriptorTablePointer
+
+fn set_gate(vector: usize, address: usize, flags: u8) -> int:
+    IDT[vector].offset_low = (address & (0xffff as usize)) as u16
+    IDT[vector].selector = 0x08 as u16
+    IDT[vector].zero = 0 as u8
+    IDT[vector].flags = flags
+    IDT[vector].offset_high = (address >> (16 as usize)) as u16
+    return 0
+
+pub fn install() -> int:
+    set_gate(13 as usize, interrupt_address(13, processes.general_protection), 0x8e as u8)
+    set_gate(14 as usize, interrupt_address(14, processes.page_fault), 0x8e as u8)
+    set_gate(32 as usize, interrupt_address(32, scheduler.irq0), 0x8e as u8)
+    set_gate(33 as usize, interrupt_address(33, keyboard.irq1), 0x8e as u8)
+    set_gate(46 as usize, interrupt_address(46, ata.ata_irq14), 0x8e as u8)
+    set_gate(128 as usize, interrupt_address(128, processes.syscall), 0xee as u8)
+    set_gate(129 as usize, interrupt_address(129, scheduler.block_trap), 0x8e as u8)
+    IDTR.limit = 2047 as u16
+    IDTR.base = (&IDT) as usize as u32
+    native.cpu_lidt((&IDTR) as usize)
+    return 0

@@ -19,6 +19,9 @@ pub const MULTIBOOT_CHECKSUM: u32 =
 pub const BOOTSTRAP_STACK_SIZE: u32 = 16 * 1024;
 pub const MAX_ELF_SIZE: usize = 16 * 1024 * 1024;
 pub const MAX_LOAD_MEMORY_SIZE: u32 = 8 * 1024 * 1024;
+pub const USER_IMAGE_BASE: u32 = 0x0040_0000;
+pub const USER_IMAGE_END: u32 = 0x0080_0000;
+pub const MAX_USER_ELF_SIZE: usize = 4096;
 
 const ELF_HEADER_SIZE: u32 = 52;
 const PROGRAM_HEADER_SIZE: u32 = 32;
@@ -126,6 +129,147 @@ pub struct ExecutableSymbol {
     pub section: ObjectSection,
     pub offset: u32,
     pub size: u32,
+}
+
+/// Writes the compact, two-segment ELF consumed by the Ring3 loader. Unlike
+/// the kernel writer this deliberately has no Multiboot header, section table,
+/// symbol table, or binary-image form.
+pub fn write_user_executable(image: &LinkedExecutableImage) -> Result<ElfArtifact, Diagnostic> {
+    validate_linked_image_contract(image, false)?;
+    let text_size = usize_u32(image.text.len(), "user text size")?;
+    let rodata_start = align_up(text_size, image.rodata_alignment.max(1))?;
+    let rx_size = checked_add(
+        rodata_start,
+        usize_u32(image.rodata.len(), "user rodata size")?,
+        "user RX size",
+    )?;
+    let data_address = align_up(checked_add(USER_IMAGE_BASE, rx_size, "user RX end")?, 4096)?;
+    let data_size = usize_u32(image.data.len(), "user data size")?;
+    let bss_relative = align_up(data_size, image.bss_alignment.max(1))?;
+    let rw_memory_size = checked_add(bss_relative, image.bss_size, "user RW memory size")?;
+    let image_end = checked_add(data_address, rw_memory_size, "user image end")?;
+    if image_end > USER_IMAGE_END {
+        return Err(elf_diagnostic("user image exceeds 0x00400000..0x007fffff"));
+    }
+    if image.entry_offset >= text_size {
+        return Err(elf_diagnostic("user entry is outside executable text"));
+    }
+
+    const USER_TEXT_OFFSET: u32 = ELF_HEADER_SIZE + 2 * PROGRAM_HEADER_SIZE;
+    let data_offset = checked_add(USER_TEXT_OFFSET, rx_size, "user data file offset")?;
+    let file_size = checked_add(data_offset, data_size, "user ELF size")?;
+    if file_size as usize > MAX_USER_ELF_SIZE {
+        return Err(elf_diagnostic(format!(
+            "user ELF size {file_size} exceeds bound {MAX_USER_ELF_SIZE}"
+        )));
+    }
+    let entry = checked_add(USER_IMAGE_BASE, image.entry_offset, "user entry")?;
+    let mut elf = bounded_zeros(file_size as usize, "user ELF")?;
+    elf[0..4].copy_from_slice(b"\x7fELF");
+    elf[4] = 1;
+    elf[5] = 1;
+    elf[6] = 1;
+    write_u16(&mut elf, 16, 2)?;
+    write_u16(&mut elf, 18, 3)?;
+    write_u32(&mut elf, 20, 1)?;
+    write_u32(&mut elf, 24, entry)?;
+    write_u32(&mut elf, 28, ELF_HEADER_SIZE)?;
+    write_u32(&mut elf, 32, 0)?;
+    write_u32(&mut elf, 36, 0)?;
+    write_u16(&mut elf, 40, ELF_HEADER_SIZE as u16)?;
+    write_u16(&mut elf, 42, PROGRAM_HEADER_SIZE as u16)?;
+    write_u16(&mut elf, 44, 2)?;
+    write_u16(&mut elf, 46, 0)?;
+    write_u16(&mut elf, 48, 0)?;
+    write_u16(&mut elf, 50, 0)?;
+
+    write_user_program_header(
+        &mut elf,
+        ELF_HEADER_SIZE as usize,
+        USER_TEXT_OFFSET,
+        USER_IMAGE_BASE,
+        rx_size,
+        rx_size,
+        PF_R | PF_X,
+    )?;
+    write_user_program_header(
+        &mut elf,
+        (ELF_HEADER_SIZE + PROGRAM_HEADER_SIZE) as usize,
+        data_offset,
+        data_address,
+        data_size,
+        rw_memory_size,
+        PF_R | PF_W,
+    )?;
+    copy_bytes(&mut elf, USER_TEXT_OFFSET as usize, &image.text)?;
+    copy_bytes(
+        &mut elf,
+        checked_add(USER_TEXT_OFFSET, rodata_start, "user rodata offset")? as usize,
+        &image.rodata,
+    )?;
+    copy_bytes(&mut elf, data_offset as usize, &image.data)?;
+
+    let layout = ElfLayout {
+        image_base: USER_IMAGE_BASE,
+        load_file_offset: USER_TEXT_OFFSET,
+        load_file_size: checked_add(rx_size, data_size, "user file image size")?,
+        load_memory_size: checked_add(
+            data_address - USER_IMAGE_BASE,
+            rw_memory_size,
+            "user memory image size",
+        )?,
+        entry,
+        multiboot_offset: 0,
+        multiboot_address: 0,
+        text_offset: USER_TEXT_OFFSET,
+        text_address: USER_IMAGE_BASE,
+        text_size,
+        rodata_offset: USER_TEXT_OFFSET + rodata_start,
+        rodata_address: USER_IMAGE_BASE + rodata_start,
+        rodata_size: usize_u32(image.rodata.len(), "user rodata size")?,
+        data_offset,
+        data_address,
+        data_size,
+        bss_offset: data_offset + bss_relative,
+        bss_address: data_address + bss_relative,
+        bss_size: image.bss_size,
+        stack_bottom: 0,
+        stack_top: 0,
+        symtab_offset: 0,
+        strtab_offset: 0,
+        shstrtab_offset: 0,
+        section_header_offset: 0,
+        file_size,
+        string_addresses: Vec::new(),
+    };
+    Ok(ElfArtifact {
+        elf,
+        bin: Vec::new(),
+        machine_code: image.text.clone(),
+        layout,
+        dump: format!(
+            "user-elf32 entry=0x{entry:08x} rx=0x{USER_IMAGE_BASE:08x}+0x{rx_size:08x} rw=0x{data_address:08x}+0x{rw_memory_size:08x}\n"
+        ),
+    })
+}
+
+fn write_user_program_header(
+    elf: &mut [u8],
+    offset: usize,
+    file_offset: u32,
+    address: u32,
+    file_size: u32,
+    memory_size: u32,
+    flags: u32,
+) -> Result<(), Diagnostic> {
+    write_u32(elf, offset, PT_LOAD)?;
+    write_u32(elf, offset + 4, file_offset)?;
+    write_u32(elf, offset + 8, address)?;
+    write_u32(elf, offset + 12, address)?;
+    write_u32(elf, offset + 16, file_size)?;
+    write_u32(elf, offset + 20, memory_size)?;
+    write_u32(elf, offset + 24, flags)?;
+    write_u32(elf, offset + 28, 1)
 }
 
 #[derive(Clone, Debug)]
@@ -743,6 +887,13 @@ pub fn write_linked_executable(image: &LinkedExecutableImage) -> Result<ElfArtif
 }
 
 fn validate_linked_image(image: &LinkedExecutableImage) -> Result<(), Diagnostic> {
+    validate_linked_image_contract(image, true)
+}
+
+fn validate_linked_image_contract(
+    image: &LinkedExecutableImage,
+    require_bootstrap_stack: bool,
+) -> Result<(), Diagnostic> {
     if image.text.is_empty() {
         return Err(elf_diagnostic(
             "linked executable has an empty .text section",
@@ -766,12 +917,13 @@ fn validate_linked_image(image: &LinkedExecutableImage) -> Result<(), Diagnostic
             )));
         }
     }
-    if image
-        .stack_top_offset
-        .checked_sub(image.stack_bottom_offset)
-        != Some(BOOTSTRAP_STACK_SIZE)
-        || image.stack_top_offset > image.bss_size
-        || !image.stack_top_offset.is_multiple_of(16)
+    if require_bootstrap_stack
+        && (image
+            .stack_top_offset
+            .checked_sub(image.stack_bottom_offset)
+            != Some(BOOTSTRAP_STACK_SIZE)
+            || image.stack_top_offset > image.bss_size
+            || !image.stack_top_offset.is_multiple_of(16))
     {
         return Err(elf_diagnostic(
             "linked bootstrap stack offsets are inconsistent",

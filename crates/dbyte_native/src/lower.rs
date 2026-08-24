@@ -588,6 +588,21 @@ fn lower_intrinsic(
                 encoder.mov_base8_from_reg(Register::Edx, Register::Eax)
             })?;
         }
+        Intrinsic::VolatileLoad16 => {
+            // stack: [addr]  →  EAX = zero_extend(*addr as u16)
+            pop(encoder, span, Register::Edx)?;
+            emit(encoder, span, |encoder| {
+                encoder.movzx_reg_from_base16(Register::Eax, Register::Edx)
+            })?;
+        }
+        Intrinsic::VolatileStore16 => {
+            // stack: [addr, value]  (value pushed last)
+            pop(encoder, span, Register::Eax)?; // value
+            pop(encoder, span, Register::Edx)?; // address
+            emit(encoder, span, |encoder| {
+                encoder.mov_base16_from_reg(Register::Edx, Register::Eax)
+            })?;
+        }
         Intrinsic::VolatileLoad32 => {
             pop(encoder, span, Register::Edx)?;
             emit(encoder, span, |encoder| {
@@ -616,7 +631,65 @@ fn lower_intrinsic(
                 encoder.movzx_reg_reg8(Register::Eax, Register::Eax)
             })?;
         }
+        Intrinsic::CpuCli => emit(encoder, span, |encoder| encoder.cli())?,
+        Intrinsic::CpuSti => emit(encoder, span, |encoder| encoder.sti())?,
         Intrinsic::CpuHlt => emit(encoder, span, |encoder| encoder.hlt())?,
+        Intrinsic::CpuPause => emit(encoder, span, |encoder| encoder.pause())?,
+        Intrinsic::Lidt => {
+            // stack: [desc_ptr]
+            // LIDT [EDX] — desc_ptr is a 6-byte { u16 limit, u32 base } in memory.
+            pop(encoder, span, Register::Edx)?;
+            emit(encoder, span, |encoder| {
+                encoder.lidt(crate::x86::MemoryOperand::new(Register::Edx, 0))
+            })?;
+        }
+        Intrinsic::ReadEflags => {
+            // PUSHFD saves EFLAGS onto the stack; we then pop it into EAX and
+            // push EAX onto the IR evaluation stack as the return value.
+            emit(encoder, span, |encoder| encoder.pushfd())?;
+            emit(encoder, span, |encoder| encoder.pop_reg(Register::Eax))?;
+        }
+        Intrinsic::WriteEflags => {
+            // stack: [flags]
+            // Pop the value into EAX, push it, then POPFD restores EFLAGS.
+            pop(encoder, span, Register::Eax)?;
+            emit(encoder, span, |encoder| encoder.push_reg(Register::Eax))?;
+            emit(encoder, span, |encoder| encoder.popfd())?;
+        }
+        Intrinsic::MemCopy => {
+            // stack: [dst, src, count]  (count pushed last)
+            // REP MOVSB clobbers ESI, EDI, ECX — save callee-saved ESI and EDI.
+            emit(encoder, span, |encoder| encoder.push_reg(Register::Esi))?;
+            emit(encoder, span, |encoder| encoder.push_reg(Register::Edi))?;
+            pop(encoder, span, Register::Ecx)?; // count
+            pop(encoder, span, Register::Esi)?; // src
+            pop(encoder, span, Register::Edi)?; // dst
+            emit(encoder, span, |encoder| encoder.rep_movsb())?;
+            emit(encoder, span, |encoder| encoder.pop_reg(Register::Edi))?;
+            emit(encoder, span, |encoder| encoder.pop_reg(Register::Esi))?;
+        }
+        Intrinsic::MemSet => {
+            // stack: [dst, value, count]  (count pushed last)
+            // REP STOSB clobbers EDI and ECX — save callee-saved EDI.
+            emit(encoder, span, |encoder| encoder.push_reg(Register::Edi))?;
+            pop(encoder, span, Register::Ecx)?; // count
+            pop(encoder, span, Register::Eax)?; // value (AL = fill byte)
+            pop(encoder, span, Register::Edi)?; // dst
+            emit(encoder, span, |encoder| encoder.rep_stosb())?;
+            emit(encoder, span, |encoder| encoder.pop_reg(Register::Edi))?;
+        }
+        Intrinsic::MemZero => {
+            // stack: [dst, count]  (count pushed last)
+            // Like MemSet with AL = 0; save callee-saved EDI.
+            emit(encoder, span, |encoder| encoder.push_reg(Register::Edi))?;
+            pop(encoder, span, Register::Ecx)?; // count
+            pop(encoder, span, Register::Edi)?; // dst
+            emit(encoder, span, |encoder| {
+                encoder.xor_reg_reg(Register::Eax, Register::Eax)
+            })?;
+            emit(encoder, span, |encoder| encoder.rep_stosb())?;
+            emit(encoder, span, |encoder| encoder.pop_reg(Register::Edi))?;
+        }
     }
     Ok(())
 }
@@ -985,5 +1058,273 @@ mod tests {
         };
         let error = lower_program(&program).unwrap_err();
         assert!(error.message.contains("IR evaluation stack underflow"));
+    }
+
+    // ── new memory intrinsic tests ─────────────────────────────────────────
+
+    #[test]
+    fn lowers_volatile_load16_emits_movzx_word() {
+        // MOVZX r32, WORD PTR [r] encodes as 0F B7 /r
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x1000), // address
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::VolatileLoad16,
+                    argument_count: 1,
+                    result: Some(NativeType::I32),
+                },
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        // 0F B7 is the two-byte opcode prefix for MOVZX r32, r/m16
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0x0f, 0xb7]),
+            "expected MOVZX word opcode 0F B7 in machine code"
+        );
+    }
+
+    #[test]
+    fn lowers_volatile_store16_emits_operand_size_prefix() {
+        // MOV WORD PTR [r], r16 encodes as 66 89 /r
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x1000), // address
+                IrInst::ConstI32(0xabcd), // value
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::VolatileStore16,
+                    argument_count: 2,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        // Operand-size prefix 66 followed by MOV r/m16, r16 opcode 89
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0x66, 0x89]),
+            "expected operand-size prefix 66 89 for 16-bit store"
+        );
+    }
+
+    #[test]
+    fn lowers_mem_copy_emits_rep_movsb_with_esi_edi_save() {
+        // REP MOVSB encodes as F3 A4; ESI = 0x56, EDI = 0x57
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x2000), // dst
+                IrInst::ConstI32(0x1000), // src
+                IrInst::ConstI32(16),     // count
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::MemCopy,
+                    argument_count: 3,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0xf3, 0xa4]),
+            "expected REP MOVSB opcode F3 A4"
+        );
+        // PUSH ESI = 56, PUSH EDI = 57; POP EDI = 5F, POP ESI = 5E
+        assert!(code.contains(&0x56), "expected PUSH ESI (0x56)");
+        assert!(code.contains(&0x57), "expected PUSH EDI (0x57)");
+        assert!(code.contains(&0x5f), "expected POP EDI (0x5F)");
+        assert!(code.contains(&0x5e), "expected POP ESI (0x5E)");
+    }
+
+    #[test]
+    fn lowers_mem_set_emits_rep_stosb_with_edi_save() {
+        // REP STOSB encodes as F3 AA; EDI = 0x57
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x3000), // dst
+                IrInst::ConstI32(0xff),   // value
+                IrInst::ConstI32(32),     // count
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::MemSet,
+                    argument_count: 3,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0xf3, 0xaa]),
+            "expected REP STOSB opcode F3 AA"
+        );
+        assert!(code.contains(&0x57), "expected PUSH EDI (0x57)");
+        assert!(code.contains(&0x5f), "expected POP EDI (0x5F)");
+    }
+
+    #[test]
+    fn lowers_mem_zero_emits_xor_then_rep_stosb() {
+        // XOR EAX, EAX = 31 C0; REP STOSB = F3 AA
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x4000), // dst
+                IrInst::ConstI32(64),     // count
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::MemZero,
+                    argument_count: 2,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0xf3, 0xaa]),
+            "expected REP STOSB opcode F3 AA"
+        );
+        // XOR EAX, EAX = 31 C0
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0x31, 0xc0]),
+            "expected XOR EAX, EAX (31 C0) for zero fill"
+        );
+        assert!(code.contains(&0x57), "expected PUSH EDI (0x57)");
+        assert!(code.contains(&0x5f), "expected POP EDI (0x5F)");
+    }
+
+    #[test]
+    fn lowers_cpu_cli_emits_fa() {
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::CpuCli,
+                    argument_count: 0,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(code.contains(&0xfa), "expected CLI opcode FA");
+    }
+
+    #[test]
+    fn lowers_cpu_sti_emits_fb() {
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::CpuSti,
+                    argument_count: 0,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(code.contains(&0xfb), "expected STI opcode FB");
+    }
+
+    #[test]
+    fn lowers_cpu_pause_emits_f3_90() {
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::CpuPause,
+                    argument_count: 0,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0xf3, 0x90]),
+            "expected PAUSE opcode F3 90"
+        );
+    }
+
+    #[test]
+    fn lowers_lidt_emits_0f_01_1a() {
+        // LIDT [EDX] encodes as 0F 01 /3 with rm=010 (EDX) → 0F 01 1A
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x1000), // desc_ptr
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::Lidt,
+                    argument_count: 1,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        // 0F 01 is the escape prefix for LIDT/LGDT
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0x0f, 0x01]),
+            "expected LIDT escape prefix 0F 01"
+        );
+        // ModRM 0x1A = mod=00, reg=011 (LIDT), rm=010 (EDX)
+        assert!(code.contains(&0x1a), "expected ModRM 1A for LIDT [EDX]");
+    }
+
+    #[test]
+    fn lowers_read_eflags_emits_pushfd_pop_eax() {
+        // PUSHFD = 9C, POP EAX = 58
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::ReadEflags,
+                    argument_count: 0,
+                    result: Some(NativeType::I32),
+                },
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(code.contains(&0x9c), "expected PUSHFD opcode 9C");
+        // POP EAX = 58; it must follow the PUSHFD
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0x9c, 0x58]),
+            "expected PUSHFD (9C) immediately followed by POP EAX (58)"
+        );
+    }
+
+    #[test]
+    fn lowers_write_eflags_emits_push_eax_popfd() {
+        // PUSH EAX = 50, POPFD = 9D
+        let program = IrProgram {
+            functions: vec![kernel(vec![
+                IrInst::ConstI32(0x202), // IF=1 (interrupts enabled)
+                IrInst::Intrinsic {
+                    intrinsic: Intrinsic::WriteEflags,
+                    argument_count: 1,
+                    result: None,
+                },
+                IrInst::ConstI32(0),
+                IrInst::Return,
+            ])],
+            strings: Vec::new(),
+        };
+        let code = lower_program(&program).unwrap().machine_code;
+        assert!(code.contains(&0x9d), "expected POPFD opcode 9D");
+        assert!(
+            code.windows(2).any(|bytes| bytes == [0x50, 0x9d]),
+            "expected PUSH EAX (50) immediately followed by POPFD (9D)"
+        );
     }
 }

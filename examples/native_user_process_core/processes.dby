@@ -1,0 +1,873 @@
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "scheduler.dby" as scheduler
+import "process_context.dby" as process_context
+import "filesystem_runtime.dby" as fs
+import "serial.dby" as serial
+import "arch_x86.dby" as arch
+import "proof.dby" as proof
+
+const MAX_PROCESSES: usize = 4 as usize
+const MAX_FRAMES: usize = 12 as usize
+const STATE_FREE: u32 = 0 as u32
+const STATE_READY: u32 = 1 as u32
+const STATE_RUNNING: u32 = 2 as u32
+const STATE_BLOCKED_SYSCALL: u32 = 3 as u32
+const STATE_EXITED: u32 = 4 as u32
+const STATE_RETIRED: u32 = 5 as u32
+const USER_TEXT: usize = 0x00400000 as usize
+const USER_END: usize = 0x00800000 as usize
+const USER_STACK_BASE: usize = 0xbfffc000 as usize
+const USER_STACK_TOP: usize = 0xc0000000 as usize
+const PAGE_MASK: usize = 0xfffff000 as usize
+const PTE_PRESENT: usize = 1 as usize
+const PTE_WRITE: usize = 2 as usize
+const PTE_USER: usize = 4 as usize
+const EINVAL: i32 = -1
+const EBADF: i32 = -2
+const EFAULT: i32 = -3
+const ENOSYS: i32 = -4
+const EIO: i32 = -8
+const EMFILE: i32 = -7
+const REQUEST_CAPACITY: usize = 4 as usize
+const PROCESS_COOKIE: u32 = 0x50524353 as u32
+
+static mut FILE_BUFFER: array[u8, 4096]
+static mut STATE: array[u32, 4]
+static mut GENERATION: array[u32, 4]
+static mut PID: array[usize, 4]
+static mut TASK_ID: array[usize, 4]
+static mut CR3: array[usize, 4]
+static mut ENTRY: array[usize, 4]
+static mut TEXT_FRAME: array[usize, 4]
+static mut FRAME_COUNT: array[usize, 4]
+static mut PROCESS_FRAMES: array[usize, 48]
+static mut EXIT_REASON: array[u32, 4]
+static mut FAULT_ADDRESS: array[usize, 4]
+static mut FAULT_ERROR: array[u32, 4]
+static mut NEXT_PID: usize
+static mut SYSCALL_COUNT: usize
+static mut FAULT_COUNT: usize
+static mut RECLAIM_COUNT: usize
+static mut REQUEST_SEMAPHORE: scheduler.Semaphore
+static mut REQUEST_ACTIVE: array[u32, 4]
+static mut REQUEST_NUMBER: array[u32, 4]
+static mut REQUEST_ARG0: array[usize, 4]
+static mut REQUEST_ARG1: array[usize, 4]
+static mut REQUEST_ARG2: array[usize, 4]
+static mut REQUEST_QUEUE: array[usize, 4]
+static mut REQUEST_HEAD: usize
+static mut REQUEST_TAIL: usize
+static mut REQUEST_COUNT: usize
+static mut PATH_BYTES: array[u8, 1024]
+static mut FD_TABLE: array[u32, 76]
+static mut BOUNCE: array[u8, 512]
+static mut WORKER_REQUESTS: usize
+static mut CHECKSUM: array[u32, 4]
+
+fn process_checksum(slot: usize) -> u32:
+    let value: u32 = PROCESS_COOKIE ^ STATE[slot] ^ GENERATION[slot]
+    value = value ^ (PID[slot] as u32) ^ (TASK_ID[slot] as u32)
+    value = value ^ (CR3[slot] as u32) ^ (ENTRY[slot] as u32)
+    value = value ^ (FRAME_COUNT[slot] as u32) ^ EXIT_REASON[slot]
+    value = value ^ (FAULT_ADDRESS[slot] as u32) ^ FAULT_ERROR[slot]
+    value = value ^ REQUEST_ACTIVE[slot] ^ REQUEST_NUMBER[slot]
+    return value
+
+fn seal_process(slot: usize) -> int:
+    CHECKSUM[slot] = process_checksum(slot)
+    return 0
+
+fn valid_process(slot: usize) -> bool:
+    if slot >= MAX_PROCESSES:
+        return false
+    return CHECKSUM[slot] == process_checksum(slot)
+
+fn read32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn read16(address: usize) -> u16:
+    return native.volatile_load16(address as ptr[u16])
+
+fn write32(address: usize, value: u32) -> int:
+    native.volatile_store32(address as ptr[u32], value)
+    return 0
+
+fn owner_key(slot: usize) -> usize:
+    return ((GENERATION[slot] as usize) << (3 as usize)) | (slot + (1 as usize))
+
+fn zero_page(address: usize) -> int:
+    let offset: usize = 0 as usize
+    while offset < (4096 as usize):
+        write32(address + offset, 0 as u32)
+        offset = offset + (4 as usize)
+    return 0
+
+fn remember_frame(slot: usize, frame: usize) -> int:
+    let count: usize = FRAME_COUNT[slot]
+    if count >= MAX_FRAMES:
+        return 1
+    PROCESS_FRAMES[(slot * MAX_FRAMES) + count] = frame
+    FRAME_COUNT[slot] = count + (1 as usize)
+    return 0
+
+fn allocate_frame(slot: usize) -> usize:
+    let frame: usize = frames.allocate()
+    if frame == (0 as usize):
+        return 0 as usize
+    if frame >= (0x00400000 as usize):
+        frames.release(frame)
+        return 0 as usize
+    zero_page(frame)
+    if remember_frame(slot, frame) != 0:
+        frames.release(frame)
+        return 0 as usize
+    return frame
+
+fn rollback(slot: usize) -> int:
+    let count: usize = FRAME_COUNT[slot]
+    while count > (0 as usize):
+        count = count - (1 as usize)
+        let frame: usize = PROCESS_FRAMES[(slot * MAX_FRAMES) + count]
+        PROCESS_FRAMES[(slot * MAX_FRAMES) + count] = 0 as usize
+        if frame != (0 as usize):
+            frames.release(frame)
+    FRAME_COUNT[slot] = 0 as usize
+    CR3[slot] = 0 as usize
+    ENTRY[slot] = 0 as usize
+    TEXT_FRAME[slot] = 0 as usize
+    STATE[slot] = STATE_FREE
+    seal_process(slot)
+    return 0
+
+fn pte_address(table: usize, index: usize) -> usize:
+    return table + (index << (2 as usize))
+
+fn copy_segment(slot: usize, source_offset: usize, file_size: usize, memory_size: usize, frame: usize) -> int:
+    if file_size > memory_size:
+        return 1
+    if memory_size > (4096 as usize):
+        return 1
+    if source_offset > (4096 as usize):
+        return 1
+    if file_size > (4096 as usize) - source_offset:
+        return 1
+    let mapped: usize = paging.scratch_map(slot, frame)
+    if mapped == (0 as usize):
+        return 1
+    let index: usize = 0 as usize
+    while index < file_size:
+        native.volatile_store8((mapped + index) as ptr[u8], FILE_BUFFER[source_offset + index])
+        index = index + (1 as usize)
+    paging.scratch_unmap(slot)
+    return 0
+
+fn validate_header(length: usize) -> bool:
+    if length < (116 as usize):
+        return false
+    if FILE_BUFFER[0 as usize] != (0x7f as u8):
+        return false
+    if FILE_BUFFER[1 as usize] != (69 as u8):
+        return false
+    if FILE_BUFFER[2 as usize] != (76 as u8):
+        return false
+    if FILE_BUFFER[3 as usize] != (70 as u8):
+        return false
+    if FILE_BUFFER[4 as usize] != (1 as u8):
+        return false
+    if FILE_BUFFER[5 as usize] != (1 as u8):
+        return false
+    if FILE_BUFFER[6 as usize] != (1 as u8):
+        return false
+    let ident_index: usize = 7 as usize
+    while ident_index < (16 as usize):
+        if FILE_BUFFER[ident_index] != (0 as u8):
+            return false
+        ident_index = ident_index + (1 as usize)
+    if read32(((&FILE_BUFFER[0]) as usize) + (16 as usize)) != (0x00030002 as u32):
+        return false
+    if read32(((&FILE_BUFFER[0]) as usize) + (20 as usize)) != (1 as u32):
+        return false
+    if read32(((&FILE_BUFFER[0]) as usize) + (28 as usize)) != (52 as u32):
+        return false
+    if read32(((&FILE_BUFFER[0]) as usize) + (32 as usize)) != (0 as u32):
+        return false
+    if read32(((&FILE_BUFFER[0]) as usize) + (36 as usize)) != (0 as u32):
+        return false
+    if read16(((&FILE_BUFFER[0]) as usize) + (40 as usize)) != (52 as u16):
+        return false
+    if read16(((&FILE_BUFFER[0]) as usize) + (42 as usize)) != (32 as u16):
+        return false
+    if read16(((&FILE_BUFFER[0]) as usize) + (44 as usize)) != (2 as u16):
+        return false
+    if read16(((&FILE_BUFFER[0]) as usize) + (46 as usize)) != (0 as u16):
+        return false
+    if read16(((&FILE_BUFFER[0]) as usize) + (48 as usize)) != (0 as u16):
+        return false
+    if read16(((&FILE_BUFFER[0]) as usize) + (50 as usize)) != (0 as u16):
+        return false
+    return true
+
+pub fn processes_initialize() -> int:
+    let slot: usize = 0 as usize
+    while slot < MAX_PROCESSES:
+        STATE[slot] = STATE_FREE
+        GENERATION[slot] = 1 as u32
+        PID[slot] = 0 as usize
+        TASK_ID[slot] = 0 as usize
+        CR3[slot] = 0 as usize
+        TEXT_FRAME[slot] = 0 as usize
+        FRAME_COUNT[slot] = 0 as usize
+        REQUEST_ACTIVE[slot] = 0 as u32
+        let fd: usize = 0 as usize
+        while fd < (19 as usize):
+            FD_TABLE[(slot * (19 as usize)) + fd] = 0 as u32
+            fd = fd + (1 as usize)
+        seal_process(slot)
+        slot = slot + (1 as usize)
+    NEXT_PID = 1 as usize
+    SYSCALL_COUNT = 0 as usize
+    FAULT_COUNT = 0 as usize
+    RECLAIM_COUNT = 0 as usize
+    REQUEST_HEAD = 0 as usize
+    REQUEST_TAIL = 0 as usize
+    REQUEST_COUNT = 0 as usize
+    WORKER_REQUESTS = 0 as usize
+    if scheduler.semaphore_initialize(&REQUEST_SEMAPHORE, 0 as usize, 4 as usize) != 0:
+        return 1
+    return 0
+
+pub fn load_process(path: str, path_length: usize, slot: usize) -> int:
+    if slot >= MAX_PROCESSES:
+        return 1
+    if STATE[slot] != STATE_FREE:
+        return 1
+    let handle: u32 = 0 as u32
+    if fs.fs_open(path, path_length, fs.READ, &handle) != 0:
+        return 20 + (fs.runtime_last_error() as int)
+    let length: usize = 0 as usize
+    let status: int = fs.fs_handle_read(handle, &FILE_BUFFER[0], 4096 as usize, &length)
+    let close_status: int = fs.fs_close(handle)
+    if status != 0:
+        return 3
+    if close_status != 0:
+        return 3
+    if validate_header(length) == false:
+        return 4
+    let entry: usize = read32(((&FILE_BUFFER[0]) as usize) + (24 as usize)) as usize
+    if entry < USER_TEXT:
+        return 4
+    if entry >= USER_END:
+        return 4
+    let pd: usize = allocate_frame(slot)
+    let low_table: usize = allocate_frame(slot)
+    let image_table: usize = allocate_frame(slot)
+    let stack_table: usize = allocate_frame(slot)
+    if pd == (0 as usize):
+        rollback(slot)
+        return 5
+    if low_table == (0 as usize):
+        rollback(slot)
+        return 5
+    if image_table == (0 as usize):
+        rollback(slot)
+        return 5
+    if stack_table == (0 as usize):
+        rollback(slot)
+        return 5
+    let kernel_pd: usize = paging.directory_address()
+    let low_index: usize = 256 as usize
+    while low_index < (1024 as usize):
+        write32(low_table + (low_index << (2 as usize)), read32((read32(kernel_pd) as usize & PAGE_MASK) + (low_index << (2 as usize))))
+        low_index = low_index + (1 as usize)
+    write32(pd, (low_table | PTE_PRESENT | PTE_WRITE) as u32)
+    write32(pd + ((772 as usize) << (2 as usize)), read32(kernel_pd + ((772 as usize) << (2 as usize))))
+    write32(pd + ((773 as usize) << (2 as usize)), read32(kernel_pd + ((773 as usize) << (2 as usize))))
+    write32(pd + ((1 as usize) << (2 as usize)), (image_table | PTE_PRESENT | PTE_WRITE | PTE_USER) as u32)
+    write32(pd + ((767 as usize) << (2 as usize)), (stack_table | PTE_PRESENT | PTE_WRITE | PTE_USER) as u32)
+    let ph: usize = 52 as usize
+    let segment: usize = 0 as usize
+    let expected_file_offset: usize = 116 as usize
+    let previous_memory_end: usize = USER_TEXT
+    while segment < (2 as usize):
+        let header: usize = ((&FILE_BUFFER[0]) as usize) + ph + (segment * (32 as usize))
+        if read32(header) != (1 as u32):
+            rollback(slot)
+            return 6
+        let file_offset: usize = read32(header + (4 as usize)) as usize
+        let virtual_address: usize = read32(header + (8 as usize)) as usize
+        let file_size: usize = read32(header + (16 as usize)) as usize
+        let memory_size: usize = read32(header + (20 as usize)) as usize
+        let flags: u32 = read32(header + (24 as usize))
+        let alignment: usize = read32(header + (28 as usize)) as usize
+        if virtual_address < USER_TEXT:
+            rollback(slot)
+            return 6
+        if virtual_address >= USER_END:
+            rollback(slot)
+            return 6
+        if (virtual_address & (4095 as usize)) != (0 as usize):
+            rollback(slot)
+            return 6
+        if read32(header + (12 as usize)) as usize != virtual_address:
+            rollback(slot)
+            return 6
+        if alignment != (1 as usize):
+            rollback(slot)
+            return 6
+        if file_size > memory_size:
+            rollback(slot)
+            return 6
+        if memory_size > (4096 as usize):
+            rollback(slot)
+            return 6
+        if file_offset != expected_file_offset:
+            rollback(slot)
+            return 6
+        if file_offset > length:
+            rollback(slot)
+            return 6
+        if file_size > length - file_offset:
+            rollback(slot)
+            return 6
+        if segment == (0 as usize):
+            if virtual_address != USER_TEXT:
+                rollback(slot)
+                return 6
+            if flags != (5 as u32):
+                rollback(slot)
+                return 6
+            if memory_size == (0 as usize):
+                rollback(slot)
+                return 6
+        else:
+            if virtual_address != ((previous_memory_end + (4095 as usize)) & PAGE_MASK):
+                rollback(slot)
+                return 6
+            if flags != (6 as u32):
+                rollback(slot)
+                return 6
+        expected_file_offset = file_offset + file_size
+        if expected_file_offset < file_offset:
+            rollback(slot)
+            return 6
+        previous_memory_end = virtual_address + memory_size
+        if previous_memory_end < virtual_address:
+            rollback(slot)
+            return 6
+        if previous_memory_end > USER_END:
+            rollback(slot)
+            return 6
+        if memory_size != (0 as usize):
+            let frame: usize = allocate_frame(slot)
+            if frame == (0 as usize):
+                rollback(slot)
+                return 5
+            if copy_segment(slot, file_offset, file_size, memory_size, frame) != 0:
+                rollback(slot)
+                return 6
+            if segment == (0 as usize):
+                TEXT_FRAME[slot] = frame
+            let pte: usize = (virtual_address - USER_TEXT) >> (12 as usize)
+            let permission: usize = PTE_PRESENT | PTE_USER
+            if (flags & (2 as u32)) != (0 as u32):
+                permission = permission | PTE_WRITE
+            write32(pte_address(image_table, pte), (frame | permission) as u32)
+        segment = segment + (1 as usize)
+    if expected_file_offset != length:
+        rollback(slot)
+        return 6
+    let text_header: usize = ((&FILE_BUFFER[0]) as usize) + ph
+    let text_start: usize = read32(text_header + (8 as usize)) as usize
+    let text_size: usize = read32(text_header + (20 as usize)) as usize
+    if entry < text_start:
+        rollback(slot)
+        return 6
+    if entry >= text_start + text_size:
+        rollback(slot)
+        return 6
+    let stack_page: usize = 0 as usize
+    while stack_page < (4 as usize):
+        let frame: usize = allocate_frame(slot)
+        if frame == (0 as usize):
+            rollback(slot)
+            return 5
+        write32(pte_address(stack_table, (1020 as usize) + stack_page), (frame | PTE_PRESENT | PTE_WRITE | PTE_USER) as u32)
+        stack_page = stack_page + (1 as usize)
+    STATE[slot] = STATE_READY
+    PID[slot] = NEXT_PID
+    NEXT_PID = NEXT_PID + (1 as usize)
+    CR3[slot] = pd
+    ENTRY[slot] = entry
+    EXIT_REASON[slot] = 0 as u32
+    FAULT_ADDRESS[slot] = 0 as usize
+    FAULT_ERROR[slot] = 0 as u32
+    seal_process(slot)
+    return 0
+
+pub fn attach_task(slot: usize, task_id: usize) -> int:
+    if slot >= MAX_PROCESSES:
+        return 1
+    if STATE[slot] != STATE_READY:
+        return 1
+    let status: int = process_context.bind_process_task(task_id, CR3[slot])
+    if status != 0:
+        return status
+    TASK_ID[slot] = task_id
+    seal_process(slot)
+    return 0
+
+pub fn enter(slot: usize) -> int:
+    if slot >= MAX_PROCESSES:
+        return 1
+    if TASK_ID[slot] != scheduler.current_task_id():
+        return 2
+    if valid_process(slot) == false:
+        return 3
+    STATE[slot] = STATE_RUNNING
+    seal_process(slot)
+    let top: usize = scheduler.current_kernel_stack_top()
+    let resume: usize = top - (1024 as usize)
+    let word: usize = 0 as usize
+    while word < (13 as usize):
+        write32(resume + (word << (2 as usize)), 0 as u32)
+        word = word + (1 as usize)
+    write32(resume + (32 as usize), ENTRY[slot] as u32)
+    write32(resume + (36 as usize), 0x1b as u32)
+    write32(resume + (40 as usize), 0x202 as u32)
+    write32(resume + (44 as usize), USER_STACK_TOP as u32)
+    write32(resume + (48 as usize), 0x23 as u32)
+    native.interrupt_resume(resume)
+
+pub fn slot_for_task(task_id: usize) -> usize:
+    let slot: usize = 0 as usize
+    while slot < MAX_PROCESSES:
+        if TASK_ID[slot] == task_id:
+            return slot
+        slot = slot + (1 as usize)
+    return 0xffffffff as usize
+
+fn translate(slot: usize, address: usize, write: bool) -> usize:
+    let pd: usize = CR3[slot]
+    let pde: usize = read32(pd + (((address >> (22 as usize)) & (1023 as usize)) << (2 as usize))) as usize
+    if (pde & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER):
+        return 0 as usize
+    let table: usize = pde & PAGE_MASK
+    let pte: usize = read32(table + (((address >> (12 as usize)) & (1023 as usize)) << (2 as usize))) as usize
+    if (pte & (PTE_PRESENT | PTE_USER)) != (PTE_PRESENT | PTE_USER):
+        return 0 as usize
+    if write:
+        if (pte & PTE_WRITE) == (0 as usize):
+            return 0 as usize
+    return (pte & PAGE_MASK) + (address & (4095 as usize))
+
+pub fn validate_user_range(slot: usize, address: usize, length: usize, write: bool) -> bool:
+    if slot >= MAX_PROCESSES:
+        return false
+    if length == (0 as usize):
+        return true
+    if address >= USER_STACK_TOP:
+        return false
+    let end: usize = address + length
+    if end <= address:
+        return false
+    if end > USER_STACK_TOP:
+        return false
+    let cursor: usize = address
+    while cursor < end:
+        if translate(slot, cursor, write) == (0 as usize):
+            return false
+        let next: usize = (cursor & PAGE_MASK) + (4096 as usize)
+        if next <= cursor:
+            return false
+        cursor = next
+    return true
+
+pub fn copy_from_process(slot: usize, address: usize, output: ptr[u8], length: usize) -> int:
+    if validate_user_range(slot, address, length, false) == false:
+        return EFAULT
+    let index: usize = 0 as usize
+    while index < length:
+        let physical: usize = translate(slot, address + index, false)
+        let mapped: usize = paging.scratch_map(slot, physical & PAGE_MASK)
+        if mapped == (0 as usize):
+            return EFAULT
+        let chunk: usize = (4096 as usize) - (physical & (4095 as usize))
+        if chunk > length - index:
+            chunk = length - index
+        let copied: usize = 0 as usize
+        while copied < chunk:
+            output[index + copied] = native.volatile_load8((mapped + (physical & (4095 as usize)) + copied) as ptr[u8])
+            copied = copied + (1 as usize)
+        paging.scratch_unmap(slot)
+        index = index + chunk
+    return 0
+
+pub fn copy_to_process(slot: usize, address: usize, source: ptr[u8], length: usize) -> int:
+    if validate_user_range(slot, address, length, true) == false:
+        return EFAULT
+    let index: usize = 0 as usize
+    while index < length:
+        let physical: usize = translate(slot, address + index, true)
+        let mapped: usize = paging.scratch_map(slot, physical & PAGE_MASK)
+        if mapped == (0 as usize):
+            return EFAULT
+        let chunk: usize = (4096 as usize) - (physical & (4095 as usize))
+        if chunk > length - index:
+            chunk = length - index
+        let copied: usize = 0 as usize
+        while copied < chunk:
+            native.volatile_store8((mapped + (physical & (4095 as usize)) + copied) as ptr[u8], source[index + copied])
+            copied = copied + (1 as usize)
+        paging.scratch_unmap(slot)
+        index = index + chunk
+    return 0
+
+fn next_request_index(index: usize) -> usize:
+    let result: usize = index + (1 as usize)
+    if result >= REQUEST_CAPACITY:
+        return 0 as usize
+    return result
+
+fn previous_request_index(index: usize) -> usize:
+    if index == (0 as usize):
+        return REQUEST_CAPACITY - (1 as usize)
+    return index - (1 as usize)
+
+fn copy_path(slot: usize, address: usize) -> int:
+    let index: usize = 0 as usize
+    while index < (255 as usize):
+        if validate_user_range(slot, address + index, 1 as usize, false) == false:
+            return EFAULT
+        let physical: usize = translate(slot, address + index, false)
+        let mapped: usize = paging.scratch_map(slot, physical & PAGE_MASK)
+        if mapped == (0 as usize):
+            return EFAULT
+        let value: u8 = native.volatile_load8((mapped + (physical & (4095 as usize))) as ptr[u8])
+        paging.scratch_unmap(slot)
+        PATH_BYTES[(slot * (256 as usize)) + index] = value
+        if value == (0 as u8):
+            return index as int
+        index = index + (1 as usize)
+    return EINVAL
+
+fn enqueue_request(slot: usize, number: u32, arg0: usize, arg1: usize, arg2: usize) -> int:
+    if valid_process(slot) == false:
+        return EIO
+    if REQUEST_ACTIVE[slot] != (0 as u32):
+        return EIO
+    if REQUEST_COUNT >= REQUEST_CAPACITY:
+        return EIO
+    REQUEST_ACTIVE[slot] = 1 as u32
+    REQUEST_NUMBER[slot] = number
+    REQUEST_ARG0[slot] = arg0
+    REQUEST_ARG1[slot] = arg1
+    REQUEST_ARG2[slot] = arg2
+    REQUEST_QUEUE[REQUEST_TAIL] = slot
+    REQUEST_TAIL = next_request_index(REQUEST_TAIL)
+    REQUEST_COUNT = REQUEST_COUNT + (1 as usize)
+    if scheduler.semaphore_post(&REQUEST_SEMAPHORE) == false:
+        REQUEST_TAIL = previous_request_index(REQUEST_TAIL)
+        REQUEST_QUEUE[REQUEST_TAIL] = 0 as usize
+        REQUEST_COUNT = REQUEST_COUNT - (1 as usize)
+        REQUEST_ACTIVE[slot] = 0 as u32
+        REQUEST_NUMBER[slot] = 0 as u32
+        REQUEST_ARG0[slot] = 0 as usize
+        REQUEST_ARG1[slot] = 0 as usize
+        REQUEST_ARG2[slot] = 0 as usize
+        seal_process(slot)
+        return EIO
+    STATE[slot] = STATE_BLOCKED_SYSCALL
+    seal_process(slot)
+    return 0
+
+fn allocate_fd(slot: usize, raw_handle: u32) -> i32:
+    let fd: usize = 3 as usize
+    while fd < (19 as usize):
+        let index: usize = (slot * (19 as usize)) + fd
+        if FD_TABLE[index] == (0 as u32):
+            FD_TABLE[index] = raw_handle
+            return fd as i32
+        fd = fd + (1 as usize)
+    return EMFILE
+
+fn execute_open(slot: usize, flags: usize, path_length: usize) -> i32:
+    let raw: u32 = 0 as u32
+    let path: str = (&PATH_BYTES[slot * (256 as usize)]) as usize as str
+    if fs.fs_open_owned(owner_key(slot), path, path_length, flags as u32, &raw) != 0:
+        return -5
+    let fd: i32 = allocate_fd(slot, raw)
+    if fd < 0:
+        fs.fs_close_owned(owner_key(slot), raw)
+    return fd
+
+fn execute_close(slot: usize, fd: usize) -> i32:
+    if fd < (3 as usize):
+        return EBADF
+    if fd >= (19 as usize):
+        return EBADF
+    let index: usize = (slot * (19 as usize)) + fd
+    let raw: u32 = FD_TABLE[index]
+    if raw == (0 as u32):
+        return EBADF
+    if fs.fs_close_owned(owner_key(slot), raw) != 0:
+        return EIO
+    FD_TABLE[index] = 0 as u32
+    return 0
+
+fn execute_write(slot: usize, fd: usize, address: usize, length: usize) -> i32:
+    if fd == (1 as usize):
+        let offset: usize = 0 as usize
+        while offset < length:
+            let amount: usize = length - offset
+            if amount > (512 as usize):
+                amount = 512 as usize
+            if copy_from_process(slot, address + offset, &BOUNCE[0], amount) != 0:
+                return EFAULT
+            let index: usize = 0 as usize
+            while index < amount:
+                serial.putc(BOUNCE[index])
+                index = index + (1 as usize)
+            offset = offset + amount
+        return length as i32
+    if fd == (2 as usize):
+        return execute_write(slot, 1 as usize, address, length)
+    if fd < (3 as usize):
+        return EBADF
+    if fd >= (19 as usize):
+        return EBADF
+    let raw: u32 = FD_TABLE[(slot * (19 as usize)) + fd]
+    if raw == (0 as u32):
+        return EBADF
+    let offset: usize = 0 as usize
+    while offset < length:
+        let amount: usize = length - offset
+        if amount > (512 as usize):
+            amount = 512 as usize
+        if copy_from_process(slot, address + offset, &BOUNCE[0], amount) != 0:
+            return EFAULT
+        let written: usize = 0 as usize
+        if fs.fs_handle_write_owned(owner_key(slot), raw, &BOUNCE[0], amount, &written) != 0:
+            return EIO
+        if written != amount:
+            return EIO
+        offset = offset + amount
+    return length as i32
+
+fn execute_read(slot: usize, fd: usize, address: usize, length: usize) -> i32:
+    if fd < (3 as usize):
+        return ENOSYS
+    if fd >= (19 as usize):
+        return EBADF
+    let raw: u32 = FD_TABLE[(slot * (19 as usize)) + fd]
+    if raw == (0 as u32):
+        return EBADF
+    let total: usize = 0 as usize
+    while total < length:
+        let amount: usize = length - total
+        if amount > (512 as usize):
+            amount = 512 as usize
+        let read: usize = 0 as usize
+        if fs.fs_handle_read_owned(owner_key(slot), raw, &BOUNCE[0], amount, &read) != 0:
+            return EIO
+        if read == (0 as usize):
+            return total as i32
+        if copy_to_process(slot, address + total, &BOUNCE[0], read) != 0:
+            return EFAULT
+        total = total + read
+        if read < amount:
+            return total as i32
+    return total as i32
+
+pub fn syscall_worker() -> int:
+    while true:
+        if scheduler.semaphore_wait(&REQUEST_SEMAPHORE) != 0:
+            return 1
+        native.cpu_cli()
+        if REQUEST_COUNT == (0 as usize):
+            return 2
+        let slot: usize = REQUEST_QUEUE[REQUEST_HEAD]
+        REQUEST_QUEUE[REQUEST_HEAD] = 0 as usize
+        REQUEST_HEAD = next_request_index(REQUEST_HEAD)
+        REQUEST_COUNT = REQUEST_COUNT - (1 as usize)
+        native.cpu_sti()
+        let number: u32 = REQUEST_NUMBER[slot]
+        let result: i32 = ENOSYS
+        if number == (1 as u32):
+            result = execute_write(slot, REQUEST_ARG0[slot], REQUEST_ARG1[slot], REQUEST_ARG2[slot])
+        else:
+            if number == (3 as u32):
+                result = execute_open(slot, REQUEST_ARG1[slot], REQUEST_ARG2[slot])
+            else:
+                if number == (4 as u32):
+                    result = execute_read(slot, REQUEST_ARG0[slot], REQUEST_ARG1[slot], REQUEST_ARG2[slot])
+                else:
+                    if number == (5 as u32):
+                        result = execute_close(slot, REQUEST_ARG0[slot])
+        REQUEST_ACTIVE[slot] = 0 as u32
+        STATE[slot] = STATE_READY
+        seal_process(slot)
+        WORKER_REQUESTS = WORKER_REQUESTS + (1 as usize)
+        if scheduler.complete_syscall(TASK_ID[slot], result) != 0:
+            return 3
+    return 0
+
+fn terminate_current(reason: u32, address: usize, error: u32, resume: usize) -> int:
+    let slot: usize = slot_for_task(scheduler.current_task_id())
+    if slot >= MAX_PROCESSES:
+        return 1
+    STATE[slot] = STATE_EXITED
+    EXIT_REASON[slot] = reason
+    FAULT_ADDRESS[slot] = address
+    FAULT_ERROR[slot] = error
+    if reason != (1 as u32):
+        FAULT_COUNT = FAULT_COUNT + (1 as usize)
+    seal_process(slot)
+    scheduler.exit_current_from_interrupt(resume)
+    return 0
+
+pub interrupt(no_error_code, cpl3_transition) fn syscall(frame: ptr[arch.PrivilegeInterruptFrame]):
+    let resume: usize = (frame as usize) - (32 as usize)
+    let slot: usize = slot_for_task(scheduler.current_task_id())
+    if slot >= MAX_PROCESSES:
+        terminate_current(4 as u32, 0 as usize, 0 as u32, resume)
+    if valid_process(slot) == false:
+        terminate_current(4 as u32, 0 as usize, 0 as u32, resume)
+    SYSCALL_COUNT = SYSCALL_COUNT + (1 as usize)
+    let number: u32 = read32(resume + (28 as usize))
+    if number == (0 as u32):
+        terminate_current(1 as u32, 0 as usize, read32(resume + (16 as usize)), resume)
+    if number == (1 as u32):
+        let fd: usize = read32(resume + (16 as usize)) as usize
+        let address: usize = read32(resume + (24 as usize)) as usize
+        let length: usize = read32(resume + (20 as usize)) as usize
+        if length > (4096 as usize):
+            write32(resume + (28 as usize), EINVAL as u32)
+            return
+        if validate_user_range(slot, address, length, false) == false:
+            write32(resume + (28 as usize), EFAULT as u32)
+            return
+        let status: int = enqueue_request(slot, number, fd, address, length)
+        if status != 0:
+            write32(resume + (28 as usize), status as u32)
+            return
+        scheduler.block_current_syscall(resume)
+    if number == (3 as u32):
+        let address: usize = read32(resume + (16 as usize)) as usize
+        let flags: usize = read32(resume + (24 as usize)) as usize
+        let path_length: int = copy_path(slot, address)
+        if path_length < 0:
+            write32(resume + (28 as usize), path_length as u32)
+            return
+        let status: int = enqueue_request(slot, number, address, flags, path_length as usize)
+        if status != 0:
+            write32(resume + (28 as usize), status as u32)
+            return
+        scheduler.block_current_syscall(resume)
+    if number == (4 as u32):
+        let fd: usize = read32(resume + (16 as usize)) as usize
+        let address: usize = read32(resume + (24 as usize)) as usize
+        let length: usize = read32(resume + (20 as usize)) as usize
+        if length > (4096 as usize):
+            write32(resume + (28 as usize), EINVAL as u32)
+            return
+        if validate_user_range(slot, address, length, true) == false:
+            write32(resume + (28 as usize), EFAULT as u32)
+            return
+        let status: int = enqueue_request(slot, number, fd, address, length)
+        if status != 0:
+            write32(resume + (28 as usize), status as u32)
+            return
+        scheduler.block_current_syscall(resume)
+    if number == (5 as u32):
+        let status: int = enqueue_request(slot, number, read32(resume + (16 as usize)) as usize, 0 as usize, 0 as usize)
+        if status != 0:
+            write32(resume + (28 as usize), status as u32)
+            return
+        scheduler.block_current_syscall(resume)
+    if number == (2 as u32):
+        write32(resume + (28 as usize), 0 as u32)
+        return
+    write32(resume + (28 as usize), ENOSYS as u32)
+    return
+
+pub interrupt(error_code, cpl3_transition) fn general_protection(frame: ptr[arch.PrivilegeInterruptFrame], error_code: u32):
+    let resume: usize = (frame as usize) - (36 as usize)
+    if ((*frame).cs & (3 as u32)) != (3 as u32):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    terminate_current(2 as u32, 0 as usize, error_code, resume)
+    return
+
+pub interrupt(error_code, cpl3_transition) fn page_fault(frame: ptr[arch.PrivilegeInterruptFrame], error_code: u32):
+    let address: usize = native.cpu_read_cr2()
+    let resume: usize = (frame as usize) - (36 as usize)
+    if ((*frame).cs & (3 as u32)) != (3 as u32):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    terminate_current(3 as u32, address, error_code, resume)
+    return
+
+pub fn reap_processes() -> int:
+    let slot: usize = 0 as usize
+    while slot < MAX_PROCESSES:
+        if STATE[slot] == STATE_EXITED:
+            if valid_process(slot) == false:
+                return 1
+            if fs.fs_release_owner(owner_key(slot)) != 0:
+                return 1
+            let fd: usize = 3 as usize
+            while fd < (19 as usize):
+                FD_TABLE[(slot * (19 as usize)) + fd] = 0 as u32
+                fd = fd + (1 as usize)
+            process_context.unbind_process_task(TASK_ID[slot])
+            rollback(slot)
+            TASK_ID[slot] = 0 as usize
+            PID[slot] = 0 as usize
+            if GENERATION[slot] == (0xffffffff as u32):
+                STATE[slot] = STATE_RETIRED
+            else:
+                GENERATION[slot] = GENERATION[slot] + (1 as u32)
+            RECLAIM_COUNT = RECLAIM_COUNT + (1 as usize)
+            seal_process(slot)
+        slot = slot + (1 as usize)
+    return 0
+
+pub fn syscall_count() -> usize:
+    return SYSCALL_COUNT
+
+pub fn fault_count() -> usize:
+    return FAULT_COUNT
+
+pub fn process_reclaim_count() -> usize:
+    return RECLAIM_COUNT
+
+pub fn worker_request_count() -> usize:
+    return WORKER_REQUESTS
+
+pub fn process_generation(slot: usize) -> u32:
+    return GENERATION[slot]
+
+pub fn process_text_frame(slot: usize) -> usize:
+    return TEXT_FRAME[slot]
+
+pub fn process_fd(slot: usize, fd: usize) -> u32:
+    if slot >= MAX_PROCESSES:
+        return 0 as u32
+    if fd >= (19 as usize):
+        return 0 as u32
+    return FD_TABLE[(slot * (19 as usize)) + fd]
+
+pub fn process_cr3(slot: usize) -> usize:
+    return CR3[slot]
+
+pub fn exit_reason(slot: usize) -> u32:
+    return EXIT_REASON[slot]
+
+pub fn fault_address(slot: usize) -> usize:
+    return FAULT_ADDRESS[slot]
+
+pub fn fault_error(slot: usize) -> u32:
+    return FAULT_ERROR[slot]

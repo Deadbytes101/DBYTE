@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v11.10.0**
+- Snapshot version: **v11.11.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -171,6 +171,15 @@ and persistent kernel configuration/log state across three boots:
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_filesystem_runtime.ps1
 ```
 
+The `v11.11.0` native user-process proof compiles compact DByte Ring3 ELF32
+programs, transports them in a checked DBUP1 Multiboot bundle, installs them
+into DBFS1, and exercises private CR3 address spaces, TSS stack transitions,
+worker-backed file syscalls, per-process descriptors, and contained #GP/#PF exits:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_user_process_core.ps1
+```
+
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
 See [DByte Native Memory Core](docs/DBYTE_NATIVE_MEMORY_CORE.md) for the
@@ -187,6 +196,8 @@ See [DByte Native Kernel Block Device](docs/DBYTE_NATIVE_KERNEL_BLOCK_DEVICE.md)
 ATA IDENTIFY, LBA28 PIO, slave-PIC IRQ14 ownership, and disposable-disk verification.
 See [DByte Native Persistent Filesystem](docs/DBYTE_NATIVE_PERSISTENT_FILESYSTEM.md) for
 the DBFS1 disk layout, bounded root API, two-boot persistence, and host inspection contract.
+See [DByte Native User Process](docs/DBYTE_NATIVE_USER_PROCESS.md) for the user ELF profile,
+DBUP1 transport, Ring3/TSS ABI, private CR3 mappings, syscall worker, and fault containment.
 
 Launch the DByte shell with the DByteOS userland profile:
 

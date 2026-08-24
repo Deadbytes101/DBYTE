@@ -1,0 +1,463 @@
+import "frames.dby" as frames
+import "paging.dby" as paging
+import "memory_ops.dby" as memory
+
+const PAGE_SIZE: usize = 4096 as usize
+const HEADER_SIZE: usize = 36 as usize
+const MIN_BLOCK: usize = 64 as usize
+const MAGIC: u32 = 0xd8b10c42 as u32
+const COOKIE: u32 = 0x6b8f31a5 as u32
+const STATE_FREE: u32 = 0xf4ee0001 as u32
+const STATE_USED: u32 = 0xa110c001 as u32
+
+const OK: u32 = 0 as u32
+const INVALID_ALIGNMENT: u32 = 1 as u32
+const SIZE_OVERFLOW: u32 = 2 as u32
+const OUT_OF_MEMORY: u32 = 3 as u32
+const OUTSIDE_HEAP: u32 = 4 as u32
+const INTERIOR_POINTER: u32 = 5 as u32
+const DOUBLE_FREE: u32 = 6 as u32
+const CORRUPTION: u32 = 7 as u32
+const MAPPING_COLLISION: u32 = 8 as u32
+
+static mut FREE_HEAD: usize
+static mut COMMITTED_PAGES: usize
+static mut HIGH_WATER_PAGES: usize
+static mut LAST_ERROR: u32
+static mut POISONED: u32
+static mut COALESCE_COUNT: usize
+
+fn load(address: usize) -> usize:
+    return native.volatile_load32(address as ptr[u32]) as usize
+
+fn store(address: usize, value: usize) -> int:
+    native.volatile_store32(address as ptr[u32], value as u32)
+    return 0
+
+fn magic(block: usize) -> u32:
+    return load(block) as u32
+
+fn total(block: usize) -> usize:
+    return load(block + (4 as usize))
+
+fn previous_size(block: usize) -> usize:
+    return load(block + (8 as usize))
+
+fn requested(block: usize) -> usize:
+    return load(block + (12 as usize))
+
+fn payload_offset(block: usize) -> usize:
+    return load(block + (16 as usize))
+
+fn state(block: usize) -> u32:
+    return load(block + (20 as usize)) as u32
+
+fn previous_free(block: usize) -> usize:
+    return load(block + (24 as usize))
+
+fn next_free(block: usize) -> usize:
+    return load(block + (28 as usize))
+
+fn checksum_value(block: usize) -> u32:
+    let value: u32 = MAGIC ^ (block as u32)
+    value = value ^ (total(block) as u32)
+    value = value ^ (previous_size(block) as u32)
+    value = value ^ (requested(block) as u32)
+    value = value ^ (payload_offset(block) as u32)
+    value = value ^ state(block)
+    value = value ^ (previous_free(block) as u32)
+    value = value ^ (next_free(block) as u32)
+    return value ^ COOKIE
+
+fn seal(block: usize) -> int:
+    store(block + (32 as usize), checksum_value(block) as usize)
+    return 0
+
+fn valid_header(block: usize) -> bool:
+    let start: usize = paging.arena_start()
+    let end: usize = start + (COMMITTED_PAGES << (12 as usize))
+    if block < start:
+        return false
+    if (block + HEADER_SIZE) > end:
+        return false
+    if (block & (15 as usize)) != (0 as usize):
+        return false
+    if magic(block) != MAGIC:
+        return false
+    let size: usize = total(block)
+    if size < MIN_BLOCK:
+        return false
+    if (size & (15 as usize)) != (0 as usize):
+        return false
+    if (block + size) < block:
+        return false
+    if (block + size) > end:
+        return false
+    if load(block + (32 as usize)) != (checksum_value(block) as usize):
+        return false
+    return true
+
+fn poison() -> int:
+    POISONED = 1 as u32
+    LAST_ERROR = CORRUPTION
+    return CORRUPTION as i32
+
+fn align_up(value: usize, alignment: usize) -> usize:
+    return (value + alignment - (1 as usize)) & (~(alignment - (1 as usize)))
+
+fn alignment_valid(alignment: usize) -> bool:
+    if alignment == (0 as usize):
+        return false
+    if alignment > (4096 as usize):
+        return false
+    return (alignment & (alignment - (1 as usize))) == (0 as usize)
+
+fn initialize_header(block: usize, size: usize, previous: usize, block_state: u32) -> int:
+    store(block, MAGIC as usize)
+    store(block + (4 as usize), size)
+    store(block + (8 as usize), previous)
+    store(block + (12 as usize), 0 as usize)
+    store(block + (16 as usize), 0 as usize)
+    store(block + (20 as usize), block_state as usize)
+    store(block + (24 as usize), 0 as usize)
+    store(block + (28 as usize), 0 as usize)
+    seal(block)
+    return 0
+
+fn remove_free(block: usize) -> int:
+    let left: usize = previous_free(block)
+    let right: usize = next_free(block)
+    if left == (0 as usize):
+        FREE_HEAD = right
+    else:
+        store(left + (28 as usize), right)
+        seal(left)
+    if right != (0 as usize):
+        store(right + (24 as usize), left)
+        seal(right)
+    store(block + (24 as usize), 0 as usize)
+    store(block + (28 as usize), 0 as usize)
+    seal(block)
+    return 0
+
+fn insert_free(block: usize) -> int:
+    let cursor: usize = FREE_HEAD
+    let left: usize = 0 as usize
+    while cursor != (0 as usize):
+        if cursor >= block:
+            store(block + (24 as usize), left)
+            store(block + (28 as usize), cursor)
+            store(cursor + (24 as usize), block)
+            seal(cursor)
+            if left == (0 as usize):
+                FREE_HEAD = block
+            else:
+                store(left + (28 as usize), block)
+                seal(left)
+            seal(block)
+            return 0
+        left = cursor
+        cursor = next_free(cursor)
+    store(block + (24 as usize), left)
+    store(block + (28 as usize), 0 as usize)
+    if left == (0 as usize):
+        FREE_HEAD = block
+    else:
+        store(left + (28 as usize), block)
+        seal(left)
+    seal(block)
+    return 0
+
+fn find_last_block() -> usize:
+    let cursor: usize = paging.arena_start()
+    let end: usize = cursor + (COMMITTED_PAGES << (12 as usize))
+    let last: usize = 0 as usize
+    while cursor < end:
+        if valid_header(cursor) == false:
+            poison()
+            return 0 as usize
+        last = cursor
+        cursor = cursor + total(cursor)
+    if cursor != end:
+        poison()
+        return 0 as usize
+    return last
+
+fn zero_page(address: usize) -> int:
+    return memory.memset(address as ptr[u8], 0 as u8, PAGE_SIZE)
+
+fn rollback_growth(first_page: usize, count: usize) -> int:
+    let done: usize = count
+    while done > (0 as usize):
+        done = done - (1 as usize)
+        let virtual_address: usize = paging.arena_start() + ((first_page + done) << (12 as usize))
+        let physical: usize = paging.unmap_kernel_page(virtual_address)
+        if physical != (0 as usize):
+            frames.release(physical)
+    return 0
+
+fn grow(required_end: usize) -> int:
+    let start: usize = paging.arena_start()
+    let target_bytes: usize = required_end - start
+    let target_pages: usize = (target_bytes + (4095 as usize)) >> (12 as usize)
+    if target_pages > (512 as usize):
+        LAST_ERROR = OUT_OF_MEMORY
+        return OUT_OF_MEMORY as i32
+    if target_pages <= COMMITTED_PAGES:
+        return 0
+    let old_pages: usize = COMMITTED_PAGES
+    let prior_last: usize = 0 as usize
+    if old_pages != (0 as usize):
+        prior_last = find_last_block()
+        if prior_last == (0 as usize):
+            return CORRUPTION as i32
+    let page: usize = old_pages
+    while page < target_pages:
+        let physical: usize = frames.allocate()
+        if physical == (0 as usize):
+            rollback_growth(old_pages, page - old_pages)
+            LAST_ERROR = OUT_OF_MEMORY
+            return OUT_OF_MEMORY as i32
+        let virtual_address: usize = start + (page << (12 as usize))
+        let map_status: int = paging.map_kernel_page(virtual_address, physical)
+        if map_status != 0:
+            frames.release(physical)
+            rollback_growth(old_pages, page - old_pages)
+            if map_status == 3:
+                LAST_ERROR = MAPPING_COLLISION
+                return MAPPING_COLLISION as i32
+            LAST_ERROR = OUT_OF_MEMORY
+            return OUT_OF_MEMORY as i32
+        zero_page(virtual_address)
+        page = page + (1 as usize)
+    let added: usize = target_pages - old_pages
+    COMMITTED_PAGES = target_pages
+    if COMMITTED_PAGES > HIGH_WATER_PAGES:
+        HIGH_WATER_PAGES = COMMITTED_PAGES
+    if old_pages == (0 as usize):
+        initialize_header(start, COMMITTED_PAGES << (12 as usize), 0 as usize, STATE_FREE)
+        FREE_HEAD = start
+        return 0
+    let last: usize = prior_last
+    if last == (0 as usize):
+        rollback_growth(old_pages, added)
+        COMMITTED_PAGES = old_pages
+        return CORRUPTION as i32
+    if state(last) == STATE_FREE:
+        store(last + (4 as usize), total(last) + (added << (12 as usize)))
+        seal(last)
+        return 0
+    let block: usize = start + (old_pages << (12 as usize))
+    initialize_header(block, added << (12 as usize), total(last), STATE_FREE)
+    insert_free(block)
+    return 0
+
+fn fit_size(block: usize, size: usize, alignment: usize) -> usize:
+    let minimum: usize = block + HEADER_SIZE + (4 as usize)
+    if minimum < block:
+        return 0 as usize
+    let rounded: usize = minimum + alignment - (1 as usize)
+    if rounded < minimum:
+        return 0 as usize
+    let payload: usize = align_up(minimum, alignment)
+    let end: usize = payload + size
+    if end < payload:
+        return 0 as usize
+    let block_end: usize = align_up(end, 16 as usize)
+    if block_end < end:
+        return 0 as usize
+    return block_end - block
+
+fn find_fit(size: usize, alignment: usize) -> usize:
+    let cursor: usize = FREE_HEAD
+    while cursor != (0 as usize):
+        if valid_header(cursor) == false:
+            poison()
+            return 0 as usize
+        if state(cursor) != STATE_FREE:
+            poison()
+            return 0 as usize
+        let needed: usize = fit_size(cursor, size, alignment)
+        if needed != (0 as usize):
+            if needed <= total(cursor):
+                return cursor
+        cursor = next_free(cursor)
+    return 0 as usize
+
+fn update_next_previous(block: usize) -> int:
+    let next: usize = block + total(block)
+    let end: usize = paging.arena_start() + (COMMITTED_PAGES << (12 as usize))
+    if next < end:
+        if valid_header(next) == false:
+            return poison()
+        store(next + (8 as usize), total(block))
+        seal(next)
+    return 0
+
+fn allocate_from(block: usize, size: usize, alignment: usize) -> ptr[u8]:
+    let needed: usize = fit_size(block, size, alignment)
+    let original: usize = total(block)
+    let previous: usize = previous_size(block)
+    remove_free(block)
+    let allocated_size: usize = original
+    if (original - needed) >= MIN_BLOCK:
+        allocated_size = needed
+    initialize_header(block, allocated_size, previous, STATE_USED)
+    let payload: usize = align_up(block + HEADER_SIZE + (4 as usize), alignment)
+    store(block + (12 as usize), size)
+    store(block + (16 as usize), payload - block)
+    seal(block)
+    store(payload - (4 as usize), (block as u32 ^ COOKIE) as usize)
+    if allocated_size < original:
+        let remainder: usize = block + allocated_size
+        initialize_header(remainder, original - allocated_size, allocated_size, STATE_FREE)
+        insert_free(remainder)
+    update_next_previous(block)
+    LAST_ERROR = OK
+    return payload as ptr[u8]
+
+fn decommit_tail(block: usize) -> int:
+    let start: usize = paging.arena_start()
+    let minimum_end: usize = block + MIN_BLOCK
+    let retain_end: usize = align_up(minimum_end, PAGE_SIZE)
+    let minimum_pages: usize = (retain_end - start) >> (12 as usize)
+    let target_pages: usize = minimum_pages
+    if target_pages < (1 as usize):
+        target_pages = 1 as usize
+    while COMMITTED_PAGES > target_pages:
+        let page: usize = COMMITTED_PAGES - (1 as usize)
+        let virtual_address: usize = start + (page << (12 as usize))
+        let physical: usize = paging.unmap_kernel_page(virtual_address)
+        if physical == (0 as usize):
+            return poison()
+        if frames.release(physical) != 0:
+            return poison()
+        COMMITTED_PAGES = page
+    store(block + (4 as usize), (start + (COMMITTED_PAGES << (12 as usize))) - block)
+    seal(block)
+    return 0
+
+pub fn heap_initialize() -> int:
+    FREE_HEAD = 0 as usize
+    COMMITTED_PAGES = 0 as usize
+    HIGH_WATER_PAGES = 0 as usize
+    LAST_ERROR = OK
+    POISONED = 0 as u32
+    COALESCE_COUNT = 0 as usize
+    return grow(paging.arena_start() + PAGE_SIZE)
+
+pub fn alloc(size: usize, alignment: usize) -> ptr[u8]:
+    if POISONED != (0 as u32):
+        LAST_ERROR = CORRUPTION
+        return 0 as usize as ptr[u8]
+    if alignment_valid(alignment) == false:
+        LAST_ERROR = INVALID_ALIGNMENT
+        return 0 as usize as ptr[u8]
+    if size == (0 as usize):
+        LAST_ERROR = OK
+        return 0 as usize as ptr[u8]
+    let block: usize = find_fit(size, alignment)
+    if block != (0 as usize):
+        return allocate_from(block, size, alignment)
+    if LAST_ERROR == CORRUPTION:
+        return 0 as usize as ptr[u8]
+    let committed_end: usize = paging.arena_start() + (COMMITTED_PAGES << (12 as usize))
+    let needed: usize = fit_size(committed_end, size, alignment)
+    if needed == (0 as usize):
+        LAST_ERROR = SIZE_OVERFLOW
+        return 0 as usize as ptr[u8]
+    if (committed_end + needed) < committed_end:
+        LAST_ERROR = SIZE_OVERFLOW
+        return 0 as usize as ptr[u8]
+    if grow(committed_end + needed) != 0:
+        return 0 as usize as ptr[u8]
+    let grown_block: usize = find_fit(size, alignment)
+    if grown_block == (0 as usize):
+        poison()
+        return 0 as usize as ptr[u8]
+    return allocate_from(grown_block, size, alignment)
+
+pub fn free(pointer: ptr[u8]) -> int:
+    if POISONED != (0 as u32):
+        LAST_ERROR = CORRUPTION
+        return CORRUPTION as i32
+    let address: usize = pointer as usize
+    if address == (0 as usize):
+        LAST_ERROR = OK
+        return 0
+    let start: usize = paging.arena_start()
+    let end: usize = start + (COMMITTED_PAGES << (12 as usize))
+    if address < (start + HEADER_SIZE + (4 as usize)):
+        LAST_ERROR = OUTSIDE_HEAP
+        return OUTSIDE_HEAP as i32
+    if address >= end:
+        LAST_ERROR = OUTSIDE_HEAP
+        return OUTSIDE_HEAP as i32
+    let encoded: u32 = load(address - (4 as usize)) as u32
+    let block: usize = (encoded ^ COOKIE) as usize
+    if block < start:
+        LAST_ERROR = INTERIOR_POINTER
+        return INTERIOR_POINTER as i32
+    if block >= end:
+        LAST_ERROR = INTERIOR_POINTER
+        return INTERIOR_POINTER as i32
+    if magic(block) == MAGIC:
+        if load(block + (32 as usize)) != (checksum_value(block) as usize):
+            return poison()
+        if (block + payload_offset(block)) == address:
+            if state(block) == STATE_FREE:
+                LAST_ERROR = DOUBLE_FREE
+                return DOUBLE_FREE as i32
+    if valid_header(block) == false:
+        LAST_ERROR = INTERIOR_POINTER
+        return INTERIOR_POINTER as i32
+    if (block + payload_offset(block)) != address:
+        LAST_ERROR = INTERIOR_POINTER
+        return INTERIOR_POINTER as i32
+    if state(block) != STATE_USED:
+        return poison()
+    store(block + (20 as usize), STATE_FREE as usize)
+    seal(block)
+    insert_free(block)
+    let merged: usize = block
+    if previous_size(merged) != (0 as usize):
+        let left: usize = merged - previous_size(merged)
+        if valid_header(left) == false:
+            return poison()
+        if state(left) == STATE_FREE:
+            remove_free(merged)
+            store(left + (4 as usize), total(left) + total(merged))
+            seal(left)
+            merged = left
+            COALESCE_COUNT = COALESCE_COUNT + (1 as usize)
+
+    let right: usize = merged + total(merged)
+    if right < end:
+        if valid_header(right) == false:
+            return poison()
+        if state(right) == STATE_FREE:
+            remove_free(right)
+            store(merged + (4 as usize), total(merged) + total(right))
+            seal(merged)
+            COALESCE_COUNT = COALESCE_COUNT + (1 as usize)
+    update_next_previous(merged)
+    if (merged + total(merged)) == end:
+        if decommit_tail(merged) != 0:
+            return CORRUPTION as i32
+    LAST_ERROR = OK
+    return 0
+
+pub fn last_error() -> u32:
+    return LAST_ERROR
+
+pub fn is_poisoned() -> bool:
+    return POISONED != (0 as u32)
+
+pub fn committed_pages() -> usize:
+    return COMMITTED_PAGES
+
+pub fn high_water_pages() -> usize:
+    return HIGH_WATER_PAGES
+
+pub fn coalesce_count() -> usize:
+    return COALESCE_COUNT

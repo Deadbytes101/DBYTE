@@ -1,0 +1,186 @@
+import "boot.dby" as boot
+import "sha256.dby" as sha256
+
+const HEADER_SIZE: usize = 64 as usize
+const ENTRY_SIZE: usize = 64 as usize
+
+static mut BUNDLE_START: usize
+static mut BUNDLE_END: usize
+static mut ENTRY_COUNT: usize
+
+fn byte(address: usize) -> u8:
+    return native.volatile_load8(address as ptr[u8])
+
+fn word(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn name_equal(record: usize, name: str, length: usize) -> bool:
+    if (word(record) as usize) != length:
+        return false
+    let index: usize = 0 as usize
+    while index < length:
+        if byte(record + (44 as usize) + index) != (name[index] as u8):
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn align16(value: usize) -> usize:
+    return (value + (15 as usize)) & (0xfffffff0 as usize)
+
+fn valid_name(record: usize) -> bool:
+    let length: usize = word(record) as usize
+    if length == (0 as usize):
+        return false
+    if length > (16 as usize):
+        return false
+    let index: usize = 0 as usize
+    while index < (20 as usize):
+        let value: u8 = byte(record + (44 as usize) + index)
+        if index < length:
+            let valid: bool = false
+            if value >= (65 as u8):
+                if value <= (90 as u8):
+                    valid = true
+            if value >= (48 as u8):
+                if value <= (57 as u8):
+                    valid = true
+            if value == (46 as u8):
+                valid = true
+            if value == (95 as u8):
+                valid = true
+            if valid == false:
+                return false
+        else:
+            if value != (0 as u8):
+                return false
+        index = index + (1 as usize)
+    return true
+
+fn ordered(previous: usize, current: usize) -> bool:
+    let previous_length: usize = word(previous) as usize
+    let current_length: usize = word(current) as usize
+    let index: usize = 0 as usize
+    while index < previous_length:
+        if index >= current_length:
+            return false
+        let left: u8 = byte(previous + (44 as usize) + index)
+        let right: u8 = byte(current + (44 as usize) + index)
+        if left < right:
+            return true
+        if left > right:
+            return false
+        index = index + (1 as usize)
+    return previous_length < current_length
+
+pub fn bundle_initialize() -> int:
+    BUNDLE_START = boot.module_start()
+    BUNDLE_END = boot.module_end()
+    if BUNDLE_START == (0 as usize):
+        return 1
+    if BUNDLE_END > (0x00400000 as usize):
+        return 2
+    if (BUNDLE_END - BUNDLE_START) < HEADER_SIZE:
+        return 3
+    if byte(BUNDLE_START) != (68 as u8):
+        return 4
+    if byte(BUNDLE_START + (1 as usize)) != (66 as u8):
+        return 4
+    if byte(BUNDLE_START + (2 as usize)) != (85 as u8):
+        return 4
+    if byte(BUNDLE_START + (3 as usize)) != (80 as u8):
+        return 4
+    if byte(BUNDLE_START + (4 as usize)) != (49 as u8):
+        return 4
+    if byte(BUNDLE_START + (5 as usize)) != (0 as u8):
+        return 4
+    if byte(BUNDLE_START + (6 as usize)) != (0 as u8):
+        return 4
+    if byte(BUNDLE_START + (7 as usize)) != (0 as u8):
+        return 4
+    if word(BUNDLE_START + (8 as usize)) != (1 as u32):
+        return 5
+    ENTRY_COUNT = word(BUNDLE_START + (12 as usize)) as usize
+    if ENTRY_COUNT == (0 as usize):
+        return 6
+    if ENTRY_COUNT > (16 as usize):
+        return 6
+    if word(BUNDLE_START + (16 as usize)) != (64 as u32):
+        return 7
+    if word(BUNDLE_START + (20 as usize)) != (64 as u32):
+        return 7
+    let table_end: usize = HEADER_SIZE + (ENTRY_COUNT * ENTRY_SIZE)
+    let payload_start: usize = align16(table_end)
+    if (word(BUNDLE_START + (24 as usize)) as usize) != payload_start:
+        return 7
+    if (word(BUNDLE_START + (28 as usize)) as usize) != (BUNDLE_END - BUNDLE_START):
+        return 8
+    let header_index: usize = 32 as usize
+    while header_index < HEADER_SIZE:
+        if byte(BUNDLE_START + header_index) != (0 as u8):
+            return 8
+        header_index = header_index + (1 as usize)
+    let cursor: usize = payload_start
+    let index: usize = 0 as usize
+    while index < ENTRY_COUNT:
+        let record: usize = BUNDLE_START + HEADER_SIZE + (index * ENTRY_SIZE)
+        if valid_name(record) == false:
+            return 9
+        if index > (0 as usize):
+            if ordered(record - ENTRY_SIZE, record) == false:
+                return 9
+        let offset: usize = word(record + (4 as usize)) as usize
+        let length: usize = word(record + (8 as usize)) as usize
+        if length == (0 as usize):
+            return 10
+        if length > (4096 as usize):
+            return 10
+        if offset != align16(cursor):
+            return 10
+        if offset > (BUNDLE_END - BUNDLE_START):
+            return 10
+        if length > (BUNDLE_END - BUNDLE_START) - offset:
+            return 10
+        if sha256.matches(BUNDLE_START + offset, length, record + (12 as usize)) == false:
+            return 11
+        cursor = offset + length
+        index = index + (1 as usize)
+    if cursor != (BUNDLE_END - BUNDLE_START):
+        return 12
+    return 0
+
+pub fn bundle_find(name: str, length: usize, payload: ptr[usize], size: ptr[usize]) -> int:
+    if payload as usize == (0 as usize):
+        return 1
+    if size as usize == (0 as usize):
+        return 1
+    let index: usize = 0 as usize
+    while index < ENTRY_COUNT:
+        let record: usize = BUNDLE_START + HEADER_SIZE + (index * ENTRY_SIZE)
+        if name_equal(record, name, length):
+            let offset: usize = word(record + (4 as usize)) as usize
+            let length_bytes: usize = word(record + (8 as usize)) as usize
+            if length_bytes == (0 as usize):
+                return 2
+            if offset > (BUNDLE_END - BUNDLE_START):
+                return 2
+            if length_bytes > (BUNDLE_END - BUNDLE_START) - offset:
+                return 2
+            (*payload) = BUNDLE_START + offset
+            (*size) = length_bytes
+            return 0
+        index = index + (1 as usize)
+    return 3
+
+pub fn bundle_copy(name: str, length: usize, output: ptr[u8], capacity: usize, written: ptr[usize]) -> int:
+    let payload: usize = 0 as usize
+    let size: usize = 0 as usize
+    if bundle_find(name, length, &payload, &size) != 0:
+        return 1
+    if size > capacity:
+        return 2
+    let index: usize = 0 as usize
+    while index < size:
+        output[index] = byte(payload + index)
+        index = index + (1 as usize)
+    (*written) = size
+    return 0

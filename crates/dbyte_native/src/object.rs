@@ -44,6 +44,8 @@ const ENTRY_METADATA_SECTION: &str = ".dbyte.entry";
 pub const ENTRY_METADATA_PREFIX: &str = "__dbyte_entry:";
 const TASK_METADATA_SECTION: &str = ".dbyte.tasks";
 pub const TASK_METADATA_PREFIX: &str = "__dbyte_task:";
+const PROFILE_METADATA_SECTION: &str = ".dbyte.profile";
+pub const PROFILE_METADATA_PREFIX: &str = "__dbyte_profile:";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectSection {
@@ -289,11 +291,17 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     let interrupt_metadata = build_interrupt_metadata(image)?;
     let entry_metadata = build_entry_metadata(image)?;
     let task_metadata = build_task_metadata(image)?;
+    let profile_metadata = build_profile_metadata(image)?;
     let has_task_metadata = image
         .symbols
         .iter()
         .any(|symbol| symbol.name.starts_with(TASK_METADATA_PREFIX));
-    let metadata_section_count = if has_task_metadata { 8u16 } else { 7u16 };
+    let has_profile_metadata = image
+        .symbols
+        .iter()
+        .any(|symbol| symbol.name.starts_with(PROFILE_METADATA_PREFIX));
+    let metadata_section_count =
+        7u16 + u16::from(has_task_metadata) + u16::from(has_profile_metadata);
     let symtab_index = metadata_section_count
         .checked_add(
             u16::try_from(relocation_sections.len())
@@ -315,6 +323,9 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     ];
     if has_task_metadata {
         section_names.push(TASK_METADATA_SECTION);
+    }
+    if has_profile_metadata {
+        section_names.push(PROFILE_METADATA_SECTION);
     }
     for section in &relocation_sections {
         section_names.push(
@@ -450,6 +461,30 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         cursor = checked_add(cursor, task_metadata_size, "task metadata section end")?;
     }
 
+    let profile_metadata_offset = cursor;
+    if has_profile_metadata {
+        let profile_metadata_size =
+            checked_usize_u32(profile_metadata.len(), "profile metadata size")?;
+        let name_index = 7 + usize::from(has_task_metadata);
+        headers.push(SectionHeader {
+            name: section_name_offsets[name_index],
+            section_type: SHT_PROGBITS,
+            flags: 0,
+            address: 0,
+            offset: profile_metadata_offset,
+            size: profile_metadata_size,
+            link: 0,
+            info: 0,
+            alignment: 1,
+            entry_size: 0,
+        });
+        cursor = checked_add(
+            cursor,
+            profile_metadata_size,
+            "profile metadata section end",
+        )?;
+    }
+
     for (relocation_position, section) in relocation_sections.iter().copied().enumerate() {
         cursor = align_up(cursor, 4)?;
         let table = &relocation_tables[&section];
@@ -578,6 +613,13 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     if has_task_metadata {
         copy_bytes(&mut bytes, task_metadata_offset as usize, &task_metadata)?;
     }
+    if has_profile_metadata {
+        copy_bytes(
+            &mut bytes,
+            profile_metadata_offset as usize,
+            &profile_metadata,
+        )?;
+    }
     copy_bytes(&mut bytes, symtab_offset as usize, &symtab)?;
     copy_bytes(&mut bytes, strtab_offset as usize, &strtab)?;
     copy_bytes(&mut bytes, shstrtab_offset as usize, &shstrtab)?;
@@ -599,7 +641,7 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
     let section_header_size = read_u16(bytes, 46)?;
     let section_count = read_u16(bytes, 48)?;
     let shstrtab_index = read_u16(bytes, 50)?;
-    if section_header_size != SECTION_HEADER_SIZE as u16 || !(9..=14).contains(&section_count) {
+    if section_header_size != SECTION_HEADER_SIZE as u16 || !(9..=15).contains(&section_count) {
         return Err(invalid_object("unsupported ELF section-header shape"));
     }
     if shstrtab_index == 0 || shstrtab_index >= section_count {
@@ -753,6 +795,22 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
         }
         validate_task_metadata(
             section_file_bytes(bytes, task_header, TASK_METADATA_SECTION)?,
+            &symbols,
+        )?;
+    }
+    if let Some(profile_index) = by_name.get(PROFILE_METADATA_SECTION).copied() {
+        let profile_header = &parsed[profile_index as usize].header;
+        if profile_header.section_type != SHT_PROGBITS
+            || profile_header.flags != 0
+            || profile_header.link != 0
+            || profile_header.info != 0
+            || profile_header.alignment != 1
+            || profile_header.entry_size != 0
+        {
+            return Err(invalid_object("invalid .dbyte.profile section contract"));
+        }
+        validate_profile_metadata(
+            section_file_bytes(bytes, profile_header, PROFILE_METADATA_SECTION)?,
             &symbols,
         )?;
     }
@@ -1266,6 +1324,7 @@ fn validate_allowed_sections(sections: &[ParsedSection]) -> Result<(), Diagnosti
         ".dbyte.interrupts",
         ".dbyte.entry",
         ".dbyte.tasks",
+        ".dbyte.profile",
         ".rel.text",
         ".rel.rodata",
         ".rel.data",
@@ -1689,6 +1748,48 @@ fn validate_task_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(), 
     if bytes != expected {
         return Err(invalid_object(
             "non-canonical .dbyte.tasks metadata does not match symbols",
+        ));
+    }
+    Ok(())
+}
+
+fn build_profile_metadata(image: &ObjectImage) -> Result<Vec<u8>, Diagnostic> {
+    let mut records: Vec<&str> = image
+        .symbols
+        .iter()
+        .filter_map(|symbol| {
+            symbol
+                .name
+                .strip_prefix(PROFILE_METADATA_PREFIX)
+                .map(|_| symbol.name.as_str())
+        })
+        .collect();
+    records.sort_unstable();
+    records.dedup();
+    if records.len() > 1
+        || records
+            .iter()
+            .any(|record| *record != "__dbyte_profile:user")
+    {
+        return Err(object_error("object contains unsupported profile metadata"));
+    }
+    let mut bytes = b"DBYTEPRO\0\x01\0".to_vec();
+    for record in records {
+        bytes.extend_from_slice(record.as_bytes());
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn validate_profile_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(), Diagnostic> {
+    let expected = build_profile_metadata(&ObjectImage {
+        sections: BTreeMap::new(),
+        symbols: symbols.to_vec(),
+        relocations: Vec::new(),
+    })?;
+    if bytes != expected {
+        return Err(invalid_object(
+            "non-canonical .dbyte.profile metadata does not match symbols",
         ));
     }
     Ok(())
@@ -2122,6 +2223,34 @@ mod tests {
         assert_eq!(
             write_relocatable(&image).unwrap_err().category,
             DiagnosticCategory::InvalidRelocation
+        );
+    }
+
+    #[test]
+    fn user_profile_metadata_round_trips_and_malformed_bytes_fail_closed() {
+        let mut image = sample_object();
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_profile:user".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let artifact = write_relocatable(&image).unwrap();
+        let parsed = parse_relocatable(&artifact.bytes).unwrap();
+        assert!(parsed
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "__dbyte_profile:user"));
+        let mut malformed = artifact.bytes;
+        let offset = section_data_offset(&malformed, ".dbyte.profile");
+        malformed[offset] ^= 0xff;
+        assert_eq!(
+            parse_relocatable(&malformed).unwrap_err().category,
+            DiagnosticCategory::InvalidObject
         );
     }
 }

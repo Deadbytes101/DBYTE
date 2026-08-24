@@ -1,0 +1,29 @@
+static mut CONFIG: array[u8, 64]
+
+pub fn user_main() -> int:
+    let message: str = "HELLO FROM DBYTE USER\r\n"
+    let result: i32 = user.syscall3(1 as u32, 1 as usize, message, 23 as usize)
+    if result != 23:
+        return 1
+    let path: str = "/SYSTEM/CONFIG.TXT"
+    let fd: i32 = user.syscall2(3 as u32, path, 1 as usize)
+    if fd < 3:
+        return 2
+    let count: i32 = user.syscall3(4 as u32, fd as usize, (&CONFIG[0]) as usize, 64 as usize)
+    if count != 9:
+        return 3
+    if user.syscall1(5 as u32, fd as usize) != 0:
+        return 4
+    if CONFIG[0] != (0x56 as u8):
+        return 5
+    if CONFIG[5] != (0x3d as u8):
+        return 5
+    let prefix: str = "CONFIG VALUE "
+    if user.syscall3(1 as u32, 1 as usize, prefix, 13 as usize) != 13:
+        return 6
+    if user.syscall3(1 as u32, 1 as usize, ((&CONFIG[0]) as usize) + (6 as usize), 2 as usize) != 2:
+        return 6
+    let newline: str = "\r\n"
+    if user.syscall3(1 as u32, 1 as usize, newline, 2 as usize) != 2:
+        return 6
+    return 0

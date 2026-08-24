@@ -20,6 +20,13 @@ use dbyte_ast::{BinOp, Expr, Param, Span, Stmt, StructField, TypeAnnotation, Una
 use std::collections::{BTreeMap, BTreeSet};
 
 const ENTRY_FUNCTION: &str = "kernel_main";
+const USER_ENTRY_FUNCTION: &str = "user_main";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemsProfile {
+    Kernel,
+    User,
+}
 
 /// Fully analyzed systems project in the same deterministic module order as
 /// [`NativeModuleGraph`]. The shared layout table uses canonical nominal names
@@ -134,6 +141,7 @@ struct ConstantValue {
 }
 
 struct ProjectContext<'a> {
+    profile: SystemsProfile,
     graph: &'a NativeModuleGraph,
     headers: Vec<ModuleHeader>,
     symbols: Vec<ModuleSymbols>,
@@ -147,7 +155,7 @@ struct ProjectContext<'a> {
 /// constant values before any function body is compiled. The body pass can
 /// therefore resolve forward and cross-module references deterministically.
 pub fn analyze_systems_project(graph: &NativeModuleGraph) -> NativeResult<SystemsProjectIr> {
-    analyze_systems_graph(graph, true)
+    analyze_systems_graph(graph, true, SystemsProfile::Kernel)
 }
 
 /// Analyze a module graph for relocatable-object emission.
@@ -157,23 +165,53 @@ pub fn analyze_systems_project(graph: &NativeModuleGraph) -> NativeResult<System
 /// `kernel_main`. All other declaration, visibility, type, and body checks are
 /// identical to integrated project analysis.
 pub fn analyze_systems_objects(graph: &NativeModuleGraph) -> NativeResult<SystemsProjectIr> {
-    analyze_systems_graph(graph, false)
+    analyze_systems_graph(graph, false, SystemsProfile::Kernel)
+}
+
+pub fn analyze_user_project(graph: &NativeModuleGraph) -> NativeResult<SystemsProjectIr> {
+    analyze_systems_graph(graph, true, SystemsProfile::User)
+}
+
+pub fn analyze_user_objects(graph: &NativeModuleGraph) -> NativeResult<SystemsProjectIr> {
+    analyze_systems_graph(graph, false, SystemsProfile::User)
 }
 
 fn analyze_systems_graph(
     graph: &NativeModuleGraph,
     require_entry: bool,
+    profile: SystemsProfile,
 ) -> NativeResult<SystemsProjectIr> {
     validate_graph_shape(graph)?;
+    if profile == SystemsProfile::User {
+        for module in &graph.modules {
+            for statement in &module.program.stmts {
+                if matches!(
+                    statement,
+                    Stmt::FnDef {
+                        interrupt: Some(_),
+                        ..
+                    }
+                ) {
+                    return Err(module_diagnostic(
+                        module,
+                        DiagnosticCategory::InvalidIntrinsic,
+                        "interrupt functions are forbidden for i686-dbyte-user",
+                        statement.span(),
+                    ));
+                }
+            }
+        }
+    }
     let headers = collect_headers(graph)?;
     let layouts = build_project_layouts(graph, &headers)?;
     let symbols = resolve_module_symbols(graph, &headers, &layouts)?;
     validate_exports(graph, &symbols)?;
     if require_entry {
-        validate_entry(graph, &symbols)?;
+        validate_entry(graph, &symbols, profile)?;
     }
     let constants = evaluate_project_constants(graph, &headers, &symbols, &layouts)?;
     let context = ProjectContext {
+        profile,
         graph,
         headers,
         symbols,
@@ -233,7 +271,9 @@ fn validate_graph_shape(graph: &NativeModuleGraph) -> NativeResult<()> {
                     import.span,
                 ));
             }
-            if import.alias == "native" || !aliases.insert(import.alias.as_str()) {
+            if matches!(import.alias.as_str(), "native" | "user")
+                || !aliases.insert(import.alias.as_str())
+            {
                 return Err(module_diagnostic(
                     module,
                     DiagnosticCategory::InvalidModuleImport,
@@ -625,19 +665,36 @@ fn insert_emitted_symbol(
     Ok(())
 }
 
-fn validate_entry(graph: &NativeModuleGraph, symbols: &[ModuleSymbols]) -> NativeResult<()> {
+fn validate_entry(
+    graph: &NativeModuleGraph,
+    symbols: &[ModuleSymbols],
+    profile: SystemsProfile,
+) -> NativeResult<()> {
     let root = graph.root_module();
-    let entry = symbols[root.id]
-        .functions
-        .get(ENTRY_FUNCTION)
-        .ok_or_else(|| {
-            module_diagnostic(
+    let entry_name = if profile == SystemsProfile::Kernel {
+        ENTRY_FUNCTION
+    } else {
+        USER_ENTRY_FUNCTION
+    };
+    let entry = symbols[root.id].functions.get(entry_name).ok_or_else(|| {
+        module_diagnostic(
+            root,
+            DiagnosticCategory::InvalidEntryPoint,
+            format!("missing native entry function '{entry_name}'"),
+            Span::zero(),
+        )
+    })?;
+    if profile == SystemsProfile::User {
+        if !entry.public || !entry.params.is_empty() || entry.return_type != SystemType::I32 {
+            return Err(module_diagnostic(
                 root,
                 DiagnosticCategory::InvalidEntryPoint,
-                "missing native entry function 'kernel_main'",
-                Span::zero(),
-            )
-        })?;
+                "user entry must be `pub fn user_main() -> int`",
+                entry.span,
+            ));
+        }
+        return Ok(());
+    }
     let legacy = entry.params.is_empty();
     let multiboot_v1 = entry.params.len() == 2
         && entry.params[0] == SystemType::U32
@@ -814,10 +871,7 @@ fn validate_interrupt_signature(
     raw_params: &[Param],
     span: Span,
 ) -> NativeResult<()> {
-    let expected_count = match class {
-        InterruptClass::NoErrorCode => 1,
-        InterruptClass::ErrorCode => 2,
-    };
+    let expected_count = if class.has_error_code() { 2 } else { 1 };
     if params.len() != expected_count {
         return Err(module_diagnostic(
             module,
@@ -853,22 +907,31 @@ fn validate_interrupt_signature(
             raw_params[0].span,
         )
     })?;
-    let valid_frame = layout.size == 12
-        && layout.fields.len() == 3
+    let expected_names: &[&str] = if class.cpl3_transition() {
+        &["eip", "cs", "eflags", "user_esp", "user_ss"]
+    } else {
+        &["eip", "cs", "eflags"]
+    };
+    let valid_frame = layout.size == (expected_names.len() as u32 * 4)
+        && layout.fields.len() == expected_names.len()
         && layout
             .fields
             .iter()
-            .zip(["eip", "cs", "eflags"])
+            .zip(expected_names.iter().copied())
             .all(|(field, name)| field.name == name && field.ty == SystemType::U32);
     if !valid_frame {
         return Err(module_diagnostic(
             module,
             DiagnosticCategory::InvalidType,
-            "InterruptFrame must contain declaration-order u32 fields eip, cs, eflags",
+            if class.cpl3_transition() {
+                "PrivilegeInterruptFrame must contain declaration-order u32 fields eip, cs, eflags, user_esp, user_ss"
+            } else {
+                "InterruptFrame must contain declaration-order u32 fields eip, cs, eflags"
+            },
             raw_params[0].span,
         ));
     }
-    if class == InterruptClass::ErrorCode && params[1] != SystemType::U32 {
+    if class.has_error_code() && params[1] != SystemType::U32 {
         return Err(module_diagnostic(
             module,
             DiagnosticCategory::InvalidType,
@@ -1490,6 +1553,7 @@ fn compile_module(
 
     Ok(SystemsModuleIr {
         module_name: module.name.clone(),
+        user_profile: context.profile == SystemsProfile::User,
         functions,
         globals,
         strings,
@@ -2335,6 +2399,16 @@ impl<'a> FunctionAnalyzer<'a> {
                     .unwrap_or(SystemType::I32);
                 let bits =
                     checked_literal_bits(*value, &ty, *span).map_err(|error| self.attach(error))?;
+                if self.context.profile == SystemsProfile::User
+                    && matches!(ty, SystemType::Usize)
+                    && bits >= 0xc000_0000
+                {
+                    return Err(self.error(
+                        DiagnosticCategory::UnsupportedFeature,
+                        "i686-dbyte-user rejects constant addresses in the kernel range",
+                        *span,
+                    ));
+                }
                 self.instructions.push(SystemsInst::Const {
                     bits,
                     ty: ty.clone(),
@@ -2735,7 +2809,7 @@ impl<'a> FunctionAnalyzer<'a> {
             annotation,
             span,
         )?;
-        if !target.is_scalar() || matches!(target, SystemType::Bool | SystemType::Str) {
+        if !target.is_scalar() || matches!(target, SystemType::Bool) {
             return Err(self.error(
                 DiagnosticCategory::InvalidNarrowing,
                 format!("runtime cast target must be an integer or pointer, found {target}"),
@@ -2746,6 +2820,16 @@ impl<'a> FunctionAnalyzer<'a> {
             if target.is_integer() {
                 let bits = checked_literal_bits(literal, &target, span)
                     .map_err(|error| self.attach(error))?;
+                if self.context.profile == SystemsProfile::User
+                    && matches!(target, SystemType::Usize)
+                    && bits >= 0xc000_0000
+                {
+                    return Err(self.error(
+                        DiagnosticCategory::UnsupportedFeature,
+                        "i686-dbyte-user rejects constant addresses in the kernel range",
+                        span,
+                    ));
+                }
                 self.instructions.push(SystemsInst::Const {
                     bits,
                     ty: target.clone(),
@@ -2755,7 +2839,7 @@ impl<'a> FunctionAnalyzer<'a> {
         }
         let source = self.compile_value(expression, expression.span(), "cast operand")?;
         if !source.is_scalar()
-            || matches!(source, SystemType::Bool | SystemType::Str)
+            || matches!(source, SystemType::Bool)
             || !explicit_cast_allowed(&source, &target)
         {
             return Err(self.error(
@@ -2773,9 +2857,23 @@ impl<'a> FunctionAnalyzer<'a> {
 
     fn compile_call(&mut self, name: &str, args: &[Expr], span: Span) -> NativeResult<ExprResult> {
         if name == "interrupt_address" {
+            if self.context.profile == SystemsProfile::User {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "interrupt_address is forbidden for i686-dbyte-user",
+                    span,
+                ));
+            }
             return self.compile_interrupt_address(args, span);
         }
         if name == "task_address" {
+            if self.context.profile == SystemsProfile::User {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "task_address is forbidden for i686-dbyte-user",
+                    span,
+                ));
+            }
             return self.compile_task_address(args, span);
         }
         if matches!(name, "size_of" | "align_of") {
@@ -2854,7 +2952,40 @@ impl<'a> FunctionAnalyzer<'a> {
             ));
         };
         if namespace == "native" {
+            if self.context.profile == SystemsProfile::User {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "the native kernel intrinsic namespace is forbidden for i686-dbyte-user",
+                    span,
+                ));
+            }
             return self.compile_intrinsic(property, args, span);
+        }
+        if namespace == "user" {
+            if self.context.profile != SystemsProfile::User {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    "the user syscall namespace is only valid for i686-dbyte-user",
+                    span,
+                ));
+            }
+            let intrinsic = SystemIntrinsic::from_name(property).filter(|intrinsic| {
+                matches!(
+                    intrinsic,
+                    SystemIntrinsic::UserSyscall0
+                        | SystemIntrinsic::UserSyscall1
+                        | SystemIntrinsic::UserSyscall2
+                        | SystemIntrinsic::UserSyscall3
+                )
+            });
+            let intrinsic = intrinsic.ok_or_else(|| {
+                self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    format!("unknown user intrinsic 'user.{property}'"),
+                    span,
+                )
+            })?;
+            return self.compile_user_syscall(intrinsic, args, span);
         }
         let target = import_target(self.context, self.module_id, namespace, span)?;
         if self.context.headers[target].structs.contains_key(property) {
@@ -3007,14 +3138,42 @@ impl<'a> FunctionAnalyzer<'a> {
                 span,
             )
         })?;
+        if matches!(
+            intrinsic,
+            SystemIntrinsic::UserSyscall0
+                | SystemIntrinsic::UserSyscall1
+                | SystemIntrinsic::UserSyscall2
+                | SystemIntrinsic::UserSyscall3
+        ) {
+            return Err(self.error(
+                DiagnosticCategory::InvalidIntrinsic,
+                format!(
+                    "user syscall intrinsic must use the user namespace, not native.{property}"
+                ),
+                span,
+            ));
+        }
         if intrinsic == SystemIntrinsic::InterruptResume
-            && self.signature.interrupt == Some(InterruptClass::ErrorCode)
+            && self
+                .signature
+                .interrupt
+                .is_some_and(InterruptClass::has_error_code)
         {
             return Err(self.error(
                 DiagnosticCategory::InvalidIntrinsic,
                 "native.interrupt_resume is forbidden in error-code interrupt functions",
                 span,
             ));
+        }
+        if intrinsic == SystemIntrinsic::CpuLtr {
+            if args.len() != 1 {
+                return Err(self.error(
+                    DiagnosticCategory::WrongArity,
+                    format!("native.cpu_ltr expects 1 argument, got {}", args.len()),
+                    span,
+                ));
+            }
+            self.constant_u16(&args[0], "TSS selector")?;
         }
         if intrinsic == SystemIntrinsic::TaskBlockTrap {
             if self.signature.interrupt.is_some() {
@@ -3034,6 +3193,26 @@ impl<'a> FunctionAnalyzer<'a> {
                     ));
                 }
             }
+        }
+        self.compile_typed_intrinsic(intrinsic, args, span)
+    }
+
+    fn compile_typed_intrinsic(
+        &mut self,
+        intrinsic: SystemIntrinsic,
+        args: &[Expr],
+        span: Span,
+    ) -> NativeResult<ExprResult> {
+        if matches!(
+            intrinsic,
+            SystemIntrinsic::VolatileLoad8
+                | SystemIntrinsic::VolatileStore8
+                | SystemIntrinsic::VolatileLoad16
+                | SystemIntrinsic::VolatileStore16
+                | SystemIntrinsic::VolatileLoad32
+                | SystemIntrinsic::VolatileStore32
+        ) {
+            return self.compile_volatile_intrinsic(intrinsic, args, span);
         }
         let expected_types = intrinsic.parameter_types();
         if args.len() != expected_types.len() {
@@ -3072,6 +3251,122 @@ impl<'a> FunctionAnalyzer<'a> {
             result: result.clone(),
         });
         Ok(result.map_or(ExprResult::Void, ExprResult::Value))
+    }
+
+    fn compile_volatile_intrinsic(
+        &mut self,
+        intrinsic: SystemIntrinsic,
+        args: &[Expr],
+        span: Span,
+    ) -> NativeResult<ExprResult> {
+        let value_type = match intrinsic {
+            SystemIntrinsic::VolatileLoad8 | SystemIntrinsic::VolatileStore8 => SystemType::U8,
+            SystemIntrinsic::VolatileLoad16 | SystemIntrinsic::VolatileStore16 => SystemType::U16,
+            SystemIntrinsic::VolatileLoad32 | SystemIntrinsic::VolatileStore32 => SystemType::U32,
+            _ => unreachable!(),
+        };
+        let expected_count = if matches!(
+            intrinsic,
+            SystemIntrinsic::VolatileLoad8
+                | SystemIntrinsic::VolatileLoad16
+                | SystemIntrinsic::VolatileLoad32
+        ) {
+            1
+        } else {
+            2
+        };
+        if args.len() != expected_count {
+            return Err(self.error(
+                DiagnosticCategory::WrongArity,
+                format!(
+                    "intrinsic '{intrinsic}' expects {expected_count} arguments, got {}",
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        let address = self.compile_value(&args[0], args[0].span(), "volatile address")?;
+        if !matches!(address, SystemType::Usize | SystemType::Pointer(_)) {
+            return Err(self.error(
+                DiagnosticCategory::InvalidIntrinsic,
+                format!("argument 1 to '{intrinsic}' expects usize or pointer, found {address}"),
+                args[0].span(),
+            ));
+        }
+        if expected_count == 2 {
+            let actual = self.compile_value_expected(
+                &args[1],
+                Some(&value_type),
+                args[1].span(),
+                "volatile value",
+            )?;
+            if actual != value_type {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    format!("argument 2 to '{intrinsic}' expects {value_type}, found {actual}"),
+                    args[1].span(),
+                ));
+            }
+        }
+        let result = if expected_count == 1 {
+            Some(value_type)
+        } else {
+            None
+        };
+        self.instructions.push(SystemsInst::Intrinsic {
+            intrinsic,
+            argument_count: expected_count,
+            result: result.clone(),
+        });
+        Ok(result.map_or(ExprResult::Void, ExprResult::Value))
+    }
+
+    fn compile_user_syscall(
+        &mut self,
+        intrinsic: SystemIntrinsic,
+        args: &[Expr],
+        span: Span,
+    ) -> NativeResult<ExprResult> {
+        let expected_count = intrinsic.parameter_types().len();
+        if args.len() != expected_count {
+            return Err(self.error(
+                DiagnosticCategory::WrongArity,
+                format!(
+                    "intrinsic '{intrinsic}' expects {expected_count} arguments, got {}",
+                    args.len()
+                ),
+                span,
+            ));
+        }
+        let number = self.compile_value_expected(
+            &args[0],
+            Some(&SystemType::U32),
+            args[0].span(),
+            "syscall number",
+        )?;
+        if number != SystemType::U32 {
+            return Err(self.error(
+                DiagnosticCategory::InvalidIntrinsic,
+                format!("syscall number expects u32, found {number}"),
+                args[0].span(),
+            ));
+        }
+        for argument in &args[1..] {
+            let actual = self.compile_value(argument, argument.span(), "syscall argument")?;
+            if !actual.is_scalar() {
+                return Err(self.error(
+                    DiagnosticCategory::InvalidIntrinsic,
+                    format!("syscall argument must be a scalar register value, found {actual}"),
+                    argument.span(),
+                ));
+            }
+        }
+        self.instructions.push(SystemsInst::Intrinsic {
+            intrinsic,
+            argument_count: args.len(),
+            result: Some(SystemType::I32),
+        });
+        Ok(ExprResult::Value(SystemType::I32))
     }
 
     fn constant_u16(&self, expression: &Expr, role: &str) -> NativeResult<u16> {
@@ -3198,16 +3493,23 @@ impl<'a> FunctionAnalyzer<'a> {
             ));
         };
         let requires_error = matches!(vector, 8 | 10 | 11 | 12 | 13 | 14 | 17);
-        let required = if requires_error {
-            InterruptClass::ErrorCode
-        } else {
-            InterruptClass::NoErrorCode
-        };
-        if class != required {
+        let class_error = class.has_error_code();
+        let transition_valid = vector != 128 || class.cpl3_transition();
+        if class_error != requires_error || !transition_valid {
             return Err(self.error(
                 DiagnosticCategory::InterruptClassMismatch,
                 format!(
-                    "vector {vector} requires {required} handler, but {source_name} is {class}"
+                    "vector {vector} requires {}{} handler, but {source_name} is {class}",
+                    if requires_error {
+                        "error_code"
+                    } else {
+                        "no_error_code"
+                    },
+                    if vector == 128 {
+                        ",cpl3_transition"
+                    } else {
+                        ""
+                    }
                 ),
                 span,
             ));
@@ -3767,7 +4069,7 @@ impl<'a> FunctionAnalyzer<'a> {
     }
 
     fn ensure_local_available(&self, name: &str, span: Span) -> NativeResult<()> {
-        if name == "native"
+        if matches!(name, "native" | "user")
             || self.context.headers[self.module_id]
                 .imports
                 .contains_key(name)
@@ -4411,5 +4713,59 @@ mod tests {
                 DiagnosticCategory::InvalidIntrinsic
             );
         }
+    }
+
+    #[test]
+    fn user_profile_has_checked_entry_syscalls_and_forbidden_kernel_surface() {
+        let valid = "pub fn user_main() -> int:\n    let text: str = \"ok\"\n    let result: i32 = user.syscall3(1 as u32, 1 as usize, text, 2 as usize)\n    return result\n";
+        let project = analyze_user_project(&one_module(valid)).unwrap();
+        assert!(project.modules[0].user_profile);
+        let entry = project.modules[0].function("user_main").unwrap();
+        assert!(entry.instructions.iter().any(|instruction| matches!(
+            instruction,
+            SystemsInst::Intrinsic {
+                intrinsic: SystemIntrinsic::UserSyscall3,
+                argument_count: 4,
+                result: Some(SystemType::I32),
+            }
+        )));
+
+        for invalid in [
+            "fn user_main() -> int:\n    return 0\n",
+            "pub fn user_main(value: usize) -> int:\n    return value as i32\n",
+            "pub fn user_main() -> int:\n    native.cpu_cli()\n    return 0\n",
+            "pub fn helper() -> int:\n    return 0\npub fn user_main() -> int:\n    return task_address(helper) as i32\n",
+            "pub fn user_main() -> int:\n    let address: usize = 0xc1000000 as usize\n    return address as i32\n",
+        ] {
+            assert!(analyze_user_project(&one_module(invalid)).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn cpl3_transition_interrupt_frame_and_vector_are_checked() {
+        let valid = "struct PrivilegeInterruptFrame:\n    eip: u32\n    cs: u32\n    eflags: u32\n    user_esp: u32\n    user_ss: u32\npub interrupt(no_error_code, cpl3_transition) fn syscall(frame: ptr[PrivilegeInterruptFrame]):\n    return\nfn kernel_main() -> int:\n    let address: usize = interrupt_address(128, syscall)\n    return address as i32\n";
+        let project = analyze_systems_project(&one_module(valid)).unwrap();
+        assert_eq!(
+            project.modules[0].function("syscall").unwrap().interrupt,
+            Some(InterruptClass::NoErrorCodeCpl3Transition)
+        );
+
+        let wrong_frame = valid.replace("    user_ss: u32\n", "");
+        assert_eq!(
+            analyze_systems_project(&one_module(&wrong_frame))
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::InvalidType
+        );
+        let wrong_vector = valid.replace(
+            "interrupt_address(128, syscall)",
+            "interrupt_address(14, syscall)",
+        );
+        assert_eq!(
+            analyze_systems_project(&one_module(&wrong_vector))
+                .unwrap_err()
+                .category,
+            DiagnosticCategory::InterruptClassMismatch
+        );
     }
 }

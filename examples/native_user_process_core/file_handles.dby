@@ -1,0 +1,139 @@
+pub struct FileHandle:
+    allocated: u32
+    generation: u32
+    owner_task: usize
+    inode: u32
+    offset: usize
+    flags: u32
+
+const MAX_HANDLES: usize = 16 as usize
+const MAX_GENERATION: u32 = 0x0fffffff as u32
+const OK: int = 0
+const HANDLE_FULL: int = 20
+const INVALID_HANDLE: int = 21
+const STALE_HANDLE: int = 22
+const WRONG_OWNER: int = 23
+
+static mut HANDLES: array[FileHandle, 16]
+static mut OPENS: usize
+static mut CLOSES: usize
+static mut CLEANUPS: usize
+
+fn record(index: usize) -> ptr[FileHandle]:
+    return &HANDLES[index]
+
+fn encode(index: usize, generation: u32) -> u32:
+    return (generation << (4 as u32)) | (index as u32)
+
+fn advance_generation(handle: ptr[FileHandle]) -> int:
+    if (*handle).generation == MAX_GENERATION:
+        (*handle).allocated = 2 as u32
+    else:
+        (*handle).allocated = 0 as u32
+        (*handle).generation = (*handle).generation + (1 as u32)
+    (*handle).owner_task = 0 as usize
+    (*handle).inode = 0 as u32
+    (*handle).offset = 0 as usize
+    (*handle).flags = 0 as u32
+    return 0
+
+pub fn handles_initialize() -> int:
+    let index: usize = 0 as usize
+    while index < MAX_HANDLES:
+        let handle: ptr[FileHandle] = record(index)
+        (*handle).allocated = 0 as u32
+        (*handle).generation = 1 as u32
+        (*handle).owner_task = 0 as usize
+        (*handle).inode = 0 as u32
+        (*handle).offset = 0 as usize
+        (*handle).flags = 0 as u32
+        index = index + (1 as usize)
+    OPENS = 0 as usize
+    CLOSES = 0 as usize
+    CLEANUPS = 0 as usize
+    return OK
+
+pub fn reserve_handle(owner: usize, inode_number: u32, flags_value: u32, initial_offset: usize, output: ptr[u32]) -> int:
+    if owner == (0 as usize):
+        return INVALID_HANDLE
+    if output as usize == (0 as usize):
+        return INVALID_HANDLE
+    let index: usize = 0 as usize
+    while index < MAX_HANDLES:
+        let handle: ptr[FileHandle] = record(index)
+        if (*handle).allocated == (0 as u32):
+            (*handle).allocated = 1 as u32
+            (*handle).owner_task = owner
+            (*handle).inode = inode_number
+            (*handle).offset = initial_offset
+            (*handle).flags = flags_value
+            (*output) = encode(index, (*handle).generation)
+            OPENS = OPENS + (1 as usize)
+            return OK
+        index = index + (1 as usize)
+    return HANDLE_FULL
+
+pub fn validate_handle(handle_id: u32, owner: usize, inode_output: ptr[u32], offset_output: ptr[usize], flags_output: ptr[u32]) -> int:
+    if handle_id == (0 as u32):
+        return INVALID_HANDLE
+    let index: usize = (handle_id & (15 as u32)) as usize
+    if index >= MAX_HANDLES:
+        return INVALID_HANDLE
+    let handle: ptr[FileHandle] = record(index)
+    if (*handle).allocated != (1 as u32):
+        return STALE_HANDLE
+    if (*handle).generation != (handle_id >> (4 as u32)):
+        return STALE_HANDLE
+    if (*handle).owner_task != owner:
+        return WRONG_OWNER
+    if inode_output as usize != (0 as usize):
+        (*inode_output) = (*handle).inode
+    if offset_output as usize != (0 as usize):
+        (*offset_output) = (*handle).offset
+    if flags_output as usize != (0 as usize):
+        (*flags_output) = (*handle).flags
+    return OK
+
+pub fn update_offset(handle_id: u32, owner: usize, new_offset: usize) -> int:
+    let status: int = validate_handle(handle_id, owner, 0 as usize as ptr[u32], 0 as usize as ptr[usize], 0 as usize as ptr[u32])
+    if status != OK:
+        return status
+    let handle: ptr[FileHandle] = record((handle_id & (15 as u32)) as usize)
+    (*handle).offset = new_offset
+    return OK
+
+pub fn update_inode(handle_id: u32, owner: usize, inode_number: u32) -> int:
+    let status: int = validate_handle(handle_id, owner, 0 as usize as ptr[u32], 0 as usize as ptr[usize], 0 as usize as ptr[u32])
+    if status != OK:
+        return status
+    let handle: ptr[FileHandle] = record((handle_id & (15 as u32)) as usize)
+    (*handle).inode = inode_number
+    return OK
+
+pub fn close_handle(handle_id: u32, owner: usize) -> int:
+    let status: int = validate_handle(handle_id, owner, 0 as usize as ptr[u32], 0 as usize as ptr[usize], 0 as usize as ptr[u32])
+    if status != OK:
+        return status
+    advance_generation(record((handle_id & (15 as u32)) as usize))
+    CLOSES = CLOSES + (1 as usize)
+    return OK
+
+pub fn release_owner(owner: usize) -> int:
+    let index: usize = 0 as usize
+    while index < MAX_HANDLES:
+        let handle: ptr[FileHandle] = record(index)
+        if (*handle).allocated == (1 as u32):
+            if (*handle).owner_task == owner:
+                advance_generation(handle)
+                CLEANUPS = CLEANUPS + (1 as usize)
+        index = index + (1 as usize)
+    return OK
+
+pub fn handle_open_count() -> usize:
+    return OPENS
+
+pub fn handle_close_count() -> usize:
+    return CLOSES
+
+pub fn handle_cleanup_count() -> usize:
+    return CLEANUPS

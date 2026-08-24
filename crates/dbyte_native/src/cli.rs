@@ -1,7 +1,10 @@
+use crate::dbup::{pack_user_bundle, BundleInput};
 use crate::linker::{link_object_bytes, LinkInput};
 use crate::object::parse_relocatable;
-use crate::systems_compiler::{compile_systems_objects, compile_systems_project};
-use crate::{compile_source, Diagnostic, EmitKind, TARGET};
+use crate::systems_compiler::{
+    compile_systems_objects, compile_systems_project, compile_user_objects, compile_user_project,
+};
+use crate::{compile_source, Diagnostic, EmitKind, TARGET, USER_TARGET};
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
@@ -9,7 +12,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec link <object.o>... -o <output.elf>";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link <object.o>... -o <output.elf>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -108,15 +111,28 @@ impl std::error::Error for CliError {}
 #[derive(Debug)]
 struct BuildOptions {
     source: PathBuf,
+    target: BuildTarget,
     emit: EmitKind,
     output: PathBuf,
     dump_ir: bool,
     dump_machine_code: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BuildTarget {
+    Kernel,
+    User,
+}
+
 #[derive(Debug)]
 struct LinkOptions {
     inputs: Vec<PathBuf>,
+    output: PathBuf,
+}
+
+#[derive(Debug)]
+struct PackUserOptions {
+    inputs: Vec<(String, PathBuf)>,
     output: PathBuf,
 }
 
@@ -132,8 +148,29 @@ struct BuildProduct {
 pub fn run_args(args: &[String]) -> Result<(), CliError> {
     match args.first().map(String::as_str) {
         Some("link") => run_link_args(args),
+        Some("pack-user") => run_pack_user_args(args),
         _ => run_build_args(args),
     }
+}
+
+pub fn run_pack_user_args(args: &[String]) -> Result<(), CliError> {
+    let options = parse_pack_user_args(args)?;
+    let mut inputs = Vec::with_capacity(options.inputs.len());
+    for (name, path) in &options.inputs {
+        reject_source_as_output(path, &options.output)?;
+        let payload = fs::read(path).map_err(|error| CliError::Input {
+            path: path.clone(),
+            kind: error.kind(),
+        })?;
+        validate_elf32_kind(path, &payload, ElfKind::Executable, "DBUP1 packer")?;
+        validate_user_executable(path, &payload)?;
+        inputs.push(BundleInput {
+            name: name.clone(),
+            payload,
+        });
+    }
+    let bytes = pack_user_bundle(&inputs).map_err(|error| CliError::link(error.to_string()))?;
+    replace_output_transactionally(&options.output, &bytes)
 }
 
 pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
@@ -176,6 +213,34 @@ fn compile_build_product(
     options: &BuildOptions,
     source_text: &str,
 ) -> Result<BuildProduct, CliError> {
+    if options.target == BuildTarget::User {
+        return match options.emit {
+            EmitKind::Bin => Err(CliError::argument(
+                "i686-dbyte-user does not support --emit bin",
+            )),
+            EmitKind::Obj => {
+                let objects = compile_user_objects(&options.source)
+                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+                let root = objects.root_object();
+                let mut machine_dump = root.machine_dump.clone();
+                append_dump(&mut machine_dump, &root.object_dump);
+                Ok(BuildProduct {
+                    bytes: root.bytes.clone(),
+                    ir_dump: root.ir_dump.clone(),
+                    machine_dump,
+                })
+            }
+            EmitKind::Elf => {
+                let artifact = compile_user_project(&options.source)
+                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+                Ok(BuildProduct {
+                    bytes: artifact.linked.elf,
+                    ir_dump: artifact.ir_dump,
+                    machine_dump: artifact.machine_dump,
+                })
+            }
+        };
+    }
     match options.emit {
         EmitKind::Obj => {
             let objects = compile_systems_objects(&options.source)
@@ -340,17 +405,22 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
     }
 
     let target = target.ok_or_else(|| CliError::argument("missing required --target"))?;
-    if target != TARGET {
-        return Err(CliError::argument(format!(
-            "unsupported target '{target}'; expected '{TARGET}'"
-        )));
-    }
+    let target = match target.as_str() {
+        TARGET => BuildTarget::Kernel,
+        USER_TARGET => BuildTarget::User,
+        _ => {
+            return Err(CliError::argument(format!(
+                "unsupported target '{target}'; expected '{TARGET}' or '{USER_TARGET}'"
+            )))
+        }
+    };
 
     let emit = emit.ok_or_else(|| CliError::argument("missing required --emit"))?;
     let output = output.ok_or_else(|| CliError::argument("missing required -o/--output"))?;
 
     Ok(BuildOptions {
         source: PathBuf::from(source),
+        target,
         emit,
         output,
         dump_ir,
@@ -391,6 +461,45 @@ fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
     }
     let output = output.ok_or_else(|| CliError::argument("missing required -o/--output"))?;
     Ok(LinkOptions { inputs, output })
+}
+
+fn parse_pack_user_args(args: &[String]) -> Result<PackUserOptions, CliError> {
+    let args = match args.first().map(String::as_str) {
+        Some("pack-user") => &args[1..],
+        _ => args,
+    };
+    let mut inputs = Vec::new();
+    let mut output = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if matches!(argument.as_str(), "-o" | "--output") {
+            reject_duplicate(output.is_some(), "-o/--output")?;
+            output = Some(PathBuf::from(take_option_value(
+                args, &mut index, argument,
+            )?));
+        } else if argument.starts_with('-') {
+            return Err(CliError::argument(format!("unknown option '{argument}'")));
+        } else {
+            let (name, path) = argument.split_once('=').ok_or_else(|| {
+                CliError::argument(format!("pack-user input '{argument}' must be NAME=ELF"))
+            })?;
+            if name.is_empty() || path.is_empty() {
+                return Err(CliError::argument(format!(
+                    "pack-user input '{argument}' must be NAME=ELF"
+                )));
+            }
+            inputs.push((name.to_owned(), PathBuf::from(path)));
+        }
+        index += 1;
+    }
+    if inputs.is_empty() {
+        return Err(CliError::argument(
+            "pack-user requires at least one NAME=ELF input",
+        ));
+    }
+    let output = output.ok_or_else(|| CliError::argument("missing required -o/--output"))?;
+    Ok(PackUserOptions { inputs, output })
 }
 
 fn reject_duplicate(already_seen: bool, option: &str) -> Result<(), CliError> {
@@ -501,6 +610,80 @@ fn validate_elf32_kind(
                 "error[elf32]: {producer} produced an invalid ELF32/i386 {}",
                 expected.description()
             ),
+        ))
+    }
+}
+
+fn validate_user_executable(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    let read_u16 = |offset: usize| {
+        bytes
+            .get(offset..offset + 2)
+            .map(|value| u16::from_le_bytes([value[0], value[1]]))
+    };
+    let read_u32 = |offset: usize| {
+        bytes
+            .get(offset..offset + 4)
+            .map(|value| u32::from_le_bytes([value[0], value[1], value[2], value[3]]))
+    };
+    let entry = read_u32(24);
+    let mut valid = bytes.len() <= 4096
+        && read_u32(28) == Some(52)
+        && read_u32(32) == Some(0)
+        && read_u32(36) == Some(0)
+        && read_u16(42) == Some(32)
+        && read_u16(44) == Some(2)
+        && read_u16(46) == Some(0)
+        && read_u16(48) == Some(0)
+        && read_u16(50) == Some(0)
+        && entry.is_some_and(|value| (0x0040_0000..0x0080_0000).contains(&value));
+    let mut last_file_end = 116u32;
+    for index in 0..2usize {
+        let header = 52 + index * 32;
+        let offset = read_u32(header + 4);
+        let address = read_u32(header + 8);
+        let physical = read_u32(header + 12);
+        let file_size = read_u32(header + 16);
+        let memory_size = read_u32(header + 20);
+        let flags = read_u32(header + 24);
+        let alignment = read_u32(header + 28);
+        let expected_flags = if index == 0 { 5 } else { 6 };
+        valid &= read_u32(header) == Some(1)
+            && address == physical
+            && flags == Some(expected_flags)
+            && alignment == Some(1);
+        let Some((offset, address, file_size, memory_size)) =
+            offset.zip(address).zip(file_size).zip(memory_size).map(
+                |(((offset, address), file_size), memory_size)| {
+                    (offset, address, file_size, memory_size)
+                },
+            )
+        else {
+            valid = false;
+            continue;
+        };
+        let file_end = offset.checked_add(file_size);
+        let memory_end = address.checked_add(memory_size);
+        valid &= file_size <= memory_size
+            && offset == last_file_end
+            && file_end.is_some_and(|end| end as usize <= bytes.len())
+            && memory_end.is_some_and(|end| end <= 0x0080_0000)
+            && address >= 0x0040_0000;
+        if index == 0 {
+            valid &= address == 0x0040_0000
+                && memory_size != 0
+                && entry.is_some_and(|entry| {
+                    memory_end.is_some_and(|end| (address..end).contains(&entry))
+                });
+        }
+        last_file_end = file_end.unwrap_or(u32::MAX);
+    }
+    valid &= last_file_end as usize == bytes.len();
+    if valid {
+        Ok(())
+    } else {
+        Err(CliError::compile(
+            path,
+            "error[elf32]: DBUP1 packer requires the canonical compact i686-dbyte-user ELF",
         ))
     }
 }
@@ -661,7 +844,7 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::linker::LINK_ENTRY_SYMBOL;
+    use crate::linker::{link_user_object_bytes, LINK_ENTRY_SYMBOL, LINK_USER_ENTRY_SYMBOL};
     use crate::object::{
         write_relocatable, ObjectImage, ObjectSection, ObjectSectionData, ObjectSymbol,
         SymbolBinding, SymbolDefinition, SymbolKind,
@@ -704,6 +887,23 @@ mod tests {
     fn known_good_elf() -> Vec<u8> {
         link_object_bytes(&[LinkInput::new("known-good.o", valid_kernel_object_bytes())])
             .expect("link known-good ELF")
+            .elf
+    }
+
+    fn known_good_user_elf() -> Vec<u8> {
+        let mut image = function_object(LINK_USER_ENTRY_SYMBOL);
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_profile:user".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        link_user_object_bytes(&[LinkInput::new("user.o", object_bytes(&image))])
+            .expect("link known-good user ELF")
             .elf
     }
 
@@ -764,6 +964,15 @@ mod tests {
             vec![PathBuf::from("kernel.o"), PathBuf::from("serial.o")]
         );
         assert_eq!(link.output, PathBuf::from("kernel.elf"));
+    }
+
+    #[test]
+    fn pack_user_accepts_only_canonical_user_executables() {
+        assert!(validate_user_executable(Path::new("user.elf"), &known_good_user_elf()).is_ok());
+        assert!(validate_user_executable(Path::new("kernel.elf"), &known_good_elf()).is_err());
+        let mut writable_text = known_good_user_elf();
+        writable_text[52 + 24..52 + 28].copy_from_slice(&7u32.to_le_bytes());
+        assert!(validate_user_executable(Path::new("wx.elf"), &writable_text).is_err());
     }
 
     #[test]

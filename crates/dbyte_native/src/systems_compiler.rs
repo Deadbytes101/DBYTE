@@ -2,11 +2,14 @@
 //! in-process DByte static linker.
 
 use crate::diagnostics::{Diagnostic, NativeResult};
-use crate::linker::{link_object_bytes, LinkArtifact, LinkInput};
+use crate::linker::{link_object_bytes, link_user_object_bytes, LinkArtifact, LinkInput};
 use crate::modules::load_native_module_graph;
 use crate::object::write_relocatable;
 use crate::systems_lower::lower_systems_module;
-use crate::systems_semantic::{analyze_systems_objects, analyze_systems_project};
+use crate::systems_semantic::{
+    analyze_systems_objects, analyze_systems_project, analyze_user_objects, analyze_user_project,
+    SystemsProfile,
+};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,18 +81,24 @@ pub struct SystemsBuildArtifact {
 }
 
 pub fn compile_systems_objects(root: &Path) -> NativeResult<CompiledProjectObjects> {
-    compile_systems_objects_with_mode(root, false)
+    compile_systems_objects_with_mode(root, false, SystemsProfile::Kernel)
+}
+
+pub fn compile_user_objects(root: &Path) -> NativeResult<CompiledProjectObjects> {
+    compile_systems_objects_with_mode(root, false, SystemsProfile::User)
 }
 
 fn compile_systems_objects_with_mode(
     root: &Path,
     require_entry: bool,
+    profile: SystemsProfile,
 ) -> NativeResult<CompiledProjectObjects> {
     let graph = load_native_module_graph(root)?;
-    let project = if require_entry {
-        analyze_systems_project(&graph)?
-    } else {
-        analyze_systems_objects(&graph)?
+    let project = match (profile, require_entry) {
+        (SystemsProfile::Kernel, true) => analyze_systems_project(&graph)?,
+        (SystemsProfile::Kernel, false) => analyze_systems_objects(&graph)?,
+        (SystemsProfile::User, true) => analyze_user_project(&graph)?,
+        (SystemsProfile::User, false) => analyze_user_objects(&graph)?,
     };
     if project.modules.len() != graph.modules.len() {
         return Err(Diagnostic::without_span(
@@ -135,10 +144,27 @@ pub fn link_compiled_project(objects: &CompiledProjectObjects) -> NativeResult<L
 }
 
 pub fn compile_systems_project(root: &Path) -> NativeResult<SystemsBuildArtifact> {
-    let objects = compile_systems_objects_with_mode(root, true)?;
+    let objects = compile_systems_objects_with_mode(root, true, SystemsProfile::Kernel)?;
     let ir_dump = objects.combined_ir_dump();
     let mut machine_dump = objects.combined_machine_dump();
     let linked = link_compiled_project(&objects)?;
+    machine_dump.push_str(&linked.dump);
+    if !machine_dump.ends_with('\n') {
+        machine_dump.push('\n');
+    }
+    Ok(SystemsBuildArtifact {
+        objects,
+        linked,
+        ir_dump,
+        machine_dump,
+    })
+}
+
+pub fn compile_user_project(root: &Path) -> NativeResult<SystemsBuildArtifact> {
+    let objects = compile_systems_objects_with_mode(root, true, SystemsProfile::User)?;
+    let ir_dump = objects.combined_ir_dump();
+    let mut machine_dump = objects.combined_machine_dump();
+    let linked = link_user_object_bytes(&objects.link_inputs())?;
     machine_dump.push_str(&linked.dump);
     if !machine_dump.ends_with('\n') {
         machine_dump.push('\n');

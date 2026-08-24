@@ -8,6 +8,7 @@ mod block_device_contract;
 #[cfg(test)]
 mod blocking_contract;
 pub mod cli;
+pub mod dbup;
 pub mod diagnostics;
 pub mod elf32;
 #[cfg(test)]
@@ -32,6 +33,8 @@ pub mod systems_ir;
 pub mod systems_lower;
 pub mod systems_semantic;
 pub mod types;
+#[cfg(test)]
+mod user_process_contract;
 pub mod x86;
 
 use std::fmt::Write;
@@ -43,6 +46,7 @@ pub use diagnostics::{Diagnostic, DiagnosticCategory};
 pub use elf32::ElfLayout;
 
 pub const TARGET: &str = "i686-dbyte-none";
+pub const USER_TARGET: &str = "i686-dbyte-user";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmitKind {
@@ -160,5 +164,175 @@ mod tests {
         assert!(artifact.ir_dump.contains("intrinsic native.io_out8"));
         assert!(artifact.machine_dump.contains("fixup call-rel32"));
         assert!(artifact.machine_dump.contains("patched absolute immediate"));
+    }
+
+    #[test]
+    fn new_memory_intrinsics_reach_ir_and_produce_elf() {
+        // Minimal kernel that exercises all five new memory intrinsics through
+        // the complete compile_source() pipeline: lex → parse → semantic → lower → ELF.
+        let source = r#"
+fn kernel_main() -> int:
+    let addr: int = 0x1000
+    let v16: int = native.volatile_load16(addr)
+    native.volatile_store16(addr, v16)
+    let buf: int = 0x2000
+    let src: int = 0x3000
+    native.mem_copy(buf, src, 64)
+    native.mem_set(buf, 0xff, 32)
+    native.mem_zero(buf, 32)
+    return 0
+"#;
+        let artifact = compile_source("mem_intrinsics_test.dby", source).unwrap();
+        assert!(artifact.elf.starts_with(b"\x7fELF"));
+        assert!(
+            artifact
+                .ir_dump
+                .contains("intrinsic native.volatile_load16"),
+            "expected volatile_load16 in IR dump"
+        );
+        assert!(
+            artifact
+                .ir_dump
+                .contains("intrinsic native.volatile_store16"),
+            "expected volatile_store16 in IR dump"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.mem_copy"),
+            "expected mem_copy in IR dump"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.mem_set"),
+            "expected mem_set in IR dump"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.mem_zero"),
+            "expected mem_zero in IR dump"
+        );
+        // Machine dump should be non-empty and contain the REP string opcodes
+        assert!(
+            artifact.machine_dump.contains("patched-machine-code"),
+            "machine dump should include hex section"
+        );
+    }
+
+    #[test]
+    fn vga_byte_write_probe_produces_valid_elf() {
+        // This is the exact VGA write pattern that will display "GB" in GBTOS.
+        // Passes through the complete lex→parse→semantic→lower→ELF pipeline.
+        let source = r#"
+fn kernel_main() -> int:
+    let vga: int = 0xb8000
+
+    native.volatile_store8(vga, 71)
+    native.volatile_store8(vga + 1, 15)
+
+    native.volatile_store8(vga + 2, 66)
+    native.volatile_store8(vga + 3, 15)
+
+    return 0
+"#;
+        let artifact = compile_source("vga_probe.dby", source).unwrap();
+        assert!(artifact.elf.starts_with(b"\x7fELF"), "ELF magic missing");
+        assert!(
+            artifact
+                .ir_dump
+                .contains("intrinsic native.volatile_store8"),
+            "expected volatile_store8 in IR dump"
+        );
+        // MOV BYTE [r], r8 uses opcode 0x88
+        assert!(
+            artifact.machine_code.contains(&0x88),
+            "expected byte-store opcode 0x88 in machine code"
+        );
+    }
+
+    #[test]
+    fn cpu_control_and_port_aliases_reach_ir() {
+        // Verify that cpu_cli/sti/pause and port_in8/port_out8 aliases all
+        // resolve through the full pipeline without errors.
+        let source = r#"
+fn kernel_main() -> int:
+    native.cpu_cli()
+    native.port_out8(0x20, 0x20)
+    let status: int = native.port_in8(0x64)
+    native.cpu_sti()
+    native.cpu_pause()
+    return status
+"#;
+        let artifact = compile_source("cpu_port_test.dby", source).unwrap();
+        assert!(artifact.elf.starts_with(b"\x7fELF"));
+        // Both port aliases should resolve to the io_out8 / io_in8 qualified names.
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.io_out8"),
+            "port_out8 should resolve to native.io_out8 in IR"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.io_in8"),
+            "port_in8 should resolve to native.io_in8 in IR"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.cpu_cli"),
+            "expected cpu_cli in IR"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.cpu_sti"),
+            "expected cpu_sti in IR"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.cpu_pause"),
+            "expected cpu_pause in IR"
+        );
+        // CLI = FA, STI = FB must appear in machine code
+        assert!(
+            artifact.machine_code.contains(&0xfa),
+            "expected CLI byte FA"
+        );
+        assert!(
+            artifact.machine_code.contains(&0xfb),
+            "expected STI byte FB"
+        );
+    }
+
+    #[test]
+    fn idt_and_eflags_primitives_reach_ir_and_produce_elf() {
+        // Simulates the skeleton of a real interrupt_init() routine:
+        // disable interrupts, load the IDT, re-enable interrupts.
+        let source = r#"
+fn interrupt_init(idt_ptr: int) -> int:
+    native.cpu_cli()
+    let flags: int = native.read_eflags()
+    native.lidt(idt_ptr)
+    native.write_eflags(flags)
+    native.cpu_sti()
+    return 0
+
+fn kernel_main() -> int:
+    let idt: int = 0x5000
+    return interrupt_init(idt)
+"#;
+        let artifact = compile_source("idt_test.dby", source).unwrap();
+        assert!(artifact.elf.starts_with(b"\x7fELF"), "ELF magic missing");
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.lidt"),
+            "expected native.lidt in IR"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.read_eflags"),
+            "expected native.read_eflags in IR"
+        );
+        assert!(
+            artifact.ir_dump.contains("intrinsic native.write_eflags"),
+            "expected native.write_eflags in IR"
+        );
+        // PUSHFD = 9C, POPFD = 9D, LIDT prefix = 0F
+        assert!(
+            artifact.machine_code.contains(&0x9c),
+            "expected PUSHFD (9C)"
+        );
+        assert!(artifact.machine_code.contains(&0x9d), "expected POPFD (9D)");
+        assert!(
+            artifact.machine_code.contains(&0x0f),
+            "expected LIDT escape (0F)"
+        );
     }
 }

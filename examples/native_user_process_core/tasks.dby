@@ -1,0 +1,299 @@
+import "serial.dby" as serial
+import "scheduler.dby" as scheduler
+import "dbfs.dby" as dbfs
+import "filesystem_runtime.dby" as fs
+import "user_bundle.dby" as bundle
+import "processes.dby" as processes
+import "proof.dby" as proof
+import "ata.dby" as ata
+import "paging.dby" as paging
+import "frames.dby" as frames
+
+static mut PROGRAM_BUFFER: array[u8, 4096]
+static mut CONFIG_BYTES: array[u8, 9]
+static mut PHASE: usize
+static mut INSTALLED: usize
+static mut FAILURE: int
+static mut PROGRESS_DONE: usize
+static mut ISOLATION_FRAME_A: usize
+static mut ISOLATION_FRAME_B: usize
+
+fn line(text: str, length: usize) -> int:
+    serial.write(text, length)
+    serial.newline()
+    return 0
+
+fn fail(code: int) -> int:
+    FAILURE = code
+    proof.value("USER_FAIL", 9 as usize, code as usize)
+    line("USER PROCESS FAILED", 19 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return code
+
+fn install_program(bundle_name: str, bundle_length: usize, path: str, path_length: usize) -> int:
+    let length: usize = 0 as usize
+    if bundle.bundle_copy(bundle_name, bundle_length, &PROGRAM_BUFFER[0], 4096 as usize, &length) != 0:
+        return 1
+    let inode: u32 = 0 as u32
+    let status: int = dbfs.fs_create_file(path, path_length, &inode)
+    if status != 0:
+        if status != 8:
+            return 2
+        if dbfs.fs_lookup(path, path_length, &inode) != 0:
+            return 2
+        if dbfs.fs_truncate_inode(inode) != 0:
+            return 2
+    let final_size: usize = 0 as usize
+    if dbfs.fs_write_inode(inode, 0 as usize, &PROGRAM_BUFFER[0], length, false, &final_size) != 0:
+        return 3
+    if final_size != length:
+        return 3
+    return 0
+
+fn ensure_file(path: str, path_length: usize) -> int:
+    let inode: u32 = 0 as u32
+    let status: int = dbfs.fs_create_file(path, path_length, &inode)
+    if status == 0:
+        return 0
+    if status == 8:
+        return 0
+    return status
+
+fn install_all() -> int:
+    let status: int = dbfs.dbfs_mount()
+    if status == 3:
+        if dbfs.dbfs_format() != 0:
+            return 1
+        if dbfs.dbfs_mount() != 0:
+            return 1
+    else:
+        if status != 0:
+            return 1
+    let inode: u32 = 0 as u32
+    if dbfs.fs_lookup("/SYSTEM", 7 as usize, &inode) != 0:
+        if dbfs.fs_mkdir("/SYSTEM", 7 as usize) != 0:
+            return 2
+    if dbfs.fs_lookup("/SYSTEM/BIN", 11 as usize, &inode) != 0:
+        if dbfs.fs_mkdir("/SYSTEM/BIN", 11 as usize) != 0:
+            return 2
+    CONFIG_BYTES[0] = 0x56 as u8
+    CONFIG_BYTES[1] = 0x41 as u8
+    CONFIG_BYTES[2] = 0x4c as u8
+    CONFIG_BYTES[3] = 0x55 as u8
+    CONFIG_BYTES[4] = 0x45 as u8
+    CONFIG_BYTES[5] = 0x3d as u8
+    let config_value: u32 = (40 as u32) + (2 as u32)
+    CONFIG_BYTES[6] = (0x30 as u8) + ((config_value / (10 as u32)) as u8)
+    CONFIG_BYTES[7] = (0x30 as u8) + ((config_value % (10 as u32)) as u8)
+    CONFIG_BYTES[8] = 0x0a as u8
+    let config_inode: u32 = 0 as u32
+    let config_status: int = dbfs.fs_create_file("/SYSTEM/CONFIG.TXT", 18 as usize, &config_inode)
+    if config_status != 0:
+        if config_status != 8:
+            return 4
+        if dbfs.fs_lookup("/SYSTEM/CONFIG.TXT", 18 as usize, &config_inode) != 0:
+            return 4
+        if dbfs.fs_truncate_inode(config_inode) != 0:
+            return 4
+    let config_size: usize = 0 as usize
+    if dbfs.fs_write_inode(config_inode, 0 as usize, &CONFIG_BYTES[0], 9 as usize, false, &config_size) != 0:
+        return 4
+    if config_size != (9 as usize):
+        return 4
+    if ensure_file("/SYSTEM/A.TXT", 13 as usize) != 0:
+        return 5
+    if ensure_file("/SYSTEM/B.TXT", 13 as usize) != 0:
+        return 5
+    if install_program("HELLO.ELF", 9 as usize, "/SYSTEM/BIN/HELLO.ELF", 21 as usize) != 0:
+        return 31
+    if install_program("ISOA.ELF", 8 as usize, "/SYSTEM/BIN/ISOA.ELF", 20 as usize) != 0:
+        return 32
+    if install_program("ISOB.ELF", 8 as usize, "/SYSTEM/BIN/ISOB.ELF", 20 as usize) != 0:
+        return 33
+    if install_program("SURVIVE.ELF", 11 as usize, "/SYSTEM/BIN/SURVIVE.ELF", 23 as usize) != 0:
+        return 34
+    if install_program("PAGEFAULT.ELF", 13 as usize, "/SYSTEM/BIN/PAGEFAULT.ELF", 25 as usize) != 0:
+        return 35
+    if install_program("HOSTILE.ELF", 11 as usize, "/SYSTEM/BIN/HOSTILE.ELF", 23 as usize) != 0:
+        return 36
+    return 0
+
+pub fn user_launcher_0() -> int:
+    processes.enter(0 as usize)
+    return 1
+
+pub fn user_launcher_1() -> int:
+    processes.enter(1 as usize)
+    return 1
+
+pub fn user_launcher_2() -> int:
+    processes.enter(2 as usize)
+    return 1
+
+pub fn user_launcher_3() -> int:
+    processes.enter(3 as usize)
+    return 1
+
+fn load_and_spawn(path: str, length: usize, slot: usize, entry: usize) -> int:
+    let load_status: int = processes.load_process(path, length, slot)
+    if load_status != 0:
+        return 10 + load_status
+    let task: usize = scheduler.spawn(entry)
+    if task == (0 as usize):
+        return 2
+    if processes.attach_task(slot, task) != 0:
+        return 3
+    native.cpu_sti()
+    return 0
+
+fn spawn_prepared(slot: usize, entry: usize) -> int:
+    let task: usize = scheduler.spawn(entry)
+    if task == (0 as usize):
+        return 1
+    if processes.attach_task(slot, task) != 0:
+        return 2
+    return 0
+
+pub fn installer() -> int:
+    if dbfs.dbfs_initialize() != 0:
+        return fail(101)
+    let install_status: int = install_all()
+    if install_status != 0:
+        return fail(110 + install_status)
+    if fs.runtime_initialize() != 0:
+        return fail(103)
+    line("USER ADDRESS SPACE ONLINE", 25 as usize)
+    line("ELF LOADER ONLINE", 17 as usize)
+    let load_status: int = processes.load_process("/SYSTEM/BIN/HELLO.ELF", 21 as usize, 0 as usize)
+    if load_status != 0:
+        return fail(200 + load_status)
+    load_status = processes.load_process("/SYSTEM/BIN/ISOA.ELF", 20 as usize, 1 as usize)
+    if load_status != 0:
+        return fail(210 + load_status)
+    load_status = processes.load_process("/SYSTEM/BIN/ISOB.ELF", 20 as usize, 2 as usize)
+    if load_status != 0:
+        return fail(220 + load_status)
+    load_status = processes.load_process("/SYSTEM/BIN/SURVIVE.ELF", 23 as usize, 3 as usize)
+    if load_status != 0:
+        return fail(230 + load_status)
+    ISOLATION_FRAME_A = processes.process_text_frame(1 as usize)
+    ISOLATION_FRAME_B = processes.process_text_frame(2 as usize)
+    if ISOLATION_FRAME_A == (0 as usize):
+        return fail(231)
+    if ISOLATION_FRAME_A == ISOLATION_FRAME_B:
+        return fail(232)
+    native.cpu_cli()
+    if spawn_prepared(0 as usize, task_address(user_launcher_0)) != 0:
+        return fail(240)
+    if spawn_prepared(1 as usize, task_address(user_launcher_1)) != 0:
+        return fail(241)
+    if spawn_prepared(2 as usize, task_address(user_launcher_2)) != 0:
+        return fail(242)
+    if spawn_prepared(3 as usize, task_address(user_launcher_3)) != 0:
+        return fail(243)
+    line("RING3 ONLINE", 12 as usize)
+    line("SYSCALL ABI ONLINE", 18 as usize)
+    INSTALLED = 1 as usize
+    return 0
+
+pub fn progress_worker() -> int:
+    let progress: usize = 0 as usize
+    while PROGRESS_DONE == (0 as usize):
+        progress = progress + (1 as usize)
+    return 0
+
+pub fn idle() -> int:
+    while true:
+        native.cpu_sti()
+        native.cpu_hlt()
+        native.cpu_cli()
+        processes.reap_processes()
+        if scheduler.reap_exited() != 0:
+            return fail(201)
+        if PHASE == (0 as usize):
+            if INSTALLED != (0 as usize):
+                if scheduler.live_count() == (3 as usize):
+                    line("USER FS ONLINE", 14 as usize)
+                    line("USER ISOLATION OK", 17 as usize)
+                    native.cpu_sti()
+                    if load_and_spawn("/SYSTEM/BIN/HOSTILE.ELF", 23 as usize, 0 as usize, task_address(user_launcher_0)) != 0:
+                        return fail(202)
+                    PHASE = 1 as usize
+        else:
+            if PHASE == (1 as usize):
+                if scheduler.live_count() == (3 as usize):
+                    if processes.exit_reason(0 as usize) != (2 as u32):
+                        return fail(203)
+                    line("USER #GP TERMINATED", 19 as usize)
+                    native.cpu_sti()
+                    if load_and_spawn("/SYSTEM/BIN/PAGEFAULT.ELF", 25 as usize, 0 as usize, task_address(user_launcher_0)) != 0:
+                        return fail(204)
+                    PHASE = 2 as usize
+            else:
+                if PHASE == (2 as usize):
+                    if scheduler.live_count() == (3 as usize):
+                        if processes.exit_reason(0 as usize) != (3 as u32):
+                            return fail(205)
+                        line("USER #PF TERMINATED", 19 as usize)
+                        PROGRESS_DONE = 1 as usize
+                        PHASE = 3 as usize
+                else:
+                    if PHASE == (3 as usize):
+                        if scheduler.live_count() == (2 as usize):
+                            if processes.syscall_count() != (19 as usize):
+                                return fail(206)
+                            if processes.worker_request_count() != (9 as usize):
+                                return fail(207)
+                            if processes.fault_count() != (2 as usize):
+                                return fail(208)
+                            if processes.process_reclaim_count() != (6 as usize):
+                                return fail(209)
+                            if fs.fs_cleanup_count() != (2 as usize):
+                                return fail(212)
+                            if paging.scratch_map_count() != paging.scratch_unmap_count():
+                                return fail(213)
+                            if ata.ata_irq_count() != ata.ata_slave_eoi_count():
+                                return fail(214)
+                            if ata.ata_irq_count() != ata.ata_master_eoi_count():
+                                return fail(215)
+                            if processes.fault_address(0 as usize) != (0xc1000000 as usize):
+                                return fail(210)
+                            if (processes.fault_error(0 as usize) & (7 as u32)) != (7 as u32):
+                                return fail(211)
+                            proof.value("SYSCALLS", 8 as usize, processes.syscall_count())
+                            proof.value("WORKER_REQ", 10 as usize, processes.worker_request_count())
+                            proof.value("PROCESS_FAULTS", 14 as usize, processes.fault_count())
+                            proof.value("PROCESS_REAP", 12 as usize, processes.process_reclaim_count())
+                            proof.value("ISO_FRAME_A", 11 as usize, ISOLATION_FRAME_A)
+                            proof.value("ISO_FRAME_B", 11 as usize, ISOLATION_FRAME_B)
+                            proof.value("SLOT0_GEN", 9 as usize, processes.process_generation(0 as usize) as usize)
+                            proof.value("FD_CLEANUP", 10 as usize, fs.fs_cleanup_count())
+                            proof.value("SCRATCH_MAP", 11 as usize, paging.scratch_map_count())
+                            proof.value("SCRATCH_UNMAP", 13 as usize, paging.scratch_unmap_count())
+                            proof.value("IRQ0_TICKS", 10 as usize, scheduler.tick_count() as usize)
+                            proof.value("IRQ0_EOI", 8 as usize, scheduler.eoi_count())
+                            proof.value("ATA_IRQ", 7 as usize, ata.ata_irq_count())
+                            proof.value("ATA_SLAVE_EOI", 13 as usize, ata.ata_slave_eoi_count())
+                            proof.value("ATA_MASTER_EOI", 14 as usize, ata.ata_master_eoi_count())
+                            proof.value("FRAME_ALLOC", 11 as usize, frames.allocation_count())
+                            proof.value("FRAME_RELEASE", 13 as usize, frames.release_count())
+                            line("PROCESS EXIT OK", 15 as usize)
+                            line("PROCESS RECLAIM OK", 18 as usize)
+                            line("KERNEL SURVIVED", 15 as usize)
+                            line("USERMODE CHECK OK", 17 as usize)
+                            native.cpu_cli()
+                            while true:
+                                native.cpu_hlt()
+        PHASE = PHASE
+    return 0
+
+pub fn tasks_initialize() -> int:
+    PHASE = 0 as usize
+    INSTALLED = 0 as usize
+    FAILURE = 0
+    PROGRESS_DONE = 0 as usize
+    ISOLATION_FRAME_A = 0 as usize
+    ISOLATION_FRAME_B = 0 as usize
+    return 0
