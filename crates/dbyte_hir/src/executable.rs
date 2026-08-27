@@ -11,7 +11,8 @@ use super::{
     ValueCategory,
 };
 use dbyte_ast::{
-    BinOp, CallConvention, CaptureMode, Expr, MatchMode, Pattern, Program, Span, Stmt, UnaryOp,
+    BinOp, CallConvention, CaptureMode, Expr, FunctionKind, MatchMode, Pattern, Program, Span,
+    Stmt, UnaryOp,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -61,6 +62,8 @@ pub struct HirFunction {
     pub generic: Option<GenericDefId>,
     pub name: String,
     pub public: bool,
+    pub kind: FunctionKind,
+    pub drop_target: Option<SymbolId>,
     pub convention: CallConvention,
     pub interrupt: Option<dbyte_ast::InterruptClass>,
     pub declaration_only: bool,
@@ -77,6 +80,8 @@ pub struct ConcreteHirFunction {
     pub key: FunctionInstanceKey,
     pub symbol_name: String,
     pub public: bool,
+    pub kind: FunctionKind,
+    pub drop_target: Option<SymbolId>,
     pub convention: CallConvention,
     pub interrupt: Option<dbyte_ast::InterruptClass>,
     pub declaration_only: bool,
@@ -102,6 +107,26 @@ pub struct HirBlock {
     pub statements: Vec<HirStatement>,
 }
 
+fn block_is_terminal(block: &HirBlock) -> bool {
+    block
+        .statements
+        .last()
+        .is_some_and(|statement| match statement {
+            HirStatement::Return { .. }
+            | HirStatement::Break { .. }
+            | HirStatement::Continue { .. } => true,
+            HirStatement::If {
+                then_block,
+                else_block: Some(else_block),
+                ..
+            } => block_is_terminal(then_block) && block_is_terminal(else_block),
+            HirStatement::Match { arms, .. } => {
+                !arms.is_empty() && arms.iter().all(|arm| block_is_terminal(&arm.body))
+            }
+            _ => false,
+        })
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum HirStatement {
     Let {
@@ -112,6 +137,7 @@ pub enum HirStatement {
     Assign {
         place: HirPlace,
         value: HirExpr,
+        cleanup_before_commit: Option<HirBlock>,
         span: Span,
     },
     Expression(HirExpr),
@@ -128,6 +154,12 @@ pub enum HirStatement {
     },
     While {
         condition: HirExpr,
+        body: HirBlock,
+        span: Span,
+    },
+    For {
+        local: HirLocal,
+        iterable: HirExpr,
         body: HirBlock,
         span: Span,
     },
@@ -181,13 +213,130 @@ pub struct HirExpr {
     pub ty: TypeId,
     pub category: ValueCategory,
     pub ownership: OwnershipAction,
+    pub allocator_origin: Option<super::AllocatorOriginId>,
+    pub borrow_origin: Option<super::BorrowOriginId>,
     pub kind: HirExprKind,
     pub span: Span,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HostCapabilityId {
+    Print,
+    MathAbs,
+    MathMin,
+    MathMax,
+    FsReadText,
+    FsWriteText,
+    FsReadBytes,
+    FsWriteBytes,
+    FsExists,
+    FsMkdir,
+    FsRemove,
+    EncodingHexEncode,
+    EncodingHexDecode,
+    HashSha256,
+    EnvArgs,
+    ProcessRun,
+    BufferNew,
+    BufferFromBytes,
+    BufferToBytes,
+    BufferLen,
+    BufferGet,
+    BufferSet,
+    BufferSlice,
+    BufferLoad,
+    BufferSave,
+    BufferFind,
+    BufferReplace,
+    BinaryU8,
+    BinaryI8,
+    BinaryU16Le,
+    BinaryU16Be,
+    BinaryI16Le,
+    BinaryI16Be,
+    BinaryU32Le,
+    BinaryU32Be,
+    BinaryI32Le,
+    BinaryI32Be,
+    BinaryPackU16Le,
+    BinaryPackU16Be,
+    BinaryPackU32Le,
+    BinaryPackU32Be,
+    BinaryWriteU16Le,
+    BinaryWriteU16Be,
+    BinaryWriteU32Le,
+    BinaryWriteU32Be,
+}
+
+impl HostCapabilityId {
+    pub fn resolve(module: &str, member: &str) -> Option<Self> {
+        Some(match (module, member) {
+            ("std.math", "abs") => Self::MathAbs,
+            ("std.math", "min") => Self::MathMin,
+            ("std.math", "max") => Self::MathMax,
+            ("std.fs", "read_text") => Self::FsReadText,
+            ("std.fs", "write_text") => Self::FsWriteText,
+            ("std.fs", "read_bytes") => Self::FsReadBytes,
+            ("std.fs", "write_bytes") => Self::FsWriteBytes,
+            ("std.fs", "exists") => Self::FsExists,
+            ("std.fs", "mkdir") => Self::FsMkdir,
+            ("std.fs", "remove") => Self::FsRemove,
+            ("std.encoding", "hex_encode") => Self::EncodingHexEncode,
+            ("std.encoding", "hex_decode") => Self::EncodingHexDecode,
+            ("std.hash", "sha256") => Self::HashSha256,
+            ("std.env", "args") => Self::EnvArgs,
+            ("std.process", "run") => Self::ProcessRun,
+            ("std.buffer", "new") => Self::BufferNew,
+            ("std.buffer", "from_bytes") => Self::BufferFromBytes,
+            ("std.buffer", "to_bytes") => Self::BufferToBytes,
+            ("std.buffer", "len") => Self::BufferLen,
+            ("std.buffer", "get") => Self::BufferGet,
+            ("std.buffer", "set") => Self::BufferSet,
+            ("std.buffer", "slice") => Self::BufferSlice,
+            ("std.buffer", "load") => Self::BufferLoad,
+            ("std.buffer", "save") => Self::BufferSave,
+            ("std.buffer", "find") => Self::BufferFind,
+            ("std.buffer", "replace") => Self::BufferReplace,
+            ("std.binary", "u8") => Self::BinaryU8,
+            ("std.binary", "i8") => Self::BinaryI8,
+            ("std.binary", "u16_le") => Self::BinaryU16Le,
+            ("std.binary", "u16_be") => Self::BinaryU16Be,
+            ("std.binary", "i16_le") => Self::BinaryI16Le,
+            ("std.binary", "i16_be") => Self::BinaryI16Be,
+            ("std.binary", "u32_le") => Self::BinaryU32Le,
+            ("std.binary", "u32_be") => Self::BinaryU32Be,
+            ("std.binary", "i32_le") => Self::BinaryI32Le,
+            ("std.binary", "i32_be") => Self::BinaryI32Be,
+            ("std.binary", "pack_u16_le") => Self::BinaryPackU16Le,
+            ("std.binary", "pack_u16_be") => Self::BinaryPackU16Be,
+            ("std.binary", "pack_u32_le") => Self::BinaryPackU32Le,
+            ("std.binary", "pack_u32_be") => Self::BinaryPackU32Be,
+            ("std.binary", "write_u16_le") => Self::BinaryWriteU16Le,
+            ("std.binary", "write_u16_be") => Self::BinaryWriteU16Be,
+            ("std.binary", "write_u32_le") => Self::BinaryWriteU32Le,
+            ("std.binary", "write_u32_be") => Self::BinaryWriteU32Be,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirFormatPart {
+    Literal(Vec<u8>),
+    Value(HirExpr),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum HirExprKind {
+    Unit,
     Integer(i64),
+    LayoutOf {
+        target: TypeId,
+        alignment: bool,
+    },
+    Length {
+        value: Box<HirExpr>,
+    },
     Float(f64),
     Bool(bool),
     String(Vec<u8>),
@@ -228,6 +377,11 @@ pub enum HirExprKind {
         intrinsic: HirIntrinsic,
         arguments: Vec<HirExpr>,
     },
+    HostCall {
+        capability: HostCapabilityId,
+        arguments: Vec<HirExpr>,
+    },
+    FormatString(Vec<HirFormatPart>),
     InterruptAddress {
         vector: u8,
         handler: FunctionInstanceKey,
@@ -257,6 +411,10 @@ pub enum HirExprKind {
         err_variant: super::VariantId,
         cleanup: Vec<HirBlock>,
     },
+    Drop {
+        place: HirPlace,
+        cleanup: HirBlock,
+    },
     Closure {
         closure: ClosureId,
         captures: Vec<HirCapture>,
@@ -284,8 +442,22 @@ pub enum HirPlaceBase {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HirProjection {
-    Field { field: FieldId, offset: u32 },
-    Index { index: HirExpr, element_size: u32 },
+    Field {
+        field: FieldId,
+        ty: TypeId,
+        offset: u32,
+    },
+    Payload {
+        variant: super::VariantId,
+        index: u32,
+        ty: TypeId,
+        offset: u32,
+    },
+    Index {
+        index: HirExpr,
+        element: TypeId,
+        element_size: u32,
+    },
 }
 
 /// Build executable bodies only after canonical semantic analysis succeeds.
@@ -328,7 +500,18 @@ pub struct ProjectInput {
 pub struct CanonicalHirProject {
     pub root: ModuleId,
     pub module_order: Vec<ModuleId>,
+    pub source_modules: BTreeMap<ModuleId, String>,
     pub executable: ExecutableHirProgram,
+    pub symbol_owners: BTreeMap<SymbolId, ModuleId>,
+    pub link_names: BTreeMap<SymbolId, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteHirProject {
+    pub root: ModuleId,
+    pub module_order: Vec<ModuleId>,
+    pub source_modules: BTreeMap<ModuleId, String>,
+    pub executable: ConcreteHirProgram,
     pub symbol_owners: BTreeMap<SymbolId, ModuleId>,
     pub link_names: BTreeMap<SymbolId, String>,
 }
@@ -403,17 +586,56 @@ pub fn analyze_project(
     Ok(CanonicalHirProject {
         root: project.root,
         module_order: project.modules.iter().map(|module| module.id).collect(),
+        source_modules: project
+            .modules
+            .iter()
+            .map(|module| (module.id, module.name.clone()))
+            .collect(),
         executable,
         symbol_owners,
         link_names,
     })
 }
 
+pub fn monomorphize_project(
+    project: &CanonicalHirProject,
+) -> Result<ConcreteHirProject, Diagnostic> {
+    let executable = monomorphize(&project.executable)?;
+    validate_profile(&executable, executable.semantic.profile)?;
+    Ok(ConcreteHirProject {
+        root: project.root,
+        module_order: project.module_order.clone(),
+        source_modules: project.source_modules.clone(),
+        executable,
+        symbol_owners: project.symbol_owners.clone(),
+        link_names: project.link_names.clone(),
+    })
+}
+
+pub fn validate_project_profile(
+    project: &ConcreteHirProject,
+    profile: super::Profile,
+) -> Result<(), Diagnostic> {
+    validate_profile(&project.executable, profile)
+}
+
 pub fn monomorphize(program: &ExecutableHirProgram) -> Result<ConcreteHirProgram, Diagnostic> {
     let mut pending = BTreeSet::new();
     for function in &program.functions {
+        let exported_drop = function.kind == FunctionKind::Drop
+            && function.generic.is_none()
+            && function.drop_target.is_some_and(|target| {
+                program
+                    .semantic
+                    .definitions
+                    .iter()
+                    .any(|definition| definition.symbol == target && definition.public)
+            });
         if function.generic.is_none()
-            && (function.public || function.name == "kernel_main" || function.name == "user_main")
+            && (function.public
+                || exported_drop
+                || function.name == "kernel_main"
+                || function.name == "user_main")
         {
             pending.insert(FunctionInstanceKey {
                 symbol: function.symbol,
@@ -423,6 +645,11 @@ pub fn monomorphize(program: &ExecutableHirProgram) -> Result<ConcreteHirProgram
     }
     collect_called_instances_block(&program.top_level, &mut pending);
     for specialization in &program.semantic.specializations {
+        if specialization.arguments.iter().any(|argument| {
+            concrete_type_is_open(&program.semantic, *argument, &mut BTreeSet::new())
+        }) {
+            continue;
+        }
         if let Some(function) = program
             .functions
             .iter()
@@ -475,8 +702,21 @@ pub fn monomorphize(program: &ExecutableHirProgram) -> Result<ConcreteHirProgram
             });
         }
         let substitution = source.generic.map(|owner| (owner, key.arguments.clone()));
+        if substitution.is_some() {
+            let source_type_count = program.semantic.types.len();
+            for index in 0..source_type_count {
+                match types.substitute(TypeId(index as u32), substitution.as_ref(), source.span) {
+                    Ok(_) => {}
+                    Err(error) if error.code == "E_HIR_OPEN_GENERIC" => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
         let mut concrete = source.clone();
         substitute_function(&mut concrete, substitution.as_ref(), &mut types)?;
+        let mut concrete_semantic = program.semantic.clone();
+        concrete_semantic.types = types.types.clone();
+        materialize_concrete_drop_block(&mut concrete.body, &concrete_semantic)?;
         let mut discovered = BTreeSet::new();
         collect_called_instances_block(&concrete.body, &mut discovered);
         for instance in discovered {
@@ -489,6 +729,8 @@ pub fn monomorphize(program: &ExecutableHirProgram) -> Result<ConcreteHirProgram
             key: key.clone(),
             symbol_name: mangle_instance(&source.name, &key.arguments),
             public: source.public && key.arguments.is_empty(),
+            kind: source.kind,
+            drop_target: source.drop_target,
             convention: source.convention,
             interrupt: source.interrupt,
             declaration_only: source.declaration_only,
@@ -539,9 +781,19 @@ fn mangle_instance(name: &str, arguments: &[TypeId]) -> String {
 fn collect_called_instances_block(block: &HirBlock, output: &mut BTreeSet<FunctionInstanceKey>) {
     for statement in &block.statements {
         match statement {
-            HirStatement::Let { value, .. }
-            | HirStatement::Expression(value)
-            | HirStatement::Assign { value, .. } => collect_called_instances_expr(value, output),
+            HirStatement::Let { value, .. } | HirStatement::Expression(value) => {
+                collect_called_instances_expr(value, output)
+            }
+            HirStatement::Assign {
+                value,
+                cleanup_before_commit,
+                ..
+            } => {
+                collect_called_instances_expr(value, output);
+                if let Some(cleanup) = cleanup_before_commit {
+                    collect_called_instances_block(cleanup, output);
+                }
+            }
             HirStatement::Return { value, cleanup, .. } => {
                 if let Some(value) = value {
                     collect_called_instances_expr(value, output);
@@ -566,6 +818,10 @@ fn collect_called_instances_block(block: &HirBlock, output: &mut BTreeSet<Functi
                 condition, body, ..
             } => {
                 collect_called_instances_expr(condition, output);
+                collect_called_instances_block(body, output);
+            }
+            HirStatement::For { iterable, body, .. } => {
+                collect_called_instances_expr(iterable, output);
                 collect_called_instances_block(body, output);
             }
             HirStatement::Match { value, arms, .. } => {
@@ -601,10 +857,12 @@ fn collect_called_instances_expr(expression: &HirExpr, output: &mut BTreeSet<Fun
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Length { value }
         | HirExprKind::Try { value, .. }
         | HirExprKind::Constant { value, .. } => collect_called_instances_expr(value, output),
         HirExprKind::DirectCall { arguments, .. }
         | HirExprKind::IntrinsicCall { arguments, .. }
+        | HirExprKind::HostCall { arguments, .. }
         | HirExprKind::List(arguments)
         | HirExprKind::Enum {
             payload: arguments, ..
@@ -626,8 +884,18 @@ fn collect_called_instances_expr(expression: &HirExpr, output: &mut BTreeSet<Fun
                 collect_called_instances_expr(value, output);
             }
         }
+        HirExprKind::FormatString(parts) => {
+            for part in parts {
+                if let HirFormatPart::Value(value) = part {
+                    collect_called_instances_expr(value, output);
+                }
+            }
+        }
         HirExprKind::Closure { body, .. } => collect_called_instances_block(body, output),
-        HirExprKind::Integer(..)
+        HirExprKind::Drop { cleanup, .. } => collect_called_instances_block(cleanup, output),
+        HirExprKind::Unit
+        | HirExprKind::Integer(..)
+        | HirExprKind::LayoutOf { .. }
         | HirExprKind::Float(..)
         | HirExprKind::Bool(..)
         | HirExprKind::String(..)
@@ -666,9 +934,21 @@ fn substitute_block(
 ) -> Result<(), Diagnostic> {
     for statement in &mut block.statements {
         match statement {
-            HirStatement::Let { value, .. }
-            | HirStatement::Expression(value)
-            | HirStatement::Assign { value, .. } => substitute_expr(value, substitution, types)?,
+            HirStatement::Let { value, .. } | HirStatement::Expression(value) => {
+                substitute_expr(value, substitution, types)?
+            }
+            HirStatement::Assign {
+                place,
+                value,
+                cleanup_before_commit,
+                ..
+            } => {
+                substitute_place(place, substitution, types)?;
+                substitute_expr(value, substitution, types)?;
+                if let Some(cleanup) = cleanup_before_commit {
+                    substitute_block(cleanup, substitution, types)?;
+                }
+            }
             HirStatement::Return { value, cleanup, .. } => {
                 if let Some(value) = value {
                     substitute_expr(value, substitution, types)?;
@@ -695,13 +975,31 @@ fn substitute_block(
                 substitute_expr(condition, substitution, types)?;
                 substitute_block(body, substitution, types)?;
             }
+            HirStatement::For {
+                local,
+                iterable,
+                body,
+                ..
+            } => {
+                local.ty = types.substitute(local.ty, substitution, local.span)?;
+                substitute_expr(iterable, substitution, types)?;
+                substitute_block(body, substitution, types)?;
+            }
             HirStatement::Match { value, arms, .. } => {
                 substitute_expr(value, substitution, types)?;
                 for arm in arms {
+                    for binding in &mut arm.bindings {
+                        binding.ty = types.substitute(binding.ty, substitution, binding.span)?;
+                    }
                     substitute_block(&mut arm.body, substitution, types)?;
                 }
             }
-            HirStatement::Defer { body, .. } => substitute_block(body, substitution, types)?,
+            HirStatement::Defer { captures, body, .. } => {
+                for capture in captures {
+                    capture.ty = types.substitute(capture.ty, substitution, capture.span)?;
+                }
+                substitute_block(body, substitution, types)?;
+            }
             HirStatement::Break { cleanup, .. } | HirStatement::Continue { cleanup, .. } => {
                 for block in cleanup {
                     substitute_block(block, substitution, types)?;
@@ -719,13 +1017,23 @@ fn substitute_expr(
 ) -> Result<(), Diagnostic> {
     expression.ty = types.substitute(expression.ty, substitution, expression.span)?;
     match &mut expression.kind {
+        HirExprKind::LayoutOf { target, .. } => {
+            *target = types.substitute(*target, substitution, expression.span)?;
+        }
         HirExprKind::Binary { left, right, .. } => {
             substitute_expr(left, substitution, types)?;
             substitute_expr(right, substitution, types)?;
         }
-        HirExprKind::Unary { value, .. }
-        | HirExprKind::Cast { value, .. }
-        | HirExprKind::Try { value, .. } => substitute_expr(value, substitution, types)?,
+        HirExprKind::Unary { value, .. } | HirExprKind::Cast { value, .. } => {
+            substitute_expr(value, substitution, types)?
+        }
+        HirExprKind::Length { value } => substitute_expr(value, substitution, types)?,
+        HirExprKind::Try { value, cleanup, .. } => {
+            substitute_expr(value, substitution, types)?;
+            for block in cleanup {
+                substitute_block(block, substitution, types)?;
+            }
+        }
         HirExprKind::DirectCall {
             callee, arguments, ..
         } => {
@@ -756,6 +1064,7 @@ fn substitute_expr(
                 .collect::<Result<_, _>>()?;
         }
         HirExprKind::IntrinsicCall { arguments, .. }
+        | HirExprKind::HostCall { arguments, .. }
         | HirExprKind::List(arguments)
         | HirExprKind::Enum {
             payload: arguments, ..
@@ -777,17 +1086,32 @@ fn substitute_expr(
                 substitute_expr(value, substitution, types)?;
             }
         }
+        HirExprKind::FormatString(parts) => {
+            for part in parts {
+                if let HirFormatPart::Value(value) = part {
+                    substitute_expr(value, substitution, types)?;
+                }
+            }
+        }
         HirExprKind::Closure {
+            captures,
             parameters,
             result,
             body,
             ..
         } => {
+            for capture in captures {
+                capture.ty = types.substitute(capture.ty, substitution, capture.span)?;
+            }
             for parameter in parameters {
                 parameter.ty = types.substitute(parameter.ty, substitution, parameter.span)?;
             }
             *result = types.substitute(*result, substitution, expression.span)?;
             substitute_block(body, substitution, types)?;
+        }
+        HirExprKind::Drop { place, cleanup } => {
+            substitute_place(place, substitution, types)?;
+            substitute_block(cleanup, substitution, types)?;
         }
         HirExprKind::Place(place) | HirExprKind::Borrow { place, .. } => {
             substitute_place(place, substitution, types)?
@@ -807,11 +1131,489 @@ fn substitute_place(
         substitute_expr(pointer, substitution, types)?;
     }
     for projection in &mut place.projections {
-        if let HirProjection::Index { index, .. } = projection {
-            substitute_expr(index, substitution, types)?;
+        match projection {
+            HirProjection::Field { ty, .. } | HirProjection::Payload { ty, .. } => {
+                *ty = types.substitute(*ty, substitution, place.span)?;
+            }
+            HirProjection::Index { index, element, .. } => {
+                substitute_expr(index, substitution, types)?;
+                *element = types.substitute(*element, substitution, place.span)?;
+            }
         }
     }
     Ok(())
+}
+
+fn materialize_concrete_drop_block(
+    block: &mut HirBlock,
+    semantic: &HirProgram,
+) -> Result<(), Diagnostic> {
+    for statement in &mut block.statements {
+        match statement {
+            HirStatement::Let { value, .. } | HirStatement::Expression(value) => {
+                materialize_concrete_drop_expr(value, semantic)?
+            }
+            HirStatement::Assign {
+                place,
+                value,
+                cleanup_before_commit,
+                ..
+            } => {
+                materialize_concrete_drop_place(place, semantic)?;
+                materialize_concrete_drop_expr(value, semantic)?;
+                if let Some(cleanup) = cleanup_before_commit {
+                    materialize_concrete_drop_block(cleanup, semantic)?;
+                }
+            }
+            HirStatement::Return { value, cleanup, .. } => {
+                if let Some(value) = value {
+                    materialize_concrete_drop_expr(value, semantic)?;
+                }
+                for cleanup in cleanup {
+                    materialize_concrete_drop_block(cleanup, semantic)?;
+                }
+            }
+            HirStatement::If {
+                condition,
+                then_block,
+                else_block,
+                ..
+            } => {
+                materialize_concrete_drop_expr(condition, semantic)?;
+                materialize_concrete_drop_block(then_block, semantic)?;
+                if let Some(else_block) = else_block {
+                    materialize_concrete_drop_block(else_block, semantic)?;
+                }
+            }
+            HirStatement::While {
+                condition, body, ..
+            } => {
+                materialize_concrete_drop_expr(condition, semantic)?;
+                materialize_concrete_drop_block(body, semantic)?;
+            }
+            HirStatement::For { iterable, body, .. } => {
+                materialize_concrete_drop_expr(iterable, semantic)?;
+                materialize_concrete_drop_block(body, semantic)?;
+            }
+            HirStatement::Match { value, arms, .. } => {
+                materialize_concrete_drop_expr(value, semantic)?;
+                for arm in arms {
+                    materialize_concrete_drop_block(&mut arm.body, semantic)?;
+                }
+            }
+            HirStatement::Defer { body, .. } => materialize_concrete_drop_block(body, semantic)?,
+            HirStatement::Break { cleanup, .. } | HirStatement::Continue { cleanup, .. } => {
+                for cleanup in cleanup {
+                    materialize_concrete_drop_block(cleanup, semantic)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn materialize_concrete_drop_expr(
+    expression: &mut HirExpr,
+    semantic: &HirProgram,
+) -> Result<(), Diagnostic> {
+    if let HirExprKind::LayoutOf { target, alignment } = &expression.kind {
+        let layout = super::layout_of(semantic, *target)?;
+        expression.kind = HirExprKind::Integer(i64::from(if *alignment {
+            layout.align
+        } else {
+            layout.size
+        }));
+        return Ok(());
+    }
+    match &mut expression.kind {
+        HirExprKind::Length { value } => materialize_concrete_drop_expr(value, semantic)?,
+        HirExprKind::Drop { place, cleanup } => {
+            if cleanup.statements.is_empty()
+                && concrete_type_needs_drop(semantic, place.ty, &mut BTreeSet::new())?
+            {
+                *cleanup = concrete_drop_block(semantic, place.clone(), place.ty, expression.span)?;
+            }
+            materialize_concrete_drop_block(cleanup, semantic)?;
+        }
+        HirExprKind::Binary { left, right, .. } => {
+            materialize_concrete_drop_expr(left, semantic)?;
+            materialize_concrete_drop_expr(right, semantic)?;
+        }
+        HirExprKind::Unary { value, .. }
+        | HirExprKind::Cast { value, .. }
+        | HirExprKind::Try { value, .. } => materialize_concrete_drop_expr(value, semantic)?,
+        HirExprKind::DirectCall { arguments, .. }
+        | HirExprKind::IntrinsicCall { arguments, .. }
+        | HirExprKind::HostCall { arguments, .. }
+        | HirExprKind::List(arguments)
+        | HirExprKind::Enum {
+            payload: arguments, ..
+        } => {
+            for argument in arguments {
+                materialize_concrete_drop_expr(argument, semantic)?;
+            }
+        }
+        HirExprKind::IndirectCall {
+            callee, arguments, ..
+        } => {
+            materialize_concrete_drop_expr(callee, semantic)?;
+            for argument in arguments {
+                materialize_concrete_drop_expr(argument, semantic)?;
+            }
+        }
+        HirExprKind::Struct { fields, .. } => {
+            for (_, value) in fields {
+                materialize_concrete_drop_expr(value, semantic)?;
+            }
+        }
+        HirExprKind::FormatString(parts) => {
+            for part in parts {
+                if let HirFormatPart::Value(value) = part {
+                    materialize_concrete_drop_expr(value, semantic)?;
+                }
+            }
+        }
+        HirExprKind::Closure { body, .. } => materialize_concrete_drop_block(body, semantic)?,
+        HirExprKind::Place(place) | HirExprKind::Borrow { place, .. } => {
+            materialize_concrete_drop_place(place, semantic)?
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn materialize_concrete_drop_place(
+    place: &mut HirPlace,
+    semantic: &HirProgram,
+) -> Result<(), Diagnostic> {
+    if let HirPlaceBase::Pointer(pointer) = &mut place.base {
+        materialize_concrete_drop_expr(pointer, semantic)?;
+    }
+    for projection in &mut place.projections {
+        if let HirProjection::Index {
+            index,
+            element,
+            element_size,
+        } = projection
+        {
+            materialize_concrete_drop_expr(index, semantic)?;
+            *element_size = super::layout_of(semantic, *element)?.size;
+        }
+    }
+    Ok(())
+}
+
+fn concrete_type_needs_drop(
+    semantic: &HirProgram,
+    ty: TypeId,
+    active: &mut BTreeSet<TypeId>,
+) -> Result<bool, Diagnostic> {
+    if !active.insert(ty) {
+        return Ok(false);
+    }
+    let result = match semantic.type_of(ty) {
+        CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args } => {
+            if semantic.functions.iter().any(|function| {
+                function.kind == FunctionKind::Drop && function.drop_target == Some(*symbol)
+            }) {
+                true
+            } else {
+                let definition = semantic
+                    .definitions
+                    .iter()
+                    .find(|definition| definition.symbol == *symbol)
+                    .ok_or_else(|| Diagnostic {
+                        code: "E_HIR_DROP_TYPE",
+                        message: "drop glue type definition is missing".into(),
+                        span: Span::zero(),
+                    })?;
+                let substitutions: BTreeMap<_, _> = definition
+                    .generic_params
+                    .iter()
+                    .cloned()
+                    .zip(args.iter().copied())
+                    .collect();
+                match &definition.kind {
+                    TypeDefKind::Struct { fields, .. } => fields.iter().any(|field| {
+                        semantic
+                            .types
+                            .iter()
+                            .position(|candidate| {
+                                annotation_matches(
+                                    semantic,
+                                    candidate,
+                                    &field.annotation,
+                                    &substitutions,
+                                )
+                            })
+                            .is_some_and(|index| {
+                                concrete_type_needs_drop(semantic, TypeId(index as u32), active)
+                                    .unwrap_or(true)
+                            })
+                    }),
+                    TypeDefKind::Enum { variants } => variants.iter().any(|variant| {
+                        variant.payload.iter().any(|payload| {
+                            semantic
+                                .types
+                                .iter()
+                                .position(|candidate| {
+                                    annotation_matches(semantic, candidate, payload, &substitutions)
+                                })
+                                .is_some_and(|index| {
+                                    concrete_type_needs_drop(semantic, TypeId(index as u32), active)
+                                        .unwrap_or(true)
+                                })
+                        })
+                    }),
+                }
+            }
+        }
+        CanonicalType::Array { element, .. } => {
+            concrete_type_needs_drop(semantic, *element, active)?
+        }
+        CanonicalType::GenericParam { .. } => {
+            return Err(Diagnostic {
+                code: "E_HIR_OPEN_GENERIC",
+                message: "open generic reached concrete drop-glue materialization".into(),
+                span: Span::zero(),
+            })
+        }
+        _ => false,
+    };
+    active.remove(&ty);
+    Ok(result)
+}
+
+fn concrete_drop_block(
+    semantic: &HirProgram,
+    place: HirPlace,
+    ty: TypeId,
+    span: Span,
+) -> Result<HirBlock, Diagnostic> {
+    let mut statements = Vec::new();
+    let nominal = match semantic.type_of(ty) {
+        CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args } => {
+            Some((*symbol, args.clone()))
+        }
+        _ => None,
+    };
+    if let Some((symbol, args)) = nominal.clone() {
+        if let Some(function) = semantic.functions.iter().find(|function| {
+            function.kind == FunctionKind::Drop && function.drop_target == Some(symbol)
+        }) {
+            let borrow_ty = semantic
+                .types
+                .iter()
+                .position(|candidate| {
+                    *candidate
+                        == CanonicalType::Borrow {
+                            mutable: true,
+                            pointee: ty,
+                        }
+                })
+                .map(|index| TypeId(index as u32))
+                .ok_or_else(|| Diagnostic {
+                    code: "E_HIR_DROP_BORROW",
+                    message: "concrete drop glue lacks its mutable borrow type".into(),
+                    span,
+                })?;
+            statements.push(HirStatement::Expression(HirExpr {
+                ty: TypeId(0),
+                category: ValueCategory::RValue,
+                ownership: OwnershipAction::Copy,
+                allocator_origin: None,
+                borrow_origin: None,
+                kind: HirExprKind::DirectCall {
+                    callee: FunctionInstanceKey {
+                        symbol: function.symbol,
+                        arguments: args,
+                    },
+                    convention: CallConvention::DByte,
+                    arguments: vec![HirExpr {
+                        ty: borrow_ty,
+                        category: ValueCategory::RValue,
+                        ownership: OwnershipAction::BorrowMut,
+                        allocator_origin: None,
+                        borrow_origin: None,
+                        kind: HirExprKind::Borrow {
+                            mutable: true,
+                            place: place.clone(),
+                        },
+                        span,
+                    }],
+                },
+                span,
+            }));
+        }
+    }
+    match semantic.type_of(ty) {
+        CanonicalType::Struct { symbol, args } => {
+            let definition = semantic
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol == *symbol)
+                .ok_or_else(|| Diagnostic {
+                    code: "E_HIR_DROP_TYPE",
+                    message: "drop glue struct definition is missing".into(),
+                    span,
+                })?;
+            if let TypeDefKind::Struct { fields, .. } = &definition.kind {
+                let (_, offsets) = super::layout_struct(semantic, *symbol, args)?;
+                let substitutions: BTreeMap<_, _> = definition
+                    .generic_params
+                    .iter()
+                    .cloned()
+                    .zip(args.iter().copied())
+                    .collect();
+                for (field, offset) in fields.iter().zip(offsets).rev() {
+                    if !annotation_can_need_drop(semantic, &field.annotation, &substitutions) {
+                        continue;
+                    }
+                    let field_ty =
+                        super::resolved_annotation(semantic, &field.annotation, &substitutions)?;
+                    if concrete_type_needs_drop(semantic, field_ty, &mut BTreeSet::new())? {
+                        let mut field_place = place.clone();
+                        field_place.projections.push(HirProjection::Field {
+                            field: field.id,
+                            ty: field_ty,
+                            offset,
+                        });
+                        field_place.ty = field_ty;
+                        statements.extend(
+                            concrete_drop_block(semantic, field_place, field_ty, span)?.statements,
+                        );
+                    }
+                }
+            }
+        }
+        CanonicalType::Array { element, length } => {
+            let layout = super::layout_of(semantic, *element)?;
+            let usize_ty = semantic
+                .types
+                .iter()
+                .position(|candidate| {
+                    matches!(candidate, CanonicalType::Integer(super::IntegerType::Usize))
+                })
+                .map(|index| TypeId(index as u32))
+                .ok_or_else(|| Diagnostic {
+                    code: "E_HIR_DROP_INDEX",
+                    message: "canonical usize type is missing".into(),
+                    span,
+                })?;
+            for index in (0..*length).rev() {
+                let mut element_place = place.clone();
+                element_place.projections.push(HirProjection::Index {
+                    index: HirExpr {
+                        ty: usize_ty,
+                        category: ValueCategory::RValue,
+                        ownership: OwnershipAction::Copy,
+                        allocator_origin: None,
+                        borrow_origin: None,
+                        kind: HirExprKind::Integer(i64::from(index)),
+                        span,
+                    },
+                    element: *element,
+                    element_size: layout.size,
+                });
+                element_place.ty = *element;
+                statements.extend(
+                    concrete_drop_block(semantic, element_place, *element, span)?.statements,
+                );
+            }
+        }
+        CanonicalType::Enum { symbol, .. } => {
+            let definition = semantic
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol == *symbol)
+                .ok_or_else(|| Diagnostic {
+                    code: "E_HIR_DROP_TYPE",
+                    message: "drop glue enum definition is missing".into(),
+                    span,
+                })?;
+            let TypeDefKind::Enum { variants } = &definition.kind else {
+                unreachable!()
+            };
+            let mut arms = Vec::with_capacity(variants.len());
+            for variant in variants {
+                let (_, _, payload) = super::enum_variant_layout(semantic, ty, variant.id)?;
+                let mut body = Vec::new();
+                for (index, (payload_ty, offset)) in payload.iter().copied().enumerate().rev() {
+                    if !concrete_type_needs_drop(semantic, payload_ty, &mut BTreeSet::new())? {
+                        continue;
+                    }
+                    let mut payload_place = place.clone();
+                    payload_place.projections.push(HirProjection::Payload {
+                        variant: variant.id,
+                        index: index as u32,
+                        ty: payload_ty,
+                        offset,
+                    });
+                    payload_place.ty = payload_ty;
+                    body.extend(
+                        concrete_drop_block(semantic, payload_place, payload_ty, span)?.statements,
+                    );
+                }
+                arms.push(HirMatchArm {
+                    variant: Some(FieldedVariant {
+                        symbol: *symbol,
+                        variant: variant.id,
+                        discriminant: variant.discriminant,
+                    }),
+                    bindings: Vec::new(),
+                    body: HirBlock { statements: body },
+                    span,
+                });
+            }
+            let value_kind = match &place.base {
+                HirPlaceBase::Local(local) if place.projections.is_empty() => {
+                    HirExprKind::Local(*local)
+                }
+                HirPlaceBase::Global(symbol) if place.projections.is_empty() => {
+                    HirExprKind::Global(*symbol)
+                }
+                _ => HirExprKind::Place(place.clone()),
+            };
+            statements.push(HirStatement::Match {
+                mode: MatchMode::BorrowMut,
+                value: HirExpr {
+                    ty,
+                    category: ValueCategory::LValue,
+                    ownership: OwnershipAction::BorrowMut,
+                    allocator_origin: None,
+                    borrow_origin: None,
+                    kind: value_kind,
+                    span,
+                },
+                arms,
+                exhaustive: true,
+                span,
+            });
+        }
+        _ => {}
+    }
+    Ok(HirBlock { statements })
+}
+
+fn annotation_can_need_drop(
+    semantic: &HirProgram,
+    annotation: &dbyte_ast::TypeAnnotation,
+    substitutions: &BTreeMap<String, TypeId>,
+) -> bool {
+    use dbyte_ast::TypeAnnotation;
+    match annotation {
+        TypeAnnotation::Named(name) => substitutions.get(name).map_or_else(
+            || {
+                semantic
+                    .definitions
+                    .iter()
+                    .any(|definition| definition.name == *name)
+            },
+            |ty| concrete_type_needs_drop(semantic, *ty, &mut BTreeSet::new()).unwrap_or(true),
+        ),
+        TypeAnnotation::Generic { .. } | TypeAnnotation::Array { .. } => true,
+        _ => false,
+    }
 }
 
 struct TypeSubstituter {
@@ -934,26 +1736,62 @@ impl TypeSubstituter {
 
 fn validate_concrete(program: &ConcreteHirProgram) -> Result<(), Diagnostic> {
     for function in &program.functions {
-        for ty in function
+        for (label, ty) in function
             .parameters
             .iter()
-            .map(|p| p.ty)
-            .chain(function.locals.iter().map(|l| l.ty))
-            .chain(std::iter::once(function.result))
+            .map(|parameter| (parameter.name.as_str(), parameter.ty))
+            .chain(
+                function
+                    .locals
+                    .iter()
+                    .map(|local| (local.name.as_str(), local.ty)),
+            )
+            .chain(std::iter::once(("return", function.result)))
         {
-            if matches!(
-                program.semantic.types[ty.0 as usize],
-                CanonicalType::GenericParam { .. }
-            ) {
+            if concrete_type_is_open(&program.semantic, ty, &mut BTreeSet::new()) {
                 return Err(Diagnostic {
                     code: "E_HIR_OPEN_GENERIC",
-                    message: "open generic type reached native boundary".into(),
+                    message: format!(
+                        "open generic type reached concrete function `{}` slot `{label}`",
+                        function.symbol_name
+                    ),
                     span: function.span,
                 });
             }
         }
     }
     Ok(())
+}
+
+fn concrete_type_is_open(semantic: &HirProgram, ty: TypeId, active: &mut BTreeSet<TypeId>) -> bool {
+    if !active.insert(ty) {
+        return false;
+    }
+    let open = match semantic.type_of(ty) {
+        CanonicalType::GenericParam { .. } => true,
+        CanonicalType::LegacyList(element)
+        | CanonicalType::Pointer {
+            pointee: element, ..
+        }
+        | CanonicalType::Borrow {
+            pointee: element, ..
+        }
+        | CanonicalType::Slice { element, .. }
+        | CanonicalType::Array { element, .. } => concrete_type_is_open(semantic, *element, active),
+        CanonicalType::Struct { args, .. } | CanonicalType::Enum { args, .. } => args
+            .iter()
+            .copied()
+            .any(|argument| concrete_type_is_open(semantic, argument, active)),
+        CanonicalType::Function { params, result, .. }
+        | CanonicalType::ClosureShape { params, result } => params
+            .iter()
+            .copied()
+            .chain(std::iter::once(*result))
+            .any(|part| concrete_type_is_open(semantic, part, active)),
+        _ => false,
+    };
+    active.remove(&ty);
+    open
 }
 
 struct ExecutableBuilder<'a> {
@@ -964,8 +1802,16 @@ struct ExecutableBuilder<'a> {
     locals: Vec<HirLocal>,
     next_local: u32,
     next_closure: u32,
-    active_defers: Vec<HirBlock>,
+    active_cleanups: Vec<ActiveCleanup>,
     current_generics: BTreeMap<String, TypeId>,
+    host_modules: BTreeMap<String, String>,
+    runtime_drop_enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveCleanup {
+    owner: Option<LocalId>,
+    block: HirBlock,
 }
 
 impl<'a> ExecutableBuilder<'a> {
@@ -994,8 +1840,13 @@ impl<'a> ExecutableBuilder<'a> {
             locals: Vec::new(),
             next_local: 0,
             next_closure: 0,
-            active_defers: Vec::new(),
+            active_cleanups: Vec::new(),
             current_generics: BTreeMap::new(),
+            host_modules: BTreeMap::new(),
+            runtime_drop_enabled: semantic
+                .functions
+                .iter()
+                .any(|function| function.kind == FunctionKind::Drop),
         }
     }
 
@@ -1004,6 +1855,13 @@ impl<'a> ExecutableBuilder<'a> {
         program: &Program,
         semantic: HirProgram,
     ) -> Result<ExecutableHirProgram, Diagnostic> {
+        for statement in &program.stmts {
+            if let Stmt::Import { path, alias, .. } = statement {
+                if path.starts_with("std.") {
+                    self.host_modules.insert(alias.clone(), path.clone());
+                }
+            }
+        }
         self.reset_function();
         self.push_scope();
         let mut globals = Vec::new();
@@ -1058,18 +1916,24 @@ impl<'a> ExecutableBuilder<'a> {
                     let ty =
                         self.resolve_annotation(&parameter.ty, &generic_types, parameter.span)?;
                     let local = self.define_local(parameter.name.clone(), ty, true, parameter.span);
+                    self.register_drop(local.id, ty, parameter.span)?;
                     debug_assert_eq!(index, parameters.len());
                     parameters.push(local);
                 }
                 let result =
                     self.resolve_annotation(&definition.result, &generic_types, definition.span)?;
-                let body = self.block(body)?;
+                let mut body = self.block(body)?;
+                for cleanup in self.active_cleanups.iter().rev() {
+                    body.statements.extend(cleanup.block.statements.clone());
+                }
                 self.pop_scope();
                 functions.push(HirFunction {
                     symbol: definition.symbol,
                     generic: definition.generic,
                     name: definition.name,
                     public: definition.public,
+                    kind: definition.kind,
+                    drop_target: definition.drop_target,
                     convention: definition.convention,
                     interrupt: definition.interrupt,
                     declaration_only: definition.declaration_only,
@@ -1113,7 +1977,7 @@ impl<'a> ExecutableBuilder<'a> {
         self.scopes.clear();
         self.locals.clear();
         self.next_local = 0;
-        self.active_defers.clear();
+        self.active_cleanups.clear();
         self.current_generics.clear();
     }
     fn push_scope(&mut self) {
@@ -1144,6 +2008,245 @@ impl<'a> ExecutableBuilder<'a> {
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).copied())
+    }
+
+    fn deactivate_drop(&mut self, local: LocalId) {
+        self.active_cleanups
+            .retain(|cleanup| cleanup.owner != Some(local));
+    }
+
+    fn live_drop_owners(cleanups: &[ActiveCleanup]) -> BTreeSet<LocalId> {
+        cleanups
+            .iter()
+            .filter_map(|cleanup| cleanup.owner)
+            .collect()
+    }
+
+    fn branch_block(
+        &mut self,
+        statements: &[Stmt],
+        entry: &[ActiveCleanup],
+    ) -> Result<(HirBlock, Vec<ActiveCleanup>), Diagnostic> {
+        self.active_cleanups = entry.to_vec();
+        let block = self.block(statements)?;
+        let exit = self.active_cleanups.clone();
+        Ok((block, exit))
+    }
+
+    fn require_same_drop_state(
+        &self,
+        expected: &[ActiveCleanup],
+        actual: &[ActiveCleanup],
+        span: Span,
+    ) -> Result<(), Diagnostic> {
+        if Self::live_drop_owners(expected) != Self::live_drop_owners(actual) {
+            return Err(self.error(
+                "E_OWNERSHIP_MAYBE_MOVED",
+                "control-flow join would make an owned local maybe-live or maybe-moved",
+                span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn type_needs_drop(&mut self, ty: TypeId, active: &mut BTreeSet<TypeId>) -> bool {
+        if !active.insert(ty) {
+            return false;
+        }
+        let result = match self.semantic.type_of(ty).clone() {
+            CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args } => {
+                if self.semantic.functions.iter().any(|function| {
+                    function.kind == FunctionKind::Drop && function.drop_target == Some(symbol)
+                }) {
+                    true
+                } else {
+                    let Some(definition) = self
+                        .semantic
+                        .definitions
+                        .iter()
+                        .find(|definition| definition.symbol == symbol)
+                        .cloned()
+                    else {
+                        active.remove(&ty);
+                        return false;
+                    };
+                    let substitutions: BTreeMap<_, _> = definition
+                        .generic_params
+                        .iter()
+                        .cloned()
+                        .zip(args)
+                        .collect();
+                    match definition.kind {
+                        TypeDefKind::Struct { fields, .. } => fields.into_iter().any(|field| {
+                            self.resolve_annotation(&field.annotation, &substitutions, field.span)
+                                .is_ok_and(|field_ty| self.type_needs_drop(field_ty, active))
+                        }),
+                        TypeDefKind::Enum { variants } => variants.into_iter().any(|variant| {
+                            variant.payload.into_iter().any(|payload| {
+                                self.resolve_annotation(&payload, &substitutions, variant.span)
+                                    .is_ok_and(|payload_ty| {
+                                        self.type_needs_drop(payload_ty, active)
+                                    })
+                            })
+                        }),
+                    }
+                }
+            }
+            CanonicalType::Array { element, .. } => self.type_needs_drop(element, active),
+            CanonicalType::GenericParam { .. } => true,
+            _ => false,
+        };
+        active.remove(&ty);
+        result
+    }
+
+    fn drop_block(
+        &mut self,
+        place: HirPlace,
+        ty: TypeId,
+        span: Span,
+    ) -> Result<HirBlock, Diagnostic> {
+        if matches!(
+            self.semantic.type_of(ty),
+            CanonicalType::GenericParam { .. }
+        ) {
+            return Ok(HirBlock {
+                statements: vec![HirStatement::Expression(HirExpr {
+                    ty: TypeId(0),
+                    category: ValueCategory::RValue,
+                    ownership: OwnershipAction::Copy,
+                    allocator_origin: None,
+                    borrow_origin: None,
+                    kind: HirExprKind::Drop {
+                        place,
+                        cleanup: HirBlock::default(),
+                    },
+                    span,
+                })],
+            });
+        }
+        let mut statements = Vec::new();
+        let nominal = match self.semantic.type_of(ty) {
+            CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args } => {
+                Some((*symbol, args.clone()))
+            }
+            _ => None,
+        };
+        if let Some((symbol, args)) = nominal.clone() {
+            if let Some(function) = self.semantic.functions.iter().find(|function| {
+                function.kind == FunctionKind::Drop && function.drop_target == Some(symbol)
+            }) {
+                let borrow_ty = self
+                    .semantic
+                    .types
+                    .iter()
+                    .position(|candidate| {
+                        *candidate
+                            == CanonicalType::Borrow {
+                                mutable: true,
+                                pointee: ty,
+                            }
+                    })
+                    .map(|index| TypeId(index as u32))
+                    .ok_or_else(|| {
+                        self.error(
+                            "E_HIR_DROP_BORROW",
+                            "drop glue is missing its canonical mutable borrow type",
+                            span,
+                        )
+                    })?;
+                statements.push(HirStatement::Expression(HirExpr {
+                    ty: TypeId(0),
+                    category: ValueCategory::RValue,
+                    ownership: OwnershipAction::Copy,
+                    allocator_origin: None,
+                    borrow_origin: None,
+                    kind: HirExprKind::DirectCall {
+                        callee: FunctionInstanceKey {
+                            symbol: function.symbol,
+                            arguments: args,
+                        },
+                        convention: CallConvention::DByte,
+                        arguments: vec![HirExpr {
+                            ty: borrow_ty,
+                            category: ValueCategory::RValue,
+                            ownership: OwnershipAction::BorrowMut,
+                            allocator_origin: None,
+                            borrow_origin: None,
+                            kind: HirExprKind::Borrow {
+                                mutable: true,
+                                place: place.clone(),
+                            },
+                            span,
+                        }],
+                    },
+                    span,
+                }));
+            }
+        }
+        if let Some((symbol, args)) = nominal {
+            let definition = self
+                .semantic
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol == symbol)
+                .cloned();
+            if let Some(definition) = definition {
+                if let TypeDefKind::Struct { fields, .. } = definition.kind {
+                    let (_, offsets) = super::layout_struct(self.semantic, symbol, &args)?;
+                    let substitutions: BTreeMap<_, _> = definition
+                        .generic_params
+                        .iter()
+                        .cloned()
+                        .zip(args.iter().copied())
+                        .collect();
+                    for (field, offset) in fields.iter().zip(offsets).rev() {
+                        if !annotation_can_need_drop(
+                            self.semantic,
+                            &field.annotation,
+                            &substitutions,
+                        ) {
+                            continue;
+                        }
+                        let field_ty = super::resolved_annotation(
+                            self.semantic,
+                            &field.annotation,
+                            &substitutions,
+                        )?;
+                        if self.type_needs_drop(field_ty, &mut BTreeSet::new()) {
+                            let mut field_place = place.clone();
+                            field_place.projections.push(HirProjection::Field {
+                                field: field.id,
+                                ty: field_ty,
+                                offset,
+                            });
+                            field_place.ty = field_ty;
+                            statements
+                                .extend(self.drop_block(field_place, field_ty, span)?.statements);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(HirBlock { statements })
+    }
+
+    fn register_drop(&mut self, local: LocalId, ty: TypeId, span: Span) -> Result<(), Diagnostic> {
+        if self.type_needs_drop(ty, &mut BTreeSet::new()) {
+            let place = HirPlace {
+                base: HirPlaceBase::Local(local),
+                projections: Vec::new(),
+                ty,
+                mutable: true,
+                span,
+            };
+            let block = self.drop_block(place, ty, span)?;
+            self.active_cleanups.push(ActiveCleanup {
+                owner: Some(local),
+                block,
+            });
+        }
+        Ok(())
     }
     fn fact(&self, span: Span) -> Result<HirExpression, Diagnostic> {
         self.facts
@@ -1213,17 +2316,33 @@ impl<'a> ExecutableBuilder<'a> {
 
     fn block(&mut self, statements: &[Stmt]) -> Result<HirBlock, Diagnostic> {
         self.push_scope();
-        let defer_base = self.active_defers.len();
+        let defer_base = self.active_cleanups.len();
         let mut output = Vec::new();
         for statement in statements {
             if let Some(statement) = self.statement(statement, defer_base)? {
                 output.push(statement);
             }
         }
-        for cleanup in self.active_defers[defer_base..].iter().rev() {
-            output.extend(cleanup.statements.clone());
+        // Preserve the frozen v12.0 cleanup image for programs that do not
+        // opt into affine destruction. v12.1 drop programs use the unified
+        // graph and must not emit unreachable cleanup after terminal edges.
+        let falls_through = !self.runtime_drop_enabled
+            || !matches!(
+                statements.last(),
+                Some(Stmt::Return { .. } | Stmt::Break { .. } | Stmt::Continue { .. })
+            );
+        if falls_through {
+            for cleanup in self
+                .active_cleanups
+                .get(defer_base..)
+                .unwrap_or(&[])
+                .iter()
+                .rev()
+            {
+                output.extend(cleanup.block.statements.clone());
+            }
         }
-        self.active_defers.truncate(defer_base);
+        self.active_cleanups.truncate(defer_base);
         self.pop_scope();
         Ok(HirBlock { statements: output })
     }
@@ -1251,6 +2370,7 @@ impl<'a> ExecutableBuilder<'a> {
                     value.ty = local_ty;
                 }
                 let local = self.define_local(name.clone(), local_ty, false, *span);
+                self.register_drop(local.id, local_ty, *span)?;
                 HirStatement::Let {
                     local: local.id,
                     value,
@@ -1259,13 +2379,28 @@ impl<'a> ExecutableBuilder<'a> {
             }
             Stmt::Assign { name, value, span } => {
                 let place = self.named_place(name, *span)?;
+                let cleanup_before_commit = match &place.base {
+                    HirPlaceBase::Local(local) if place.projections.is_empty() => self
+                        .active_cleanups
+                        .iter()
+                        .find(|cleanup| cleanup.owner == Some(*local))
+                        .map(|cleanup| cleanup.block.clone()),
+                    _ => None,
+                };
                 let mut value = self.expr(value)?;
                 if value.ty != place.ty {
                     value.ty = place.ty;
                 }
+                if let HirPlaceBase::Local(local) = &place.base {
+                    if place.projections.is_empty() {
+                        self.deactivate_drop(*local);
+                        self.register_drop(*local, place.ty, *span)?;
+                    }
+                }
                 HirStatement::Assign {
                     place,
                     value,
+                    cleanup_before_commit,
                     span: *span,
                 }
             }
@@ -1276,12 +2411,18 @@ impl<'a> ExecutableBuilder<'a> {
             } => HirStatement::Assign {
                 place: self.place(target)?,
                 value: self.expr(value)?,
+                cleanup_before_commit: None,
                 span: *span,
             },
             Stmt::Expr(value) => HirStatement::Expression(self.expr(value)?),
             Stmt::Return { value, span } => HirStatement::Return {
                 value: value.as_ref().map(|value| self.expr(value)).transpose()?,
-                cleanup: self.active_defers.iter().rev().cloned().collect(),
+                cleanup: self
+                    .active_cleanups
+                    .iter()
+                    .rev()
+                    .map(|cleanup| cleanup.block.clone())
+                    .collect(),
                 span: *span,
             },
             Stmt::If {
@@ -1289,20 +2430,37 @@ impl<'a> ExecutableBuilder<'a> {
                 then_body,
                 else_body,
                 span,
-            } => HirStatement::If {
-                condition: self.expr(cond)?,
-                then_block: self.block(then_body)?,
-                else_block: else_body
-                    .as_ref()
-                    .map(|body| self.block(body))
-                    .transpose()?,
-                span: *span,
-            },
-            Stmt::While { cond, body, span } => HirStatement::While {
-                condition: self.expr(cond)?,
-                body: self.block(body)?,
-                span: *span,
-            },
+            } => {
+                let condition = self.expr(cond)?;
+                let entry = self.active_cleanups.clone();
+                let (then_block, then_exit) = self.branch_block(then_body, &entry)?;
+                let (else_block, else_exit) = if let Some(body) = else_body {
+                    let (block, exit) = self.branch_block(body, &entry)?;
+                    (Some(block), exit)
+                } else {
+                    (None, entry.clone())
+                };
+                self.require_same_drop_state(&then_exit, &else_exit, *span)?;
+                self.active_cleanups = then_exit;
+                HirStatement::If {
+                    condition,
+                    then_block,
+                    else_block,
+                    span: *span,
+                }
+            }
+            Stmt::While { cond, body, span } => {
+                let condition = self.expr(cond)?;
+                let entry = self.active_cleanups.clone();
+                let (body, exit) = self.branch_block(body, &entry)?;
+                self.require_same_drop_state(&entry, &exit, *span)?;
+                self.active_cleanups = entry;
+                HirStatement::While {
+                    condition,
+                    body,
+                    span: *span,
+                }
+            }
             Stmt::Match {
                 mode,
                 value,
@@ -1340,7 +2498,10 @@ impl<'a> ExecutableBuilder<'a> {
                     }
                 };
                 let mut lowered = Vec::new();
+                let entry = self.active_cleanups.clone();
+                let mut common_exit: Option<Vec<ActiveCleanup>> = None;
                 for arm in arms {
+                    self.active_cleanups = entry.clone();
                     self.push_scope();
                     let (variant, bindings) = match &arm.pattern {
                         Pattern::Wildcard(_) => (None, Vec::new()),
@@ -1385,7 +2546,11 @@ impl<'a> ExecutableBuilder<'a> {
                                             })?
                                     }
                                 };
-                                locals.push(self.define_local(binding.clone(), ty, false, *span));
+                                let local = self.define_local(binding.clone(), ty, false, *span);
+                                if *mode == MatchMode::Move {
+                                    self.register_drop(local.id, ty, *span)?;
+                                }
+                                locals.push(local);
                             }
                             (
                                 Some(FieldedVariant {
@@ -1399,6 +2564,14 @@ impl<'a> ExecutableBuilder<'a> {
                     };
                     let body = self.block(&arm.body)?;
                     self.pop_scope();
+                    let exit = self.active_cleanups.clone();
+                    if !block_is_terminal(&body) {
+                        if let Some(expected) = &common_exit {
+                            self.require_same_drop_state(expected, &exit, arm.span)?;
+                        } else {
+                            common_exit = Some(exit);
+                        }
+                    }
                     lowered.push(HirMatchArm {
                         variant,
                         bindings,
@@ -1406,6 +2579,7 @@ impl<'a> ExecutableBuilder<'a> {
                         span: arm.span,
                     });
                 }
+                self.active_cleanups = common_exit.unwrap_or(entry);
                 HirStatement::Match {
                     mode: *mode,
                     value,
@@ -1424,7 +2598,10 @@ impl<'a> ExecutableBuilder<'a> {
                     .map(|capture| self.capture(capture))
                     .collect::<Result<Vec<_>, _>>()?;
                 let body = self.block(body)?;
-                self.active_defers.push(body.clone());
+                self.active_cleanups.push(ActiveCleanup {
+                    owner: None,
+                    block: body.clone(),
+                });
                 HirStatement::Defer {
                     captures,
                     body,
@@ -1432,27 +2609,60 @@ impl<'a> ExecutableBuilder<'a> {
                 }
             }
             Stmt::Break { span } => HirStatement::Break {
-                cleanup: self.active_defers[defer_base..]
+                cleanup: self
+                    .active_cleanups
+                    .get(defer_base..)
+                    .unwrap_or(&[])
                     .iter()
                     .rev()
-                    .cloned()
+                    .map(|cleanup| cleanup.block.clone())
                     .collect(),
                 span: *span,
             },
             Stmt::Continue { span } => HirStatement::Continue {
-                cleanup: self.active_defers[defer_base..]
+                cleanup: self
+                    .active_cleanups
+                    .get(defer_base..)
+                    .unwrap_or(&[])
                     .iter()
                     .rev()
-                    .cloned()
+                    .map(|cleanup| cleanup.block.clone())
                     .collect(),
                 span: *span,
             },
-            Stmt::For { span, .. } => {
-                return Err(self.error(
-                    "E_HIR_UNSUPPORTED",
-                    "for lowering is not yet canonicalized",
-                    *span,
-                ))
+            Stmt::For {
+                var,
+                iterable,
+                body,
+                span,
+            } => {
+                let iterable = self.expr(iterable)?;
+                let element = match self.semantic.type_of(iterable.ty) {
+                    CanonicalType::LegacyList(element)
+                    | CanonicalType::Array { element, .. }
+                    | CanonicalType::Slice { element, .. } => *element,
+                    CanonicalType::LegacyStr => iterable.ty,
+                    _ => {
+                        return Err(self.error(
+                            "E_HIR_FOR_TYPE",
+                            "validated for iterable has no canonical element type",
+                            *span,
+                        ))
+                    }
+                };
+                let entry = self.active_cleanups.clone();
+                self.push_scope();
+                let local = self.define_local(var.clone(), element, false, *span);
+                let (body, exit) = self.branch_block(body, &entry)?;
+                self.pop_scope();
+                self.require_same_drop_state(&entry, &exit, *span)?;
+                self.active_cleanups = entry;
+                HirStatement::For {
+                    local,
+                    iterable,
+                    body,
+                    span: *span,
+                }
             }
             Stmt::FnDef { .. }
             | Stmt::StructDef { .. }
@@ -1561,7 +2771,7 @@ impl<'a> ExecutableBuilder<'a> {
                 let (field, offset, ty) = resolve_field(self.semantic, place.ty, property, *span)?;
                 place
                     .projections
-                    .push(HirProjection::Field { field, offset });
+                    .push(HirProjection::Field { field, ty, offset });
                 place.ty = ty;
                 place.span = *span;
                 Ok(place)
@@ -1593,6 +2803,7 @@ impl<'a> ExecutableBuilder<'a> {
                 let (element, size) = resolve_element(self.semantic, place.ty, *span)?;
                 place.projections.push(HirProjection::Index {
                     index,
+                    element,
                     element_size: size,
                 });
                 place.ty = element;
@@ -1628,12 +2839,15 @@ impl<'a> ExecutableBuilder<'a> {
                     ty: fact.ty,
                     category: fact.category,
                     ownership: fact.ownership,
+                    allocator_origin: fact.allocator_origin,
+                    borrow_origin: fact.borrow_origin,
                     kind: HirExprKind::Integer(value),
                     span: expression.span(),
                 });
             }
         }
         let kind = match expression {
+            Expr::UnitLit(_) => HirExprKind::Unit,
             Expr::IntLit(value, _) => HirExprKind::Integer(*value),
             Expr::FloatLit(value, _) => HirExprKind::Float(*value),
             Expr::BoolLit(value, _) => HirExprKind::Bool(*value),
@@ -1737,7 +2951,23 @@ impl<'a> ExecutableBuilder<'a> {
                 span,
             } => {
                 if let Expr::Ident(namespace, _) = object.as_ref() {
-                    if let Some(intrinsic) = HirIntrinsic::resolve(namespace, property) {
+                    if let Some(module) = self.host_modules.get(namespace) {
+                        let capability =
+                            HostCapabilityId::resolve(module, property).ok_or_else(|| {
+                                self.error(
+                                    "E_HIR_HOST_CAPABILITY",
+                                    "validated host capability lost its canonical identity",
+                                    *span,
+                                )
+                            })?;
+                        HirExprKind::HostCall {
+                            capability,
+                            arguments: args
+                                .iter()
+                                .map(|argument| self.expr(argument))
+                                .collect::<Result<_, _>>()?,
+                        }
+                    } else if let Some(intrinsic) = HirIntrinsic::resolve(namespace, property) {
                         HirExprKind::IntrinsicCall {
                             intrinsic,
                             arguments: args
@@ -1799,8 +3029,23 @@ impl<'a> ExecutableBuilder<'a> {
                     value: Box::new(value),
                     ok_variant: ok,
                     err_variant: err,
-                    cleanup: self.active_defers.iter().rev().cloned().collect(),
+                    cleanup: self
+                        .active_cleanups
+                        .iter()
+                        .rev()
+                        .map(|cleanup| cleanup.block.clone())
+                        .collect(),
                 }
+            }
+            Expr::Drop { expr, span } => {
+                let place = self.place(expr)?;
+                let cleanup = self.drop_block(place.clone(), place.ty, *span)?;
+                if let HirPlaceBase::Local(local) = place.base {
+                    if place.projections.is_empty() {
+                        self.deactivate_drop(local);
+                    }
+                }
+                HirExprKind::Drop { place, cleanup }
             }
             Expr::Closure {
                 captures,
@@ -1838,21 +3083,41 @@ impl<'a> ExecutableBuilder<'a> {
                     body,
                 }
             }
-            Expr::FStr(_, span) => {
-                return Err(self.error(
-                    "E_HIR_UNSUPPORTED",
-                    "formatted strings remain a legacy hosted expression",
-                    *span,
-                ))
-            }
+            Expr::FStr(parts, span) => HirExprKind::FormatString(
+                parts
+                    .iter()
+                    .map(|part| match part {
+                        dbyte_ast::FStrPart::Literal(value) => {
+                            Ok(HirFormatPart::Literal(value.as_bytes().to_vec()))
+                        }
+                        dbyte_ast::FStrPart::Interp(name) => self
+                            .expr(&Expr::Ident(name.clone(), *span))
+                            .map(HirFormatPart::Value),
+                    })
+                    .collect::<Result<_, _>>()?,
+            ),
         };
-        Ok(HirExpr {
+        let lowered = HirExpr {
             ty: fact.ty,
             category: fact.category,
             ownership: fact.ownership,
+            allocator_origin: fact.allocator_origin,
+            borrow_origin: fact.borrow_origin,
             kind,
             span: expression.span(),
-        })
+        };
+        if fact.ownership == OwnershipAction::Move {
+            match &lowered.kind {
+                HirExprKind::Local(local) => self.deactivate_drop(*local),
+                HirExprKind::Place(HirPlace {
+                    base: HirPlaceBase::Local(local),
+                    projections,
+                    ..
+                }) if projections.is_empty() => self.deactivate_drop(*local),
+                _ => {}
+            }
+        }
+        Ok(lowered)
     }
 
     fn call(
@@ -1863,6 +3128,15 @@ impl<'a> ExecutableBuilder<'a> {
         named_args: &[dbyte_ast::NamedArgument],
         span: Span,
     ) -> Result<HirExprKind, Diagnostic> {
+        if name == "print" {
+            return Ok(HirExprKind::HostCall {
+                capability: HostCapabilityId::Print,
+                arguments: args
+                    .iter()
+                    .map(|argument| self.expr(argument))
+                    .collect::<Result<_, _>>()?,
+            });
+        }
         if name == "interrupt_address" || name == "task_address" {
             let resolved = self
                 .semantic
@@ -1907,13 +3181,23 @@ impl<'a> ExecutableBuilder<'a> {
                         span,
                     )
                 })?;
-            let ty = self.resolve_annotation(&annotation, &BTreeMap::new(), span)?;
-            let layout = super::layout_of(self.semantic, ty)?;
-            return Ok(HirExprKind::Integer(i64::from(if name == "size_of" {
-                layout.size
-            } else {
-                layout.align
-            })));
+            let ty = self.resolve_annotation(&annotation, &self.current_generics, span)?;
+            return Ok(HirExprKind::LayoutOf {
+                target: ty,
+                alignment: name == "align_of",
+            });
+        }
+        if name == "len" {
+            let value = args.first().ok_or_else(|| {
+                self.error(
+                    "E_HIR_LENGTH_ARGUMENT",
+                    "validated len call lost its argument",
+                    span,
+                )
+            })?;
+            return Ok(HirExprKind::Length {
+                value: Box::new(self.expr(value)?),
+            });
         }
         if let Some(local) = self.lookup_local(name) {
             let local_ty = self
@@ -1943,6 +3227,8 @@ impl<'a> ExecutableBuilder<'a> {
                 ty: local_ty,
                 category: ValueCategory::LValue,
                 ownership: OwnershipAction::Copy,
+                allocator_origin: None,
+                borrow_origin: None,
                 kind: HirExprKind::Local(local),
                 span,
             };
@@ -1963,7 +3249,7 @@ impl<'a> ExecutableBuilder<'a> {
         {
             let arguments = type_args
                 .iter()
-                .map(|arg| self.resolve_annotation(arg, &BTreeMap::new(), span))
+                .map(|arg| self.resolve_annotation(arg, &self.current_generics, span))
                 .collect::<Result<Vec<_>, _>>()?;
             return Ok(HirExprKind::DirectCall {
                 callee: FunctionInstanceKey {
@@ -2115,7 +3401,7 @@ fn annotation_matches(
         }
     }
     match (candidate, annotation) {
-        (CanonicalType::Unit, A::Inferred) => true,
+        (CanonicalType::Unit, A::Unit | A::Inferred) => true,
         (CanonicalType::Integer(super::IntegerType::LegacyInt), A::Int) => true,
         (CanonicalType::Integer(super::IntegerType::I8), A::I8) => true,
         (CanonicalType::Integer(super::IntegerType::U8), A::U8) => true,
@@ -2130,6 +3416,9 @@ fn annotation_matches(
         | (CanonicalType::LegacyBytes, A::Bytes)
         | (CanonicalType::LegacyBuffer, A::Buffer)
         | (CanonicalType::StringView, A::StringView) => true,
+        (CanonicalType::LegacyList(element), A::List(inner)) => {
+            annotation_matches(program, program.type_of(*element), inner, generics)
+        }
         (
             CanonicalType::Pointer {
                 mutable: true,
@@ -2158,6 +3447,16 @@ fn annotation_matches(
             },
             A::MutSlice(inner),
         ) => annotation_matches(program, program.type_of(*element), inner, generics),
+        (
+            CanonicalType::Borrow { mutable, pointee },
+            A::Borrow {
+                mutable: expected,
+                pointee: inner,
+            },
+        ) => {
+            mutable == expected
+                && annotation_matches(program, program.type_of(*pointee), inner, generics)
+        }
         (
             CanonicalType::Array { element, length },
             A::Array {
@@ -2311,7 +3610,9 @@ fn resolve_element(
     span: Span,
 ) -> Result<(TypeId, u32), Diagnostic> {
     let element = match program.type_of(base) {
-        CanonicalType::Array { element, .. } | CanonicalType::Slice { element, .. } => *element,
+        CanonicalType::Array { element, .. }
+        | CanonicalType::Slice { element, .. }
+        | CanonicalType::LegacyList(element) => *element,
         CanonicalType::Pointer { pointee, .. } => *pointee,
         CanonicalType::LegacyStr => program
             .types
@@ -2321,6 +3622,16 @@ fn resolve_element(
             .ok_or_else(|| Diagnostic {
                 code: "E_HIR_UNRESOLVED_TYPE",
                 message: "legacy string byte type is missing".into(),
+                span,
+            })?,
+        CanonicalType::LegacyBytes | CanonicalType::LegacyBuffer => program
+            .types
+            .iter()
+            .position(|ty| matches!(ty, CanonicalType::Integer(super::IntegerType::LegacyInt)))
+            .map(|index| TypeId(index as u32))
+            .ok_or_else(|| Diagnostic {
+                code: "E_HIR_UNRESOLVED_TYPE",
+                message: "legacy byte index type is missing".into(),
                 span,
             })?,
         CanonicalType::StringView => program
@@ -2341,7 +3652,19 @@ fn resolve_element(
             })
         }
     };
-    Ok((element, super::layout_of(program, element)?.size))
+    let size = if matches!(
+        program.type_of(base),
+        CanonicalType::LegacyBytes | CanonicalType::LegacyBuffer
+    ) {
+        1
+    } else {
+        match super::layout_of(program, element) {
+            Ok(layout) => layout.size,
+            Err(error) if error.code == "E_LAYOUT_UNAVAILABLE" => 0,
+            Err(error) => return Err(error),
+        }
+    };
+    Ok((element, size))
 }
 
 fn result_variants(
@@ -2430,6 +3753,66 @@ mod tests {
     }
 
     #[test]
+    fn monomorphization_recomputes_generic_index_projection_scale() {
+        let source = "fn write[T](data: ptr[T], index: usize, value: T) -> unit:\n    data[index] = value\n    return unit\n\npub fn kernel_main() -> int:\n    let values: array[u32, 2] = [0 as u32, 0 as u32]\n    write[u32](&values as usize as ptr[u32], 1 as usize, 42 as u32)\n    return values[1] as int\n";
+        let executable = analyze_executable(
+            &parse(source),
+            super::super::Profile::I686None,
+            super::super::TargetDataLayout::I686,
+        )
+        .unwrap();
+        let concrete = monomorphize(&executable).unwrap();
+        let write = concrete
+            .functions
+            .iter()
+            .find(|function| function.symbol_name.starts_with("__dbyte_mono_write_t"))
+            .unwrap();
+        let HirStatement::Assign { place, .. } = &write.body.statements[0] else {
+            panic!("generic pointer write did not remain an assignment");
+        };
+        assert!(matches!(
+            place.projections.last(),
+            Some(HirProjection::Index {
+                element_size: 4,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn v121_executable_hir_registers_custom_drop_on_fallthrough() {
+        let source = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    value.id = 0\n\nfn run() -> unit:\n    let resource = Resource(id = 7)\n    return unit\n";
+        let executable = analyze_executable(
+            &parse(source),
+            super::super::Profile::Hosted,
+            super::super::TargetDataLayout::I686,
+        )
+        .expect("drop program builds executable HIR");
+        let run = executable
+            .functions
+            .iter()
+            .find(|function| function.name == "run")
+            .expect("run function");
+        let HirStatement::Return { cleanup, .. } = run
+            .body
+            .statements
+            .iter()
+            .find(|statement| matches!(statement, HirStatement::Return { .. }))
+            .unwrap()
+        else {
+            panic!("expected return");
+        };
+        assert_eq!(cleanup.len(), 1);
+        assert!(matches!(
+            cleanup[0].statements[0],
+            HirStatement::Expression(HirExpr {
+                kind: HirExprKind::DirectCall { .. },
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn project_module_order_is_fail_closed_and_deterministic() {
         let program = parse("pub fn kernel_main() -> int:\n    return 0\n");
         let project = ProjectInput {
@@ -2475,8 +3858,11 @@ mod tests {
             super::super::TargetDataLayout::I686,
         )
         .unwrap();
-        let concrete = monomorphize(&analyzed.executable).unwrap();
-        assert_eq!(concrete.functions.len(), 2);
+        let concrete = monomorphize_project(&analyzed).unwrap();
+        assert_eq!(concrete.executable.functions.len(), 2);
+        assert_eq!(concrete.module_order, [ModuleId(0), ModuleId(1)]);
+        assert_eq!(concrete.source_modules[&ModuleId(0)], "numbers");
+        validate_project_profile(&concrete, super::super::Profile::I686None).unwrap();
         let add = analyzed
             .executable
             .semantic

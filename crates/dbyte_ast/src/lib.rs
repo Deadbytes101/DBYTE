@@ -21,6 +21,7 @@ impl std::fmt::Display for Span {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeAnnotation {
+    Unit,
     Int,
     I8,
     U8,
@@ -39,6 +40,10 @@ pub enum TypeAnnotation {
     ConstPointer(Box<TypeAnnotation>),
     Slice(Box<TypeAnnotation>),
     MutSlice(Box<TypeAnnotation>),
+    Borrow {
+        mutable: bool,
+        pointee: Box<TypeAnnotation>,
+    },
     StringView,
     Array {
         element: Box<TypeAnnotation>,
@@ -64,6 +69,7 @@ pub enum TypeAnnotation {
 impl std::fmt::Display for TypeAnnotation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            TypeAnnotation::Unit => write!(f, "unit"),
             TypeAnnotation::Int => write!(f, "int"),
             TypeAnnotation::I8 => write!(f, "i8"),
             TypeAnnotation::U8 => write!(f, "u8"),
@@ -82,6 +88,13 @@ impl std::fmt::Display for TypeAnnotation {
             TypeAnnotation::ConstPointer(inner) => write!(f, "const_ptr[{}]", inner),
             TypeAnnotation::Slice(inner) => write!(f, "slice[{}]", inner),
             TypeAnnotation::MutSlice(inner) => write!(f, "mut_slice[{}]", inner),
+            TypeAnnotation::Borrow { mutable, pointee } => {
+                if *mutable {
+                    write!(f, "borrow mut {pointee}")
+                } else {
+                    write!(f, "borrow {pointee}")
+                }
+            }
             TypeAnnotation::StringView => write!(f, "StringView"),
             TypeAnnotation::Array { element, length } => {
                 write!(f, "array[{}, {}]", element, length)
@@ -133,6 +146,12 @@ impl std::fmt::Display for TypeAnnotation {
 pub enum CallConvention {
     DByte,
     C,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionKind {
+    Normal,
+    Drop,
 }
 
 impl std::fmt::Display for CallConvention {
@@ -226,6 +245,7 @@ pub enum FStrPart {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
+    UnitLit(Span),
     IntLit(i64, Span),
     FloatLit(f64, Span),
     BoolLit(bool, Span),
@@ -287,6 +307,10 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    Drop {
+        expr: Box<Expr>,
+        span: Span,
+    },
     Closure {
         captures: Vec<Capture>,
         params: Vec<Param>,
@@ -304,7 +328,8 @@ pub enum Expr {
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
-            Expr::IntLit(_, s)
+            Expr::UnitLit(s)
+            | Expr::IntLit(_, s)
             | Expr::FloatLit(_, s)
             | Expr::BoolLit(_, s)
             | Expr::StrLit(_, s)
@@ -320,6 +345,7 @@ impl Expr {
             | Expr::Invoke { span, .. }
             | Expr::Borrow { span, .. }
             | Expr::Try { span, .. }
+            | Expr::Drop { span, .. }
             | Expr::Closure { span, .. }
             | Expr::Index { span, .. }
             | Expr::Member { span, .. }
@@ -437,6 +463,7 @@ pub enum Stmt {
     },
     FnDef {
         is_pub: bool,
+        kind: FunctionKind,
         interrupt: Option<InterruptClass>,
         call_convention: CallConvention,
         name: String,

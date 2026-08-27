@@ -6,7 +6,7 @@ use crate::linker::{link_object_bytes, link_user_object_bytes, LinkArtifact, Lin
 use crate::modules::load_native_module_graph;
 use crate::object::{
     write_relocatable, ObjectSection, ObjectSymbol, SymbolBinding, SymbolDefinition, SymbolKind,
-    GENERIC_METADATA_PREFIX,
+    DROP_METADATA_PREFIX, GENERIC_METADATA_PREFIX,
 };
 use crate::systems_lower::lower_systems_module;
 #[cfg(test)]
@@ -42,10 +42,11 @@ pub fn compile_canonical_legacy_single_image(
         dbyte_hir::TargetDataLayout::I686,
     )
     .map_err(|errors| canonical_project_diagnostics(errors, &graph))?;
-    let concrete = dbyte_hir::monomorphize(&analyzed.executable)
+    let concrete = dbyte_hir::monomorphize_project(&analyzed)
         .map_err(|error| canonical_project_diagnostic(error, &graph))?;
-    validate_canonical_entry(&analyzed, &concrete, dbyte_hir::Profile::I686None)?;
-    let Some(ir) = crate::legacy_hir::lower_legacy_single_image(&analyzed, &concrete)? else {
+    validate_canonical_entry(&concrete, dbyte_hir::Profile::I686None)?;
+    let Some(ir) = crate::legacy_hir::lower_legacy_single_image(&analyzed, &concrete.executable)?
+    else {
         return Ok(None);
     };
     let ir_dump = ir.dump();
@@ -130,10 +131,10 @@ fn compile_canonical_project_objects_with_entry(
     };
     let analyzed = dbyte_hir::analyze_project(&input, profile, dbyte_hir::TargetDataLayout::I686)
         .map_err(|errors| canonical_project_diagnostics(errors, &graph))?;
-    let concrete = dbyte_hir::monomorphize(&analyzed.executable)
+    let concrete = dbyte_hir::monomorphize_project(&analyzed)
         .map_err(|error| canonical_project_diagnostic(error, &graph))?;
     if require_entry {
-        validate_canonical_entry(&analyzed, &concrete, profile)?;
+        validate_canonical_entry(&concrete, profile)?;
     }
     let names = graph
         .modules
@@ -141,13 +142,25 @@ fn compile_canonical_project_objects_with_entry(
         .map(|module| (dbyte_hir::ModuleId(module.id as u32), module.name.clone()))
         .collect();
     let ir_modules =
-        crate::hir_native::lower_hir_project_to_native_ir(&analyzed, &concrete, &names)?;
+        crate::hir_native::lower_hir_project_to_native_ir(&analyzed, &concrete.executable, &names)?;
     let mut modules = Vec::with_capacity(ir_modules.len());
     for (module_id, ir_module) in ir_modules {
         let source_module = &graph.modules[module_id.0 as usize];
         let mut lowered = lower_systems_module(&ir_module)
             .map_err(|error| attach_path(error, &source_module.display_path))?;
         for marker in generic_metadata_markers(&analyzed, module_id) {
+            lowered.image.symbols.push(ObjectSymbol {
+                name: marker,
+                binding: SymbolBinding::Local,
+                kind: SymbolKind::Function,
+                definition: SymbolDefinition::Defined {
+                    section: ObjectSection::Text,
+                    value: 0,
+                },
+                size: 0,
+            });
+        }
+        for marker in drop_metadata_markers(&analyzed, module_id) {
             lowered.image.symbols.push(ObjectSymbol {
                 name: marker,
                 binding: SymbolBinding::Local,
@@ -218,11 +231,51 @@ fn generic_metadata_markers(
     markers
 }
 
-fn validate_canonical_entry(
+fn drop_metadata_markers(
     project: &dbyte_hir::CanonicalHirProject,
-    concrete: &dbyte_hir::ConcreteHirProgram,
+    module: dbyte_hir::ModuleId,
+) -> Vec<String> {
+    let mut markers = Vec::new();
+    for definition in &project.executable.semantic.definitions {
+        if !definition.public || project.symbol_owners.get(&definition.symbol) != Some(&module) {
+            continue;
+        }
+        let Some(drop_function) = project
+            .executable
+            .semantic
+            .functions
+            .iter()
+            .find(|function| {
+                function.kind == dbyte_ast::FunctionKind::Drop
+                    && function.drop_target == Some(definition.symbol)
+            })
+        else {
+            continue;
+        };
+        let owner = project
+            .link_names
+            .get(&definition.symbol)
+            .unwrap_or(&definition.name);
+        let function = project
+            .link_names
+            .get(&drop_function.symbol)
+            .unwrap_or(&drop_function.name);
+        markers.push(format!(
+            "{DROP_METADATA_PREFIX}{owner}:{function}:{}:{}",
+            definition.symbol.0,
+            definition.generic_params.len()
+        ));
+    }
+    markers.sort();
+    markers.dedup();
+    markers
+}
+
+fn validate_canonical_entry(
+    project: &dbyte_hir::ConcreteHirProject,
     profile: dbyte_hir::Profile,
 ) -> NativeResult<()> {
+    let concrete = &project.executable;
     let name = if profile == dbyte_hir::Profile::I686User {
         "user_main"
     } else {

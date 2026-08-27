@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 byteorder = "1.5.0"
 dbyte_ast.workspace = true
+dbyte_hir.workspace = true
 dbyte_lexer.workspace = true
 dbyte_module.workspace = true
 dbyte_parser.workspace = true

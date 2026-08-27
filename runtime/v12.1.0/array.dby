@@ -1,0 +1,160 @@
+import "alloc.dby" as alloc
+
+pub struct Array[T]:
+    data: ptr[T]
+    len: usize
+    capacity: usize
+    allocator_context: ptr[u8]
+    allocator_vtable: const_ptr[alloc.AllocatorVTable]
+
+fn allocator_of[T](values: borrow Array[T]) -> alloc.AllocatorRef:
+    return alloc.AllocatorRef(context = (*values).allocator_context, vtable = (*values).allocator_vtable)
+
+fn checked_bytes[T](elements: usize) -> Result[usize, alloc.AllocError]:
+    let element_size: usize = size_of(T)
+    if element_size == (0 as usize):
+        return Result[usize, alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    if elements > (((0xffffffff as u32) as usize) / element_size):
+        return Result[usize, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    return Result[usize, alloc.AllocError].Ok(elements * element_size)
+
+pub fn with_allocator[T](allocator: alloc.AllocatorRef) -> Array[T]:
+    let alignment: usize = align_of(T)
+    let pointer_result = alloc.allocate(allocator, 0 as usize, alignment)
+    match pointer_result:
+        case Result.Ok(pointer):
+            return Array[T](data = pointer as usize as ptr[T], len = 0 as usize, capacity = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable)
+        case Result.Err(error):
+            return Array[T](data = alignment as ptr[T], len = 0 as usize, capacity = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable)
+
+pub fn with_capacity[T](capacity: usize, allocator: alloc.AllocatorRef) -> Result[Array[T], alloc.AllocError]:
+    if size_of(T) == (0 as usize):
+        return Result[Array[T], alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    if capacity == (0 as usize):
+        return Result[Array[T], alloc.AllocError].Ok(with_allocator[T](allocator))
+    let bytes = checked_bytes[T](capacity)?
+    let result = alloc.allocate(allocator, bytes, align_of(T))
+    match result:
+        case Result.Ok(pointer):
+            return Result[Array[T], alloc.AllocError].Ok(Array[T](data = pointer as usize as ptr[T], len = 0 as usize, capacity = capacity, allocator_context = allocator.context, allocator_vtable = allocator.vtable))
+        case Result.Err(error):
+            return Result[Array[T], alloc.AllocError].Err(error)
+
+pub fn reserve[T](values: borrow mut Array[T], additional: usize) -> Result[unit, alloc.AllocError]:
+    if additional > (((0xffffffff as u32) as usize) - (*values).len):
+        return Result[unit, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    let required: usize = (*values).len + additional
+    if required <= (*values).capacity:
+        return Result[unit, alloc.AllocError].Ok(unit)
+    let new_capacity: usize = (*values).capacity
+    if new_capacity == (0 as usize):
+        new_capacity = 4 as usize
+    while new_capacity < required:
+        if new_capacity > (((0xffffffff as u32) as usize) / (2 as usize)):
+            new_capacity = required
+        else:
+            new_capacity = new_capacity * (2 as usize)
+    let old_bytes = checked_bytes[T]((*values).capacity)?
+    let new_bytes = checked_bytes[T](new_capacity)?
+    let allocator = allocator_of[T](borrow *values)
+    let result = alloc.resize(allocator, (*values).data as usize as ptr[u8], old_bytes, new_bytes, align_of(T))
+    match result:
+        case Result.Ok(pointer):
+            (*values).data = pointer as usize as ptr[T]
+            (*values).capacity = new_capacity
+            return Result[unit, alloc.AllocError].Ok(unit)
+        case Result.Err(error):
+            return Result[unit, alloc.AllocError].Err(error)
+
+pub fn push[T](values: borrow mut Array[T], value: T) -> Result[unit, alloc.AllocError]:
+    reserve[T](values, 1 as usize)?
+    (*values).data[(*values).len] = value
+    (*values).len = (*values).len + (1 as usize)
+    return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn pop[T](values: borrow mut Array[T]) -> Option[T]:
+    if (*values).len == (0 as usize):
+        return Option[T].None()
+    let index: usize = (*values).len - (1 as usize)
+    let value: T = (*values).data[index]
+    (*values).len = index
+    return Option[T].Some(value)
+
+pub fn insert[T](values: borrow mut Array[T], index: usize, value: T) -> Result[unit, alloc.AllocError]:
+    if index > (*values).len:
+        return Result[unit, alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    reserve[T](values, 1 as usize)?
+    let cursor: usize = (*values).len
+    while cursor > index:
+        (*values).data[cursor] = (*values).data[cursor - (1 as usize)]
+        cursor = cursor - (1 as usize)
+    (*values).data[index] = value
+    (*values).len = (*values).len + (1 as usize)
+    return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn remove[T](values: borrow mut Array[T], index: usize) -> Option[T]:
+    if index >= (*values).len:
+        return Option[T].None()
+    let value: T = (*values).data[index]
+    let cursor: usize = index
+    while (cursor + (1 as usize)) < (*values).len:
+        (*values).data[cursor] = (*values).data[cursor + (1 as usize)]
+        cursor = cursor + (1 as usize)
+    (*values).len = (*values).len - (1 as usize)
+    return Option[T].Some(value)
+
+pub fn get[T](values: borrow Array[T], index: usize) -> Option[T]:
+    if index >= (*values).len:
+        return Option[T].None()
+    return Option[T].Some((*values).data[index])
+
+pub fn get_mut[T](values: borrow mut Array[T], index: usize) -> Option[borrow mut T]:
+    if index >= (*values).len:
+        return Option[borrow mut T].None()
+    return Option[borrow mut T].Some(borrow mut (*values).data[index])
+
+pub fn as_slice[T](values: borrow Array[T]) -> slice[T]:
+    return __dbyte_runtime.slice_from_raw((*values).data, (*values).len)
+
+pub fn as_mut_slice[T](values: borrow mut Array[T]) -> mut_slice[T]:
+    return __dbyte_runtime.mut_slice_from_raw((*values).data, (*values).len)
+
+pub fn clone[T](values: borrow Array[T]) -> Result[Array[T], alloc.AllocError]:
+    return clone_in[T](values, allocator_of[T](values))
+
+pub fn clone_in[T](values: borrow Array[T], allocator: alloc.AllocatorRef) -> Result[Array[T], alloc.AllocError]:
+    let copy = with_allocator[T](allocator)
+    reserve[T](borrow mut copy, (*values).len)?
+    let index: usize = 0 as usize
+    while index < (*values).len:
+        copy.data[index] = (*values).data[index]
+        index = index + (1 as usize)
+    copy.len = (*values).len
+    return Result[Array[T], alloc.AllocError].Ok(copy)
+
+pub fn clear[T](values: borrow mut Array[T]) -> unit:
+    let remaining: usize = (*values).len
+    while remaining > (0 as usize):
+        remaining = remaining - (1 as usize)
+        drop((*values).data[remaining])
+    (*values).len = 0 as usize
+    return unit
+
+pub fn length[T](values: borrow Array[T]) -> usize:
+    return (*values).len
+
+pub fn capacity[T](values: borrow Array[T]) -> usize:
+    return (*values).capacity
+
+drop fn destroy[T](values: borrow mut Array[T]):
+    clear[T](values)
+    let bytes = checked_bytes[T]((*values).capacity)
+    match bytes:
+        case Result.Ok(size):
+            alloc.release(allocator_of[T](borrow *values), (*values).data as usize as ptr[u8], size, align_of(T))
+        case Result.Err(error):
+            return unit
+    (*values).len = 0 as usize
+    (*values).capacity = 0 as usize
+    (*values).data = align_of(T) as ptr[T]
+    return unit

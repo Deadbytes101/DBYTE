@@ -14,6 +14,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+mod canonical;
+pub use canonical::{
+    execute_canonical_bytecode, execute_canonical_bytecode_with_args,
+    execute_canonical_bytecode_with_memory, CanonicalVmExecution,
+};
+
 // Keep this below the host thread stack ceiling so recursion fails as a DByte
 // RuntimeError instead of aborting the Rust process.
 const MAX_CALL_DEPTH: usize = 32;
@@ -2417,6 +2423,45 @@ mod tests {
             .unwrap();
         let chunk = Compiler::new().compile_program(&program).unwrap();
         Vm::new().run(&chunk).unwrap();
+    }
+
+    #[test]
+    fn explicit_drop_invokes_the_canonical_custom_destructor() {
+        let source = "struct Resource:\n    value: int\n\ndrop fn destroy(value: borrow mut Resource):\n    print(7)\n\nlet resource = Resource(value = 42)\ndrop(resource)\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        let mut vm = Vm::new();
+        vm.capture_output();
+        vm.run(&chunk).unwrap();
+        assert_eq!(vm.take_captured_output(), "7\n");
+    }
+
+    #[test]
+    fn automatic_drop_and_defer_share_reverse_activation_order() {
+        let source = "struct Resource:\n    value: int\n\ndrop fn destroy(value: borrow mut Resource):\n    print(value.value)\n\nfn work() -> int:\n    defer []:\n        print(9)\n    let first = Resource(value = 1)\n    let second = Resource(value = 2)\n    defer []:\n        print(8)\n    return 7\n\nprint(work())\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        let mut vm = Vm::new();
+        vm.capture_output();
+        vm.run(&chunk).unwrap();
+        assert_eq!(vm.take_captured_output(), "8\n2\n1\n9\n7\n");
+    }
+
+    #[test]
+    fn reassignment_drops_old_vm_value_before_committing_rhs() {
+        let source = "struct Resource:\n    value: int\n\ndrop fn destroy(value: borrow mut Resource):\n    print(value.value)\n\nfn work() -> int:\n    let resource = Resource(value = 1)\n    resource = Resource(value = 2)\n    return 0\n\nprint(work())\n";
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let chunk = Compiler::new().compile_program(&program).unwrap();
+        let mut vm = Vm::new();
+        vm.capture_output();
+        vm.run(&chunk).unwrap();
+        assert_eq!(vm.take_captured_output(), "1\n2\n0\n");
     }
 
     #[test]

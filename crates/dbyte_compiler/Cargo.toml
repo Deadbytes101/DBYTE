@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 dbyte_ast.workspace = true
 dbyte_bytecode.workspace = true
+dbyte_hir.workspace = true
 
 [dev-dependencies]
 dbyte_lexer.workspace = true

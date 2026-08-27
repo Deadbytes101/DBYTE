@@ -8,6 +8,8 @@ Set-Location $repoRoot
 
 $cargo = "$env:USERPROFILE\.cargo\bin\cargo.exe"
 
+& (Join-Path $scriptDir "verify_hir_authority.ps1")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo fmt --all -- --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cargo clippy --all-targets -- -D warnings
@@ -33,8 +35,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOutput = .\target\debug\dbyte.exe --version
-if ($versionOutput -ne 'DByte 12.0.0') {
-    throw "Version mismatch: expected 'DByte 12.0.0', got '$versionOutput'"
+if ($versionOutput -ne 'DByte 12.1.0') {
+    throw "Version mismatch: expected 'DByte 12.1.0', got '$versionOutput'"
 }
 
 function Normalize-Output($value) {
@@ -344,6 +346,34 @@ Assert-Contains $listResult.Text (Expected-File "tests\vm\vm_list_oob.err") "vm 
 
 Write-Host "Running VM fast path disasm checks..."
 
+# The v12.1 production VM consumes canonical-ID bytecode.  The legacy AST VM
+# optimizer opcodes below remain documented for the compatibility oracle, but
+# are not the executable production representation anymore.  Exercise the same
+# source families through the canonical disassembler and require resolved
+# operations instead of source-name or Rust Debug recovery.
+$canonicalDisasmCases = @(
+    @{ Path = "benchmarks\loop_sum.dby"; Tokens = @("STORE_LOCAL", "LOAD_LOCAL", "WHILE_BEGIN", "ADD_I64") },
+    @{ Path = "tests\vm\typed\generic_local_fallback.dby"; Tokens = @("MAKE_LIST", "STORE_LOCAL", "LOAD_PLACE") },
+    @{ Path = "benchmarks\binary_read_u32.dby"; Tokens = @("HOST_CALL BinaryU32Le") },
+    @{ Path = "benchmarks\buffer_replace.dby"; Tokens = @("HOST_CALL BufferReplace") },
+    @{ Path = "tests\patching\load_save_roundtrip.dby"; Tokens = @("HOST_CALL BufferLoad", "HOST_CALL BufferSave") },
+    @{ Path = "tests\patching\fs_exists.dby"; Tokens = @("HOST_CALL FsExists") },
+    @{ Path = "tests\vm\function_fastpath\direct_call_disasm.dby"; Tokens = @("CALL_DIRECT", "RETURN") },
+    @{ Path = "tests\functions\recursion_factorial.dby"; Tokens = @("CALL_DIRECT", "RETURN") }
+)
+foreach ($case in $canonicalDisasmCases) {
+    $canonicalDisasm = Invoke-Dbyte -Arguments @("disasm", $case.Path) -WorkingDirectory $repoRoot
+    if ($canonicalDisasm.Code -ne 0) {
+        throw "canonical disasm failed for $($case.Path): $($canonicalDisasm.Text)"
+    }
+    Assert-NotContains $canonicalDisasm.Text "CanonicalBytecodeProject {" "$($case.Path) compact canonical disasm"
+    foreach ($token in $case.Tokens) {
+        Assert-Contains $canonicalDisasm.Text $token "$($case.Path) canonical operation"
+    }
+}
+
+<# Legacy AST VM optimizer opcode checks, retained as historical documentation.
+
 $loopDisasm = Invoke-Dbyte -Arguments @("disasm", "benchmarks\loop_sum.dby") -WorkingDirectory $repoRoot
 if ($loopDisasm.Code -ne 0) { throw "loop_sum disasm failed: $($loopDisasm.Text)" }
 Assert-Contains $loopDisasm.Text "STORE_LOCAL_I64" "loop_sum typed store"
@@ -583,6 +613,7 @@ Assert-Contains $frameDispatchGeneric.Text "STORE_LOCAL" "frame dispatch generic
 Assert-Contains $frameDispatchGeneric.Text "RETURN" "frame dispatch generic return path"
 Assert-NotContains $frameDispatchGeneric.Text "RETURN_I64" "frame dispatch generic return avoids return_i64"
 
+#>
 Write-Host "Running interactive runtime tests..."
 
 $replPersist = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "let x: int = 40`nprint(x + 2)`n.quit`n"
@@ -14464,7 +14495,7 @@ Write-Host "[OK] v10.55.1 DByte Graphics Shell IRQ0 Runtime Bridge Hardening ver
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 12.0.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 12.1.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -14612,7 +14643,7 @@ Assert-Contains $scriptArgsCheck.Text "no type errors found" "script args check 
 
 $scriptArgsDisasm = Invoke-Dbyte -Arguments @("disasm", $scriptArgsFile)
 if ($scriptArgsDisasm.Code -ne 0) { throw "script args disasm failed: $($scriptArgsDisasm.Text)" }
-Assert-Contains $scriptArgsDisasm.Text "MEMBER_CALL args 0" "script args disasm"
+Assert-Contains $scriptArgsDisasm.Text "HOST_CALL EnvArgs 0" "script args canonical capability"
 
 $scriptArgsRepl = Invoke-DbyteInput -Arguments @("repl", "--no-rc") -InputText "import std.env as env`nprint(len(env.args()))`n.quit`n"
 if ($scriptArgsRepl.Code -ne 0) { throw "script args repl failed: $($scriptArgsRepl.Text)" }
@@ -16713,7 +16744,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 12.0.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 12.1.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -16721,7 +16752,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 12.0.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 12.0.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 12.0.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 12.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 12.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 12.1.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -18252,7 +18283,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "12.0.0"
+$EXPECTED_VERSION = "12.1.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -19915,7 +19946,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha in the v12.0.0 package smoke tests..."
+Write-Host "Running DByteOS Alpha in the v12.1.0 package smoke tests..."
 if (Test-Path (Join-Path $repoRoot "tmp")) { Remove-Item -Recurse -Force (Join-Path $repoRoot "tmp") }
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
@@ -19926,8 +19957,8 @@ if (Test-Path $smokeRoot) { Remove-Item -Recurse -Force $smokeRoot }
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 
 Write-Host "  Building and packaging..."
-& .\scripts\package_release.ps1 -Version "12.0.0" -SkipBundle
-$zipFile = Join-Path $repoRoot "dbyte-v12.0.0-windows-x64.zip"
+& .\scripts\package_release.ps1 -Version "12.1.0" -SkipBundle
+$zipFile = Join-Path $repoRoot "dbyte-v12.1.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
 
 Write-Host "  Extracting package..."
@@ -19951,7 +19982,7 @@ if ($packagedNativeHeader.Length -lt 20 -or $packagedNativeHeader[0] -ne 0x7f -o
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 12.0.0") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 12.1.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -20347,11 +20378,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 12.0.0`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 12.1.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 12.0.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 12.0.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 12.0.0`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 12.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 12.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 12.1.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -20605,7 +20636,7 @@ Journal: 0 entries recorded
 Open Tasks:
   demo: 2 open
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 12.0.0
+dbyte-shell> DByte 12.1.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"
@@ -20614,7 +20645,7 @@ Remove-Item -Recurse -Force $smokeRoot -ErrorAction SilentlyContinue
 Assert-GitStatus-Unchanged $packageSmokeStatus "package smoke cleanliness"
 Write-Host "Package smoke tests passed."
 
-& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "12.0.0"
+& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "12.1.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\scripts\verify_native_kernel_core.ps1 -MilestoneVersion "11.2.0"
@@ -20650,7 +20681,13 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\scripts\verify_v11_frozen_compiler_compat.ps1
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+& .\scripts\verify_v12_frozen_compiler_compat.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & .\scripts\verify_native_v12_hir.ps1 -MilestoneVersion "12.0.0"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& .\scripts\verify_native_runtime_foundation.ps1 -MilestoneVersion "12.1.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $orphanQemu = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | Where-Object { $initialQemuIds -notcontains $_.Id })

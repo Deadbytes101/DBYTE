@@ -1,0 +1,131 @@
+import "array.dby" as arrays
+import "string.dby" as strings
+import "hosted_alloc.dby" as host
+import "hosted_array.dby" as hosted_arrays
+import "hosted_string.dby" as hosted_strings
+
+fn inspect(values: borrow arrays.Array[u32]) -> u32:
+    let view = arrays.as_slice[u32](values)
+    if len(view) != (2 as usize):
+        return 0 as u32
+    return view[1 as usize]
+
+fn mutate(values: borrow mut arrays.Array[u32]) -> u32:
+    let view = arrays.as_mut_slice[u32](values)
+    view[1 as usize] = 3 as u32
+    return view[1 as usize]
+
+fn push_byte(values: borrow mut arrays.Array[u8], value: u8) -> unit:
+    let result = arrays.push[u8](values, value)
+    match result:
+        case Result.Ok(accepted):
+            return unit
+        case Result.Err(error):
+            print("FAIL")
+            return unit
+
+let values = hosted_arrays.new[u32]()
+let first = arrays.push[u32](borrow mut values, 40 as u32)
+match first:
+    case Result.Ok(value):
+        let accepted: u32 = 0 as u32
+    case Result.Err(error):
+        print("FAIL")
+let second = arrays.push[u32](borrow mut values, 2 as u32)
+match second:
+    case Result.Ok(value):
+        let accepted: u32 = 0 as u32
+    case Result.Err(error):
+        print("FAIL")
+let item = arrays.get[u32](borrow values, 0 as usize)
+match item:
+    case Option.Some(value):
+        print(value)
+    case Option.None:
+        print("FAIL")
+print(arrays.length[u32](borrow values))
+print(inspect(borrow values))
+print(mutate(borrow mut values))
+let copied_values = arrays.clone[u32](borrow values)
+match copied_values:
+    case Result.Ok(copy):
+        print(arrays.length[u32](borrow copy))
+        drop(copy)
+    case Result.Err(error):
+        print("FAIL")
+let copied_values_in = arrays.clone_in[u32](borrow values, host.system_allocator())
+match copied_values_in:
+    case Result.Ok(copy):
+        print(arrays.length[u32](borrow copy))
+        drop(copy)
+    case Result.Err(error):
+        print("FAIL")
+drop(values)
+
+let text = hosted_strings.new()
+let appended = strings.append_view(borrow mut text, "Hi")
+match appended:
+    case Result.Ok(value):
+        print(strings.length(borrow text))
+        let view = strings.as_view(borrow text)
+        print(view[1 as usize])
+        let copied_text = strings.clone(borrow text)
+        match copied_text:
+            case Result.Ok(copy):
+                print(strings.length(borrow copy))
+                drop(copy)
+            case Result.Err(error):
+                print("FAIL")
+        let copied_text_in = strings.clone_in(borrow text, host.system_allocator())
+        match copied_text_in:
+            case Result.Ok(copy):
+                print(strings.length(borrow copy))
+                drop(copy)
+            case Result.Err(error):
+                print("FAIL")
+    case Result.Err(error):
+        print("FAIL")
+drop(text)
+
+let bytes = hosted_arrays.new[u8]()
+push_byte(borrow mut bytes, 68 as u8)
+push_byte(borrow mut bytes, 0xc3 as u8)
+push_byte(borrow mut bytes, 0xa9 as u8)
+let decoded = strings.from_utf8(arrays.as_slice[u8](borrow bytes), host.system_allocator())
+match decoded:
+    case Result.Ok(value):
+        print(strings.length(borrow value))
+        drop(value)
+    case Result.Err(error):
+        print("FAIL")
+drop(bytes)
+
+let invalid = hosted_arrays.new[u8]()
+push_byte(borrow mut invalid, 0xc0 as u8)
+push_byte(borrow mut invalid, 0xaf as u8)
+let rejected = strings.from_utf8(arrays.as_slice[u8](borrow invalid), host.system_allocator())
+match rejected:
+    case Result.Ok(value):
+        print("FAIL")
+        drop(value)
+    case Result.Err(error):
+        match error:
+            case strings.StringError.InvalidUtf8:
+                print("INVALID")
+            case strings.StringError.Allocation(allocation_error):
+                print("FAIL")
+drop(invalid)
+
+let words = hosted_arrays.new[strings.String]()
+let nested = strings.from_view("nested", host.system_allocator())
+match nested:
+    case Result.Ok(value):
+        let pushed = arrays.push[strings.String](borrow mut words, value)
+        match pushed:
+            case Result.Ok(accepted):
+                print(arrays.length[strings.String](borrow words))
+            case Result.Err(error):
+                print("FAIL")
+    case Result.Err(error):
+        print("FAIL")
+drop(words)

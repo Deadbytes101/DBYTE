@@ -1,0 +1,5 @@
+pub fn out8(port: u16, value: u8):
+    native.io_out8(port, value)
+
+pub fn in8(port: u16) -> u8:
+    return native.io_in8(port)

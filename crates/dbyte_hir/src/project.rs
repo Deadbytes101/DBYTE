@@ -29,32 +29,86 @@ pub(crate) fn resolve_project_ast(
 ) -> Result<ResolvedProjectAst, Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
     let mut declarations = Vec::<BTreeMap<String, Decl>>::with_capacity(project.modules.len());
-    let mut public_names = BTreeMap::<String, ModuleId>::new();
+    let captured_root_values = project
+        .modules
+        .iter()
+        .find(|module| module.id == project.root)
+        .map_or_else(BTreeSet::new, |module| {
+            let root_values: BTreeMap<_, _> = module
+                .program
+                .stmts
+                .iter()
+                .filter_map(|statement| match statement {
+                    Stmt::Let { name, value, .. } => Some((name.clone(), value)),
+                    _ => None,
+                })
+                .collect();
+            let mut referenced = BTreeSet::new();
+            for statement in &module.program.stmts {
+                if let Stmt::FnDef { params, body, .. } = statement {
+                    let mut function_references = BTreeSet::new();
+                    collect_referenced_names_in_statements(body, &mut function_references);
+                    let mut function_locals: BTreeSet<_> = params
+                        .iter()
+                        .map(|parameter| parameter.name.clone())
+                        .collect();
+                    collect_declared_names_in_statements(body, &mut function_locals);
+                    referenced.extend(function_references.difference(&function_locals).cloned());
+                }
+            }
+            let mut captured: BTreeSet<_> = root_values
+                .keys()
+                .filter(|name| referenced.contains(*name))
+                .cloned()
+                .collect();
+            loop {
+                let mut dependencies = BTreeSet::new();
+                for name in &captured {
+                    if let Some(initializer) = root_values.get(name) {
+                        collect_referenced_names_in_expression(initializer, &mut dependencies);
+                    }
+                }
+                let before = captured.len();
+                captured.extend(
+                    root_values
+                        .keys()
+                        .filter(|name| dependencies.contains(*name))
+                        .cloned(),
+                );
+                if captured.len() == before {
+                    break;
+                }
+            }
+            captured
+        });
+    let mut public_counts = BTreeMap::<String, usize>::new();
+    for module in &project.modules {
+        for statement in &module.program.stmts {
+            if let Some((name, true, _)) = declaration(statement) {
+                *public_counts.entry(name.to_owned()).or_default() += 1;
+            }
+        }
+    }
     let mut owners = BTreeMap::new();
     for module in &project.modules {
         let mut module_declarations = BTreeMap::new();
         for statement in &module.program.stmts {
-            let Some((name, public, span)) = declaration(statement) else {
+            if module.id == project.root
+                && matches!(statement, Stmt::Let { name, .. } if !captured_root_values.contains(name))
+            {
+                continue;
+            }
+            let Some((name, public, _span)) = declaration(statement) else {
                 continue;
             };
             let entry = name == "kernel_main" || name == "user_main";
-            let internal = if public || (module.id == project.root && entry) {
+            let internal = if public && public_counts.get(name).copied().unwrap_or(0) > 1 {
+                format!("__dbyte_pub_m{}_{}", module.id.0, name)
+            } else if public || (module.id == project.root && entry) {
                 name.to_owned()
             } else {
                 format!("__dbyte_m{}_{}", module.id.0, name)
             };
-            if public {
-                if let Some(previous) = public_names.insert(name.to_owned(), module.id) {
-                    diagnostics.push(Diagnostic {
-                        code: "E_DUPLICATE_EXPORT",
-                        message: format!(
-                            "public name `{name}` is exported by modules m{} and m{}",
-                            previous.0, module.id.0
-                        ),
-                        span,
-                    });
-                }
-            }
             owners.insert(internal.clone(), (module.id, name.to_owned()));
             let fields = match statement {
                 Stmt::StructDef { fields, .. } => {
@@ -62,7 +116,10 @@ pub(crate) fn resolve_project_ast(
                 }
                 _ => None,
             };
-            let value = matches!(statement, Stmt::Const { .. } | Stmt::Static { .. });
+            let value = matches!(
+                statement,
+                Stmt::Let { .. } | Stmt::Const { .. } | Stmt::Static { .. }
+            );
             module_declarations.insert(
                 name.to_owned(),
                 Decl {
@@ -83,19 +140,43 @@ pub(crate) fn resolve_project_ast(
     let mut statements = Vec::new();
     for module in &project.modules {
         let aliases: BTreeMap<_, _> = module.imports.iter().cloned().collect();
+        let mut host_imports = BTreeMap::new();
+        collect_host_imports(&module.program.stmts, &mut host_imports);
+        let host_aliases: BTreeMap<_, _> = host_imports
+            .keys()
+            .map(|alias| {
+                (
+                    alias.clone(),
+                    format!("__dbyte_host_m{}_{}", module.id.0, alias),
+                )
+            })
+            .collect();
         let mut rewriter = Rewriter {
             module: module.id,
+            root: project.root,
             declarations: &declarations,
             aliases,
+            host_aliases,
             locals: Vec::new(),
             diagnostics: Vec::new(),
         };
+        for (alias, path) in &host_imports {
+            statements.push(Stmt::Import {
+                path: path.clone(),
+                alias: rewriter.host_aliases[alias].clone(),
+                span: Span::zero(),
+            });
+        }
         for statement in &module.program.stmts {
-            if !matches!(statement, Stmt::Import { .. }) {
-                let mut statement = rewriter.statement(statement.clone(), true);
-                shift_statement_span(&mut statement, module.id.0 as usize * 1_000_000);
-                statements.push(statement);
+            if let Stmt::Import { path, alias, span } = statement {
+                if path.starts_with("std.") {
+                    let _ = (alias, span);
+                }
+                continue;
             }
+            let mut statement = rewriter.statement(statement.clone(), true);
+            shift_statement_span(&mut statement, module.id.0 as usize * 1_000_000);
+            statements.push(statement);
         }
         diagnostics.append(&mut rewriter.diagnostics);
     }
@@ -253,6 +334,7 @@ fn shift_expression_span(expression: &mut Expr, lines: usize) {
         Expr::Unary { expr, .. }
         | Expr::Borrow { expr, .. }
         | Expr::Try { expr, .. }
+        | Expr::Drop { expr, .. }
         | Expr::Cast { expr, .. } => shift_expression_span(expr, lines),
         Expr::Call { args, .. } | Expr::MemberCall { args, .. } => {
             for arg in args {
@@ -300,7 +382,8 @@ fn shift_expression_span(expression: &mut Expr, lines: usize) {
                 shift_statement_span(statement, lines);
             }
         }
-        Expr::IntLit(..)
+        Expr::UnitLit(..)
+        | Expr::IntLit(..)
         | Expr::FloatLit(..)
         | Expr::BoolLit(..)
         | Expr::StrLit(..)
@@ -313,7 +396,8 @@ fn shift_expression_span(expression: &mut Expr, lines: usize) {
 
 fn expression_span_mut(expression: &mut Expr) -> &mut Span {
     match expression {
-        Expr::IntLit(_, span)
+        Expr::UnitLit(span)
+        | Expr::IntLit(_, span)
         | Expr::FloatLit(_, span)
         | Expr::BoolLit(_, span)
         | Expr::StrLit(_, span)
@@ -332,8 +416,188 @@ fn expression_span_mut(expression: &mut Expr) -> &mut Span {
         | Expr::Invoke { span, .. }
         | Expr::Borrow { span, .. }
         | Expr::Try { span, .. }
+        | Expr::Drop { span, .. }
         | Expr::Closure { span, .. }
         | Expr::Cast { span, .. } => span,
+    }
+}
+
+fn collect_declared_names_in_statements(statements: &[Stmt], declared: &mut BTreeSet<String>) {
+    for statement in statements {
+        match statement {
+            Stmt::Let { name, .. } | Stmt::Const { name, .. } | Stmt::Static { name, .. } => {
+                declared.insert(name.clone());
+            }
+            Stmt::FnDef {
+                name, params, body, ..
+            } => {
+                declared.insert(name.clone());
+                declared.extend(params.iter().map(|parameter| parameter.name.clone()));
+                collect_declared_names_in_statements(body, declared);
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_declared_names_in_statements(then_body, declared);
+                if let Some(else_body) = else_body {
+                    collect_declared_names_in_statements(else_body, declared);
+                }
+            }
+            Stmt::While { body, .. } | Stmt::Defer { body, .. } => {
+                collect_declared_names_in_statements(body, declared);
+            }
+            Stmt::For { var, body, .. } => {
+                declared.insert(var.clone());
+                collect_declared_names_in_statements(body, declared);
+            }
+            Stmt::Match { arms, .. } => {
+                for arm in arms {
+                    if let Pattern::Variant { bindings, .. } = &arm.pattern {
+                        declared.extend(bindings.iter().cloned());
+                    }
+                    collect_declared_names_in_statements(&arm.body, declared);
+                }
+            }
+            Stmt::Import { alias, .. } => {
+                declared.insert(alias.clone());
+            }
+            Stmt::StructDef { name, .. } | Stmt::EnumDef { name, .. } => {
+                declared.insert(name.clone());
+            }
+            Stmt::Assign { .. }
+            | Stmt::Store { .. }
+            | Stmt::Return { .. }
+            | Stmt::Break { .. }
+            | Stmt::Continue { .. }
+            | Stmt::Expr(_) => {}
+        }
+    }
+}
+
+fn collect_referenced_names_in_statements(statements: &[Stmt], referenced: &mut BTreeSet<String>) {
+    for statement in statements {
+        match statement {
+            Stmt::Let { value, .. } | Stmt::Const { value, .. } | Stmt::Expr(value) => {
+                collect_referenced_names_in_expression(value, referenced);
+            }
+            Stmt::Assign { name, value, .. } => {
+                referenced.insert(name.clone());
+                collect_referenced_names_in_expression(value, referenced);
+            }
+            Stmt::Store { target, value, .. } => {
+                collect_referenced_names_in_expression(target, referenced);
+                collect_referenced_names_in_expression(value, referenced);
+            }
+            Stmt::FnDef { body, .. } | Stmt::While { body, .. } | Stmt::Defer { body, .. } => {
+                collect_referenced_names_in_statements(body, referenced);
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(value) = value {
+                    collect_referenced_names_in_expression(value, referenced);
+                }
+            }
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_referenced_names_in_expression(cond, referenced);
+                collect_referenced_names_in_statements(then_body, referenced);
+                if let Some(else_body) = else_body {
+                    collect_referenced_names_in_statements(else_body, referenced);
+                }
+            }
+            Stmt::For { iterable, body, .. } => {
+                collect_referenced_names_in_expression(iterable, referenced);
+                collect_referenced_names_in_statements(body, referenced);
+            }
+            Stmt::Match { value, arms, .. } => {
+                collect_referenced_names_in_expression(value, referenced);
+                for arm in arms {
+                    collect_referenced_names_in_statements(&arm.body, referenced);
+                }
+            }
+            Stmt::Static { value, .. } => {
+                if let Some(value) = value {
+                    collect_referenced_names_in_expression(value, referenced);
+                }
+            }
+            Stmt::Import { .. }
+            | Stmt::StructDef { .. }
+            | Stmt::EnumDef { .. }
+            | Stmt::Break { .. }
+            | Stmt::Continue { .. } => {}
+        }
+    }
+}
+
+fn collect_referenced_names_in_expression(expression: &Expr, referenced: &mut BTreeSet<String>) {
+    match expression {
+        Expr::Ident(name, _) => {
+            referenced.insert(name.clone());
+        }
+        Expr::Call { name, args, .. } => {
+            referenced.insert(name.clone());
+            for argument in args {
+                collect_referenced_names_in_expression(argument, referenced);
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_referenced_names_in_expression(left, referenced);
+            collect_referenced_names_in_expression(right, referenced);
+        }
+        Expr::Unary { expr, .. }
+        | Expr::Borrow { expr, .. }
+        | Expr::Try { expr, .. }
+        | Expr::Drop { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::GenericApply { target: expr, .. }
+        | Expr::Member { object: expr, .. } => {
+            collect_referenced_names_in_expression(expr, referenced);
+        }
+        Expr::List(values, _) => {
+            for value in values {
+                collect_referenced_names_in_expression(value, referenced);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_referenced_names_in_expression(target, referenced);
+            collect_referenced_names_in_expression(index, referenced);
+        }
+        Expr::MemberCall { object, args, .. } => {
+            collect_referenced_names_in_expression(object, referenced);
+            for argument in args {
+                collect_referenced_names_in_expression(argument, referenced);
+            }
+        }
+        Expr::Invoke {
+            callee,
+            args,
+            named_args,
+            ..
+        } => {
+            collect_referenced_names_in_expression(callee, referenced);
+            for argument in args {
+                collect_referenced_names_in_expression(argument, referenced);
+            }
+            for argument in named_args {
+                collect_referenced_names_in_expression(&argument.value, referenced);
+            }
+        }
+        Expr::Closure { body, .. } => {
+            collect_referenced_names_in_statements(body, referenced);
+        }
+        Expr::UnitLit(..)
+        | Expr::IntLit(..)
+        | Expr::FloatLit(..)
+        | Expr::BoolLit(..)
+        | Expr::StrLit(..)
+        | Expr::BytesLit(..)
+        | Expr::FStr(..)
+        | Expr::NullLit(..) => {}
     }
 }
 
@@ -351,6 +615,9 @@ fn declaration(statement: &Stmt) -> Option<(&str, bool, Span)> {
         | Stmt::Const {
             name, is_pub, span, ..
         }
+        | Stmt::Let {
+            name, is_pub, span, ..
+        }
         | Stmt::Static {
             name, is_pub, span, ..
         } => Some((name, *is_pub, *span)),
@@ -360,8 +627,10 @@ fn declaration(statement: &Stmt) -> Option<(&str, bool, Span)> {
 
 struct Rewriter<'a> {
     module: ModuleId,
+    root: ModuleId,
     declarations: &'a [BTreeMap<String, Decl>],
     aliases: BTreeMap<String, ModuleId>,
+    host_aliases: BTreeMap<String, String>,
     locals: Vec<BTreeSet<String>>,
     diagnostics: Vec<Diagnostic>,
 }
@@ -374,6 +643,9 @@ impl Rewriter<'_> {
     fn local_name(&self, name: &str) -> String {
         if self.local(name) {
             return name.to_owned();
+        }
+        if let Some(alias) = self.host_aliases.get(name) {
+            return alias.clone();
         }
         self.declarations[self.module.0 as usize]
             .get(name)
@@ -424,7 +696,10 @@ impl Rewriter<'_> {
         if !decl.public {
             self.diagnostics.push(Diagnostic {
                 code: "E_PRIVATE_IMPORT",
-                message: format!("`{alias}.{}` is module-private", decl.source),
+                message: format!(
+                    "TypeError: module '{alias}' has no public member '{}' (`{alias}.{}` is module-private)",
+                    decl.source, decl.source
+                ),
                 span,
             });
             return None;
@@ -453,6 +728,10 @@ impl Rewriter<'_> {
             TypeAnnotation::ConstPointer(inner) => {
                 TypeAnnotation::ConstPointer(Box::new(self.annotation(*inner, span)))
             }
+            TypeAnnotation::Borrow { mutable, pointee } => TypeAnnotation::Borrow {
+                mutable,
+                pointee: Box::new(self.annotation(*pointee, span)),
+            },
             TypeAnnotation::Slice(inner) => {
                 TypeAnnotation::Slice(Box::new(self.annotation(*inner, span)))
             }
@@ -517,8 +796,14 @@ impl Rewriter<'_> {
 
     fn statement(&mut self, statement: Stmt, top_level: bool) -> Stmt {
         match statement {
+            Stmt::Import { path, alias, span } if path.starts_with("std.") => Stmt::Import {
+                path,
+                alias: self.host_aliases.get(&alias).cloned().unwrap_or(alias),
+                span,
+            },
             Stmt::FnDef {
                 is_pub,
+                kind,
                 interrupt,
                 call_convention,
                 name,
@@ -543,6 +828,7 @@ impl Rewriter<'_> {
                 self.locals.pop();
                 Stmt::FnDef {
                     is_pub,
+                    kind,
                     interrupt,
                     call_convention,
                     name,
@@ -614,6 +900,19 @@ impl Rewriter<'_> {
                 value,
                 span,
             } => {
+                if top_level
+                    && (self.module != self.root
+                        || self.declarations[self.module.0 as usize].contains_key(&name))
+                {
+                    return Stmt::Static {
+                        is_pub,
+                        is_mut: true,
+                        name: self.local_name(&name),
+                        ty: self.annotation(ty, span),
+                        value: Some(self.expression(value)),
+                        span,
+                    };
+                }
                 let output = Stmt::Let {
                     is_pub,
                     name: name.clone(),
@@ -989,6 +1288,36 @@ impl Rewriter<'_> {
                 span,
             },
             other => other,
+        }
+    }
+}
+
+fn collect_host_imports(statements: &[Stmt], imports: &mut BTreeMap<String, String>) {
+    for statement in statements {
+        match statement {
+            Stmt::Import { path, alias, .. } if path.starts_with("std.") => {
+                imports.entry(alias.clone()).or_insert_with(|| path.clone());
+            }
+            Stmt::FnDef { body, .. }
+            | Stmt::While { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Defer { body, .. } => collect_host_imports(body, imports),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_host_imports(then_body, imports);
+                if let Some(body) = else_body {
+                    collect_host_imports(body, imports);
+                }
+            }
+            Stmt::Match { arms, .. } => {
+                for arm in arms {
+                    collect_host_imports(&arm.body, imports);
+                }
+            }
+            _ => {}
         }
     }
 }

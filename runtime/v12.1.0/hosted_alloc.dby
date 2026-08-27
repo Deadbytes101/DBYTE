@@ -1,0 +1,44 @@
+import "alloc.dby" as alloc
+
+# Hosted and VM provider bridge. Raw operations remain private to this
+# versioned runtime module; callers receive only the typed AllocatorRef.
+
+static mut SYSTEM_VTABLE: alloc.AllocatorVTable
+
+fn system_alloc_raw(size: usize, alignment: usize) -> ptr[u8]:
+    return __dbyte_runtime.memory_alloc(size, alignment)
+
+fn system_resize_raw(pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> ptr[u8]:
+    return __dbyte_runtime.memory_resize(pointer, old_size, new_size, alignment)
+
+fn system_free_raw(pointer: ptr[u8], size: usize, alignment: usize) -> bool:
+    return __dbyte_runtime.memory_free(pointer, size, alignment)
+
+fn system_read8_raw(pointer: ptr[u8], offset: usize) -> u8:
+    return __dbyte_runtime.memory_read8(pointer, offset)
+
+fn system_write8_raw(pointer: ptr[u8], offset: usize, value: u8) -> unit:
+    __dbyte_runtime.memory_write8(pointer, offset, value)
+    return unit
+
+fn provider_alloc(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let pointer = system_alloc_raw(size, alignment)
+    if pointer == null:
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.OutOfMemory())
+    return Result[ptr[u8], alloc.AllocError].Ok(pointer)
+
+fn provider_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let replacement = system_resize_raw(pointer, old_size, new_size, alignment)
+    if replacement == null:
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.OutOfMemory())
+    return Result[ptr[u8], alloc.AllocError].Ok(replacement)
+
+fn provider_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    let released = system_free_raw(pointer, size, alignment)
+    return unit
+
+pub fn system_allocator() -> alloc.AllocatorRef:
+    SYSTEM_VTABLE.alloc = provider_alloc
+    SYSTEM_VTABLE.resize = provider_resize
+    SYSTEM_VTABLE.free = provider_free
+    return alloc.AllocatorRef(context = null, vtable = &SYSTEM_VTABLE)

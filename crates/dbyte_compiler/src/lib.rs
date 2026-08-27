@@ -1,6 +1,9 @@
 use dbyte_ast::*;
 use dbyte_bytecode::{BytecodeFunction, Chunk, LocalKind, NativeFn, Op, Value};
 
+mod canonical;
+pub use canonical::lower_concrete_project_to_bytecode;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -52,6 +55,8 @@ struct FunctionCompiler {
     local_types: HashMap<String, ExprType>,
     function_return_types: HashMap<String, ExprType>,
     function_param_types: HashMap<String, Vec<ExprType>>,
+    local_nominal_types: HashMap<String, String>,
+    drop_function_ids: HashMap<String, usize>,
     struct_defs: HashMap<String, Vec<String>>,
     enum_defs: HashMap<String, HashMap<String, usize>>,
     imports: HashMap<String, String>,
@@ -59,7 +64,7 @@ struct FunctionCompiler {
     inlining_stack: Vec<usize>,
     inlining_counter: usize,
     current_function_name: String,
-    active_defers: Vec<Vec<Stmt>>,
+    active_cleanups: Vec<CleanupAction>,
     compiling_cleanup: bool,
     loops: Vec<LoopContext>,
 }
@@ -68,6 +73,16 @@ struct LoopContext {
     continue_target: usize,
     cleanup_base: usize,
     break_jumps: Vec<usize>,
+}
+
+#[derive(Clone)]
+enum CleanupAction {
+    Defer(Vec<Stmt>),
+    Drop {
+        name: String,
+        slot: usize,
+        function_id: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +102,38 @@ enum InlineReturn {
     I64Stack,
     I64Local(usize),
     Discard,
+}
+
+fn nominal_drop_target(annotation: &TypeAnnotation) -> Option<String> {
+    let TypeAnnotation::Borrow { pointee, .. } = annotation else {
+        return None;
+    };
+    match pointee.as_ref() {
+        TypeAnnotation::Named(name) | TypeAnnotation::Generic { base: name, .. } => {
+            Some(name.clone())
+        }
+        _ => None,
+    }
+}
+
+fn nominal_value_type(annotation: &TypeAnnotation, value: &Expr) -> Option<String> {
+    match annotation {
+        TypeAnnotation::Named(name) | TypeAnnotation::Generic { base: name, .. } => {
+            Some(name.clone())
+        }
+        TypeAnnotation::Inferred => match value {
+            Expr::Invoke { callee, .. } => match callee.as_ref() {
+                Expr::Ident(name, _) => Some(name.clone()),
+                Expr::GenericApply { target, .. } => match target.as_ref() {
+                    Expr::Ident(name, _) => Some(name.clone()),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 impl FunctionCompiler {
@@ -111,6 +158,8 @@ impl FunctionCompiler {
             local_types: HashMap::new(),
             function_return_types: HashMap::new(),
             function_param_types: HashMap::new(),
+            local_nominal_types: HashMap::new(),
+            drop_function_ids: HashMap::new(),
             struct_defs: HashMap::new(),
             enum_defs,
             imports: HashMap::new(),
@@ -118,7 +167,7 @@ impl FunctionCompiler {
             inlining_stack: Vec::new(),
             inlining_counter: 0,
             current_function_name: name,
-            active_defers: Vec::new(),
+            active_cleanups: Vec::new(),
             compiling_cleanup: false,
             loops: Vec::new(),
         }
@@ -236,6 +285,7 @@ impl FunctionCompiler {
     fn reserve_functions(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             if let Stmt::FnDef {
+                kind,
                 name,
                 params,
                 ret_ty,
@@ -251,7 +301,15 @@ impl FunctionCompiler {
                         .map(|param| expr_type_from_annotation(&param.ty))
                         .collect(),
                 );
-                self.reserve_function(name, params);
+                let id = self.reserve_function(name, params);
+                if *kind == FunctionKind::Drop {
+                    if let Some(target) = params
+                        .first()
+                        .and_then(|parameter| nominal_drop_target(&parameter.ty))
+                    {
+                        self.drop_function_ids.insert(target, id);
+                    }
+                }
             }
         }
     }
@@ -282,37 +340,59 @@ impl FunctionCompiler {
     fn compile_stmts(&mut self, stmts: &[Stmt]) -> Result<(), CompileError> {
         self.reserve_functions(stmts);
         self.reserve_types(stmts);
-        let defer_base = self.active_defers.len();
+        let cleanup_base = self.active_cleanups.len();
         for stmt in stmts {
             if let Stmt::Defer { body, .. } = stmt {
-                self.active_defers.push(body.clone());
+                self.active_cleanups
+                    .push(CleanupAction::Defer(body.clone()));
             } else {
                 self.compile_stmt(stmt)?;
             }
         }
         if !self.compiling_cleanup {
-            self.compile_deferred_from(defer_base)?;
+            self.compile_cleanup_from(cleanup_base, None)?;
         }
-        self.active_defers.truncate(defer_base);
+        self.active_cleanups.truncate(cleanup_base);
         Ok(())
     }
 
-    fn compile_deferred_from(&mut self, base: usize) -> Result<(), CompileError> {
-        let bodies: Vec<_> = self.active_defers[base..].iter().rev().cloned().collect();
+    fn compile_cleanup_from(
+        &mut self,
+        base: usize,
+        moved_local: Option<&str>,
+    ) -> Result<(), CompileError> {
+        let actions: Vec<_> = self.active_cleanups[base..].iter().rev().cloned().collect();
         let previous = self.compiling_cleanup;
         self.compiling_cleanup = true;
         let result = (|| {
-            for body in bodies {
-                for statement in &body {
-                    if matches!(statement, Stmt::Defer { .. }) {
-                        return Err(CompileError {
-                            msg:
-                                "nested defer inside cleanup is not yet available in the hosted VM"
-                                    .into(),
-                            span: statement.span(),
+            for action in actions {
+                match action {
+                    CleanupAction::Defer(body) => {
+                        for statement in &body {
+                            if matches!(statement, Stmt::Defer { .. }) {
+                                return Err(CompileError {
+                                    msg: "nested defer inside cleanup is not yet available in the hosted VM"
+                                        .into(),
+                                    span: statement.span(),
+                                });
+                            }
+                            self.compile_stmt(statement)?;
+                        }
+                    }
+                    CleanupAction::Drop {
+                        name,
+                        slot,
+                        function_id,
+                    } => {
+                        if moved_local == Some(name.as_str()) {
+                            continue;
+                        }
+                        self.emit(Op::LoadLocal(slot));
+                        self.emit(Op::CallFnDiscard {
+                            id: function_id,
+                            argc: 1,
                         });
                     }
-                    self.compile_stmt(statement)?;
                 }
             }
             Ok(())
@@ -330,6 +410,9 @@ impl FunctionCompiler {
                 value,
                 ..
             } => {
+                if let Some(nominal) = nominal_value_type(ty, value) {
+                    self.local_nominal_types.insert(name.clone(), nominal);
+                }
                 let value_type = self.declared_or_expr_type(ty, value);
                 if value_type == ExprType::Int
                     && self.can_compile_i64_call_to_local_fast_path(value)
@@ -363,6 +446,15 @@ impl FunctionCompiler {
                 } else {
                     self.emit(Op::StoreLocal(slot));
                 }
+                if let Some(nominal) = self.local_nominal_types.get(name) {
+                    if let Some(function_id) = self.drop_function_ids.get(nominal).copied() {
+                        self.active_cleanups.push(CleanupAction::Drop {
+                            name: name.clone(),
+                            slot,
+                            function_id,
+                        });
+                    }
+                }
                 if *is_pub {
                     self.chunk.public_values.push((name.clone(), slot));
                 }
@@ -374,10 +466,34 @@ impl FunctionCompiler {
                 if self.compile_i64_stack_assign_fast_path(name, value, *span)? {
                     return Ok(());
                 }
-                self.compile_expr(value)?;
                 let slot = self.existing_slot(name, *span)?;
+                let drop_id = self
+                    .active_cleanups
+                    .iter()
+                    .rev()
+                    .find_map(|cleanup| match cleanup {
+                        CleanupAction::Drop {
+                            name: owner,
+                            function_id,
+                            ..
+                        } if owner == name => Some(*function_id),
+                        _ => None,
+                    });
+                self.compile_expr(value)?;
                 if self.local_type(name) == ExprType::Int {
                     self.emit(Op::StoreLocalI64(slot));
+                } else if let Some(function_id) = drop_id {
+                    let temporary =
+                        self.local_slot(&format!("__v121_assign_{}", self.inlining_counter));
+                    self.inlining_counter += 1;
+                    self.emit(Op::StoreLocal(temporary));
+                    self.emit(Op::LoadLocal(slot));
+                    self.emit(Op::CallFnDiscard {
+                        id: function_id,
+                        argc: 1,
+                    });
+                    self.emit(Op::LoadLocal(temporary));
+                    self.emit(Op::StoreLocal(slot));
                 } else {
                     self.emit(Op::StoreLocal(slot));
                 }
@@ -399,14 +515,28 @@ impl FunctionCompiler {
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 child.function_return_types = self.function_return_types.clone();
                 child.function_param_types = self.function_param_types.clone();
+                child.drop_function_ids = self.drop_function_ids.clone();
                 child.struct_defs = self.struct_defs.clone();
                 child.enum_defs = self.enum_defs.clone();
                 child.imports = self.imports.clone();
                 child.inlining_counter = self.inlining_counter;
 
                 for param in params {
-                    child.local_slot(&param.name);
+                    let slot = child.local_slot(&param.name);
                     child.set_local_type(&param.name, expr_type_from_annotation(&param.ty));
+                    if let Some(nominal) = nominal_value_type(&param.ty, &Expr::UnitLit(param.span))
+                    {
+                        child
+                            .local_nominal_types
+                            .insert(param.name.clone(), nominal.clone());
+                        if let Some(function_id) = child.drop_function_ids.get(&nominal).copied() {
+                            child.active_cleanups.push(CleanupAction::Drop {
+                                name: param.name.clone(),
+                                slot,
+                                function_id,
+                            });
+                        }
+                    }
                 }
                 child.compile_stmts(body)?;
                 let void_idx = child.add_const(Value::Void);
@@ -424,7 +554,11 @@ impl FunctionCompiler {
                 }
             }
             Stmt::Return { value, .. } => {
-                if !self.active_defers.is_empty() && !self.compiling_cleanup {
+                if !self.active_cleanups.is_empty() && !self.compiling_cleanup {
+                    let moved_local = value.as_ref().and_then(|value| match value {
+                        Expr::Ident(name, _) => Some(name.as_str()),
+                        _ => None,
+                    });
                     if let Some(value) = value {
                         self.compile_expr(value)?;
                         let temporary = format!("__v12_return_{}", self.inlining_counter);
@@ -436,7 +570,7 @@ impl FunctionCompiler {
                         } else {
                             self.emit(Op::StoreLocal(slot));
                         }
-                        self.compile_deferred_from(0)?;
+                        self.compile_cleanup_from(0, moved_local)?;
                         if self.return_type == ExprType::Int {
                             self.emit(Op::LoadLocalI64(slot));
                             self.emit(Op::ReturnI64);
@@ -445,7 +579,7 @@ impl FunctionCompiler {
                             self.emit(Op::Return);
                         }
                     } else {
-                        self.compile_deferred_from(0)?;
+                        self.compile_cleanup_from(0, None)?;
                         let index = self.add_const(Value::Void);
                         self.emit(Op::Const(index));
                         self.emit(Op::Return);
@@ -505,7 +639,7 @@ impl FunctionCompiler {
                 };
                 self.loops.push(LoopContext {
                     continue_target: loop_start,
-                    cleanup_base: self.active_defers.len(),
+                    cleanup_base: self.active_cleanups.len(),
                     break_jumps: Vec::new(),
                 });
                 self.compile_stmts(body)?;
@@ -533,7 +667,7 @@ impl FunctionCompiler {
                 });
                 self.loops.push(LoopContext {
                     continue_target: loop_start,
-                    cleanup_base: self.active_defers.len(),
+                    cleanup_base: self.active_cleanups.len(),
                     break_jumps: Vec::new(),
                 });
                 self.compile_stmts(body)?;
@@ -636,7 +770,7 @@ impl FunctionCompiler {
                         span: *span,
                     });
                 };
-                self.compile_deferred_from(cleanup_base)?;
+                self.compile_cleanup_from(cleanup_base, None)?;
                 let jump = self.emit(Op::Jump(usize::MAX));
                 self.loops
                     .last_mut()
@@ -655,7 +789,7 @@ impl FunctionCompiler {
                         span: *span,
                     });
                 };
-                self.compile_deferred_from(cleanup_base)?;
+                self.compile_cleanup_from(cleanup_base, None)?;
                 self.emit(Op::Jump(continue_target));
             }
             Stmt::Const { span, .. } | Stmt::Static { span, .. } => {
@@ -722,6 +856,10 @@ impl FunctionCompiler {
 
     fn compile_expr(&mut self, expr: &Expr) -> Result<(), CompileError> {
         match expr {
+            Expr::UnitLit(_) => {
+                let idx = self.add_const(Value::Void);
+                self.emit(Op::Const(idx));
+            }
             Expr::IntLit(n, _) => {
                 self.emit(Op::ConstI64(*n));
             }
@@ -751,9 +889,30 @@ impl FunctionCompiler {
                 });
             }
             Expr::Borrow { expr, .. } => self.compile_expr(expr)?,
+            Expr::Drop { expr, .. } => {
+                let drop_id = if let Expr::Ident(name, _) = expr.as_ref() {
+                    let cleanup_index = self.active_cleanups.iter().rposition(|cleanup| {
+                        matches!(cleanup, CleanupAction::Drop { name: owner, .. } if owner == name)
+                    });
+                    cleanup_index.and_then(|index| match self.active_cleanups.remove(index) {
+                        CleanupAction::Drop { function_id, .. } => Some(function_id),
+                        CleanupAction::Defer(_) => None,
+                    })
+                } else {
+                    None
+                };
+                self.compile_expr(expr)?;
+                if let Some(id) = drop_id {
+                    self.emit(Op::CallFnDiscard { id, argc: 1 });
+                } else {
+                    self.emit(Op::Pop);
+                }
+                let idx = self.add_const(Value::Void);
+                self.emit(Op::Const(idx));
+            }
             Expr::Try { expr, .. } => {
                 self.compile_expr(expr)?;
-                if self.active_defers.is_empty() || self.compiling_cleanup {
+                if self.active_cleanups.is_empty() || self.compiling_cleanup {
                     self.emit(Op::TryResult);
                 } else {
                     let temporary = format!("__v12_try_{}", self.inlining_counter);
@@ -766,7 +925,7 @@ impl FunctionCompiler {
                         variant: "Err".into(),
                     });
                     let ok = self.emit(Op::JumpIfFalse(usize::MAX));
-                    self.compile_deferred_from(0)?;
+                    self.compile_cleanup_from(0, None)?;
                     self.emit(Op::LoadLocal(slot));
                     self.emit(Op::Return);
                     let ok_target = self.chunk.code.len();
@@ -801,6 +960,7 @@ impl FunctionCompiler {
                 child.chunk.functions_by_id = self.chunk.functions_by_id.clone();
                 child.function_return_types = self.function_return_types.clone();
                 child.function_param_types = self.function_param_types.clone();
+                child.drop_function_ids = self.drop_function_ids.clone();
                 child.struct_defs = self.struct_defs.clone();
                 child.enum_defs = self.enum_defs.clone();
                 for capture in captures {

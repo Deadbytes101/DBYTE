@@ -439,6 +439,10 @@ impl<'a> FunctionAnalyzer<'a> {
 
     fn compile_expr(&mut self, expression: &Expr) -> NativeResult<ExprResult> {
         match expression {
+            Expr::UnitLit(span) => Err(unsupported(
+                "unit literals in the legacy native path",
+                *span,
+            )),
             Expr::IntLit(value, span) => {
                 let value = i32::try_from(*value).map_err(|_| integer_range(*value, *span))?;
                 self.instructions.push(IrInst::ConstI32(value));
@@ -517,6 +521,10 @@ impl<'a> FunctionAnalyzer<'a> {
                 args,
                 span,
             } => self.compile_intrinsic(object, property, args, *span),
+            Expr::Drop { span, .. } => Err(unsupported(
+                "drop expressions in the legacy native path",
+                *span,
+            )),
             Expr::Cast { span, .. } => Err(unsupported(
                 "explicit systems casts in the v11.0 single-image profile",
                 *span,
@@ -863,6 +871,11 @@ fn explicit_native_type(
     owner: &str,
 ) -> NativeResult<NativeType> {
     match annotation {
+        TypeAnnotation::Unit | TypeAnnotation::Borrow { .. } => Err(Diagnostic::new(
+            DiagnosticCategory::InvalidType,
+            format!("{owner} uses v12.1 canonical type `{annotation}` in the legacy native path"),
+            span,
+        )),
         TypeAnnotation::Int | TypeAnnotation::I32 => Ok(NativeType::I32),
         TypeAnnotation::Bool => Ok(NativeType::Bool),
         TypeAnnotation::Str => Ok(NativeType::Str),

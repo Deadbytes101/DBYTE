@@ -239,6 +239,7 @@ impl<'a, 's> FunctionAdapter<'a, 's> {
                 self.instructions.push(IrInst::Label(done));
             }
             HirStatement::Match { .. }
+            | HirStatement::For { .. }
             | HirStatement::Defer { .. }
             | HirStatement::Break { .. }
             | HirStatement::Continue { .. } => return Ok(false),
@@ -248,6 +249,8 @@ impl<'a, 's> FunctionAdapter<'a, 's> {
 
     fn lower_expr(&mut self, expression: &HirExpr) -> NativeResult<bool> {
         match &expression.kind {
+            HirExprKind::Unit => {}
+            HirExprKind::LayoutOf { .. } => return Ok(false),
             HirExprKind::Integer(value) => {
                 let Ok(value) = i32::try_from(*value) else {
                     return Ok(false);
@@ -314,6 +317,7 @@ impl<'a, 's> FunctionAdapter<'a, 's> {
                     return Ok(false);
                 }
             }
+            HirExprKind::Drop { .. } => return Ok(false),
             HirExprKind::DirectCall {
                 callee,
                 convention,
@@ -380,7 +384,10 @@ impl<'a, 's> FunctionAdapter<'a, 's> {
             | HirExprKind::Enum { .. }
             | HirExprKind::Borrow { .. }
             | HirExprKind::Try { .. }
-            | HirExprKind::Closure { .. } => return Ok(false),
+            | HirExprKind::Length { .. }
+            | HirExprKind::Closure { .. }
+            | HirExprKind::HostCall { .. }
+            | HirExprKind::FormatString(..) => return Ok(false),
         }
         Ok(true)
     }
@@ -393,6 +400,7 @@ impl<'a, 's> FunctionAdapter<'a, 's> {
         let [HirProjection::Index {
             index,
             element_size: 1,
+            ..
         }] = place.projections.as_slice()
         else {
             return Ok(false);

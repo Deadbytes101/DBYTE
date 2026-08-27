@@ -7,4 +7,5 @@ license.workspace = true
 
 [dependencies]
 dbyte_ast.workspace = true
+dbyte_hir.workspace = true
 hex.workspace = true

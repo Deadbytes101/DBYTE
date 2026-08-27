@@ -1,8 +1,11 @@
 use dbyte_ast::{Program, Span};
-use dbyte_interp::{Interpreter, RuntimeError};
+use dbyte_hir::{
+    analyze_project, load_source_project, load_source_project_from_program, monomorphize_project,
+    Profile, TargetDataLayout,
+};
+use dbyte_interp::{execute_concrete_project_incremental, ConcreteSession, RuntimeError};
 use dbyte_lexer::{LexError, Lexer};
 use dbyte_parser::{ParseError, Parser};
-use dbyte_typeck::{TypeChecker, TypeError};
 use std::collections::HashSet;
 use std::fmt;
 use std::fs;
@@ -72,8 +75,10 @@ impl fmt::Display for DByteError {
 impl std::error::Error for DByteError {}
 
 pub struct DByteRuntime {
-    checker: TypeChecker,
-    interp: Interpreter,
+    source: String,
+    session: ConcreteSession,
+    execution_cursor: usize,
+    entry_path: PathBuf,
     current_dir: PathBuf,
     loaded_rc_paths: HashSet<PathBuf>,
 }
@@ -109,16 +114,18 @@ impl DByteRuntime {
         };
         let current_dir = normalize_existing_dir(&path)?;
         self.current_dir = current_dir;
-        self.refresh_entry_path();
         Ok(())
     }
 
     pub fn check_source(&self, label: &str, source: &str) -> Result<(), DByteError> {
-        let program = parse_source(label, source)?;
-        let mut checker = self.checker.clone();
-        checker
-            .check_program(&program)
-            .map_err(|e| type_error(label, e))
+        let source = normalize_fragment_imports(
+            source,
+            &self.current_dir,
+            self.entry_path.parent().unwrap_or_else(|| Path::new(".")),
+        )?;
+        let candidate = append_source(&self.source, &source);
+        let program = parse_source(label, &candidate)?;
+        analyze_concrete_program(&self.entry_path, program, label).map(|_| ())
     }
 
     pub fn check_file(&self, path: impl AsRef<Path>) -> Result<(), DByteError> {
@@ -127,17 +134,8 @@ impl DByteRuntime {
         } else {
             self.current_dir.join(path.as_ref())
         };
-        let source = fs::read_to_string(&path).map_err(|e| DByteError::Io {
-            path: path.clone(),
-            msg: e.to_string(),
-        })?;
         let label = path.display().to_string();
-        let program = parse_source(&label, &source)?;
-        let mut checker = self.checker.clone();
-        checker.set_entry_path(path);
-        checker
-            .check_program(&program)
-            .map_err(|e| type_error(&label, e))
+        analyze_concrete_file(&path, &label).map(|_| ())
     }
 
     pub fn run_source(&mut self, label: &str, source: &str) -> Result<(), DByteError> {
@@ -198,17 +196,13 @@ impl DByteRuntime {
     fn from_current_dir_unchecked(current_dir: PathBuf) -> Self {
         let entry_path = current_dir.join("<embed>");
         Self {
-            checker: TypeChecker::with_entry_path(entry_path.clone()),
-            interp: Interpreter::with_captured_output(entry_path),
+            source: String::new(),
+            session: ConcreteSession::default(),
+            execution_cursor: 0,
+            entry_path,
             current_dir,
             loaded_rc_paths: HashSet::new(),
         }
-    }
-
-    fn refresh_entry_path(&mut self) {
-        let entry_path = self.current_dir.join("<embed>");
-        self.checker.set_entry_path(entry_path.clone());
-        self.interp.set_entry_path(entry_path);
     }
 
     fn run_source_inner(
@@ -217,10 +211,36 @@ impl DByteRuntime {
         source: &str,
         capture: bool,
     ) -> Result<RunOutput, DByteError> {
-        self.interp.clear_captured_output();
-        let program = parse_source(label, source)?;
-        self.run_program(label, &program)?;
-        let stdout = self.interp.take_captured_output();
+        let fragment_dir = self.current_dir.clone();
+        self.run_source_inner_with_args(label, source, capture, Vec::new(), &fragment_dir)
+    }
+
+    fn run_source_inner_with_args(
+        &mut self,
+        label: &str,
+        source: &str,
+        capture: bool,
+        args: Vec<String>,
+        fragment_dir: &Path,
+    ) -> Result<RunOutput, DByteError> {
+        let source = normalize_fragment_imports(
+            source,
+            fragment_dir,
+            self.entry_path.parent().unwrap_or_else(|| Path::new(".")),
+        )?;
+        let candidate_source = append_source(&self.source, &source);
+        let program = parse_source(label, &candidate_source)?;
+        let project = analyze_concrete_program(&self.entry_path, program, label)?;
+        let execution = execute_concrete_project_incremental(
+            &mut self.session,
+            &project,
+            self.execution_cursor,
+            args,
+        )
+        .map_err(|error| runtime_error(label, error))?;
+        self.source = candidate_source;
+        self.execution_cursor = execution.next_cursor;
+        let stdout = execution.output;
         if capture {
             Ok(RunOutput {
                 stdout,
@@ -254,34 +274,11 @@ impl DByteRuntime {
             msg: e.to_string(),
         })?;
         let label = path.display().to_string();
-        let previous_entry = self.current_dir.join("<embed>");
-        let previous_args = self.interp.script_args().to_vec();
-        self.checker.set_entry_path(path.clone());
-        self.interp.set_entry_path(path.clone());
-        self.interp.set_script_args(args);
-        let result = self.run_source_inner(&label, &source, capture);
-        self.checker.set_entry_path(previous_entry.clone());
-        self.interp.set_entry_path(previous_entry);
-        self.interp.set_script_args(previous_args);
-        result
-    }
-
-    fn run_program(&mut self, label: &str, program: &Program) -> Result<(), DByteError> {
-        let checker_snapshot = self.checker.clone();
-        let interp_snapshot = self.interp.clone();
-
-        if let Err(error) = self.checker.check_program(program) {
-            self.checker = checker_snapshot;
-            return Err(type_error(label, error));
-        }
-
-        if let Err(error) = self.interp.run(program) {
-            self.checker = checker_snapshot;
-            self.interp = interp_snapshot;
-            return Err(runtime_error(label, error));
-        }
-
-        Ok(())
+        let fragment_dir = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        self.run_source_inner_with_args(&label, &source, capture, args, &fragment_dir)
     }
 }
 
@@ -309,6 +306,121 @@ fn parse_source(label: &str, source: &str) -> Result<Program, DByteError> {
         .map_err(|e| parse_error(label, e))
 }
 
+fn append_source(existing: &str, addition: &str) -> String {
+    let mut candidate = existing.to_owned();
+    if !candidate.is_empty() && !candidate.ends_with('\n') {
+        candidate.push('\n');
+    }
+    candidate.push_str(addition);
+    if !candidate.ends_with('\n') {
+        candidate.push('\n');
+    }
+    candidate
+}
+
+fn normalize_fragment_imports(
+    source: &str,
+    fragment_dir: &Path,
+    session_dir: &Path,
+) -> Result<String, DByteError> {
+    let fragment_dir = normalize_existing_dir(fragment_dir)?;
+    let session_dir = normalize_existing_dir(session_dir)?;
+    let mut output = String::new();
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("import \"") else {
+            output.push_str(line);
+            continue;
+        };
+        let Some(end) = rest.find('"') else {
+            output.push_str(line);
+            continue;
+        };
+        let requested = &rest[..end];
+        let target =
+            fs::canonicalize(fragment_dir.join(requested)).map_err(|error| DByteError::Io {
+                path: fragment_dir.join(requested),
+                msg: error.to_string(),
+            })?;
+        let relative = relative_path(&session_dir, &target).ok_or_else(|| DByteError::Io {
+            path: target.clone(),
+            msg: "import target is on a different filesystem root".into(),
+        })?;
+        let prefix_len = line.len() - trimmed.len();
+        output.push_str(&line[..prefix_len]);
+        output.push_str("import \"");
+        output.push_str(&relative.to_string_lossy().replace('\\', "/"));
+        output.push_str(&rest[end..]);
+    }
+    Ok(output)
+}
+
+fn relative_path(base: &Path, target: &Path) -> Option<PathBuf> {
+    let base_parts: Vec<_> = base.components().collect();
+    let target_parts: Vec<_> = target.components().collect();
+    if base_parts.first() != target_parts.first() {
+        return None;
+    }
+    let shared = base_parts
+        .iter()
+        .zip(&target_parts)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let mut output = PathBuf::new();
+    for _ in shared..base_parts.len() {
+        output.push("..");
+    }
+    for part in &target_parts[shared..] {
+        output.push(part.as_os_str());
+    }
+    Some(output)
+}
+
+fn analyze_concrete_program(
+    entry_path: &Path,
+    program: Program,
+    label: &str,
+) -> Result<dbyte_hir::ConcreteHirProject, DByteError> {
+    let input = load_source_project_from_program(entry_path, program)
+        .map_err(|diagnostics| hir_error(label, diagnostics))?;
+    let canonical = analyze_project(&input, Profile::Hosted, TargetDataLayout::I686)
+        .map_err(|diagnostics| hir_error(label, diagnostics))?;
+    monomorphize_project(&canonical).map_err(|diagnostic| hir_error(label, vec![diagnostic]))
+}
+
+fn analyze_concrete_file(
+    path: &Path,
+    label: &str,
+) -> Result<dbyte_hir::ConcreteHirProject, DByteError> {
+    let input = load_source_project(path).map_err(|diagnostics| hir_error(label, diagnostics))?;
+    let canonical = analyze_project(&input, Profile::Hosted, TargetDataLayout::I686)
+        .map_err(|diagnostics| hir_error(label, diagnostics))?;
+    monomorphize_project(&canonical).map_err(|diagnostic| hir_error(label, vec![diagnostic]))
+}
+
+fn hir_error(label: &str, diagnostics: Vec<dbyte_hir::Diagnostic>) -> DByteError {
+    let diagnostic = diagnostics
+        .into_iter()
+        .next()
+        .unwrap_or(dbyte_hir::Diagnostic {
+            code: "E_HIR",
+            message: "canonical analysis failed without a diagnostic".into(),
+            span: Span::zero(),
+        });
+    let message = if diagnostic.code == "E_UNKNOWN_SYMBOL" {
+        diagnostic
+            .message
+            .replace("unknown binding", "undefined variable")
+    } else {
+        format!("{}: {}", diagnostic.code, diagnostic.message)
+    };
+    DByteError::Type {
+        label: label.to_string(),
+        msg: message,
+        span: diagnostic.span,
+    }
+}
+
 fn lex_error(label: &str, error: LexError) -> DByteError {
     DByteError::Lex {
         label: label.to_string(),
@@ -319,14 +431,6 @@ fn lex_error(label: &str, error: LexError) -> DByteError {
 
 fn parse_error(label: &str, error: ParseError) -> DByteError {
     DByteError::Parse {
-        label: label.to_string(),
-        msg: error.msg,
-        span: error.span,
-    }
-}
-
-fn type_error(label: &str, error: TypeError) -> DByteError {
-    DByteError::Type {
         label: label.to_string(),
         msg: error.msg,
         span: error.span,
@@ -464,7 +568,7 @@ mod tests {
     fn runtime_error_rolls_back_state() {
         let mut rt = DByteRuntime::new();
         let error = rt.run_source("test", "let bad: int = 1 / 0").unwrap_err();
-        assert!(matches!(error, DByteError::Runtime { .. }));
+        assert!(matches!(error, DByteError::Runtime { .. }), "{error:?}");
         let error = rt.run_source("test", "print(bad)").unwrap_err();
         assert!(error.to_string().contains("undefined variable"));
     }

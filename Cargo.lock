@@ -44,19 +44,20 @@ dependencies = [
 
 [[package]]
 name = "dbyte_ast"
-version = "12.0.0"
+version = "12.1.0"
 
 [[package]]
 name = "dbyte_bytecode"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
+ "dbyte_hir",
  "hex",
 ]
 
 [[package]]
 name = "dbyte_cli"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
@@ -74,40 +75,43 @@ dependencies = [
 
 [[package]]
 name = "dbyte_compiler"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_bytecode",
+ "dbyte_hir",
  "dbyte_lexer",
  "dbyte_parser",
 ]
 
 [[package]]
 name = "dbyte_embed"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
+ "dbyte_hir",
  "dbyte_interp",
  "dbyte_lexer",
  "dbyte_parser",
- "dbyte_typeck",
 ]
 
 [[package]]
 name = "dbyte_hir"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_lexer",
+ "dbyte_module",
  "dbyte_parser",
 ]
 
 [[package]]
 name = "dbyte_interp"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "byteorder",
  "dbyte_ast",
+ "dbyte_hir",
  "dbyte_lexer",
  "dbyte_module",
  "dbyte_parser",
@@ -118,25 +122,25 @@ dependencies = [
 
 [[package]]
 name = "dbyte_kernel_vm"
-version = "12.0.0"
+version = "12.1.0"
 
 [[package]]
 name = "dbyte_lexer"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
 ]
 
 [[package]]
 name = "dbyte_module"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
 ]
 
 [[package]]
 name = "dbyte_native"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_hir",
@@ -146,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_parser"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_lexer",
@@ -154,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_project"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "serde",
  "toml",
@@ -162,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "dbyte_typeck"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "dbyte_ast",
  "dbyte_hir",
@@ -173,12 +177,14 @@ dependencies = [
 
 [[package]]
 name = "dbyte_vm"
-version = "12.0.0"
+version = "12.1.0"
 dependencies = [
  "byteorder",
  "dbyte_ast",
  "dbyte_bytecode",
  "dbyte_compiler",
+ "dbyte_hir",
+ "dbyte_interp",
  "dbyte_lexer",
  "dbyte_module",
  "dbyte_parser",

@@ -1123,6 +1123,12 @@ impl ConstantEvaluator<'_> {
     ) -> NativeResult<ConstantValue> {
         let module = &self.graph.modules[module_id];
         match expression {
+            Expr::UnitLit(span) => Err(module_diagnostic(
+                module,
+                DiagnosticCategory::UnsupportedFeature,
+                "unit literals require canonical HIR",
+                *span,
+            )),
             Expr::IntLit(value, span) => {
                 let ty = expected
                     .filter(|ty| ty.is_integer())
@@ -2474,6 +2480,9 @@ impl<'a> FunctionAnalyzer<'a> {
         expected: Option<&SystemType>,
     ) -> NativeResult<ExprResult> {
         match expression {
+            Expr::UnitLit(span) => {
+                Err(self.unsupported("unit literals require canonical HIR", *span))
+            }
             Expr::IntLit(value, span) => {
                 let ty = expected
                     .filter(|ty| ty.is_integer())
@@ -2589,6 +2598,9 @@ impl<'a> FunctionAnalyzer<'a> {
             Expr::FloatLit(_, span) => Err(self.unsupported("float literals", *span)),
             Expr::BytesLit(_, span) => Err(self.unsupported("byte-string literals", *span)),
             Expr::FStr(_, span) => Err(self.unsupported("formatted strings", *span)),
+            Expr::Drop { span, .. } => {
+                Err(self.unsupported("drop expressions require canonical HIR", *span))
+            }
             Expr::NullLit(span)
             | Expr::GenericApply { span, .. }
             | Expr::Invoke { span, .. }

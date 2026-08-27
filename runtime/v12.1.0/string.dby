@@ -1,0 +1,186 @@
+import "alloc.dby" as alloc
+
+pub struct String:
+    data: ptr[u8]
+    len: usize
+    capacity: usize
+    allocator_context: ptr[u8]
+    allocator_vtable: const_ptr[alloc.AllocatorVTable]
+
+pub enum StringError:
+    InvalidUtf8
+    Allocation(alloc.AllocError)
+
+fn allocator_of(text: borrow String) -> alloc.AllocatorRef:
+    return alloc.AllocatorRef(context = (*text).allocator_context, vtable = (*text).allocator_vtable)
+
+pub fn with_allocator(allocator: alloc.AllocatorRef) -> String:
+    let empty = alloc.allocate(allocator, 0 as usize, 1 as usize)
+    match empty:
+        case Result.Ok(pointer):
+            return String(data = pointer, len = 0 as usize, capacity = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable)
+        case Result.Err(error):
+            return String(data = (1 as usize) as ptr[u8], len = 0 as usize, capacity = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable)
+
+fn reserve(text: borrow mut String, additional: usize) -> Result[unit, alloc.AllocError]:
+    if additional > (((0xffffffff as u32) as usize) - (*text).len):
+        return Result[unit, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    let required: usize = (*text).len + additional
+    if required <= (*text).capacity:
+        return Result[unit, alloc.AllocError].Ok(unit)
+    let new_capacity: usize = (*text).capacity
+    if new_capacity == (0 as usize):
+        new_capacity = 16 as usize
+    while new_capacity < required:
+        if new_capacity > (((0xffffffff as u32) as usize) / (2 as usize)):
+            new_capacity = required
+        else:
+            new_capacity = new_capacity * (2 as usize)
+    let allocator = allocator_of(borrow *text)
+    let replacement = alloc.resize(allocator, (*text).data, (*text).capacity, new_capacity, 1 as usize)
+    match replacement:
+        case Result.Ok(pointer):
+            (*text).data = pointer
+            (*text).capacity = new_capacity
+            return Result[unit, alloc.AllocError].Ok(unit)
+        case Result.Err(error):
+            return Result[unit, alloc.AllocError].Err(error)
+
+pub fn from_view(view: StringView, allocator: alloc.AllocatorRef) -> Result[String, alloc.AllocError]:
+    let text = with_allocator(allocator)
+    let appended = append_view(borrow mut text, view)
+    match appended:
+        case Result.Ok(value):
+            return Result[String, alloc.AllocError].Ok(text)
+        case Result.Err(error):
+            return Result[String, alloc.AllocError].Err(error)
+
+fn continuation(value: u8) -> bool:
+    if value < (0x80 as u8):
+        return false
+    if value > (0xbf as u8):
+        return false
+    return true
+
+fn between(value: u8, lower: u8, upper: u8) -> bool:
+    if value < lower:
+        return false
+    if value > upper:
+        return false
+    return true
+
+pub fn validate_utf8(bytes: slice[u8]) -> bool:
+    let index: usize = 0 as usize
+    let count: usize = len(bytes)
+    while index < count:
+        let first: u8 = bytes[index]
+        if first <= (0x7f as u8):
+            index = index + (1 as usize)
+        else:
+            if between(first, 0xc2 as u8, 0xdf as u8):
+                if index + (1 as usize) >= count:
+                    return false
+                if continuation(bytes[index + (1 as usize)]) == false:
+                    return false
+                index = index + (2 as usize)
+            else:
+                if between(first, 0xe0 as u8, 0xef as u8):
+                    if index + (2 as usize) >= count:
+                        return false
+                    let second: u8 = bytes[index + (1 as usize)]
+                    let third: u8 = bytes[index + (2 as usize)]
+                    if continuation(third) == false:
+                        return false
+                    if first == (0xe0 as u8):
+                        if between(second, 0xa0 as u8, 0xbf as u8) == false:
+                            return false
+                    else:
+                        if first == (0xed as u8):
+                            if between(second, 0x80 as u8, 0x9f as u8) == false:
+                                return false
+                        else:
+                            if continuation(second) == false:
+                                return false
+                    index = index + (3 as usize)
+                else:
+                    if between(first, 0xf0 as u8, 0xf4 as u8):
+                        if index + (3 as usize) >= count:
+                            return false
+                        let second: u8 = bytes[index + (1 as usize)]
+                        if continuation(bytes[index + (2 as usize)]) == false:
+                            return false
+                        if continuation(bytes[index + (3 as usize)]) == false:
+                            return false
+                        if first == (0xf0 as u8):
+                            if between(second, 0x90 as u8, 0xbf as u8) == false:
+                                return false
+                        else:
+                            if first == (0xf4 as u8):
+                                if between(second, 0x80 as u8, 0x8f as u8) == false:
+                                    return false
+                            else:
+                                if continuation(second) == false:
+                                    return false
+                        index = index + (4 as usize)
+                    else:
+                        return false
+    return true
+
+pub fn from_utf8(bytes: slice[u8], allocator: alloc.AllocatorRef) -> Result[String, StringError]:
+    if validate_utf8(bytes) == false:
+        return Result[String, StringError].Err(StringError.InvalidUtf8())
+    let text = with_allocator(allocator)
+    let reserved = reserve(borrow mut text, len(bytes))
+    match reserved:
+        case Result.Err(error):
+            return Result[String, StringError].Err(StringError.Allocation(error))
+        case Result.Ok(value):
+            let index: usize = 0 as usize
+            while index < len(bytes):
+                text.data[index] = bytes[index]
+                index = index + (1 as usize)
+            text.len = len(bytes)
+            return Result[String, StringError].Ok(text)
+
+pub fn append_view(text: borrow mut String, view: StringView) -> Result[unit, alloc.AllocError]:
+    let count: usize = len(view)
+    reserve(text, count)?
+    let index: usize = 0 as usize
+    while index < count:
+        (*text).data[(*text).len + index] = view[index]
+        index = index + (1 as usize)
+    (*text).len = (*text).len + count
+    return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn clear(text: borrow mut String) -> unit:
+    (*text).len = 0 as usize
+    return unit
+
+pub fn length(text: borrow String) -> usize:
+    return (*text).len
+
+pub fn capacity(text: borrow String) -> usize:
+    return (*text).capacity
+
+pub fn as_view(text: borrow String) -> StringView:
+    return __dbyte_runtime.string_view_from_raw((*text).data, (*text).len)
+
+pub fn clone(text: borrow String) -> Result[String, alloc.AllocError]:
+    return clone_in(text, allocator_of(text))
+
+pub fn clone_in(text: borrow String, allocator: alloc.AllocatorRef) -> Result[String, alloc.AllocError]:
+    let copy = with_allocator(allocator)
+    reserve(borrow mut copy, (*text).len)?
+    let index: usize = 0 as usize
+    while index < (*text).len:
+        copy.data[index] = (*text).data[index]
+        index = index + (1 as usize)
+    copy.len = (*text).len
+    return Result[String, alloc.AllocError].Ok(copy)
+
+drop fn destroy(text: borrow mut String):
+    alloc.release(allocator_of(borrow *text), (*text).data, (*text).capacity, 1 as usize)
+    (*text).data = (1 as usize) as ptr[u8]
+    (*text).len = 0 as usize
+    (*text).capacity = 0 as usize
+    return unit

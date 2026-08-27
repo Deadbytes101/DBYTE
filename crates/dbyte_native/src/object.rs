@@ -48,6 +48,8 @@ const PROFILE_METADATA_SECTION: &str = ".dbyte.profile";
 pub const PROFILE_METADATA_PREFIX: &str = "__dbyte_profile:";
 const GENERIC_METADATA_SECTION: &str = ".dbyte.generics";
 pub const GENERIC_METADATA_PREFIX: &str = "__dbyte_generic:";
+const DROP_METADATA_SECTION: &str = ".dbyte.drop";
+pub const DROP_METADATA_PREFIX: &str = "__dbyte_drop:";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectSection {
@@ -295,6 +297,7 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     let task_metadata = build_task_metadata(image)?;
     let profile_metadata = build_profile_metadata(image)?;
     let generic_metadata = build_generic_metadata(image)?;
+    let drop_metadata = build_drop_metadata(image)?;
     let has_task_metadata = image
         .symbols
         .iter()
@@ -307,10 +310,15 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         .symbols
         .iter()
         .any(|symbol| symbol.name.starts_with(GENERIC_METADATA_PREFIX));
+    let has_drop_metadata = image
+        .symbols
+        .iter()
+        .any(|symbol| symbol.name.starts_with(DROP_METADATA_PREFIX));
     let metadata_section_count = 7u16
         + u16::from(has_task_metadata)
         + u16::from(has_profile_metadata)
-        + u16::from(has_generic_metadata);
+        + u16::from(has_generic_metadata)
+        + u16::from(has_drop_metadata);
     let symtab_index = metadata_section_count
         .checked_add(
             u16::try_from(relocation_sections.len())
@@ -338,6 +346,9 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
     }
     if has_generic_metadata {
         section_names.push(GENERIC_METADATA_SECTION);
+    }
+    if has_drop_metadata {
+        section_names.push(DROP_METADATA_SECTION);
     }
     for section in &relocation_sections {
         section_names.push(
@@ -521,6 +532,28 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
         )?;
     }
 
+    let drop_metadata_offset = cursor;
+    if has_drop_metadata {
+        let drop_metadata_size = checked_usize_u32(drop_metadata.len(), "drop metadata size")?;
+        let name_index = 7
+            + usize::from(has_task_metadata)
+            + usize::from(has_profile_metadata)
+            + usize::from(has_generic_metadata);
+        headers.push(SectionHeader {
+            name: section_name_offsets[name_index],
+            section_type: SHT_PROGBITS,
+            flags: 0,
+            address: 0,
+            offset: drop_metadata_offset,
+            size: drop_metadata_size,
+            link: 0,
+            info: 0,
+            alignment: 1,
+            entry_size: 0,
+        });
+        cursor = checked_add(cursor, drop_metadata_size, "drop metadata section end")?;
+    }
+
     for (relocation_position, section) in relocation_sections.iter().copied().enumerate() {
         cursor = align_up(cursor, 4)?;
         let table = &relocation_tables[&section];
@@ -662,6 +695,9 @@ pub fn write_relocatable(image: &ObjectImage) -> Result<ObjectArtifact, Diagnost
             generic_metadata_offset as usize,
             &generic_metadata,
         )?;
+    }
+    if has_drop_metadata {
+        copy_bytes(&mut bytes, drop_metadata_offset as usize, &drop_metadata)?;
     }
     copy_bytes(&mut bytes, symtab_offset as usize, &symtab)?;
     copy_bytes(&mut bytes, strtab_offset as usize, &strtab)?;
@@ -870,6 +906,22 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
         }
         validate_generic_metadata(
             section_file_bytes(bytes, generic_header, GENERIC_METADATA_SECTION)?,
+            &symbols,
+        )?;
+    }
+    if let Some(drop_index) = by_name.get(DROP_METADATA_SECTION).copied() {
+        let drop_header = &parsed[drop_index as usize].header;
+        if drop_header.section_type != SHT_PROGBITS
+            || drop_header.flags != 0
+            || drop_header.link != 0
+            || drop_header.info != 0
+            || drop_header.alignment != 1
+            || drop_header.entry_size != 0
+        {
+            return Err(invalid_object("invalid .dbyte.drop section contract"));
+        }
+        validate_drop_metadata(
+            section_file_bytes(bytes, drop_header, DROP_METADATA_SECTION)?,
             &symbols,
         )?;
     }
@@ -1385,6 +1437,7 @@ fn validate_allowed_sections(sections: &[ParsedSection]) -> Result<(), Diagnosti
         ".dbyte.tasks",
         ".dbyte.profile",
         ".dbyte.generics",
+        ".dbyte.drop",
         ".rel.text",
         ".rel.rodata",
         ".rel.data",
@@ -1902,6 +1955,85 @@ fn validate_generic_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(
     Ok(())
 }
 
+fn build_drop_metadata(image: &ObjectImage) -> Result<Vec<u8>, Diagnostic> {
+    let mut records: Vec<&str> = image
+        .symbols
+        .iter()
+        .filter_map(|symbol| {
+            symbol
+                .name
+                .strip_prefix(DROP_METADATA_PREFIX)
+                .map(|_| symbol.name.as_str())
+        })
+        .collect();
+    records.sort_unstable();
+    records.dedup();
+    let mut bytes = b"DBYTEDRP\0\x01\0".to_vec();
+    for record in records {
+        let tail = record
+            .strip_prefix(DROP_METADATA_PREFIX)
+            .ok_or_else(|| object_error("drop metadata prefix is missing"))?;
+        let fields = tail.split(':').collect::<Vec<_>>();
+        let identifier = |value: &str| {
+            !value.is_empty()
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        };
+        let valid = matches!(fields.as_slice(), [owner, function, type_id, arity]
+            if identifier(owner)
+                && identifier(function)
+                && type_id.parse::<u32>().is_ok()
+                && arity.parse::<u32>().is_ok());
+        if !valid || !record.is_ascii() || record.contains('\n') {
+            return Err(object_error("drop metadata symbol is not canonical"));
+        }
+        bytes.extend_from_slice(record.as_bytes());
+        bytes.push(b'\n');
+    }
+    Ok(bytes)
+}
+
+fn validate_drop_metadata(bytes: &[u8], symbols: &[ObjectSymbol]) -> Result<(), Diagnostic> {
+    let expected = build_drop_metadata(&ObjectImage {
+        sections: BTreeMap::new(),
+        symbols: symbols.to_vec(),
+        relocations: Vec::new(),
+    })?;
+    if bytes != expected {
+        return Err(invalid_object(
+            "non-canonical .dbyte.drop metadata does not match symbols",
+        ));
+    }
+    for marker in symbols
+        .iter()
+        .filter(|symbol| symbol.name.starts_with(DROP_METADATA_PREFIX))
+    {
+        let fields = marker.name[DROP_METADATA_PREFIX.len()..]
+            .split(':')
+            .collect::<Vec<_>>();
+        let function = fields
+            .get(1)
+            .ok_or_else(|| invalid_object("drop metadata function field is missing"))?;
+        let arity = fields
+            .get(3)
+            .and_then(|value| value.parse::<u32>().ok())
+            .ok_or_else(|| invalid_object("drop metadata arity field is invalid"))?;
+        if arity == 0
+            && !symbols.iter().any(|symbol| {
+                symbol.name == *function
+                    && symbol.kind == SymbolKind::Function
+                    && matches!(symbol.definition, SymbolDefinition::Defined { .. })
+            })
+        {
+            return Err(invalid_object(format!(
+                "drop metadata references missing function '{function}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn align_up(value: u32, alignment: u32) -> Result<u32, Diagnostic> {
     validate_alignment(alignment)?;
     value
@@ -2275,6 +2407,40 @@ mod tests {
         let error = parse_relocatable(&corrupt).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidObject);
         assert!(error.message.contains(GENERIC_METADATA_SECTION));
+    }
+
+    #[test]
+    fn drop_metadata_is_optional_canonical_and_fail_closed() {
+        let legacy = write_relocatable(&sample_object()).unwrap();
+        assert!(!legacy
+            .bytes
+            .windows(DROP_METADATA_SECTION.len())
+            .any(|window| window == DROP_METADATA_SECTION.as_bytes()));
+
+        let mut image = sample_object();
+        image.symbols.push(ObjectSymbol {
+            name: "__dbyte_drop:Resource:caller:2:0".to_owned(),
+            binding: SymbolBinding::Local,
+            kind: SymbolKind::Function,
+            definition: SymbolDefinition::Defined {
+                section: ObjectSection::Text,
+                value: 0,
+            },
+            size: 0,
+        });
+        let artifact = write_relocatable(&image).unwrap();
+        assert!(section_data_offset(&artifact.bytes, DROP_METADATA_SECTION) > 0);
+        parse_relocatable(&artifact.bytes).unwrap();
+
+        let mut corrupt = artifact.bytes;
+        let at = corrupt
+            .windows(b"DBYTEDRP".len())
+            .position(|window| window == b"DBYTEDRP")
+            .unwrap();
+        corrupt[at] = b'X';
+        let error = parse_relocatable(&corrupt).unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidObject);
+        assert!(error.message.contains(DROP_METADATA_SECTION));
     }
 
     #[test]

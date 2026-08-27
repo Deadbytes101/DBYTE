@@ -1,0 +1,6 @@
+import "string.dby" as owned
+import "hosted_alloc.dby" as host
+
+# Hosted/VM convenience constructor backed by the static SystemAllocator.
+pub fn new() -> owned.String:
+    return owned.with_allocator(host.system_allocator())

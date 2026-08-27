@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v12.0.0**
+- Snapshot version: **v12.1.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -194,6 +194,19 @@ non-loadable public-generic metadata.
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/verify_native_v12_hir.ps1
 ```
+
+The `v12.1.0` runtime foundation adds deterministic affine destruction,
+explicit allocator capabilities, owned `Array[T]` and UTF-8 `String` values.
+Hosted execution, the bytecode VM, and i686 native lowering consume the same
+Concrete HIR cleanup and ownership decisions.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify_native_runtime_foundation.ps1
+```
+
+See [Runtime Foundation](docs/RUNTIME.md), [Allocators](docs/ALLOCATORS.md),
+[Array](docs/ARRAY.md), and [String](docs/STRING.md) for the normative v12.1
+contracts.
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.

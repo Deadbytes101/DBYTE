@@ -1,0 +1,273 @@
+import "alloc.dby" as alloc
+import "array.dby" as arrays
+import "string.dby" as string
+import "serial.dby" as serial
+
+static mut ARENA_MEMORY: array[u32, 2048]
+static mut FIXED_MEMORY: array[u32, 1024]
+static mut ARENA: alloc.ArenaAllocator
+static mut FIXED: alloc.FixedAllocator
+static mut KERNEL: alloc.KernelAllocator
+static mut KERNEL_BACKING: alloc.AllocatorRef
+
+fn line(text: str, length: usize) -> unit:
+    serial.write(text, length)
+    serial.newline()
+    return unit
+
+fn fail() -> int:
+    return 1
+
+fn push_byte(values: borrow mut arrays.Array[u8], value: u8) -> bool:
+    let result = arrays.push[u8](values, value)
+    match result:
+        case Result.Ok(accepted):
+            return true
+        case Result.Err(error):
+            return false
+
+fn mutate_first(values: borrow mut arrays.Array[u8]) -> bool:
+    let view = arrays.as_mut_slice[u8](values)
+    if len(view) == (0 as usize):
+        return false
+    view[0 as usize] = 68 as u8
+    return view[0 as usize] == (68 as u8)
+
+fn first_u32(values: borrow arrays.Array[u32]) -> u32:
+    let view = arrays.as_slice[u32](values)
+    return view[0 as usize]
+
+fn second_u32(values: borrow arrays.Array[u32]) -> u32:
+    let view = arrays.as_slice[u32](values)
+    return view[1 as usize]
+
+fn first_byte(text: borrow string.String) -> u8:
+    let view = string.as_view(text)
+    return view[0 as usize]
+
+fn kernel_allocate(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let backing: ptr[alloc.AllocatorRef] = context as usize as ptr[alloc.AllocatorRef]
+    let allocator = alloc.AllocatorRef(context = (*backing).context, vtable = (*backing).vtable)
+    return alloc.allocate(allocator, size, alignment)
+
+fn kernel_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let backing: ptr[alloc.AllocatorRef] = context as usize as ptr[alloc.AllocatorRef]
+    let allocator = alloc.AllocatorRef(context = (*backing).context, vtable = (*backing).vtable)
+    return alloc.resize(allocator, pointer, old_size, new_size, alignment)
+
+fn kernel_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    let backing: ptr[alloc.AllocatorRef] = context as usize as ptr[alloc.AllocatorRef]
+    let allocator = alloc.AllocatorRef(context = (*backing).context, vtable = (*backing).vtable)
+    alloc.release(allocator, pointer, size, alignment)
+    return unit
+
+pub fn kernel_main() -> int:
+    serial.init()
+    line("DBYTE RUNTIME FOUNDATION", 24 as usize)
+    let arena = alloc.arena_initialize(&ARENA, &ARENA_MEMORY as usize as ptr[u8], 8192 as usize)
+    let fixed = alloc.fixed_initialize(&FIXED, &FIXED_MEMORY as usize as ptr[u8], 4096 as usize)
+    KERNEL_BACKING = fixed
+    let kernel = alloc.kernel_initialize(&KERNEL, &KERNEL_BACKING as usize as ptr[u8], kernel_allocate, kernel_resize, kernel_free)
+
+    let kernel_block = alloc.allocate(kernel, 32 as usize, 16 as usize)
+    match kernel_block:
+        case Result.Ok(pointer):
+            alloc.release(kernel, pointer, 32 as usize, 16 as usize)
+        case Result.Err(error):
+            return fail()
+    if alloc.kernel_allocation_calls(&KERNEL) != (1 as u32):
+        return fail()
+    if alloc.kernel_free_calls(&KERNEL) != (1 as u32):
+        return fail()
+
+    let empty = alloc.allocate(arena, 0 as usize, 16 as usize)
+    match empty:
+        case Result.Ok(pointer):
+            if alloc.arena_allocation_calls(&ARENA) != (0 as u32):
+                return fail()
+        case Result.Err(error):
+            return fail()
+
+    let first = alloc.allocate(fixed, 64 as usize, 16 as usize)
+    match first:
+        case Result.Ok(pointer):
+            alloc.release(fixed, pointer, 64 as usize, 16 as usize)
+            let reused = alloc.allocate(fixed, 64 as usize, 16 as usize)
+            match reused:
+                case Result.Ok(second):
+                    if second != pointer:
+                        return fail()
+                    alloc.release(fixed, second, 64 as usize, 16 as usize)
+                case Result.Err(error):
+                    return fail()
+        case Result.Err(error):
+            return fail()
+
+    let split_a = alloc.allocate(fixed, 64 as usize, 16 as usize)
+    let split_b = alloc.allocate(fixed, 64 as usize, 16 as usize)
+    let split_c = alloc.allocate(fixed, 64 as usize, 16 as usize)
+    match split_a:
+        case Result.Ok(pointer_a):
+            match split_b:
+                case Result.Ok(pointer_b):
+                    match split_c:
+                        case Result.Ok(pointer_c):
+                            alloc.release(fixed, pointer_b, 64 as usize, 16 as usize)
+                            alloc.release(fixed, pointer_a, 64 as usize, 16 as usize)
+                            let merged = alloc.allocate(fixed, 96 as usize, 16 as usize)
+                            match merged:
+                                case Result.Ok(merged_pointer):
+                                    if merged_pointer != pointer_a:
+                                        return fail()
+                                    alloc.release(fixed, merged_pointer, 96 as usize, 16 as usize)
+                                    alloc.release(fixed, pointer_c, 64 as usize, 16 as usize)
+                                case Result.Err(error):
+                                    return fail()
+                        case Result.Err(error):
+                            return fail()
+                case Result.Err(error):
+                    return fail()
+        case Result.Err(error):
+            return fail()
+
+    let values = arrays.with_allocator[u32](arena)
+    let pushed = arrays.push[u32](borrow mut values, 40 as u32)
+    match pushed:
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return fail()
+    let pushed_again = arrays.push[u32](borrow mut values, 2 as u32)
+    match pushed_again:
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return fail()
+    if arrays.length[u32](borrow values) != (2 as usize):
+        return fail()
+    let old_capacity: usize = arrays.capacity[u32](borrow values)
+    let impossible = arrays.reserve[u32](borrow mut values, 0xffffffff as u32 as usize)
+    match impossible:
+        case Result.Ok(value):
+            return fail()
+        case Result.Err(error):
+            if arrays.capacity[u32](borrow values) != old_capacity:
+                return fail()
+    let values_view = arrays.as_slice[u32](borrow values)
+    if len(values_view) != (2 as usize):
+        return fail()
+    if values_view[0 as usize] != (40 as u32):
+        return fail()
+    let cloned_values = arrays.clone[u32](borrow values)
+    match cloned_values:
+        case Result.Ok(copy):
+            if arrays.length[u32](borrow copy) != (2 as usize):
+                return fail()
+            if second_u32(borrow copy) != (2 as u32):
+                return fail()
+            drop(copy)
+        case Result.Err(error):
+            return fail()
+    let moved_allocator_values = arrays.clone_in[u32](borrow values, fixed)
+    match moved_allocator_values:
+        case Result.Ok(copy):
+            if first_u32(borrow copy) != (40 as u32):
+                return fail()
+            drop(copy)
+        case Result.Err(error):
+            return fail()
+
+    let utf8_bytes = arrays.with_allocator[u8](arena)
+    if push_byte(borrow mut utf8_bytes, 0 as u8) == false:
+        return fail()
+    if push_byte(borrow mut utf8_bytes, 0xc3 as u8) == false:
+        return fail()
+    if push_byte(borrow mut utf8_bytes, 0xa9 as u8) == false:
+        return fail()
+    if mutate_first(borrow mut utf8_bytes) == false:
+        return fail()
+    let utf8_view = arrays.as_slice[u8](borrow utf8_bytes)
+    let decoded = string.from_utf8(utf8_view, arena)
+    match decoded:
+        case Result.Ok(text):
+            if string.length(borrow text) != (3 as usize):
+                return fail()
+            let decoded_view = string.as_view(borrow text)
+            if decoded_view[0 as usize] != (68 as u8):
+                return fail()
+            if decoded_view[1 as usize] != (0xc3 as u8):
+                return fail()
+            if decoded_view[2 as usize] != (0xa9 as u8):
+                return fail()
+        case Result.Err(error):
+            return fail()
+
+    let invalid_bytes = arrays.with_allocator[u8](arena)
+    if push_byte(borrow mut invalid_bytes, 0xc0 as u8) == false:
+        return fail()
+    if push_byte(borrow mut invalid_bytes, 0xaf as u8) == false:
+        return fail()
+    let invalid_view = arrays.as_slice[u8](borrow invalid_bytes)
+    let rejected = string.from_utf8(invalid_view, arena)
+    match rejected:
+        case Result.Ok(text):
+            return fail()
+        case Result.Err(error):
+            match error:
+                case string.StringError.InvalidUtf8:
+                    let accepted: u32 = 0 as u32
+                case string.StringError.Allocation(allocation_error):
+                    return fail()
+
+    let made = string.from_view("DByte UTF-8", arena)
+    match made:
+        case Result.Ok(text):
+            if string.length(borrow text) != (11 as usize):
+                return fail()
+            let text_view = string.as_view(borrow text)
+            if len(text_view) != (11 as usize):
+                return fail()
+            if text_view[0 as usize] != (68 as u8):
+                return fail()
+            let cloned_text = string.clone(borrow text)
+            match cloned_text:
+                case Result.Ok(copy):
+                    if string.length(borrow copy) != (11 as usize):
+                        return fail()
+                    drop(copy)
+                case Result.Err(error):
+                    return fail()
+            let fixed_text = string.clone_in(borrow text, fixed)
+            match fixed_text:
+                case Result.Ok(copy):
+                    if first_byte(borrow copy) != (68 as u8):
+                        return fail()
+                    drop(copy)
+                case Result.Err(error):
+                    return fail()
+        case Result.Err(error):
+            return fail()
+    let free_before: u32 = alloc.arena_free_calls(&ARENA)
+    let words = arrays.with_allocator[string.String](arena)
+    let nested = string.from_view("nested", arena)
+    match nested:
+        case Result.Ok(text):
+            let nested_push = arrays.push[string.String](borrow mut words, text)
+            match nested_push:
+                case Result.Ok(value):
+                    let accepted: u32 = 0 as u32
+                case Result.Err(error):
+                    return fail()
+        case Result.Err(error):
+            return fail()
+    drop(words)
+    if alloc.arena_free_calls(&ARENA) != free_before + (2 as u32):
+        return fail()
+    line("DROP ONLINE", 11 as usize)
+    line("ALLOCATOR ABI ONLINE", 20 as usize)
+    line("ARRAY ONLINE", 12 as usize)
+    line("STRING ONLINE", 13 as usize)
+    line("MOVE OWNERSHIP OK", 17 as usize)
+    line("OOM TRANSACTION OK", 18 as usize)
+    line("RUNTIME CHECK OK", 16 as usize)
+    return 0

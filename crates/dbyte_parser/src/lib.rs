@@ -70,6 +70,24 @@ impl Parser {
     }
 
     fn parse_type_full(&mut self) -> Result<TypeAnnotation, ParseError> {
+        if matches!(self.peek_kind(), TokenKind::Borrow) {
+            self.advance();
+            let mutable = if matches!(self.peek_kind(), TokenKind::Mut) {
+                self.advance();
+                true
+            } else {
+                false
+            };
+            let pointee = self.parse_type_full()?;
+            return Ok(TypeAnnotation::Borrow {
+                mutable,
+                pointee: Box::new(pointee),
+            });
+        }
+        if matches!(self.peek_kind(), TokenKind::Unit) {
+            self.advance();
+            return Ok(TypeAnnotation::Unit);
+        }
         if matches!(self.peek_kind(), TokenKind::Extern) {
             self.advance();
             let abi = match self.peek_kind().clone() {
@@ -690,6 +708,20 @@ impl Parser {
                 self.advance();
                 Ok(Expr::NullLit(tok.span))
             }
+            TokenKind::Unit => {
+                self.advance();
+                Ok(Expr::UnitLit(tok.span))
+            }
+            TokenKind::Drop => {
+                self.advance();
+                self.expect(&TokenKind::LParen)?;
+                let expr = self.parse_expr()?;
+                self.expect(&TokenKind::RParen)?;
+                Ok(Expr::Drop {
+                    expr: Box::new(expr),
+                    span: tok.span,
+                })
+            }
             TokenKind::Fn => self.parse_closure_expr(),
             TokenKind::Str(ref s) => {
                 let s = s.clone();
@@ -818,6 +850,13 @@ impl Parser {
         match self.peek_kind().clone() {
             TokenKind::Let => self.parse_let(false),
             TokenKind::Fn => self.parse_fn(false, None),
+            TokenKind::Drop
+                if self
+                    .peek_at(1)
+                    .is_some_and(|token| matches!(token.kind, TokenKind::Fn)) =>
+            {
+                self.parse_drop_fn()
+            }
             TokenKind::Extern => self.parse_extern_fn(false),
             TokenKind::Interrupt => self.parse_interrupt_fn(false),
             TokenKind::Const => self.parse_const(false),
@@ -1369,7 +1408,13 @@ impl Parser {
                 span,
             });
         }
-        self.parse_fn_with_convention(is_pub, Some(class), CallConvention::DByte, false)
+        self.parse_fn_with_convention(
+            is_pub,
+            Some(class),
+            CallConvention::DByte,
+            false,
+            FunctionKind::Normal,
+        )
     }
 
     fn parse_fn(
@@ -1377,7 +1422,31 @@ impl Parser {
         is_pub: bool,
         interrupt: Option<InterruptClass>,
     ) -> Result<Stmt, ParseError> {
-        self.parse_fn_with_convention(is_pub, interrupt, CallConvention::DByte, false)
+        self.parse_fn_with_convention(
+            is_pub,
+            interrupt,
+            CallConvention::DByte,
+            false,
+            FunctionKind::Normal,
+        )
+    }
+
+    fn parse_drop_fn(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.peek().span;
+        self.expect(&TokenKind::Drop)?;
+        if !matches!(self.peek_kind(), TokenKind::Fn) {
+            return Err(ParseError {
+                msg: "expected `fn` after `drop`".into(),
+                span,
+            });
+        }
+        self.parse_fn_with_convention(
+            false,
+            None,
+            CallConvention::DByte,
+            false,
+            FunctionKind::Drop,
+        )
     }
 
     fn parse_extern_fn(&mut self, is_pub: bool) -> Result<Stmt, ParseError> {
@@ -1400,7 +1469,7 @@ impl Parser {
                 span,
             });
         }
-        self.parse_fn_with_convention(is_pub, None, CallConvention::C, true)
+        self.parse_fn_with_convention(is_pub, None, CallConvention::C, true, FunctionKind::Normal)
     }
 
     fn parse_params(&mut self) -> Result<Vec<Param>, ParseError> {
@@ -1441,6 +1510,7 @@ impl Parser {
         interrupt: Option<InterruptClass>,
         call_convention: CallConvention,
         declaration_only: bool,
+        kind: FunctionKind,
     ) -> Result<Stmt, ParseError> {
         let span = self.peek().span;
         self.advance();
@@ -1476,6 +1546,7 @@ impl Parser {
         };
         Ok(Stmt::FnDef {
             is_pub,
+            kind,
             interrupt,
             call_convention,
             name,
@@ -2033,6 +2104,36 @@ mod tests {
             body[3],
             Stmt::Return {
                 value: Some(Expr::Try { .. }),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_v121_unit_drop_function_and_explicit_drop() {
+        let source = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    value.id = 0\n\nfn consume(value: Resource) -> unit:\n    drop(value)\n    return unit\n";
+        let program = parse(source);
+        assert!(matches!(
+            &program.stmts[1],
+            Stmt::FnDef {
+                kind: FunctionKind::Drop,
+                params,
+                ..
+            } if matches!(
+                &params[0].ty,
+                TypeAnnotation::Borrow { mutable: true, pointee }
+                    if **pointee == TypeAnnotation::Named("Resource".into())
+            )
+        ));
+        let Stmt::FnDef { ret_ty, body, .. } = &program.stmts[2] else {
+            panic!("expected consumer function");
+        };
+        assert_eq!(*ret_ty, TypeAnnotation::Unit);
+        assert!(matches!(body[0], Stmt::Expr(Expr::Drop { .. })));
+        assert!(matches!(
+            body[1],
+            Stmt::Return {
+                value: Some(Expr::UnitLit(_)),
                 ..
             }
         ));

@@ -3,14 +3,18 @@ use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 
-use dbyte_compiler::Compiler;
+use dbyte_bytecode::disassemble_canonical_bytecode;
+use dbyte_compiler::lower_concrete_project_to_bytecode;
 use dbyte_embed::{DByteError, DByteRuntime};
-use dbyte_interp::Interpreter;
+use dbyte_hir::{
+    analyze_project, load_source_project, monomorphize_project, ConcreteHirProject, Profile,
+    TargetDataLayout,
+};
+use dbyte_interp::execute_concrete_project_with_args;
 use dbyte_lexer::Lexer;
 use dbyte_parser::Parser;
 use dbyte_project::{create_project, find_project_root, load_project, ProjectError};
-use dbyte_typeck::TypeChecker;
-use dbyte_vm::Vm;
+use dbyte_vm::execute_canonical_bytecode_with_args;
 use std::collections::HashMap;
 
 const DEFAULT_SHELL_PROMPT: &str = "dbyte-shell>";
@@ -227,85 +231,62 @@ fn lex_file(path: &Path) -> (String, Vec<dbyte_lexer::Token>) {
     (src, tokens)
 }
 
-fn check_program(path: &Path, src: &str, program: &dbyte_ast::Program) {
-    let path_label = path.display().to_string();
-    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
-    if let Err(e) = checker.check_program(program) {
-        print_error("TypeError", &e.msg, e.span, &path_label, src);
-        process::exit(1);
-    }
-}
-
-fn compile_program(path: &Path, src: &str, program: &dbyte_ast::Program) -> dbyte_bytecode::Chunk {
-    let path_label = path.display().to_string();
-    match Compiler::with_entry_path(path.to_path_buf()).compile_program(program) {
-        Ok(chunk) => chunk,
-        Err(e) => {
-            print_error("CompileError", &e.msg, e.span, &path_label, src);
-            process::exit(1);
-        }
-    }
-}
-
-fn parse_source(path_label: &str, src: &str) -> Result<dbyte_ast::Program, ()> {
-    let tokens = match Lexer::new(src).tokenize() {
-        Ok(tokens) => tokens,
-        Err(e) => {
-            print_error("LexError", &e.msg, e.span, path_label, src);
-            return Err(());
-        }
-    };
-
-    Parser::new(tokens).parse_program().map_err(|e| {
-        print_error("ParseError", &e.msg, e.span, path_label, src);
+fn concrete_project(path: &Path, profile: Profile) -> Result<ConcreteHirProject, ()> {
+    let source = fs::read_to_string(path).unwrap_or_default();
+    let project = load_source_project(path).map_err(|diagnostics| {
+        print_hir_diagnostics(path, &source, &diagnostics);
+    })?;
+    let canonical =
+        analyze_project(&project, profile, TargetDataLayout::I686).map_err(|diagnostics| {
+            print_hir_diagnostics(path, &source, &diagnostics);
+        })?;
+    monomorphize_project(&canonical).map_err(|diagnostic| {
+        print_hir_diagnostics(path, &source, &[diagnostic]);
     })
 }
 
-#[derive(Clone)]
+fn print_hir_diagnostics(path: &Path, source: &str, diagnostics: &[dbyte_hir::Diagnostic]) {
+    for diagnostic in diagnostics {
+        print_error(
+            diagnostic.code,
+            &diagnostic.message,
+            diagnostic.span,
+            &path.display().to_string(),
+            source,
+        );
+    }
+}
+
 struct InteractiveSession {
-    checker: TypeChecker,
-    interp: Interpreter,
-    entry_path: PathBuf,
+    runtime: DByteRuntime,
+    cwd: PathBuf,
 }
 
 impl InteractiveSession {
     fn new(cwd: &Path) -> Self {
-        let entry_path = cwd.join("<interactive>");
         Self {
-            checker: TypeChecker::with_entry_path(entry_path.clone()),
-            interp: Interpreter::with_entry_path(entry_path.clone()),
-            entry_path,
+            runtime: DByteRuntime::with_current_dir(cwd)
+                .expect("interactive working directory was already validated"),
+            cwd: cwd.to_path_buf(),
         }
     }
 
     fn reset(&mut self) {
-        let entry_path = self.entry_path.clone();
-        self.checker = TypeChecker::with_entry_path(entry_path.clone());
-        self.interp = Interpreter::with_entry_path(entry_path);
+        self.runtime = DByteRuntime::with_current_dir(&self.cwd)
+            .expect("interactive working directory was already validated");
     }
 
     fn eval(&mut self, label: &str, src: &str) -> bool {
-        let Ok(program) = parse_source(label, src) else {
-            return false;
-        };
-
-        let checker_snapshot = self.checker.clone();
-        let interp_snapshot = self.interp.clone();
-
-        if let Err(e) = self.checker.check_program(&program) {
-            print_error("TypeError", &e.msg, e.span, label, src);
-            self.checker = checker_snapshot;
-            return false;
+        match self.runtime.run_source_capture(label, src) {
+            Ok(output) => {
+                print!("{}", output.stdout);
+                true
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                false
+            }
         }
-
-        if let Err(e) = self.interp.run(&program) {
-            print_error("RuntimeError", &e.msg, e.span, label, src);
-            self.checker = checker_snapshot;
-            self.interp = interp_snapshot;
-            return false;
-        }
-
-        true
     }
 
     fn load_rc(&mut self, cwd: &Path, rc_override: Option<&Path>) -> bool {
@@ -798,10 +779,7 @@ impl ShellSession {
                     } else if let Some(script) =
                         resolve_dbyteos_command_script(self.runtime.current_dir(), other)
                     {
-                        match self
-                            .runtime
-                            .run_file_capture_with_args(&script, args[1..].to_vec())
-                        {
+                        match self.run_script_capture(&script, args[1..].to_vec()) {
                             Ok(output) => print!("{}", output.stdout),
                             Err(e) => eprintln!("{}", e),
                         }
@@ -853,13 +831,24 @@ impl ShellSession {
             return;
         }
         let script_path = resolve_shell_run_script(self.runtime.current_dir(), &args[1]);
-        match self
-            .runtime
-            .run_file_capture_with_args(&script_path, args[2..].to_vec())
-        {
+        match self.run_script_capture(&script_path, args[2..].to_vec()) {
             Ok(output) => print!("{}", output.stdout),
             Err(e) => eprintln!("{}", e),
         }
+    }
+
+    fn run_script_capture(
+        &self,
+        script_path: &Path,
+        args: Vec<String>,
+    ) -> Result<dbyte_embed::RunOutput, DByteError> {
+        // A shell script invocation is a process-like execution boundary.  It
+        // receives the shell working directory and arguments, while `: code`
+        // remains the explicitly stateful canonical session.  This prevents
+        // private helpers and top-level locals from unrelated scripts from
+        // being merged into one synthetic module.
+        let mut runtime = DByteRuntime::with_current_dir(self.runtime.current_dir())?;
+        runtime.run_file_capture_with_args(script_path, args)
     }
 
     fn command_check(&self, args: &[String]) {
@@ -1065,30 +1054,43 @@ fn cmd_shell(no_rc: bool, rc_path: Option<&Path>) {
 }
 
 fn cmd_run(path: &Path, type_check: bool, engine: Engine, trace: bool, script_args: Vec<String>) {
-    let path_label = path.display().to_string();
-    let (src, program) = parse_file(path);
-    if type_check {
-        check_program(path, &src, &program);
-    }
-
-    match engine {
-        Engine::Tree => {
-            let mut interp = Interpreter::with_entry_path(path.to_path_buf());
-            interp.set_script_args(script_args);
-            if let Err(e) = interp.run(&program) {
-                print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
-                process::exit(1);
+    let _ = type_check;
+    let project = concrete_project(path, Profile::Hosted).unwrap_or_else(|()| process::exit(1));
+    let result = match engine {
+        Engine::Tree => execute_concrete_project_with_args(&project, script_args)
+            .map(|execution| execution.output)
+            .map_err(|error| (error.msg, error.span)),
+        Engine::Vm => match lower_concrete_project_to_bytecode(&project) {
+            Ok(bytecode) => {
+                if trace {
+                    let display_name = path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("<source>");
+                    eprintln!(
+                        "{}",
+                        disassemble_canonical_bytecode(&bytecode, display_name)
+                    );
+                }
+                execute_canonical_bytecode_with_args(&bytecode, script_args)
+                    .map(|execution| execution.output)
+                    .map_err(|error| (error.msg, error.span))
             }
-        }
-        Engine::Vm => {
-            let chunk = compile_program(path, &src, &program);
-            let mut vm = Vm::with_entry_path(path.to_path_buf());
-            vm.set_trace(trace);
-            vm.set_script_args(script_args);
-            if let Err(e) = vm.run(&chunk) {
-                print_error("RuntimeError", &e.msg, e.span, &path_label, &src);
-                process::exit(1);
-            }
+            Err(diagnostic) => Err((diagnostic.message, diagnostic.span)),
+        },
+    };
+    match result {
+        Ok(output) => print!("{output}"),
+        Err((message, span)) => {
+            let source = fs::read_to_string(path).unwrap_or_default();
+            print_error(
+                "RuntimeError",
+                &message,
+                span,
+                &path.display().to_string(),
+                &source,
+            );
+            process::exit(1);
         }
     }
 }
@@ -1111,17 +1113,12 @@ fn cmd_run_project(type_check: bool, engine: Engine, trace: bool) {
 
 fn cmd_check(path: &Path) {
     let path_label = path.display().to_string();
-    let (src, program) = parse_file(path);
-    let mut checker = TypeChecker::with_entry_path(path.to_path_buf());
-    match checker.check_program(&program) {
+    match concrete_project(path, Profile::Hosted) {
         Ok(_) => println!(
             "\x1b[1;32mok\x1b[0m: no type errors found in `{}`",
             path_label
         ),
-        Err(e) => {
-            print_error("TypeError", &e.msg, e.span, &path_label, &src);
-            process::exit(1);
-        }
+        Err(()) => process::exit(1),
     }
 }
 
@@ -1153,10 +1150,23 @@ fn cmd_new(name: &str) {
 }
 
 fn cmd_disasm(path: &Path) {
-    let (src, program) = parse_file(path);
-    check_program(path, &src, &program);
-    let chunk = compile_program(path, &src, &program);
-    print!("{}", chunk.disassemble());
+    let project = concrete_project(path, Profile::Vm).unwrap_or_else(|()| process::exit(1));
+    let bytecode = lower_concrete_project_to_bytecode(&project).unwrap_or_else(|diagnostic| {
+        print_hir_diagnostics(
+            path,
+            &fs::read_to_string(path).unwrap_or_default(),
+            &[diagnostic],
+        );
+        process::exit(1)
+    });
+    let display_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("<source>");
+    print!(
+        "{}",
+        disassemble_canonical_bytecode(&bytecode, display_name)
+    );
 }
 
 fn cmd_tokens(path: &Path) {
@@ -1394,19 +1404,19 @@ fn cmd_test(engine: Engine) {
 }
 
 fn run_benchmark(path: &Path, engine: Engine) -> f64 {
-    let (_src, program) = parse_file(path);
+    let project = match concrete_project(path, Profile::Hosted) {
+        Ok(project) => project,
+        Err(()) => return f64::NAN,
+    };
     let start = std::time::Instant::now();
 
     match engine {
         Engine::Tree => {
-            let mut interp = Interpreter::with_entry_path(path.to_path_buf());
-            let _ = interp.run(&program);
+            let _ = execute_concrete_project_with_args(&project, Vec::new());
         }
         Engine::Vm => {
-            let compiler = Compiler::with_entry_path(path.to_path_buf());
-            if let Ok(chunk) = compiler.compile_program(&program) {
-                let mut vm = Vm::with_entry_path(path.to_path_buf());
-                let _ = vm.run(&chunk);
+            if let Ok(bytecode) = lower_concrete_project_to_bytecode(&project) {
+                let _ = execute_canonical_bytecode_with_args(&bytecode, Vec::new());
             }
         }
     }

@@ -1,0 +1,7 @@
+import "array.dby" as owned
+import "hosted_alloc.dby" as host
+
+# Hosted/VM convenience constructor. Freestanding callers use
+# owned.with_allocator explicitly and never receive a fallback allocator.
+pub fn new[T]() -> owned.Array[T]:
+    return owned.with_allocator[T](host.system_allocator())

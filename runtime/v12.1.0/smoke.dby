@@ -1,0 +1,37 @@
+import "alloc.dby" as alloc
+import "array.dby" as array
+import "string.dby" as string
+
+static mut STORAGE: array[u8, 4096]
+static mut ARENA: alloc.ArenaAllocator
+
+pub fn kernel_main() -> int:
+    let allocator = alloc.arena_initialize(&ARENA, &STORAGE as usize as ptr[u8], 4096 as usize)
+    let values = array.with_allocator[u32](allocator)
+    let first = array.push[u32](borrow mut values, 40 as u32)
+    match first:
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return 1
+    let second = array.push[u32](borrow mut values, 2 as u32)
+    match second:
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return 1
+    let result = array.pop[u32](borrow mut values)
+    match result:
+        case Option.Some(value):
+            if value != (2 as u32):
+                return 1
+        case Option.None():
+            return 1
+    let made = string.from_view("runtime", allocator)
+    match made:
+        case Result.Ok(text):
+            if string.length(borrow text) != (7 as usize):
+                return 1
+        case Result.Err(error):
+            return 1
+    return 0

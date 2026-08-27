@@ -4,6 +4,8 @@ use dbyte_ast::Span;
 pub enum TokenKind {
     Let,
     Fn,
+    Drop,
+    Unit,
     Interrupt,
     Return,
     If,
@@ -80,6 +82,8 @@ impl std::fmt::Display for TokenKind {
         match self {
             TokenKind::Let => write!(f, "let"),
             TokenKind::Fn => write!(f, "fn"),
+            TokenKind::Drop => write!(f, "drop"),
+            TokenKind::Unit => write!(f, "unit"),
             TokenKind::Interrupt => write!(f, "interrupt"),
             TokenKind::Return => write!(f, "return"),
             TokenKind::If => write!(f, "if"),
@@ -405,6 +409,8 @@ impl<'src> Lexer<'src> {
         let kind = match s.as_str() {
             "let" => TokenKind::Let,
             "fn" => TokenKind::Fn,
+            "drop" => TokenKind::Drop,
+            "unit" => TokenKind::Unit,
             "interrupt" => TokenKind::Interrupt,
             "return" => TokenKind::Return,
             "if" => TokenKind::If,

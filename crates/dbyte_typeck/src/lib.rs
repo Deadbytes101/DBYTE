@@ -62,6 +62,7 @@ impl std::fmt::Display for ResolvedType {
 
 fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
     match ann {
+        TypeAnnotation::Unit => Some(ResolvedType::Void),
         TypeAnnotation::Int => Some(ResolvedType::Int),
         TypeAnnotation::Float => Some(ResolvedType::Float),
         TypeAnnotation::Bool => Some(ResolvedType::Bool),
@@ -82,6 +83,7 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         | TypeAnnotation::ConstPointer(_)
         | TypeAnnotation::Slice(_)
         | TypeAnnotation::MutSlice(_)
+        | TypeAnnotation::Borrow { .. }
         | TypeAnnotation::StringView
         | TypeAnnotation::Array { .. }
         | TypeAnnotation::Named(_)
@@ -326,6 +328,7 @@ impl TypeChecker {
 
     fn check_expr(&mut self, expr: &Expr) -> Result<ResolvedType, TypeError> {
         match expr {
+            Expr::UnitLit(_) => Ok(ResolvedType::Void),
             Expr::IntLit(..) => Ok(ResolvedType::Int),
             Expr::FloatLit(..) => Ok(ResolvedType::Float),
             Expr::BoolLit(..) => Ok(ResolvedType::Bool),
@@ -340,6 +343,10 @@ impl TypeChecker {
                 msg: "v12 expression requires canonical HIR checking".into(),
                 span: *span,
             }),
+            Expr::Drop { expr, .. } => {
+                self.check_expr(expr)?;
+                Ok(ResolvedType::Void)
+            }
 
             Expr::FStr(parts, span) => {
                 for part in parts {
@@ -844,6 +851,7 @@ fn program_uses_v12(program: &Program) -> bool {
     fn expression_uses_v12(expression: &Expr) -> bool {
         match expression {
             Expr::NullLit(_)
+            | Expr::UnitLit(_)
             | Expr::GenericApply { .. }
             | Expr::Invoke { .. }
             | Expr::Borrow { .. }
@@ -852,7 +860,9 @@ fn program_uses_v12(program: &Program) -> bool {
             Expr::Binary { left, right, .. } => {
                 expression_uses_v12(left) || expression_uses_v12(right)
             }
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => expression_uses_v12(expr),
+            Expr::Unary { expr, .. } | Expr::Drop { expr, .. } | Expr::Cast { expr, .. } => {
+                expression_uses_v12(expr)
+            }
             Expr::List(values, _) => values.iter().any(expression_uses_v12),
             Expr::Call { args, .. } | Expr::MemberCall { args, .. } => {
                 args.iter().any(expression_uses_v12)

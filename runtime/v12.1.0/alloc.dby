@@ -1,0 +1,365 @@
+pub enum AllocError:
+    OutOfMemory
+    UnsupportedAlignment
+    SizeOverflow
+    ContractViolation
+
+pub struct AllocatorVTable:
+    alloc: fn(ptr[u8], usize, usize) -> Result[ptr[u8], AllocError]
+    resize: fn(ptr[u8], ptr[u8], usize, usize, usize) -> Result[ptr[u8], AllocError]
+    free: fn(ptr[u8], ptr[u8], usize, usize) -> unit
+
+pub struct AllocatorRef:
+    context: ptr[u8]
+    vtable: const_ptr[AllocatorVTable]
+
+pub struct ArenaAllocator:
+    memory: ptr[u8]
+    capacity: usize
+    offset: usize
+    alloc_calls: u32
+    resize_calls: u32
+    free_calls: u32
+
+pub struct FixedAllocator:
+    memory: ptr[u8]
+    capacity: usize
+    free_offsets: array[usize, 32]
+    free_sizes: array[usize, 32]
+    free_count: usize
+    live_offsets: array[usize, 32]
+    live_sizes: array[usize, 32]
+    live_count: usize
+    poisoned: bool
+    alloc_calls: u32
+    resize_calls: u32
+    free_calls: u32
+
+pub struct KernelAllocator:
+    context: ptr[u8]
+    allocate_provider: fn(ptr[u8], usize, usize) -> Result[ptr[u8], AllocError]
+    resize_provider: fn(ptr[u8], ptr[u8], usize, usize, usize) -> Result[ptr[u8], AllocError]
+    free_provider: fn(ptr[u8], ptr[u8], usize, usize) -> unit
+    alloc_calls: u32
+    resize_calls: u32
+    free_calls: u32
+
+static mut ARENA_VTABLE: AllocatorVTable
+static mut FIXED_VTABLE: AllocatorVTable
+static mut KERNEL_VTABLE: AllocatorVTable
+
+fn dangling(alignment: usize) -> ptr[u8]:
+    return alignment as ptr[u8]
+
+pub fn valid_alignment(alignment: usize) -> bool:
+    if alignment == (0 as usize):
+        return false
+    if alignment > (4096 as usize):
+        return false
+    return (alignment & (alignment - (1 as usize))) == (0 as usize)
+
+fn align_up(value: usize, alignment: usize) -> Result[usize, AllocError]:
+    if valid_alignment(alignment) == false:
+        return Result[usize, AllocError].Err(AllocError.UnsupportedAlignment())
+    let mask: usize = alignment - (1 as usize)
+    if value > ((0xffffffff as u32) as usize) - mask:
+        return Result[usize, AllocError].Err(AllocError.SizeOverflow())
+    return Result[usize, AllocError].Ok((value + mask) & (~mask))
+
+fn copy_bytes(destination: ptr[u8], source: ptr[u8], count: usize) -> unit:
+    let index: usize = 0 as usize
+    while index < count:
+        destination[index] = source[index]
+        index = index + (1 as usize)
+    return unit
+
+fn arena_alloc(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    let arena: ptr[ArenaAllocator] = context as usize as ptr[ArenaAllocator]
+    (*arena).alloc_calls = (*arena).alloc_calls + (1 as u32)
+    let base: usize = (*arena).memory as usize
+    if (*arena).offset > (((0xffffffff as u32) as usize) - base):
+        return Result[ptr[u8], AllocError].Err(AllocError.SizeOverflow())
+    let absolute = align_up(base + (*arena).offset, alignment)?
+    let aligned: usize = absolute - base
+    if aligned > (*arena).capacity:
+        return Result[ptr[u8], AllocError].Err(AllocError.OutOfMemory())
+    if size > (*arena).capacity - aligned:
+        return Result[ptr[u8], AllocError].Err(AllocError.OutOfMemory())
+    let pointer: ptr[u8] = (base + aligned) as ptr[u8]
+    (*arena).offset = aligned + size
+    return Result[ptr[u8], AllocError].Ok(pointer)
+
+fn arena_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    let arena: ptr[ArenaAllocator] = context as usize as ptr[ArenaAllocator]
+    (*arena).resize_calls = (*arena).resize_calls + (1 as u32)
+    let replacement = arena_alloc(context, new_size, alignment)?
+    let amount: usize = old_size
+    if new_size < amount:
+        amount = new_size
+    copy_bytes(replacement, pointer, amount)
+    return Result[ptr[u8], AllocError].Ok(replacement)
+
+fn arena_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    let arena: ptr[ArenaAllocator] = context as usize as ptr[ArenaAllocator]
+    (*arena).free_calls = (*arena).free_calls + (1 as u32)
+    return unit
+
+fn fixed_alloc(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    let fixed: ptr[FixedAllocator] = context as usize as ptr[FixedAllocator]
+    (*fixed).alloc_calls = (*fixed).alloc_calls + (1 as u32)
+    if (*fixed).poisoned:
+        return Result[ptr[u8], AllocError].Err(AllocError.ContractViolation())
+    if (*fixed).live_count >= (32 as usize):
+        return Result[ptr[u8], AllocError].Err(AllocError.OutOfMemory())
+    let base: usize = (*fixed).memory as usize
+    let index: usize = 0 as usize
+    while index < (*fixed).free_count:
+        let extent_offset: usize = (*fixed).free_offsets[index]
+        let extent_size: usize = (*fixed).free_sizes[index]
+        if extent_offset <= (((0xffffffff as u32) as usize) - base):
+            let absolute_result = align_up(base + extent_offset, alignment)
+            match absolute_result:
+                case Result.Ok(absolute):
+                    let aligned: usize = absolute - base
+                    if aligned >= extent_offset:
+                        let prefix: usize = aligned - extent_offset
+                        if prefix <= extent_size:
+                            let remaining: usize = extent_size - prefix
+                            if size <= remaining:
+                                let suffix: usize = remaining - size
+                                if prefix > (0 as usize):
+                                    if suffix > (0 as usize):
+                                        if (*fixed).free_count >= (32 as usize):
+                                            return Result[ptr[u8], AllocError].Err(AllocError.OutOfMemory())
+                                if prefix == (0 as usize):
+                                    if suffix == (0 as usize):
+                                        let cursor: usize = index
+                                        while (cursor + (1 as usize)) < (*fixed).free_count:
+                                            (*fixed).free_offsets[cursor] = (*fixed).free_offsets[cursor + (1 as usize)]
+                                            (*fixed).free_sizes[cursor] = (*fixed).free_sizes[cursor + (1 as usize)]
+                                            cursor = cursor + (1 as usize)
+                                        (*fixed).free_count = (*fixed).free_count - (1 as usize)
+                                    else:
+                                        (*fixed).free_offsets[index] = aligned + size
+                                        (*fixed).free_sizes[index] = suffix
+                                else:
+                                    if prefix > (0 as usize):
+                                        (*fixed).free_sizes[index] = prefix
+                                        if suffix > (0 as usize):
+                                            let cursor: usize = (*fixed).free_count
+                                            while cursor > (index + (1 as usize)):
+                                                (*fixed).free_offsets[cursor] = (*fixed).free_offsets[cursor - (1 as usize)]
+                                                (*fixed).free_sizes[cursor] = (*fixed).free_sizes[cursor - (1 as usize)]
+                                                cursor = cursor - (1 as usize)
+                                            (*fixed).free_offsets[index + (1 as usize)] = aligned + size
+                                            (*fixed).free_sizes[index + (1 as usize)] = suffix
+                                            (*fixed).free_count = (*fixed).free_count + (1 as usize)
+                                let live: usize = (*fixed).live_count
+                                (*fixed).live_offsets[live] = aligned
+                                (*fixed).live_sizes[live] = size
+                                (*fixed).live_count = live + (1 as usize)
+                                return Result[ptr[u8], AllocError].Ok((base + aligned) as ptr[u8])
+                case Result.Err(error):
+                    return Result[ptr[u8], AllocError].Err(error)
+        index = index + (1 as usize)
+    return Result[ptr[u8], AllocError].Err(AllocError.OutOfMemory())
+
+fn fixed_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    let fixed: ptr[FixedAllocator] = context as usize as ptr[FixedAllocator]
+    (*fixed).free_calls = (*fixed).free_calls + (1 as u32)
+    if (*fixed).poisoned:
+        return unit
+    let base: usize = (*fixed).memory as usize
+    let address: usize = pointer as usize
+    if address < base:
+        (*fixed).poisoned = true
+        return unit
+    let offset: usize = address - base
+    let live_index: usize = 0 as usize
+    while live_index < (*fixed).live_count:
+        if (*fixed).live_offsets[live_index] == offset:
+            if (*fixed).live_sizes[live_index] == size:
+                break
+        live_index = live_index + (1 as usize)
+    if live_index == (*fixed).live_count:
+        (*fixed).poisoned = true
+        return unit
+    let live_cursor: usize = live_index
+    while (live_cursor + (1 as usize)) < (*fixed).live_count:
+        (*fixed).live_offsets[live_cursor] = (*fixed).live_offsets[live_cursor + (1 as usize)]
+        (*fixed).live_sizes[live_cursor] = (*fixed).live_sizes[live_cursor + (1 as usize)]
+        live_cursor = live_cursor + (1 as usize)
+    (*fixed).live_count = (*fixed).live_count - (1 as usize)
+
+    if (*fixed).free_count >= (32 as usize):
+        (*fixed).poisoned = true
+        return unit
+    let insert: usize = 0 as usize
+    while insert < (*fixed).free_count:
+        if (*fixed).free_offsets[insert] > offset:
+            break
+        insert = insert + (1 as usize)
+    let cursor: usize = (*fixed).free_count
+    while cursor > insert:
+        (*fixed).free_offsets[cursor] = (*fixed).free_offsets[cursor - (1 as usize)]
+        (*fixed).free_sizes[cursor] = (*fixed).free_sizes[cursor - (1 as usize)]
+        cursor = cursor - (1 as usize)
+    (*fixed).free_offsets[insert] = offset
+    (*fixed).free_sizes[insert] = size
+    (*fixed).free_count = (*fixed).free_count + (1 as usize)
+
+    let merge: usize = 0 as usize
+    while (merge + (1 as usize)) < (*fixed).free_count:
+        let left_end: usize = (*fixed).free_offsets[merge] + (*fixed).free_sizes[merge]
+        if left_end == (*fixed).free_offsets[merge + (1 as usize)]:
+            (*fixed).free_sizes[merge] = (*fixed).free_sizes[merge] + (*fixed).free_sizes[merge + (1 as usize)]
+            let shift: usize = merge + (1 as usize)
+            while (shift + (1 as usize)) < (*fixed).free_count:
+                (*fixed).free_offsets[shift] = (*fixed).free_offsets[shift + (1 as usize)]
+                (*fixed).free_sizes[shift] = (*fixed).free_sizes[shift + (1 as usize)]
+                shift = shift + (1 as usize)
+            (*fixed).free_count = (*fixed).free_count - (1 as usize)
+        else:
+            merge = merge + (1 as usize)
+    return unit
+
+fn fixed_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    let fixed: ptr[FixedAllocator] = context as usize as ptr[FixedAllocator]
+    (*fixed).resize_calls = (*fixed).resize_calls + (1 as u32)
+    let replacement = fixed_alloc(context, new_size, alignment)?
+    let amount: usize = old_size
+    if new_size < amount:
+        amount = new_size
+    copy_bytes(replacement, pointer, amount)
+    fixed_free(context, pointer, old_size, alignment)
+    return Result[ptr[u8], AllocError].Ok(replacement)
+
+fn kernel_alloc(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    let kernel: ptr[KernelAllocator] = context as usize as ptr[KernelAllocator]
+    (*kernel).alloc_calls = (*kernel).alloc_calls + (1 as u32)
+    let provider = (*kernel).allocate_provider
+    let result = provider((*kernel).context, size, alignment)
+    return result
+
+fn kernel_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    let kernel: ptr[KernelAllocator] = context as usize as ptr[KernelAllocator]
+    (*kernel).resize_calls = (*kernel).resize_calls + (1 as u32)
+    let provider = (*kernel).resize_provider
+    let result = provider((*kernel).context, pointer, old_size, new_size, alignment)
+    return result
+
+fn kernel_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    let kernel: ptr[KernelAllocator] = context as usize as ptr[KernelAllocator]
+    (*kernel).free_calls = (*kernel).free_calls + (1 as u32)
+    let provider = (*kernel).free_provider
+    provider((*kernel).context, pointer, size, alignment)
+    return unit
+
+pub fn arena_initialize(arena: ptr[ArenaAllocator], memory: ptr[u8], capacity: usize) -> AllocatorRef:
+    (*arena).memory = memory
+    (*arena).capacity = capacity
+    (*arena).offset = 0 as usize
+    (*arena).alloc_calls = 0 as u32
+    (*arena).resize_calls = 0 as u32
+    (*arena).free_calls = 0 as u32
+    ARENA_VTABLE.alloc = arena_alloc
+    ARENA_VTABLE.resize = arena_resize
+    ARENA_VTABLE.free = arena_free
+    return AllocatorRef(context = arena as usize as ptr[u8], vtable = &ARENA_VTABLE)
+
+pub fn fixed_initialize(fixed: ptr[FixedAllocator], memory: ptr[u8], capacity: usize) -> AllocatorRef:
+    (*fixed).memory = memory
+    (*fixed).capacity = capacity
+    (*fixed).free_count = 1 as usize
+    (*fixed).free_offsets[0 as usize] = 0 as usize
+    (*fixed).free_sizes[0 as usize] = capacity
+    (*fixed).live_count = 0 as usize
+    (*fixed).poisoned = false
+    (*fixed).alloc_calls = 0 as u32
+    (*fixed).resize_calls = 0 as u32
+    (*fixed).free_calls = 0 as u32
+    FIXED_VTABLE.alloc = fixed_alloc
+    FIXED_VTABLE.resize = fixed_resize
+    FIXED_VTABLE.free = fixed_free
+    return AllocatorRef(context = fixed as usize as ptr[u8], vtable = &FIXED_VTABLE)
+
+pub fn kernel_initialize(kernel: ptr[KernelAllocator], context: ptr[u8], allocate_provider: fn(ptr[u8], usize, usize) -> Result[ptr[u8], AllocError], resize_provider: fn(ptr[u8], ptr[u8], usize, usize, usize) -> Result[ptr[u8], AllocError], free_provider: fn(ptr[u8], ptr[u8], usize, usize) -> unit) -> AllocatorRef:
+    (*kernel).context = context
+    (*kernel).allocate_provider = allocate_provider
+    (*kernel).resize_provider = resize_provider
+    (*kernel).free_provider = free_provider
+    (*kernel).alloc_calls = 0 as u32
+    (*kernel).resize_calls = 0 as u32
+    (*kernel).free_calls = 0 as u32
+    KERNEL_VTABLE.alloc = kernel_alloc
+    KERNEL_VTABLE.resize = kernel_resize
+    KERNEL_VTABLE.free = kernel_free
+    return AllocatorRef(context = kernel as usize as ptr[u8], vtable = &KERNEL_VTABLE)
+
+pub fn allocate(allocator: AllocatorRef, size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    if valid_alignment(alignment) == false:
+        return Result[ptr[u8], AllocError].Err(AllocError.UnsupportedAlignment())
+    if size == (0 as usize):
+        return Result[ptr[u8], AllocError].Ok(dangling(alignment))
+    if (allocator.vtable as usize) == (0 as usize):
+        return Result[ptr[u8], AllocError].Err(AllocError.ContractViolation())
+    let provider = (*allocator.vtable).alloc
+    let result = provider(allocator.context, size, alignment)
+    match result:
+        case Result.Ok(pointer):
+            if (pointer as usize) == (0 as usize):
+                return Result[ptr[u8], AllocError].Err(AllocError.ContractViolation())
+            if ((pointer as usize) & (alignment - (1 as usize))) != (0 as usize):
+                return Result[ptr[u8], AllocError].Err(AllocError.ContractViolation())
+            return Result[ptr[u8], AllocError].Ok(pointer)
+        case Result.Err(error):
+            return Result[ptr[u8], AllocError].Err(error)
+
+pub fn resize(allocator: AllocatorRef, pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], AllocError]:
+    if valid_alignment(alignment) == false:
+        return Result[ptr[u8], AllocError].Err(AllocError.UnsupportedAlignment())
+    if old_size == (0 as usize):
+        if new_size == (0 as usize):
+            return Result[ptr[u8], AllocError].Ok(dangling(alignment))
+        return allocate(allocator, new_size, alignment)
+    if new_size == (0 as usize):
+        release(allocator, pointer, old_size, alignment)
+        return Result[ptr[u8], AllocError].Ok(dangling(alignment))
+    if (allocator.vtable as usize) == (0 as usize):
+        return Result[ptr[u8], AllocError].Err(AllocError.ContractViolation())
+    let provider = (*allocator.vtable).resize
+    return provider(allocator.context, pointer, old_size, new_size, alignment)
+
+pub fn release(allocator: AllocatorRef, pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    if size == (0 as usize):
+        return unit
+    let provider = (*allocator.vtable).free
+    provider(allocator.context, pointer, size, alignment)
+    return unit
+
+pub fn arena_allocation_calls(arena: ptr[ArenaAllocator]) -> u32:
+    return (*arena).alloc_calls
+
+pub fn arena_resize_calls(arena: ptr[ArenaAllocator]) -> u32:
+    return (*arena).resize_calls
+
+pub fn arena_free_calls(arena: ptr[ArenaAllocator]) -> u32:
+    return (*arena).free_calls
+
+pub fn fixed_allocation_calls(fixed: ptr[FixedAllocator]) -> u32:
+    return (*fixed).alloc_calls
+
+pub fn fixed_resize_calls(fixed: ptr[FixedAllocator]) -> u32:
+    return (*fixed).resize_calls
+
+pub fn fixed_free_calls(fixed: ptr[FixedAllocator]) -> u32:
+    return (*fixed).free_calls
+
+pub fn kernel_allocation_calls(kernel: ptr[KernelAllocator]) -> u32:
+    return (*kernel).alloc_calls
+
+pub fn kernel_resize_calls(kernel: ptr[KernelAllocator]) -> u32:
+    return (*kernel).resize_calls
+
+pub fn kernel_free_calls(kernel: ptr[KernelAllocator]) -> u32:
+    return (*kernel).free_calls

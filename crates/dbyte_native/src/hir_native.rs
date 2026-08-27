@@ -11,13 +11,19 @@ use crate::systems_ir::{
     ExternalFunction, ExternalGlobal, GlobalSection, SystemIntrinsic, SystemsFunction,
     SystemsGlobal, SystemsInst, SystemsModuleIr, SystemsParam, SystemsSlot, Visibility,
 };
-use dbyte_ast::{BinOp, CaptureMode, Span, UnaryOp};
+use dbyte_ast::{BinOp, CaptureMode, FunctionKind, Span, UnaryOp};
 use dbyte_hir::{
     layout_of, CanonicalType, ConcreteHirFunction, ConcreteHirProgram, HirBlock, HirExpr,
     HirExprKind, HirIntrinsic, HirMatchArm, HirPlace, HirPlaceBase, HirProjection, HirStatement,
     IntegerType, TypeId,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+type ModuleSelection<'a> = (
+    dbyte_hir::ModuleId,
+    &'a BTreeMap<dbyte_hir::FunctionInstanceKey, dbyte_hir::ModuleId>,
+    &'a BTreeMap<dbyte_hir::SymbolId, dbyte_hir::ModuleId>,
+);
 
 pub fn lower_hir_module_to_native_ir(
     module_name: &str,
@@ -32,6 +38,18 @@ pub fn lower_hir_project_to_native_ir(
     module_names: &BTreeMap<dbyte_hir::ModuleId, String>,
 ) -> NativeResult<Vec<(dbyte_hir::ModuleId, SystemsModuleIr)>> {
     let mut concrete = concrete.clone();
+    let instance_owners = concrete
+        .functions
+        .iter()
+        .map(|function| {
+            let owner = if function.key.arguments.is_empty() {
+                project.symbol_owners[&function.key.symbol]
+            } else {
+                project.root
+            };
+            (function.key.clone(), owner)
+        })
+        .collect::<BTreeMap<_, _>>();
     for function in &mut concrete.functions {
         let source = project
             .link_names
@@ -50,6 +68,14 @@ pub fn lower_hir_project_to_native_ir(
             )
         })?;
         let base = if function.public
+            || (function.kind == dbyte_ast::FunctionKind::Drop
+                && function.drop_target.is_some_and(|target| {
+                    concrete
+                        .semantic
+                        .definitions
+                        .iter()
+                        .any(|definition| definition.symbol == target && definition.public)
+                }))
             || function.convention == dbyte_ast::CallConvention::C
             || (owner == project.root && (source == "kernel_main" || source == "user_main"))
         {
@@ -99,7 +125,7 @@ pub fn lower_hir_project_to_native_ir(
             let ir = lower_selected_hir_module_to_native_ir(
                 name,
                 &concrete,
-                Some((*module, &project.symbol_owners)),
+                Some((*module, &instance_owners, &project.symbol_owners)),
             )?;
             Ok((*module, ir))
         })
@@ -109,10 +135,7 @@ pub fn lower_hir_project_to_native_ir(
 fn lower_selected_hir_module_to_native_ir(
     module_name: &str,
     program: &ConcreteHirProgram,
-    selection: Option<(
-        dbyte_hir::ModuleId,
-        &BTreeMap<dbyte_hir::SymbolId, dbyte_hir::ModuleId>,
-    )>,
+    selection: Option<ModuleSelection<'_>>,
 ) -> NativeResult<SystemsModuleIr> {
     dbyte_hir::validate_profile(program, program.semantic.profile).map_err(hir_diagnostic)?;
     let symbols: BTreeMap<_, _> = program
@@ -129,7 +152,7 @@ fn lower_selected_hir_module_to_native_ir(
     for function in program.functions.iter().filter(|function| {
         !function.declaration_only
             && selection
-                .is_none_or(|(module, owners)| owners.get(&function.key.symbol) == Some(&module))
+                .is_none_or(|(module, owners, _)| owners.get(&function.key) == Some(&module))
     }) {
         collect_string_literals_block(&function.body, &mut string_literals);
     }
@@ -147,9 +170,8 @@ fn lower_selected_hir_module_to_native_ir(
         .iter()
         .filter(|function| {
             !function.declaration_only
-                && selection.is_none_or(|(module, owners)| {
-                    owners.get(&function.key.symbol) == Some(&module)
-                })
+                && selection
+                    .is_none_or(|(module, owners, _)| owners.get(&function.key) == Some(&module))
         })
         .collect::<Vec<_>>();
     let mut closure_infos = Vec::new();
@@ -211,8 +233,8 @@ fn lower_selected_hir_module_to_native_ir(
         .filter(|function| {
             referenced_functions.contains(&function.symbol_name)
                 && (function.declaration_only
-                    || selection.is_some_and(|(module, owners)| {
-                        owners.get(&function.key.symbol) != Some(&module)
+                    || selection.is_some_and(|(module, owners, _)| {
+                        owners.get(&function.key) != Some(&module)
                     }))
         })
         .map(|function| {
@@ -234,7 +256,7 @@ fn lower_selected_hir_module_to_native_ir(
         .filter(|global| {
             !global.constant
                 && selection
-                    .is_none_or(|(module, owners)| owners.get(&global.symbol) == Some(&module))
+                    .is_none_or(|(module, _, owners)| owners.get(&global.symbol) == Some(&module))
         })
         .map(|global| lower_global(program, global))
         .collect::<NativeResult<Vec<_>>>()?;
@@ -245,7 +267,7 @@ fn lower_selected_hir_module_to_native_ir(
             referenced_globals.contains(&global.name)
                 && !global.constant
                 && selection
-                    .is_some_and(|(module, owners)| owners.get(&global.symbol) != Some(&module))
+                    .is_some_and(|(module, _, owners)| owners.get(&global.symbol) != Some(&module))
         })
         .map(|global| {
             Ok(ExternalGlobal {
@@ -269,9 +291,19 @@ fn lower_selected_hir_module_to_native_ir(
 fn collect_string_literals_block(block: &HirBlock, output: &mut Vec<(Span, Vec<u8>)>) {
     for statement in &block.statements {
         match statement {
-            HirStatement::Let { value, .. }
-            | HirStatement::Assign { value, .. }
-            | HirStatement::Expression(value) => collect_string_literals_expr(value, output),
+            HirStatement::Let { value, .. } | HirStatement::Expression(value) => {
+                collect_string_literals_expr(value, output)
+            }
+            HirStatement::Assign {
+                value,
+                cleanup_before_commit,
+                ..
+            } => {
+                collect_string_literals_expr(value, output);
+                if let Some(cleanup) = cleanup_before_commit {
+                    collect_string_literals_block(cleanup, output);
+                }
+            }
             HirStatement::Return { value, cleanup, .. } => {
                 if let Some(value) = value {
                     collect_string_literals_expr(value, output);
@@ -296,6 +328,10 @@ fn collect_string_literals_block(block: &HirBlock, output: &mut Vec<(Span, Vec<u
                 condition, body, ..
             } => {
                 collect_string_literals_expr(condition, output);
+                collect_string_literals_block(body, output);
+            }
+            HirStatement::For { iterable, body, .. } => {
+                collect_string_literals_expr(iterable, output);
                 collect_string_literals_block(body, output);
             }
             HirStatement::Match { value, arms, .. } => {
@@ -326,6 +362,9 @@ fn collect_string_literals_expr(expression: &HirExpr, output: &mut Vec<(Span, Ve
         | HirExprKind::IntrinsicCall {
             arguments: values, ..
         }
+        | HirExprKind::HostCall {
+            arguments: values, ..
+        }
         | HirExprKind::Enum {
             payload: values, ..
         } => {
@@ -337,8 +376,12 @@ fn collect_string_literals_expr(expression: &HirExpr, output: &mut Vec<(Span, Ve
             collect_string_literals_expr(left, output);
             collect_string_literals_expr(right, output);
         }
-        HirExprKind::Unary { value, .. } | HirExprKind::Cast { value, .. } => {
-            collect_string_literals_expr(value, output)
+        HirExprKind::Unary { value, .. }
+        | HirExprKind::Cast { value, .. }
+        | HirExprKind::Length { value } => collect_string_literals_expr(value, output),
+        HirExprKind::Drop { place, cleanup } => {
+            collect_string_literals_place(place, output);
+            collect_string_literals_block(cleanup, output);
         }
         HirExprKind::Constant { value, .. } => collect_string_literals_expr(value, output),
         HirExprKind::IndirectCall {
@@ -364,7 +407,21 @@ fn collect_string_literals_expr(expression: &HirExpr, output: &mut Vec<(Span, Ve
             }
         }
         HirExprKind::Closure { body, .. } => collect_string_literals_block(body, output),
-        HirExprKind::Integer(..)
+        HirExprKind::FormatString(parts) => {
+            for part in parts {
+                match part {
+                    dbyte_hir::HirFormatPart::Literal(bytes) => {
+                        output.push((expression.span, bytes.clone()));
+                    }
+                    dbyte_hir::HirFormatPart::Value(value) => {
+                        collect_string_literals_expr(value, output);
+                    }
+                }
+            }
+        }
+        HirExprKind::Unit
+        | HirExprKind::Integer(..)
+        | HirExprKind::LayoutOf { .. }
         | HirExprKind::Float(..)
         | HirExprKind::Bool(..)
         | HirExprKind::String(..)
@@ -396,9 +453,19 @@ fn collect_closures_block(
 ) {
     for statement in &block.statements {
         match statement {
-            HirStatement::Let { value, .. }
-            | HirStatement::Assign { value, .. }
-            | HirStatement::Expression(value) => collect_closures_expr(value, parent, output),
+            HirStatement::Let { value, .. } | HirStatement::Expression(value) => {
+                collect_closures_expr(value, parent, output)
+            }
+            HirStatement::Assign {
+                value,
+                cleanup_before_commit,
+                ..
+            } => {
+                collect_closures_expr(value, parent, output);
+                if let Some(cleanup) = cleanup_before_commit {
+                    collect_closures_block(cleanup, parent, output);
+                }
+            }
             HirStatement::Return { value, cleanup, .. } => {
                 if let Some(value) = value {
                     collect_closures_expr(value, parent, output);
@@ -423,6 +490,10 @@ fn collect_closures_block(
                 condition, body, ..
             } => {
                 collect_closures_expr(condition, parent, output);
+                collect_closures_block(body, parent, output);
+            }
+            HirStatement::For { iterable, body, .. } => {
+                collect_closures_expr(iterable, parent, output);
                 collect_closures_block(body, parent, output);
             }
             HirStatement::Match { value, arms, .. } => {
@@ -471,10 +542,13 @@ fn collect_closures_expr(
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Length { value }
         | HirExprKind::Try { value, .. }
         | HirExprKind::Constant { value, .. } => collect_closures_expr(value, parent, output),
+        HirExprKind::Drop { cleanup, .. } => collect_closures_block(cleanup, parent, output),
         HirExprKind::DirectCall { arguments, .. }
         | HirExprKind::IntrinsicCall { arguments, .. }
+        | HirExprKind::HostCall { arguments, .. }
         | HirExprKind::List(arguments)
         | HirExprKind::Enum {
             payload: arguments, ..
@@ -496,6 +570,13 @@ fn collect_closures_expr(
                 collect_closures_expr(value, parent, output);
             }
         }
+        HirExprKind::FormatString(parts) => {
+            for part in parts {
+                if let dbyte_hir::HirFormatPart::Value(value) = part {
+                    collect_closures_expr(value, parent, output);
+                }
+            }
+        }
         HirExprKind::Place(place) | HirExprKind::Borrow { place, .. } => {
             if let HirPlaceBase::Pointer(pointer) = &place.base {
                 collect_closures_expr(pointer, parent, output);
@@ -506,7 +587,9 @@ fn collect_closures_expr(
                 }
             }
         }
-        HirExprKind::Integer(..)
+        HirExprKind::Unit
+        | HirExprKind::Integer(..)
+        | HirExprKind::LayoutOf { .. }
         | HirExprKind::Float(..)
         | HirExprKind::Bool(..)
         | HirExprKind::String(..)
@@ -565,6 +648,14 @@ enum PackedArgument<'a> {
 }
 
 impl<'a, 's> FunctionLowerer<'a, 's> {
+    fn runtime_drop_enabled(&self) -> bool {
+        self.program
+            .semantic
+            .functions
+            .iter()
+            .any(|function| function.kind == FunctionKind::Drop)
+    }
+
     fn new(
         program: &'a ConcreteHirProgram,
         function: &ConcreteHirFunction,
@@ -603,6 +694,8 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             key: closure.parent.key.clone(),
             symbol_name: closure_symbols[&closure.id].clone(),
             public: false,
+            kind: dbyte_ast::FunctionKind::Normal,
+            drop_target: None,
             convention: dbyte_ast::CallConvention::DByte,
             interrupt: None,
             declaration_only: false,
@@ -658,14 +751,20 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
         for local in &function.locals {
             let ty = lower_type(program, local.ty, local.span)?;
             let layout = layout_of(&program.semantic, local.ty).map_err(hir_diagnostic)?;
+            let (storage_size, alignment) =
+                if matches!(program.semantic.type_of(local.ty), CanonicalType::Unit) {
+                    (4, 4)
+                } else {
+                    (layout.size, layout.align)
+                };
             let id = NativeLocalId(local.id.0);
             let is_parameter = parameter_ids.contains(&local.id);
             slots.push(SystemsSlot {
                 id,
                 name: local.name.clone(),
                 ty: ty.clone(),
-                storage_size: layout.size,
-                alignment: layout.align,
+                storage_size,
+                alignment,
                 is_parameter,
             });
             if is_parameter {
@@ -749,10 +848,18 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 ));
             }
         }
+        let exported_drop_glue = self.function.kind == dbyte_ast::FunctionKind::Drop
+            && self.function.drop_target.is_some_and(|target| {
+                self.program
+                    .semantic
+                    .definitions
+                    .iter()
+                    .any(|definition| definition.symbol == target && definition.public)
+            });
         Ok(SystemsFunction {
             source_name: self.function.symbol_name.clone(),
             symbol: self.function.symbol_name.clone(),
-            visibility: if self.function.public {
+            visibility: if self.function.public || exported_drop_glue {
                 Visibility::Public
             } else {
                 Visibility::Private
@@ -793,7 +900,24 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     self.lower_aggregate_to_local(NativeLocalId(local.0), value)?;
                 }
             }
-            HirStatement::Assign { place, value, .. } => {
+            HirStatement::Assign {
+                place,
+                value,
+                cleanup_before_commit,
+                ..
+            } => {
+                if let Some(cleanup) = cleanup_before_commit {
+                    let layout = self.layout(value.ty, value.span)?;
+                    let replacement = self.allocate_temp(value.ty, "reassign", value.span)?;
+                    self.lower_aggregate_to_local(replacement, value)?;
+                    self.lower_block(cleanup)?;
+                    self.lower_place_address(place)?;
+                    self.instructions
+                        .push(SystemsInst::LocalAddress(replacement));
+                    self.instructions
+                        .push(SystemsInst::AggregateCopy { size: layout.size });
+                    return Ok(());
+                }
                 if let HirPlace {
                     base: HirPlaceBase::Local(local),
                     projections,
@@ -814,8 +938,13 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 self.lower_place_address(place)?;
                 self.lower_expr(value)?;
                 let ty = lower_type(self.program, value.ty, value.span)?;
-                self.require_scalar(&ty, value.span)?;
-                self.instructions.push(SystemsInst::Store(ty));
+                if ty.is_scalar() {
+                    self.instructions.push(SystemsInst::Store(ty));
+                } else {
+                    self.instructions.push(SystemsInst::AggregateCopy {
+                        size: self.layout(value.ty, value.span)?.size,
+                    });
+                }
             }
             HirStatement::Expression(value) => {
                 self.lower_expr(value)?;
@@ -824,8 +953,47 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 }
             }
             HirStatement::Return { value, cleanup, .. } => {
-                for block in cleanup {
-                    self.lower_block(block)?;
+                if !self.runtime_drop_enabled() {
+                    for block in cleanup {
+                        self.lower_block(block)?;
+                    }
+                    if let Some(sret) = self.sret {
+                        let value = value.as_ref().ok_or_else(|| {
+                            self.error(
+                                DiagnosticCategory::InvalidReturn,
+                                "aggregate function requires a return value",
+                                self.function.span,
+                            )
+                        })?;
+                        self.instructions.push(SystemsInst::LocalLoad {
+                            local: sret,
+                            ty: SystemType::Pointer(Box::new(SystemType::U8)),
+                        });
+                        self.lower_expr(value)?;
+                        self.instructions.push(SystemsInst::AggregateCopy {
+                            size: self.layout(value.ty, value.span)?.size,
+                        });
+                        self.instructions.push(SystemsInst::Const {
+                            bits: 0,
+                            ty: SystemType::I32,
+                        });
+                    } else if let Some(value) = value {
+                        if matches!(self.program.semantic.type_of(value.ty), CanonicalType::Unit) {
+                            self.instructions.push(SystemsInst::Const {
+                                bits: 0,
+                                ty: SystemType::I32,
+                            });
+                        } else {
+                            self.lower_expr(value)?;
+                        }
+                    } else {
+                        self.instructions.push(SystemsInst::Const {
+                            bits: 0,
+                            ty: SystemType::I32,
+                        });
+                    }
+                    self.instructions.push(SystemsInst::Return);
+                    return Ok(());
                 }
                 if let Some(sret) = self.sret {
                     let value = value.as_ref().ok_or_else(|| {
@@ -843,13 +1011,46 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     self.instructions.push(SystemsInst::AggregateCopy {
                         size: self.layout(value.ty, value.span)?.size,
                     });
+                    for block in cleanup {
+                        self.lower_block(block)?;
+                    }
                     self.instructions.push(SystemsInst::Const {
                         bits: 0,
                         ty: SystemType::I32,
                     });
-                } else if let Some(value) = value {
-                    self.lower_expr(value)?;
                 } else {
+                    if let Some(value) = value {
+                        if !matches!(self.program.semantic.type_of(value.ty), CanonicalType::Unit) {
+                            self.lower_expr(value)?;
+                            if cleanup.is_empty() {
+                                self.instructions.push(SystemsInst::Return);
+                                return Ok(());
+                            }
+                            let result = self.allocate_system_temp(
+                                lower_type(self.program, value.ty, value.span)?,
+                                self.layout(value.ty, value.span)?.size.max(1),
+                                self.layout(value.ty, value.span)?.align.max(1),
+                                "return_value",
+                            )?;
+                            let result_ty = lower_type(self.program, value.ty, value.span)?;
+                            self.instructions.push(SystemsInst::LocalStore {
+                                local: result,
+                                ty: result_ty.clone(),
+                            });
+                            for block in cleanup {
+                                self.lower_block(block)?;
+                            }
+                            self.instructions.push(SystemsInst::LocalLoad {
+                                local: result,
+                                ty: result_ty,
+                            });
+                            self.instructions.push(SystemsInst::Return);
+                            return Ok(());
+                        }
+                    }
+                    for block in cleanup {
+                        self.lower_block(block)?;
+                    }
                     self.instructions.push(SystemsInst::Const {
                         bits: 0,
                         ty: SystemType::I32,
@@ -890,6 +1091,9 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 self.loops.pop();
                 self.instructions.push(SystemsInst::Jump(head));
                 self.instructions.push(SystemsInst::Label(done));
+            }
+            HirStatement::For { span, .. } => {
+                return Err(self.unsupported("hosted for iteration", *span));
             }
             HirStatement::Break { cleanup, span } => {
                 for block in cleanup {
@@ -932,6 +1136,32 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
     fn lower_expr(&mut self, expression: &HirExpr) -> NativeResult<()> {
         let ty = lower_type(self.program, expression.ty, expression.span)?;
         match &expression.kind {
+            HirExprKind::LayoutOf { .. } => {
+                return Err(
+                    self.unsupported("unmaterialized canonical layout query", expression.span)
+                )
+            }
+            HirExprKind::Length { value } => match self.program.semantic.type_of(value.ty) {
+                CanonicalType::Array { length, .. } => {
+                    self.instructions.push(SystemsInst::Const {
+                        bits: *length,
+                        ty: SystemType::Usize,
+                    });
+                }
+                CanonicalType::Slice { .. } | CanonicalType::StringView => {
+                    self.lower_expr(value)?;
+                    self.instructions
+                        .push(SystemsInst::FieldAddress { offset: 4 });
+                    self.instructions.push(SystemsInst::Load(SystemType::Usize));
+                }
+                _ => {
+                    return Err(self.unsupported(
+                        "len operand without a canonical bounded representation",
+                        expression.span,
+                    ));
+                }
+            },
+            HirExprKind::Unit => {}
             HirExprKind::Integer(value) => {
                 let bits = integer_bits(*value, &ty, expression.span)?;
                 self.instructions.push(SystemsInst::Const { bits, ty });
@@ -945,23 +1175,47 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     self.strings.push(bytes.clone());
                     self.strings.len() - 1
                 };
-                self.instructions
-                    .push(SystemsInst::StringAddress(StringId(id as u32)));
+                if self.runtime_drop_enabled()
+                    && matches!(
+                        self.program.semantic.type_of(expression.ty),
+                        CanonicalType::StringView
+                    )
+                {
+                    let temp = self.allocate_temp(expression.ty, "string_view", expression.span)?;
+                    self.instructions.push(SystemsInst::LocalAddress(temp));
+                    self.instructions
+                        .push(SystemsInst::StringAddress(StringId(id as u32)));
+                    self.instructions
+                        .push(SystemsInst::Store(SystemType::Usize));
+                    self.instructions.push(SystemsInst::LocalAddress(temp));
+                    self.instructions
+                        .push(SystemsInst::FieldAddress { offset: 4 });
+                    self.instructions.push(SystemsInst::Const {
+                        bits: bytes.len() as u32,
+                        ty: SystemType::Usize,
+                    });
+                    self.instructions
+                        .push(SystemsInst::Store(SystemType::Usize));
+                    self.instructions.push(SystemsInst::LocalAddress(temp));
+                } else {
+                    self.instructions
+                        .push(SystemsInst::StringAddress(StringId(id as u32)));
+                }
             }
             HirExprKind::Local(local) => {
                 self.lower_local_value(*local, expression.ty, expression.span)?;
             }
             HirExprKind::Place(place) => {
-                self.require_scalar(&ty, expression.span)?;
                 let place_ty = lower_type(self.program, place.ty, place.span)?;
-                self.require_scalar(&place_ty, place.span)?;
                 self.lower_place_address(place)?;
-                self.instructions.push(SystemsInst::Load(place_ty.clone()));
-                if place_ty != ty {
-                    self.instructions.push(SystemsInst::Cast {
-                        from: place_ty,
-                        to: ty,
-                    });
+                if place_ty.is_scalar() {
+                    self.instructions.push(SystemsInst::Load(place_ty.clone()));
+                    if place_ty != ty {
+                        self.instructions.push(SystemsInst::Cast {
+                            from: place_ty,
+                            to: ty,
+                        });
+                    }
                 }
             }
             HirExprKind::Binary { left, op, right } => {
@@ -1025,6 +1279,7 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 // adapter from silently optimizing a semantic HIR node away.
                 self.instructions.push(SystemsInst::Cast { from, to: ty });
             }
+            HirExprKind::Drop { cleanup, .. } => self.lower_block(cleanup)?,
             HirExprKind::DirectCall {
                 callee,
                 convention,
@@ -1111,6 +1366,11 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     if let Some(result) = result_temp {
                         self.instructions.push(SystemsInst::Pop);
                         self.instructions.push(SystemsInst::LocalAddress(result));
+                    } else if matches!(
+                        self.program.semantic.type_of(expression.ty),
+                        CanonicalType::Unit
+                    ) {
+                        self.instructions.push(SystemsInst::Pop);
                     }
                 }
             }
@@ -1235,9 +1495,32 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 if arguments
                     .iter()
                     .any(|argument| !self.is_scalar(argument.ty))
-                    || !self.is_scalar(expression.ty)
                 {
-                    return Err(self.unsupported("aggregate indirect call", expression.span));
+                    return Err(
+                        self.unsupported("aggregate indirect-call argument", expression.span)
+                    );
+                }
+                if !self.is_scalar(expression.ty) {
+                    if *convention == dbyte_ast::CallConvention::C {
+                        return Err(
+                            self.unsupported("aggregate C indirect-call result", expression.span)
+                        );
+                    }
+                    let result =
+                        self.allocate_temp(expression.ty, "indirect_call_result", expression.span)?;
+                    self.lower_expr(callee)?;
+                    self.instructions.push(SystemsInst::LocalAddress(result));
+                    for argument in arguments {
+                        self.lower_expr(argument)?;
+                    }
+                    self.instructions.push(SystemsInst::CallIndirect {
+                        argument_count: arguments.len() + 1,
+                        result: SystemType::I32,
+                        call_convention: *convention,
+                    });
+                    self.instructions.push(SystemsInst::Pop);
+                    self.instructions.push(SystemsInst::LocalAddress(result));
+                    return Ok(());
                 }
                 self.lower_expr(callee)?;
                 let ordered: Box<dyn Iterator<Item = &HirExpr>> =
@@ -1267,12 +1550,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 self.instructions.push(SystemsInst::LocalAddress(temp));
                 self.instructions.push(SystemsInst::AggregateZero { size });
                 for (field, value) in fields {
-                    let (_, offset) = dbyte_hir::struct_field_layout(
+                    let offset = hir_field_offset(
                         &self.program.semantic,
                         expression.ty,
                         *field,
-                    )
-                    .map_err(hir_diagnostic)?;
+                        expression.span,
+                    )?;
                     self.instructions.push(SystemsInst::LocalAddress(temp));
                     if offset != 0 {
                         self.instructions.push(SystemsInst::FieldAddress { offset });
@@ -1302,6 +1585,9 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     dbyte_hir::enum_variant_layout(&self.program.semantic, expression.ty, *variant)
                         .map_err(hir_diagnostic)?;
                 for (value, (_, offset)) in payload.iter().zip(layouts) {
+                    if matches!(self.program.semantic.type_of(value.ty), CanonicalType::Unit) {
+                        continue;
+                    }
                     self.instructions.push(SystemsInst::LocalAddress(temp));
                     self.instructions.push(SystemsInst::FieldAddress { offset });
                     self.lower_expr(value)?;
@@ -1381,19 +1667,24 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                         expression.span,
                     )
                 })?;
-                self.instructions.push(SystemsInst::LocalLoad {
-                    local: result_pointer,
-                    ty: SystemType::Pointer(Box::new(SystemType::U8)),
-                });
-                if offset != 0 {
-                    self.instructions.push(SystemsInst::FieldAddress { offset });
-                }
-                if self.is_scalar(payload_ty) {
-                    self.instructions.push(SystemsInst::Load(lower_type(
-                        self.program,
-                        payload_ty,
-                        expression.span,
-                    )?));
+                if !matches!(
+                    self.program.semantic.type_of(payload_ty),
+                    CanonicalType::Unit
+                ) {
+                    self.instructions.push(SystemsInst::LocalLoad {
+                        local: result_pointer,
+                        ty: SystemType::Pointer(Box::new(SystemType::U8)),
+                    });
+                    if offset != 0 {
+                        self.instructions.push(SystemsInst::FieldAddress { offset });
+                    }
+                    if self.is_scalar(payload_ty) {
+                        self.instructions.push(SystemsInst::Load(lower_type(
+                            self.program,
+                            payload_ty,
+                            expression.span,
+                        )?));
+                    }
                 }
             }
             HirExprKind::Closure {
@@ -1402,6 +1693,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 let temp = self.allocate_temp(expression.ty, "closure", expression.span)?;
                 self.materialize_closure(temp, *closure, captures, expression.span)?;
                 self.instructions.push(SystemsInst::LocalAddress(temp));
+            }
+            HirExprKind::HostCall { .. } => {
+                return Err(self.unsupported("host capability call", expression.span));
+            }
+            HirExprKind::FormatString(..) => {
+                return Err(self.unsupported("host formatted string", expression.span));
             }
         }
         Ok(())
@@ -1413,6 +1710,30 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
         arguments: &[HirExpr],
         expression: &HirExpr,
     ) -> NativeResult<()> {
+        if intrinsic.is_runtime_view() {
+            let [pointer, length] = arguments else {
+                return Err(self.internal_hir(
+                    "runtime view constructor lost pointer or length",
+                    expression.span,
+                ));
+            };
+            let view = self.allocate_temp(expression.ty, "runtime_view", expression.span)?;
+            self.instructions.push(SystemsInst::LocalAddress(view));
+            self.instructions
+                .push(SystemsInst::AggregateZero { size: 8 });
+            self.instructions.push(SystemsInst::LocalAddress(view));
+            self.lower_expr(pointer)?;
+            self.instructions
+                .push(SystemsInst::Store(SystemType::Usize));
+            self.instructions.push(SystemsInst::LocalAddress(view));
+            self.instructions
+                .push(SystemsInst::FieldAddress { offset: 4 });
+            self.lower_expr(length)?;
+            self.instructions
+                .push(SystemsInst::Store(SystemType::Usize));
+            self.instructions.push(SystemsInst::LocalAddress(view));
+            return Ok(());
+        }
         let linker_symbol = match intrinsic {
             HirIntrinsic::KernelImageStart => Some("__dbyte_image_start"),
             HirIntrinsic::KernelImageEnd => Some("__dbyte_image_end"),
@@ -1490,7 +1811,15 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             | HirIntrinsic::KernelImageEnd
             | HirIntrinsic::BootstrapStackStart
             | HirIntrinsic::BootstrapStackEnd
-            | HirIntrinsic::TaskTrampolineAddress => unreachable!(),
+            | HirIntrinsic::TaskTrampolineAddress
+            | HirIntrinsic::RuntimeSliceFromRaw
+            | HirIntrinsic::RuntimeMutSliceFromRaw
+            | HirIntrinsic::RuntimeStringViewFromRaw
+            | HirIntrinsic::RuntimeMemoryAlloc
+            | HirIntrinsic::RuntimeMemoryResize
+            | HirIntrinsic::RuntimeMemoryFree
+            | HirIntrinsic::RuntimeMemoryRead8
+            | HirIntrinsic::RuntimeMemoryWrite8 => unreachable!(),
         };
         let result = if matches!(
             self.program.semantic.type_of(expression.ty),
@@ -1525,7 +1854,20 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             {
                 self.instructions
                     .push(SystemsInst::LocalAddress(destination));
-                self.lower_expr(value)?;
+                if self.runtime_drop_enabled() {
+                    let id = if let Some(id) =
+                        self.strings.iter().position(|candidate| candidate == bytes)
+                    {
+                        id
+                    } else {
+                        self.strings.push(bytes.clone());
+                        self.strings.len() - 1
+                    };
+                    self.instructions
+                        .push(SystemsInst::StringAddress(StringId(id as u32)));
+                } else {
+                    self.lower_expr(value)?;
+                }
                 self.instructions
                     .push(SystemsInst::Store(SystemType::Usize));
                 self.instructions
@@ -1575,9 +1917,8 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             }
             HirExprKind::Struct { fields, .. } => {
                 for (field, field_value) in fields {
-                    let (_, offset) =
-                        dbyte_hir::struct_field_layout(&self.program.semantic, value.ty, *field)
-                            .map_err(hir_diagnostic)?;
+                    let offset =
+                        hir_field_offset(&self.program.semantic, value.ty, *field, value.span)?;
                     self.instructions
                         .push(SystemsInst::LocalAddress(destination));
                     if offset != 0 {
@@ -1788,17 +2129,16 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
         }
         for projection in &place.projections {
             match projection {
-                HirProjection::Field { field, offset } => {
+                HirProjection::Field { ty, offset, .. }
+                | HirProjection::Payload { ty, offset, .. } => {
                     self.instructions
                         .push(SystemsInst::FieldAddress { offset: *offset });
-                    current_ty =
-                        dbyte_hir::struct_field_layout(&self.program.semantic, current_ty, *field)
-                            .map_err(hir_diagnostic)?
-                            .0;
+                    current_ty = *ty;
                 }
                 HirProjection::Index {
                     index,
                     element_size,
+                    ..
                 } => match self.program.semantic.type_of(current_ty).clone() {
                     CanonicalType::Slice { element, .. } => {
                         let view = self.allocate_system_temp(
@@ -2007,6 +2347,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 )
                 .map_err(hir_diagnostic)?;
                 for (binding, (payload_ty, offset)) in arm.bindings.iter().zip(payload) {
+                    if matches!(
+                        self.program.semantic.type_of(payload_ty),
+                        CanonicalType::Unit
+                    ) {
+                        continue;
+                    }
                     let binding_ty = lower_type(self.program, binding.ty, binding.span)?;
                     if matches!(
                         self.program.semantic.type_of(binding.ty),
@@ -2288,9 +2634,8 @@ fn encode_global_initializer(
     {
         let mut bytes = vec![0; layout.size as usize];
         for (field, value) in fields {
-            let (field_ty, offset) = dbyte_hir::struct_field_layout(&program.semantic, ty, *field)
-                .map_err(hir_diagnostic)?;
-            let encoded = encode_global_initializer(program, value, field_ty, value.span)?;
+            let offset = hir_field_offset(&program.semantic, ty, *field, value.span)?;
+            let encoded = encode_global_initializer(program, value, value.ty, value.span)?;
             let offset = offset as usize;
             bytes[offset..offset + encoded.len()].copy_from_slice(&encoded);
         }
@@ -2398,7 +2743,10 @@ fn lower_type(program: &ConcreteHirProgram, ty: TypeId, span: Span) -> NativeRes
         CanonicalType::GenericParam { .. } => {
             return Err(Diagnostic::new(
                 DiagnosticCategory::UnsupportedFeature,
-                "E_HIR_OPEN_GENERIC: generic type reached native adapter",
+                format!(
+                    "E_HIR_OPEN_GENERIC: generic type t{} reached native adapter",
+                    ty.0
+                ),
                 span,
             ));
         }
@@ -2413,6 +2761,47 @@ fn lower_type(program: &ConcreteHirProgram, ty: TypeId, span: Span) -> NativeRes
             ));
         }
     })
+}
+
+fn hir_field_offset(
+    semantic: &dbyte_hir::HirProgram,
+    ty: TypeId,
+    field: dbyte_hir::FieldId,
+    span: Span,
+) -> NativeResult<u32> {
+    let CanonicalType::Struct { symbol, args } = semantic.type_of(ty) else {
+        return Err(Diagnostic::new(
+            DiagnosticCategory::InvalidType,
+            "E_NATIVE_HIR_INVARIANT: field owner is not a concrete struct",
+            span,
+        ));
+    };
+    let definition = semantic
+        .definitions
+        .iter()
+        .find(|definition| definition.symbol == *symbol)
+        .ok_or_else(|| {
+            Diagnostic::new(
+                DiagnosticCategory::InvalidType,
+                "E_NATIVE_HIR_INVARIANT: field owner definition is missing",
+                span,
+            )
+        })?;
+    let dbyte_hir::TypeDefKind::Struct { fields, .. } = &definition.kind else {
+        unreachable!()
+    };
+    let index = fields
+        .iter()
+        .position(|candidate| candidate.id == field)
+        .ok_or_else(|| {
+            Diagnostic::new(
+                DiagnosticCategory::InvalidType,
+                "E_NATIVE_HIR_INVARIANT: field identity is missing",
+                span,
+            )
+        })?;
+    let (_, offsets) = dbyte_hir::layout_struct(semantic, *symbol, args).map_err(hir_diagnostic)?;
+    Ok(offsets[index])
 }
 
 fn closure_environment_layout(
@@ -2675,5 +3064,97 @@ mod tests {
         assert!(dump.contains("address.index scale=1"));
         assert!(dump.contains("address.string"));
         crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn v121_custom_drop_glue_reaches_native_calls_exactly_at_cleanup_edges() {
+        let program = concrete("struct Resource:\n    value: u32\n\nstatic mut DROPS: u32 = 0 as u32\n\ndrop fn destroy(value: borrow mut Resource):\n    DROPS = DROPS + 1 as u32\n    (*value).value = 0 as u32\n\npub fn kernel_main() -> int:\n    let resource = Resource(value = 42 as u32)\n    drop(resource)\n    return DROPS as int\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("call destroy 1 -> i32"), "{dump}");
+        assert_eq!(dump.matches("call destroy 1 -> i32").count(), 1, "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn v121_monomorphization_materializes_generic_structural_drop_glue() {
+        let program = concrete("struct Child:\n    value: u32\n\nstatic mut DROPS: u32 = 0 as u32\n\ndrop fn destroy_child(value: borrow mut Child):\n    DROPS = DROPS + 1 as u32\n\nfn consume[T](value: T) -> unit:\n    return unit\n\npub fn kernel_main() -> int:\n    let child = Child(value = 42 as u32)\n    consume[Child](child)\n    return DROPS as int\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("__dbyte_mono_consume"), "{dump}");
+        assert!(dump.contains("call destroy_child 1 -> i32"), "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered)
+            .unwrap_or_else(|error| panic!("{error:?}\n{dump}"));
+    }
+
+    #[test]
+    fn v121_reassignment_materializes_rhs_before_old_value_cleanup() {
+        let program = concrete("struct Resource:\n    value: u32\n\nstatic mut DROPS: u32 = 0 as u32\n\ndrop fn destroy(value: borrow mut Resource):\n    DROPS = DROPS + 1 as u32\n\nfn make(value: u32) -> Resource:\n    return Resource(value = value)\n\npub fn kernel_main() -> int:\n    let resource = make(1 as u32)\n    resource = make(2 as u32)\n    return DROPS as int\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        let replacement = dump.find("call.packed.DByte make").unwrap();
+        let replacement = dump[replacement + 1..]
+            .find("call.packed.DByte make")
+            .map(|offset| replacement + 1 + offset)
+            .unwrap();
+        let cleanup = dump[replacement..]
+            .find("call destroy 1 -> i32")
+            .map(|offset| replacement + offset)
+            .unwrap();
+        assert!(replacement < cleanup, "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered)
+            .unwrap_or_else(|error| panic!("{error:?}\n{dump}"));
+    }
+
+    #[test]
+    fn v121_generic_layout_queries_materialize_after_substitution() {
+        let program = concrete("fn element_size[T]() -> usize:\n    return size_of(T)\n\npub fn kernel_main() -> int:\n    return element_size[u32]() as int\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("const.usize 0x00000004"), "{dump}");
+        assert!(!dump.contains("LayoutOf"), "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn v121_indirect_dbyte_result_return_uses_hidden_sret() {
+        let program = concrete("enum Failure:\n    Out\n\nfn provider(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], Failure]:\n    return Result[ptr[u8], Failure].Ok(context)\n\npub fn kernel_main() -> int:\n    let callback: fn(ptr[u8], usize, usize) -> Result[ptr[u8], Failure] = provider\n    let result = callback(null, 4 as usize, 4 as usize)\n    match result:\n        case Result.Ok(pointer):\n            return 0\n        case Result.Err(error):\n            return 1\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("call.indirect.DByte 4 -> i32"), "{dump}");
+        assert!(dump.contains("__dbyte_indirect_call_result"), "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn v121_string_view_literal_and_len_use_the_two_word_representation() {
+        let program = concrete(
+            "pub fn kernel_main() -> int:\n    let view: StringView = \"runtime\"\n    return len(view) as int\n",
+        );
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("address.string"), "{dump}");
+        assert!(dump.contains("address.field +4"), "{dump}");
+        assert!(dump.contains("load.usize"), "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn v121_unit_result_payload_neither_loads_nor_stores_phantom_bytes() {
+        let program = concrete("fn ready() -> Result[unit, u32]:\n    return Result[unit, u32].Ok(unit)\n\npub fn kernel_main() -> int:\n    let result = ready()\n    match result:\n        case Result.Ok(value):\n            return 0\n        case Result.Err(error):\n            return error as int\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        crate::systems_lower::lower_systems_module(&lowered)
+            .unwrap_or_else(|error| panic!("{error:?}\n{}", lowered.dump()));
+    }
+
+    #[test]
+    fn v121_enum_drop_dispatches_only_the_active_payload() {
+        let program = concrete("struct Resource:\n    value: u32\n\nstatic mut DROPS: u32 = 0 as u32\n\ndrop fn destroy(value: borrow mut Resource):\n    DROPS = DROPS + 1 as u32\n\nenum Maybe:\n    Some(Resource)\n    None\n\npub fn kernel_main() -> int:\n    let value = Maybe.Some(Resource(value = 1 as u32))\n    drop(value)\n    return DROPS as int\n");
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("compare.eq.u32"), "{dump}");
+        assert_eq!(dump.matches("call destroy 1 -> i32").count(), 1, "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered)
+            .unwrap_or_else(|error| panic!("{error:?}\n{dump}"));
     }
 }

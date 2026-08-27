@@ -4,14 +4,16 @@
 //! registers, relocation kinds, or host-sized layout decisions.
 
 use dbyte_ast::{
-    BinOp, CallConvention, CaptureMode, Expr, MatchMode, Pattern, Program, Repr, Span, Stmt,
-    TypeAnnotation, UnaryOp,
+    BinOp, CallConvention, CaptureMode, Expr, FunctionKind, MatchMode, Pattern, Program, Repr,
+    Span, Stmt, TypeAnnotation, UnaryOp,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 mod executable;
 pub use executable::*;
 mod project;
+mod source;
+pub use source::{load_source_project, load_source_project_from_program};
 
 macro_rules! id_type {
     ($name:ident) => {
@@ -27,6 +29,22 @@ id_type!(GenericDefId);
 id_type!(VariantId);
 id_type!(FieldId);
 id_type!(ClosureId);
+id_type!(AllocatorOriginId);
+id_type!(BorrowOriginId);
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AllocatorOrigin {
+    StaticSystem,
+    Parameter { function: SymbolId, index: u32 },
+    Lexical { function: SymbolId, span: Span },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BorrowOrigin {
+    Static,
+    Parameter { function: SymbolId, index: u32 },
+    Lexical { function: SymbolId, span: Span },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
@@ -180,6 +198,8 @@ pub struct FunctionDef {
     pub generic: Option<GenericDefId>,
     pub name: String,
     pub public: bool,
+    pub kind: dbyte_ast::FunctionKind,
+    pub drop_target: Option<SymbolId>,
     pub convention: CallConvention,
     pub interrupt: Option<dbyte_ast::InterruptClass>,
     pub declaration_only: bool,
@@ -255,6 +275,14 @@ pub enum HirIntrinsic {
     UserSyscall1,
     UserSyscall2,
     UserSyscall3,
+    RuntimeSliceFromRaw,
+    RuntimeMutSliceFromRaw,
+    RuntimeStringViewFromRaw,
+    RuntimeMemoryAlloc,
+    RuntimeMemoryResize,
+    RuntimeMemoryFree,
+    RuntimeMemoryRead8,
+    RuntimeMemoryWrite8,
 }
 
 impl HirIntrinsic {
@@ -296,6 +324,14 @@ impl HirIntrinsic {
             ("user", "syscall1") => Self::UserSyscall1,
             ("user", "syscall2") => Self::UserSyscall2,
             ("user", "syscall3") => Self::UserSyscall3,
+            ("__dbyte_runtime", "slice_from_raw") => Self::RuntimeSliceFromRaw,
+            ("__dbyte_runtime", "mut_slice_from_raw") => Self::RuntimeMutSliceFromRaw,
+            ("__dbyte_runtime", "string_view_from_raw") => Self::RuntimeStringViewFromRaw,
+            ("__dbyte_runtime", "memory_alloc") => Self::RuntimeMemoryAlloc,
+            ("__dbyte_runtime", "memory_resize") => Self::RuntimeMemoryResize,
+            ("__dbyte_runtime", "memory_free") => Self::RuntimeMemoryFree,
+            ("__dbyte_runtime", "memory_read8") => Self::RuntimeMemoryRead8,
+            ("__dbyte_runtime", "memory_write8") => Self::RuntimeMemoryWrite8,
             _ => return None,
         };
         Some(value)
@@ -305,6 +341,26 @@ impl HirIntrinsic {
         matches!(
             self,
             Self::UserSyscall0 | Self::UserSyscall1 | Self::UserSyscall2 | Self::UserSyscall3
+        )
+    }
+
+    pub const fn is_runtime_view(self) -> bool {
+        matches!(
+            self,
+            Self::RuntimeSliceFromRaw
+                | Self::RuntimeMutSliceFromRaw
+                | Self::RuntimeStringViewFromRaw
+        )
+    }
+
+    pub const fn is_runtime_host_memory(self) -> bool {
+        matches!(
+            self,
+            Self::RuntimeMemoryAlloc
+                | Self::RuntimeMemoryResize
+                | Self::RuntimeMemoryFree
+                | Self::RuntimeMemoryRead8
+                | Self::RuntimeMemoryWrite8
         )
     }
 }
@@ -338,6 +394,8 @@ pub struct HirExpression {
     pub ty: TypeId,
     pub category: ValueCategory,
     pub ownership: OwnershipAction,
+    pub allocator_origin: Option<AllocatorOriginId>,
+    pub borrow_origin: Option<BorrowOriginId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -382,6 +440,10 @@ pub struct HirProgram {
     pub generic_capabilities: BTreeMap<(GenericDefId, u32), BTreeSet<BuiltinCapability>>,
     pub closure_count: u32,
     pub expressions: Vec<HirExpression>,
+    pub allocator_origins: Vec<AllocatorOrigin>,
+    pub borrow_origins: Vec<BorrowOrigin>,
+    pub function_allocator_origins: BTreeMap<SymbolId, AllocatorOriginId>,
+    pub function_borrow_origins: BTreeMap<SymbolId, BorrowOriginId>,
     pub cleanup_edges: Vec<CleanupEdge>,
     pub resolved_addresses: BTreeMap<(usize, usize), ResolvedAddress>,
     pub interface_fingerprint: u64,
@@ -442,9 +504,29 @@ impl HirProgram {
         out.push_str(&format!("closures {}\n", self.closure_count));
         for expression in &self.expressions {
             out.push_str(&format!(
-                "expr {} t{} {:?} {:?}\n",
-                expression.span, expression.ty.0, expression.category, expression.ownership
+                "expr {} t{} {:?} {:?} alloc={:?} borrow={:?}\n",
+                expression.span,
+                expression.ty.0,
+                expression.category,
+                expression.ownership,
+                expression.allocator_origin,
+                expression.borrow_origin
             ));
+        }
+        for (index, origin) in self.allocator_origins.iter().enumerate() {
+            out.push_str(&format!("allocator-origin a{index} = {origin:?}\n"));
+        }
+        for (index, origin) in self.borrow_origins.iter().enumerate() {
+            out.push_str(&format!("borrow-origin b{index} = {origin:?}\n"));
+        }
+        for (function, origin) in &self.function_allocator_origins {
+            out.push_str(&format!(
+                "fn-origin s{} allocator=a{}\n",
+                function.0, origin.0
+            ));
+        }
+        for (function, origin) in &self.function_borrow_origins {
+            out.push_str(&format!("fn-origin s{} borrow=b{}\n", function.0, origin.0));
         }
         for edge in &self.cleanup_edges {
             out.push_str(&format!(
@@ -501,12 +583,23 @@ struct Analyzer {
     current_return: Option<TypeId>,
     current_interrupt: Option<dbyte_ast::InterruptClass>,
     expressions: Vec<HirExpression>,
+    allocator_origins: Vec<AllocatorOrigin>,
+    borrow_origins: Vec<BorrowOrigin>,
+    function_allocator_origins: BTreeMap<SymbolId, AllocatorOriginId>,
+    function_borrow_origins: BTreeMap<SymbolId, BorrowOriginId>,
+    allocator_bindings: BTreeMap<String, AllocatorOriginId>,
+    borrow_bindings: BTreeMap<String, BorrowOriginId>,
+    current_function: Option<SymbolId>,
+    current_function_source_name: Option<String>,
+    current_parameters: BTreeMap<String, u32>,
     cleanup_edges: Vec<CleanupEdge>,
     resolved_addresses: BTreeMap<(usize, usize), ResolvedAddress>,
     active_defers: Vec<(Span, u32)>,
     lexical_depth: u32,
     borrowed_parameters: BTreeSet<String>,
+    current_drop_parameter: Option<String>,
     current_generic: Option<GenericDefId>,
+    host_modules: BTreeMap<String, String>,
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -532,12 +625,23 @@ impl Analyzer {
             current_return: None,
             current_interrupt: None,
             expressions: Vec::new(),
+            allocator_origins: Vec::new(),
+            borrow_origins: Vec::new(),
+            function_allocator_origins: BTreeMap::new(),
+            function_borrow_origins: BTreeMap::new(),
+            allocator_bindings: BTreeMap::new(),
+            borrow_bindings: BTreeMap::new(),
+            current_function: None,
+            current_function_source_name: None,
+            current_parameters: BTreeMap::new(),
             cleanup_edges: Vec::new(),
             resolved_addresses: BTreeMap::new(),
             active_defers: Vec::new(),
             lexical_depth: 0,
             borrowed_parameters: BTreeSet::new(),
+            current_drop_parameter: None,
             current_generic: None,
+            host_modules: BTreeMap::new(),
             diagnostics: Vec::new(),
         };
         analyzer.install_prelude_enum("Option", &["T"], &[("None", &[]), ("Some", &["T"])]);
@@ -646,6 +750,10 @@ impl Analyzer {
             generic_capabilities: self.generic_capabilities,
             closure_count: self.closure_count,
             expressions: self.expressions,
+            allocator_origins: self.allocator_origins,
+            borrow_origins: self.borrow_origins,
+            function_allocator_origins: self.function_allocator_origins,
+            function_borrow_origins: self.function_borrow_origins,
             cleanup_edges: self.cleanup_edges,
             resolved_addresses: self.resolved_addresses,
             interface_fingerprint,
@@ -817,6 +925,7 @@ impl Analyzer {
             Expr::Unary { expr, .. }
             | Expr::Borrow { expr, .. }
             | Expr::Try { expr, .. }
+            | Expr::Drop { expr, .. }
             | Expr::Cast { expr, .. } => self.validate_profile_expression(expr),
             Expr::List(values, _) => {
                 for value in values {
@@ -857,7 +966,8 @@ impl Analyzer {
                     self.validate_profile_statement(statement);
                 }
             }
-            Expr::IntLit(..)
+            Expr::UnitLit(..)
+            | Expr::IntLit(..)
             | Expr::FloatLit(..)
             | Expr::BoolLit(..)
             | Expr::StrLit(..)
@@ -871,6 +981,25 @@ impl Analyzer {
     fn collect(&mut self, program: &Program) {
         for statement in &program.stmts {
             match statement {
+                Stmt::Import { path, alias, span } if path.starts_with("std.") => {
+                    if dbyte_module::stdlib_exports(path).is_none() {
+                        self.diagnostic(
+                            "E_HOST_MODULE",
+                            format!("unknown standard module `{path}`"),
+                            *span,
+                        );
+                    } else if self
+                        .host_modules
+                        .insert(alias.clone(), path.clone())
+                        .is_some()
+                    {
+                        self.diagnostic(
+                            "E_DUPLICATE_IMPORT_ALIAS",
+                            format!("duplicate import alias `{alias}`"),
+                            *span,
+                        );
+                    }
+                }
                 Stmt::StructDef {
                     is_pub,
                     is_packed,
@@ -950,6 +1079,7 @@ impl Analyzer {
                 }
                 Stmt::FnDef {
                     is_pub,
+                    kind,
                     interrupt,
                     call_convention,
                     name,
@@ -975,12 +1105,19 @@ impl Analyzer {
                         generic,
                         name: name.clone(),
                         public: *is_pub,
+                        kind: *kind,
+                        drop_target: None,
                         convention: *call_convention,
                         interrupt: *interrupt,
                         declaration_only: body.is_empty(),
                         generic_params: generic_params.clone(),
                         params: params.iter().map(|param| param.ty.clone()).collect(),
-                        result: ret_ty.clone(),
+                        result: if matches!(ret_ty, TypeAnnotation::Inferred) {
+                            infer_legacy_return_annotation(body, params)
+                                .unwrap_or(TypeAnnotation::Unit)
+                        } else {
+                            ret_ty.clone()
+                        },
                         span: *span,
                     });
                 }
@@ -992,13 +1129,18 @@ impl Analyzer {
                     value,
                 } => {
                     if let Some(symbol) = self.symbol(name, *span) {
+                        let annotation = if matches!(ty, TypeAnnotation::Inferred) {
+                            infer_legacy_global_annotation(value).unwrap_or_else(|| ty.clone())
+                        } else {
+                            ty.clone()
+                        };
                         self.globals.push(GlobalDef {
                             symbol,
                             name: name.clone(),
                             public: *is_pub,
                             mutable: false,
                             constant: true,
-                            annotation: ty.clone(),
+                            annotation,
                             initializer: Some(value.clone()),
                             span: *span,
                         });
@@ -1013,13 +1155,21 @@ impl Analyzer {
                     value,
                 } => {
                     if let Some(symbol) = self.symbol(name, *span) {
+                        let annotation = if matches!(ty, TypeAnnotation::Inferred) {
+                            value
+                                .as_ref()
+                                .and_then(infer_legacy_global_annotation)
+                                .unwrap_or_else(|| ty.clone())
+                        } else {
+                            ty.clone()
+                        };
                         self.globals.push(GlobalDef {
                             symbol,
                             name: name.clone(),
                             public: *is_pub,
                             mutable: *is_mut,
                             constant: false,
-                            annotation: ty.clone(),
+                            annotation,
                             initializer: value.clone(),
                             span: *span,
                         });
@@ -1090,6 +1240,99 @@ impl Analyzer {
                 self.resolve_type(param, &generics, function.span);
             }
             let result = self.resolve_type(&function.result, &generics, function.span);
+            if function.kind == FunctionKind::Drop {
+                let mut target = None;
+                if function.public {
+                    self.diagnostic(
+                        "E_DROP_PUBLIC",
+                        "drop functions are compiler-owned and cannot be public",
+                        function.span,
+                    );
+                }
+                if function.convention != CallConvention::DByte || function.interrupt.is_some() {
+                    self.diagnostic(
+                        "E_DROP_SIGNATURE",
+                        "drop function must use the ordinary DByte convention",
+                        function.span,
+                    );
+                }
+                if !matches!(
+                    function.result,
+                    TypeAnnotation::Unit | TypeAnnotation::Inferred
+                ) {
+                    self.diagnostic(
+                        "E_DROP_SIGNATURE",
+                        "drop function must return unit",
+                        function.span,
+                    );
+                }
+                if function.params.len() != 1 {
+                    self.diagnostic(
+                        "E_DROP_SIGNATURE",
+                        "drop function requires exactly one `borrow mut T` parameter",
+                        function.span,
+                    );
+                } else if let Some(parameter) = function.params.first() {
+                    if let Some(parameter_ty) =
+                        self.resolve_type(parameter, &generics, function.span)
+                    {
+                        match self.types.values[parameter_ty.0 as usize] {
+                            CanonicalType::Borrow {
+                                mutable: true,
+                                pointee,
+                            } => match self.types.values[pointee.0 as usize] {
+                                CanonicalType::Struct { symbol, .. }
+                                | CanonicalType::Enum { symbol, .. } => target = Some(symbol),
+                                _ => self.diagnostic(
+                                    "E_DROP_TARGET",
+                                    "drop target must be a nominal struct or enum",
+                                    function.span,
+                                ),
+                            },
+                            _ => self.diagnostic(
+                                "E_DROP_SIGNATURE",
+                                "drop parameter must be `borrow mut T`",
+                                function.span,
+                            ),
+                        }
+                    }
+                }
+                if let Some(symbol) = target {
+                    if let Some(owner) = self
+                        .definitions
+                        .iter()
+                        .find(|definition| definition.symbol == symbol)
+                        .cloned()
+                    {
+                        if owner.span.line / 1_000_000 != function.span.line / 1_000_000 {
+                            self.diagnostic(
+                                "E_DROP_FOREIGN_TYPE",
+                                "drop function and nominal type must have the same module owner",
+                                function.span,
+                            );
+                        }
+                        if owner.generic_params != function.generic_params {
+                            self.diagnostic(
+                                "E_DROP_GENERIC_MISMATCH",
+                                "generic drop parameters must exactly match the owning type",
+                                function.span,
+                            );
+                        }
+                    }
+                    if self.functions[..index].iter().any(|candidate| {
+                        candidate.kind == FunctionKind::Drop
+                            && candidate.drop_target == Some(symbol)
+                    }) {
+                        self.diagnostic(
+                            "E_DUPLICATE_DROP",
+                            "nominal type has more than one drop function",
+                            function.span,
+                        );
+                    } else {
+                        self.functions[index].drop_target = Some(symbol);
+                    }
+                }
+            }
             if function.convention == CallConvention::C {
                 for param in &function.params {
                     if let Some(ty) = self.resolve_type(param, &generics, function.span) {
@@ -1214,6 +1457,7 @@ impl Analyzer {
         span: Span,
     ) -> Option<TypeId> {
         let canonical = match annotation {
+            TypeAnnotation::Unit => CanonicalType::Unit,
             TypeAnnotation::Int => CanonicalType::Integer(IntegerType::LegacyInt),
             TypeAnnotation::I8 => CanonicalType::Integer(IntegerType::I8),
             TypeAnnotation::U8 => CanonicalType::Integer(IntegerType::U8),
@@ -1258,6 +1502,13 @@ impl Analyzer {
                 CanonicalType::Slice {
                     mutable: true,
                     element,
+                }
+            }
+            TypeAnnotation::Borrow { mutable, pointee } => {
+                let pointee = self.resolve_type(pointee, generics, span)?;
+                CanonicalType::Borrow {
+                    mutable: *mutable,
+                    pointee,
                 }
             }
             TypeAnnotation::Array { element, length } => {
@@ -1395,6 +1646,17 @@ impl Analyzer {
         }
     }
 
+    fn type_has_nominal_name(&self, ty: TypeId, expected: &str) -> bool {
+        match self.types.values.get(ty.0 as usize) {
+            Some(CanonicalType::Struct { symbol, .. } | CanonicalType::Enum { symbol, .. }) => {
+                self.definitions.iter().any(|definition| {
+                    definition.symbol == *symbol && definition.name.ends_with(expected)
+                })
+            }
+            _ => false,
+        }
+    }
+
     fn validate_bodies(&mut self, program: &Program) {
         let top_level: Vec<_> = program
             .stmts
@@ -1439,7 +1701,10 @@ impl Analyzer {
             let function = self
                 .functions
                 .iter()
-                .find(|function| function.name == *name)
+                .find(|function| {
+                    function.name == *name
+                        || function.name.rsplit('.').next() == Some(name.as_str())
+                })
                 .cloned();
             let mut generics = BTreeMap::new();
             if let Some(owner) = function.as_ref().and_then(|function| function.generic) {
@@ -1453,8 +1718,27 @@ impl Analyzer {
             }
             let mut ownership = Ownership::default();
             ownership.push_scope();
-            for parameter in params {
+            self.current_function = function.as_ref().map(|function| function.symbol);
+            self.current_function_source_name = Some(name.clone());
+            self.current_parameters = params
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| (parameter.name.clone(), index as u32))
+                .collect();
+            self.allocator_bindings.clear();
+            self.borrow_bindings.clear();
+            for (index, parameter) in params.iter().enumerate() {
                 if let Some(ty) = self.resolve_type(&parameter.ty, &generics, parameter.span) {
+                    if self.type_has_nominal_name(ty, "AllocatorRef") {
+                        if let Some(function) = self.current_function {
+                            let origin = self.intern_allocator_origin(AllocatorOrigin::Parameter {
+                                function,
+                                index: index as u32,
+                            });
+                            self.allocator_bindings
+                                .insert(parameter.name.clone(), origin);
+                        }
+                    }
                     if matches!(
                         self.types.values[ty.0 as usize],
                         CanonicalType::Slice { .. }
@@ -1462,6 +1746,13 @@ impl Analyzer {
                             | CanonicalType::Borrow { .. }
                     ) {
                         self.borrowed_parameters.insert(parameter.name.clone());
+                        if let Some(function) = self.current_function {
+                            let origin = self.intern_borrow_origin(BorrowOrigin::Parameter {
+                                function,
+                                index: index as u32,
+                            });
+                            self.borrow_bindings.insert(parameter.name.clone(), origin);
+                        }
                     }
                     ownership.define(parameter.name.clone(), ty, parameter.span);
                 }
@@ -1471,10 +1762,20 @@ impl Analyzer {
                 .and_then(|function| self.resolve_type(&function.result, &generics, function.span));
             self.current_interrupt = function.as_ref().and_then(|function| function.interrupt);
             self.current_generic = function.as_ref().and_then(|function| function.generic);
+            self.current_drop_parameter = function
+                .as_ref()
+                .filter(|function| function.kind == FunctionKind::Drop)
+                .and_then(|_| params.first().map(|parameter| parameter.name.clone()));
             self.check_block(body, &generics, &mut ownership, false);
             self.current_return = None;
             self.current_interrupt = None;
             self.current_generic = None;
+            self.current_drop_parameter = None;
+            self.current_function = None;
+            self.current_function_source_name = None;
+            self.current_parameters.clear();
+            self.allocator_bindings.clear();
+            self.borrow_bindings.clear();
             self.borrowed_parameters.clear();
             ownership.pop_scope();
             if name == "kernel_main" && self.profile == Profile::I686User {
@@ -1528,10 +1829,20 @@ impl Analyzer {
                     }
                     if let Some(ty) = declared {
                         ownership.define(name.clone(), ty, *span);
+                        let (allocator, borrow) = self.expression_origins(value);
+                        if let Some(origin) = allocator {
+                            self.allocator_bindings.insert(name.clone(), origin);
+                        }
+                        if let Some(origin) = borrow {
+                            self.borrow_bindings.insert(name.clone(), origin);
+                        }
                     }
                 }
                 Stmt::Assign { name, value, span } => {
-                    let actual = self.check_expr(value, generics, ownership, true);
+                    let expected = ownership.lookup(name).map(|binding| binding.ty);
+                    let actual =
+                        self.check_expr_expected(value, expected, generics, ownership, true);
+                    let (allocator_origin, borrow_origin) = self.expression_origins(value);
                     if let Some(binding) = ownership.lookup_mut(name) {
                         if binding.immut_borrows != 0 || binding.mut_borrowed {
                             self.diagnostic(
@@ -1544,11 +1855,25 @@ impl Analyzer {
                         {
                             self.diagnostic(
                                 "E_TYPE_MISMATCH",
-                                format!("assignment to `{name}` has the wrong type"),
+                                format!(
+                                    "TypeError: cannot assign `{}` to variable of type `{}`",
+                                    self.type_name(actual.unwrap()),
+                                    self.type_name(binding.ty)
+                                ),
                                 *span,
                             );
                         } else {
                             binding.moved = false;
+                            if let Some(origin) = allocator_origin {
+                                self.allocator_bindings.insert(name.clone(), origin);
+                            } else {
+                                self.allocator_bindings.remove(name);
+                            }
+                            if let Some(origin) = borrow_origin {
+                                self.borrow_bindings.insert(name.clone(), origin);
+                            } else {
+                                self.borrow_bindings.remove(name);
+                            }
                         }
                     } else {
                         if let Some(global) = self
@@ -1573,15 +1898,53 @@ impl Analyzer {
                         } else {
                             self.diagnostic(
                                 "E_UNKNOWN_SYMBOL",
-                                format!("unknown binding `{name}`"),
+                                format!("TypeError: undefined variable `{name}`"),
                                 *span,
                             );
                         }
                     }
                 }
                 Stmt::Return { value, span } => {
+                    if self.current_return.is_none() {
+                        self.diagnostic(
+                            "E_RETURN_OUTSIDE_FUNCTION",
+                            "TypeError: return outside function",
+                            *span,
+                        );
+                    }
                     self.record_cleanup_edges(CleanupExit::Return, *span, 0);
                     if let Some(value) = value {
+                        let (allocator_origin, borrow_origin) = self.expression_origins(value);
+                        if let Some(origin) = allocator_origin {
+                            if matches!(
+                                self.allocator_origins.get(origin.0 as usize),
+                                Some(AllocatorOrigin::Lexical { .. })
+                            ) {
+                                self.diagnostic(
+                                    "E_ALLOCATOR_LIFETIME_ESCAPE",
+                                    "returned owner outlives its lexical allocator",
+                                    value.span(),
+                                );
+                            }
+                            if let Some(function) = self.current_function {
+                                self.function_allocator_origins.insert(function, origin);
+                            }
+                        }
+                        if let Some(origin) = borrow_origin {
+                            if matches!(
+                                self.borrow_origins.get(origin.0 as usize),
+                                Some(BorrowOrigin::Lexical { .. })
+                            ) {
+                                self.diagnostic(
+                                    "E_BORROW_ESCAPE",
+                                    "returned view outlives its lexical owner",
+                                    value.span(),
+                                );
+                            }
+                            if let Some(function) = self.current_function {
+                                self.function_borrow_origins.insert(function, origin);
+                            }
+                        }
                         if self.current_return.is_some_and(|return_type| {
                             matches!(
                                 self.types.values[return_type.0 as usize],
@@ -1590,10 +1953,13 @@ impl Analyzer {
                                     | CanonicalType::Borrow { .. }
                             )
                         }) {
-                            let direct_source = matches!(
-                                value,
-                                Expr::Ident(name, _) if self.borrowed_parameters.contains(name)
-                            );
+                            let direct_source = borrow_origin.is_some_and(|origin| {
+                                matches!(
+                                    self.borrow_origins.get(origin.0 as usize),
+                                    Some(BorrowOrigin::Parameter { function, .. })
+                                        if Some(*function) == self.current_function
+                                )
+                            });
                             if !direct_source {
                                 self.diagnostic(
                                     "E_BORROW_ESCAPE",
@@ -1627,8 +1993,9 @@ impl Analyzer {
                                 self.diagnostic(
                                     "E_RETURN_TYPE",
                                     format!(
-                                        "return value has type t{}, expected t{}",
-                                        actual.0, expected.0
+                                        "return expected {}, found {}",
+                                        self.type_name(expected),
+                                        self.type_name(actual)
                                     ),
                                     *span,
                                 );
@@ -1646,9 +2013,11 @@ impl Analyzer {
                     cond,
                     then_body,
                     else_body,
-                    ..
+                    span,
                 } => {
+                    ownership.push_scope();
                     let condition = self.check_expr(cond, generics, ownership, false);
+                    ownership.pop_scope();
                     if condition.is_some_and(|ty| {
                         !matches!(self.types.values[ty.0 as usize], CanonicalType::Bool)
                     }) {
@@ -1658,27 +2027,93 @@ impl Analyzer {
                             cond.span(),
                         );
                     }
-                    self.check_block(then_body, generics, ownership, in_loop);
+                    let entry = ownership.clone();
+                    let mut then_state = entry.clone();
+                    self.check_block(then_body, generics, &mut then_state, in_loop);
+                    let mut else_state = entry.clone();
                     if let Some(body) = else_body {
-                        self.check_block(body, generics, ownership, in_loop);
+                        self.check_block(body, generics, &mut else_state, in_loop);
+                    }
+                    if then_state != else_state {
+                        self.diagnostic(
+                            "E_OWNERSHIP_MAYBE_MOVED",
+                            "if branches leave an owned local in different move or borrow states",
+                            *span,
+                        );
+                        *ownership = entry;
+                    } else {
+                        *ownership = then_state;
                     }
                 }
-                Stmt::While { cond, body, .. } => {
+                Stmt::While { cond, body, span } => {
+                    ownership.push_scope();
                     let condition = self.check_expr(cond, generics, ownership, false);
+                    ownership.pop_scope();
                     if condition.is_some_and(|ty| {
                         !matches!(self.types.values[ty.0 as usize], CanonicalType::Bool)
                     }) {
                         self.diagnostic(
                             "E_CONDITION_TYPE",
-                            "while condition must be bool",
+                            format!(
+                                "TypeError: while condition must be `bool`, found `{}`",
+                                condition.map_or("unknown".into(), |ty| self.type_name(ty))
+                            ),
                             cond.span(),
                         );
                     }
-                    self.check_block(body, generics, ownership, true);
+                    let entry = ownership.clone();
+                    let mut body_state = entry.clone();
+                    self.check_block(body, generics, &mut body_state, true);
+                    if body_state != entry {
+                        self.diagnostic(
+                            "E_OWNERSHIP_MAYBE_MOVED",
+                            "loop body changes ownership state across a loop join",
+                            *span,
+                        );
+                    }
+                    *ownership = entry;
                 }
-                Stmt::For { iterable, body, .. } => {
-                    self.check_expr(iterable, generics, ownership, false);
-                    self.check_block(body, generics, ownership, true);
+                Stmt::For {
+                    var,
+                    iterable,
+                    body,
+                    span,
+                } => {
+                    let iterable_ty = self.check_expr(iterable, generics, ownership, false);
+                    let element_ty =
+                        iterable_ty.and_then(|ty| match self.types.values[ty.0 as usize] {
+                            CanonicalType::LegacyList(element)
+                            | CanonicalType::Array { element, .. }
+                            | CanonicalType::Slice { element, .. } => Some(element),
+                            CanonicalType::LegacyStr => Some(ty),
+                            _ => None,
+                        });
+                    if element_ty.is_none() {
+                        self.diagnostic(
+                            "E_FOR_TYPE",
+                            format!(
+                                "TypeError: `{}` is not iterable",
+                                iterable_ty.map_or("unknown".into(), |ty| self.type_name(ty))
+                            ),
+                            *span,
+                        );
+                    }
+                    let entry = ownership.clone();
+                    let mut body_state = entry.clone();
+                    body_state.push_scope();
+                    if let Some(element_ty) = element_ty {
+                        body_state.define(var.clone(), element_ty, *span);
+                    }
+                    self.check_block(body, generics, &mut body_state, true);
+                    body_state.pop_scope();
+                    if body_state != entry {
+                        self.diagnostic(
+                            "E_OWNERSHIP_MAYBE_MOVED",
+                            "for body changes ownership state across a loop join",
+                            *span,
+                        );
+                    }
+                    *ownership = entry;
                 }
                 Stmt::Break { span } | Stmt::Continue { span } if !in_loop => self.diagnostic(
                     "E_LOOP_CONTROL",
@@ -1708,11 +2143,15 @@ impl Analyzer {
                     self.record_cleanup_edges(CleanupExit::Continue, *span, defer_base)
                 }
                 Stmt::Expr(expression) => {
+                    ownership.push_scope();
                     self.check_expr(expression, generics, ownership, false);
+                    ownership.pop_scope();
                 }
                 Stmt::Store { target, value, .. } => {
+                    ownership.push_scope();
                     self.check_expr(target, generics, ownership, false);
                     self.check_expr(value, generics, ownership, true);
+                    ownership.pop_scope();
                 }
                 Stmt::FnDef { span, .. }
                 | Stmt::StructDef { span, .. }
@@ -1748,6 +2187,219 @@ impl Analyzer {
         }
     }
 
+    fn intern_allocator_origin(&mut self, origin: AllocatorOrigin) -> AllocatorOriginId {
+        if let Some(index) = self
+            .allocator_origins
+            .iter()
+            .position(|candidate| *candidate == origin)
+        {
+            return AllocatorOriginId(index as u32);
+        }
+        let id = AllocatorOriginId(self.allocator_origins.len() as u32);
+        self.allocator_origins.push(origin);
+        id
+    }
+
+    fn intern_borrow_origin(&mut self, origin: BorrowOrigin) -> BorrowOriginId {
+        if let Some(index) = self
+            .borrow_origins
+            .iter()
+            .position(|candidate| *candidate == origin)
+        {
+            return BorrowOriginId(index as u32);
+        }
+        let id = BorrowOriginId(self.borrow_origins.len() as u32);
+        self.borrow_origins.push(origin);
+        id
+    }
+
+    fn expression_origins(
+        &mut self,
+        expression: &Expr,
+    ) -> (Option<AllocatorOriginId>, Option<BorrowOriginId>) {
+        let function = self.current_function.unwrap_or(SymbolId(u32::MAX));
+        match expression {
+            Expr::Ident(name, span) => {
+                let allocator = self.allocator_bindings.get(name).copied();
+                let borrow = self.borrow_bindings.get(name).copied();
+                let _ = span;
+                (allocator, borrow)
+            }
+            Expr::Borrow { expr, .. } => {
+                let allocator = self.expression_origins(expr).0;
+                let borrow = match expr.as_ref() {
+                    Expr::Ident(name, _) => {
+                        self.borrow_bindings.get(name).copied().unwrap_or_else(|| {
+                            if self.globals.iter().any(|global| global.name == *name) {
+                                self.intern_borrow_origin(BorrowOrigin::Static)
+                            } else {
+                                self.intern_borrow_origin(BorrowOrigin::Lexical {
+                                    function,
+                                    span: expression.span(),
+                                })
+                            }
+                        })
+                    }
+                    _ => self.intern_borrow_origin(BorrowOrigin::Lexical {
+                        function,
+                        span: expression.span(),
+                    }),
+                };
+                (allocator, Some(borrow))
+            }
+            Expr::Call { name, args, .. } => self.call_origins(name, args, expression.span()),
+            Expr::Invoke {
+                callee,
+                args,
+                named_args,
+                ..
+            } => {
+                let name = match callee.as_ref() {
+                    Expr::Ident(name, _) => name.as_str(),
+                    _ => return (None, None),
+                };
+                let mut values = args.clone();
+                values.extend(named_args.iter().map(|argument| argument.value.clone()));
+                self.call_origins(name, &values, expression.span())
+            }
+            Expr::MemberCall { property, args, .. } => {
+                self.call_origins(property, args, expression.span())
+            }
+            _ => (None, None),
+        }
+    }
+
+    fn call_origins(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> (Option<AllocatorOriginId>, Option<BorrowOriginId>) {
+        let function = self.current_function.unwrap_or(SymbolId(u32::MAX));
+        if matches!(
+            name,
+            "slice_from_raw" | "mut_slice_from_raw" | "string_view_from_raw"
+        ) {
+            let mut origins = self.borrow_bindings.values().copied().filter(|origin| {
+                matches!(
+                    self.borrow_origins.get(origin.0 as usize),
+                    Some(BorrowOrigin::Parameter { function: owner, .. }) if *owner == function
+                )
+            });
+            let origin = origins.next();
+            if origin.is_some() && origins.next().is_none() {
+                return (None, origin);
+            }
+        }
+        if ["arena_initialize", "fixed_initialize", "kernel_initialize"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
+        {
+            let is_static = args.first().is_some_and(|argument| {
+                matches!(
+                    argument,
+                    Expr::Unary { op: UnaryOp::AddressOf, expr, .. }
+                        if matches!(expr.as_ref(), Expr::Ident(name, _) if self.globals.iter().any(|global| global.name == *name))
+                )
+            });
+            return (
+                Some(self.intern_allocator_origin(if is_static {
+                    AllocatorOrigin::StaticSystem
+                } else {
+                    AllocatorOrigin::Lexical { function, span }
+                })),
+                None,
+            );
+        }
+        if let Some(symbol) = self
+            .functions
+            .iter()
+            .find(|candidate| candidate.name == name)
+            .map(|candidate| candidate.symbol)
+        {
+            let allocator = self
+                .function_allocator_origins
+                .get(&symbol)
+                .copied()
+                .and_then(|origin| self.translate_allocator_origin(origin, args));
+            let borrow = self
+                .function_borrow_origins
+                .get(&symbol)
+                .copied()
+                .and_then(|origin| self.translate_borrow_origin(origin, args));
+            if allocator.is_some() || borrow.is_some() {
+                return (allocator, borrow);
+            }
+        }
+        let allocator_argument = if name.ends_with("clone") {
+            args.first()
+        } else if name.ends_with("with_allocator")
+            || name.ends_with("with_capacity")
+            || name.ends_with("from_view")
+            || name.ends_with("clone_in")
+        {
+            args.last()
+        } else {
+            None
+        };
+        let allocator = allocator_argument.and_then(|argument| self.expression_origins(argument).0);
+        let borrow_argument = if name.ends_with("as_view")
+            || name.ends_with("as_slice")
+            || name.ends_with("as_mut_slice")
+            || name.ends_with("get_mut")
+        {
+            args.first()
+        } else {
+            None
+        };
+        let borrow = borrow_argument.map(|argument| self.borrow_origin_from_argument(argument));
+        (allocator, borrow)
+    }
+
+    fn translate_allocator_origin(
+        &mut self,
+        origin: AllocatorOriginId,
+        args: &[Expr],
+    ) -> Option<AllocatorOriginId> {
+        match self.allocator_origins.get(origin.0 as usize)?.clone() {
+            AllocatorOrigin::StaticSystem => Some(origin),
+            AllocatorOrigin::Parameter { index, .. } => args
+                .get(index as usize)
+                .and_then(|argument| self.expression_origins(argument).0),
+            AllocatorOrigin::Lexical { .. } => None,
+        }
+    }
+
+    fn translate_borrow_origin(
+        &mut self,
+        origin: BorrowOriginId,
+        args: &[Expr],
+    ) -> Option<BorrowOriginId> {
+        match self.borrow_origins.get(origin.0 as usize)?.clone() {
+            BorrowOrigin::Static => Some(origin),
+            BorrowOrigin::Parameter { index, .. } => args
+                .get(index as usize)
+                .map(|argument| self.borrow_origin_from_argument(argument)),
+            BorrowOrigin::Lexical { .. } => None,
+        }
+    }
+
+    fn borrow_origin_from_argument(&mut self, argument: &Expr) -> BorrowOriginId {
+        if let Some(origin) = self.expression_origins(argument).1 {
+            return origin;
+        }
+        let function = self.current_function.unwrap_or(SymbolId(u32::MAX));
+        if let Expr::Ident(name, _) = argument {
+            if self.globals.iter().any(|global| global.name == *name) {
+                return self.intern_borrow_origin(BorrowOrigin::Static);
+            }
+        }
+        self.intern_borrow_origin(BorrowOrigin::Lexical {
+            function,
+            span: argument.span(),
+        })
+    }
+
     fn check_expr(
         &mut self,
         expression: &Expr,
@@ -1771,11 +2423,26 @@ impl Analyzer {
                 _ if consume && !self.is_copy(ty) => OwnershipAction::Move,
                 _ => OwnershipAction::Copy,
             };
+            if action == OwnershipAction::Move
+                && self
+                    .current_drop_parameter
+                    .as_deref()
+                    .is_some_and(|parameter| drop_parameter_projection(expression, parameter))
+            {
+                self.diagnostic(
+                    "E_DROP_FIELD_MOVE",
+                    "drop function cannot move a non-Copy field out of the value being destroyed",
+                    expression.span(),
+                );
+            }
+            let (allocator_origin, borrow_origin) = self.expression_origins(expression);
             self.expressions.push(HirExpression {
                 span: expression.span(),
                 ty,
                 category,
                 ownership: action,
+                allocator_origin,
+                borrow_origin,
             });
         }
         ty
@@ -1790,6 +2457,48 @@ impl Analyzer {
         consume: bool,
     ) -> Option<TypeId> {
         if let Some(expected) = expected {
+            if matches!(
+                self.types.values[expected.0 as usize],
+                CanonicalType::Integer(_)
+            ) {
+                if let Expr::Binary {
+                    left,
+                    op:
+                        BinOp::Add
+                        | BinOp::Sub
+                        | BinOp::Mul
+                        | BinOp::Div
+                        | BinOp::Rem
+                        | BinOp::BitAnd
+                        | BinOp::BitOr
+                        | BinOp::BitXor
+                        | BinOp::Shl
+                        | BinOp::Shr,
+                    ..
+                } = expression
+                {
+                    self.check_expr_expected(left, Some(expected), generics, ownership, false);
+                    self.check_expr_expected(
+                        match expression {
+                            Expr::Binary { right, .. } => right,
+                            _ => unreachable!(),
+                        },
+                        Some(expected),
+                        generics,
+                        ownership,
+                        false,
+                    );
+                    self.expressions.push(HirExpression {
+                        span: expression.span(),
+                        ty: expected,
+                        category: ValueCategory::RValue,
+                        ownership: OwnershipAction::Copy,
+                        allocator_origin: None,
+                        borrow_origin: None,
+                    });
+                    return Some(expected);
+                }
+            }
             if let CanonicalType::Integer(integer) = self.types.values[expected.0 as usize] {
                 let literal = match expression {
                     Expr::IntLit(value, _) => Some(*value),
@@ -1816,6 +2525,8 @@ impl Analyzer {
                         ty: expected,
                         category: ValueCategory::RValue,
                         ownership: OwnershipAction::Copy,
+                        allocator_origin: None,
+                        borrow_origin: None,
                     });
                     return Some(expected);
                 }
@@ -1823,7 +2534,10 @@ impl Analyzer {
             let contextual = matches!(
                 (&self.types.values[expected.0 as usize], expression),
                 (CanonicalType::Pointer { .. }, Expr::NullLit(_))
-                    | (CanonicalType::LegacyStr, Expr::StrLit(..))
+                    | (
+                        CanonicalType::LegacyStr | CanonicalType::StringView,
+                        Expr::StrLit(..)
+                    )
             );
             if contextual {
                 self.expressions.push(HirExpression {
@@ -1831,6 +2545,8 @@ impl Analyzer {
                     ty: expected,
                     category: ValueCategory::RValue,
                     ownership: OwnershipAction::Copy,
+                    allocator_origin: None,
+                    borrow_origin: None,
                 });
                 return Some(expected);
             }
@@ -1855,6 +2571,24 @@ impl Analyzer {
                     ty: expected,
                     category: ValueCategory::RValue,
                     ownership: OwnershipAction::Copy,
+                    allocator_origin: None,
+                    borrow_origin: None,
+                });
+                return Some(expected);
+            }
+            if let (CanonicalType::LegacyList(element), Expr::List(values, _)) =
+                (self.types.values[expected.0 as usize].clone(), expression)
+            {
+                for value in values {
+                    self.check_expr_expected(value, Some(element), generics, ownership, true);
+                }
+                self.expressions.push(HirExpression {
+                    span: expression.span(),
+                    ty: expected,
+                    category: ValueCategory::RValue,
+                    ownership: OwnershipAction::Copy,
+                    allocator_origin: None,
+                    borrow_origin: None,
                 });
                 return Some(expected);
             }
@@ -1886,6 +2620,8 @@ impl Analyzer {
                     ty: expected,
                     category: ValueCategory::RValue,
                     ownership: OwnershipAction::Copy,
+                    allocator_origin: None,
+                    borrow_origin: None,
                 });
                 return Some(expected);
             }
@@ -1921,17 +2657,26 @@ impl Analyzer {
         consume: bool,
     ) -> Option<TypeId> {
         match expression {
+            Expr::UnitLit(..) => Some(self.types.intern(CanonicalType::Unit)),
             Expr::IntLit(..) => Some(self.types.intern(CanonicalType::Integer(IntegerType::I32))),
             Expr::FloatLit(..) => Some(self.types.intern(CanonicalType::Float)),
             Expr::BoolLit(..) => Some(self.types.intern(CanonicalType::Bool)),
-            Expr::StrLit(..) => Some(self.types.intern(CanonicalType::StringView)),
+            Expr::StrLit(..) => Some(self.types.intern(
+                if matches!(self.profile, Profile::Hosted | Profile::Vm) {
+                    CanonicalType::LegacyStr
+                } else {
+                    CanonicalType::StringView
+                },
+            )),
             Expr::BytesLit(..) => Some(self.types.intern(CanonicalType::LegacyBytes)),
             Expr::FStr(_, span) => {
-                self.diagnostic(
-                    "E_LEGACY_TEXT",
-                    "formatted strings retain legacy str semantics and are not StringView",
-                    *span,
-                );
+                if !matches!(self.profile, Profile::Hosted | Profile::Vm) {
+                    self.diagnostic(
+                        "E_LEGACY_TEXT",
+                        "formatted strings retain legacy str semantics and are hosted-only",
+                        *span,
+                    );
+                }
                 Some(self.types.intern(CanonicalType::LegacyStr))
             }
             Expr::NullLit(span) => {
@@ -1941,6 +2686,10 @@ impl Analyzer {
                     *span,
                 );
                 None
+            }
+            Expr::Drop { expr, .. } => {
+                self.check_expr(expr, generics, ownership, true)?;
+                Some(self.types.intern(CanonicalType::Unit))
             }
             Expr::Ident(name, span) => {
                 let Some(binding) = ownership.lookup_mut(name) else {
@@ -1987,7 +2736,7 @@ impl Analyzer {
                     }
                     self.diagnostic(
                         "E_UNKNOWN_SYMBOL",
-                        format!("unknown binding `{name}`"),
+                        format!("TypeError: undefined variable `{name}`"),
                         *span,
                     );
                     return None;
@@ -2029,6 +2778,20 @@ impl Analyzer {
                 expr,
                 span,
             } => {
+                if matches!(
+                    expr.as_ref(),
+                    Expr::Unary {
+                        op: UnaryOp::Deref,
+                        ..
+                    } | Expr::Member { .. }
+                        | Expr::Index { .. }
+                ) {
+                    let ty = self.check_expr(expr, generics, ownership, false)?;
+                    return Some(self.types.intern(CanonicalType::Borrow {
+                        mutable: *mutable,
+                        pointee: ty,
+                    }));
+                }
                 let Expr::Ident(name, _) = expr.as_ref() else {
                     self.diagnostic(
                         "E_BORROW_TEMPORARY",
@@ -2040,7 +2803,7 @@ impl Analyzer {
                 let Some(binding) = ownership.lookup_mut(name) else {
                     self.diagnostic(
                         "E_UNKNOWN_SYMBOL",
-                        format!("unknown binding `{name}`"),
+                        format!("TypeError: undefined variable `{name}`"),
                         *span,
                     );
                     return None;
@@ -2101,8 +2864,9 @@ impl Analyzer {
             Expr::Binary {
                 left, op, right, ..
             } => {
-                let left_is_integer_literal = is_integer_literal_expression(left);
-                let (left, right) = if left_is_integer_literal {
+                let left_is_contextual_literal = is_integer_literal_expression(left)
+                    || matches!(left.as_ref(), Expr::StrLit(..));
+                let (left, right) = if left_is_contextual_literal {
                     let right = self.check_expr(right, generics, ownership, false);
                     let left = self.check_expr_expected(left, right, generics, ownership, false);
                     (left, right)
@@ -2326,7 +3090,19 @@ impl Analyzer {
                 )
             }
             Expr::Index { target, index, .. } => {
-                self.check_expr(index, generics, ownership, false);
+                let index_ty = self.check_expr(index, generics, ownership, false);
+                if index_ty.is_some_and(|ty| {
+                    !matches!(self.types.values[ty.0 as usize], CanonicalType::Integer(_))
+                }) {
+                    self.diagnostic(
+                        "E_INDEX_TYPE",
+                        format!(
+                            "TypeError: index must be int, found {}",
+                            self.type_name(index_ty.unwrap())
+                        ),
+                        index.span(),
+                    );
+                }
                 let target = self.check_expr(target, generics, ownership, false)?;
                 match self.types.values[target.0 as usize].clone() {
                     CanonicalType::Slice { element, .. }
@@ -2343,13 +3119,17 @@ impl Analyzer {
                         // knowledge to perform the widening conversion.
                         Some(self.types.intern(CanonicalType::Integer(IntegerType::I32)))
                     }
+                    CanonicalType::LegacyBytes | CanonicalType::LegacyBuffer => Some(
+                        self.types
+                            .intern(CanonicalType::Integer(IntegerType::LegacyInt)),
+                    ),
                     CanonicalType::StringView => {
                         Some(self.types.intern(CanonicalType::Integer(IntegerType::U8)))
                     }
                     _ => {
                         self.diagnostic(
                             "E_NOT_INDEXABLE",
-                            "value is not an array or bounded slice",
+                            format!("TypeError: cannot index {}", self.type_name(target)),
                             expression.span(),
                         );
                         None
@@ -2363,6 +3143,10 @@ impl Analyzer {
                 span,
             } => {
                 if let Expr::Ident(namespace, _) = object.as_ref() {
+                    if let Some(module) = self.host_modules.get(namespace).cloned() {
+                        return self
+                            .check_host_call(&module, property, args, generics, ownership, *span);
+                    }
                     if let Some(intrinsic) = HirIntrinsic::resolve(namespace, property) {
                         return self.check_intrinsic_call(
                             namespace, intrinsic, args, generics, ownership, *span,
@@ -2414,6 +3198,69 @@ impl Analyzer {
         }
     }
 
+    fn check_host_call(
+        &mut self,
+        module: &str,
+        member: &str,
+        args: &[Expr],
+        generics: &BTreeMap<String, TypeId>,
+        ownership: &mut Ownership,
+        span: Span,
+    ) -> Option<TypeId> {
+        if HostCapabilityId::resolve(module, member).is_none() {
+            let alias = module.rsplit('.').next().unwrap_or(module);
+            self.diagnostic(
+                "E_HOST_CAPABILITY",
+                format!("TypeError: module '{alias}' has no public member '{member}'"),
+                span,
+            );
+            return None;
+        }
+        let export = dbyte_module::stdlib_exports(module)?
+            .into_iter()
+            .find(|(name, _)| name == member)
+            .map(|(_, export)| export)?;
+        let dbyte_module::StdlibExport::Function { params, ret } = export;
+        if args.len() != params.len() {
+            self.diagnostic(
+                "E_ARGUMENT_COUNT",
+                format!(
+                    "resolved host capability expects {} arguments, found {}",
+                    params.len(),
+                    args.len()
+                ),
+                span,
+            );
+        }
+        for (index, (argument, annotation)) in args.iter().zip(&params).enumerate() {
+            let expected = if matches!(annotation, TypeAnnotation::Inferred) {
+                None
+            } else {
+                self.resolve_type(annotation, generics, argument.span())
+            };
+            let actual = self.check_expr_expected(argument, expected, generics, ownership, true);
+            if let (Some(actual), Some(expected)) = (actual, expected) {
+                if !self.types_compatible(actual, expected) {
+                    self.diagnostic(
+                        "E_TYPE_MISMATCH",
+                        format!(
+                            "TypeError: expected {}, found {} (argument {})",
+                            annotation,
+                            self.type_name(actual),
+                            index + 1
+                        ),
+                        argument.span(),
+                    );
+                }
+            }
+        }
+        if matches!(ret, TypeAnnotation::Inferred) {
+            Some(self.types.intern(CanonicalType::Unit))
+        } else {
+            self.resolve_type(&ret, generics, span)
+        }
+    }
+
     fn check_intrinsic_call(
         &mut self,
         namespace: &str,
@@ -2423,12 +3270,19 @@ impl Analyzer {
         ownership: &mut Ownership,
         span: Span,
     ) -> Option<TypeId> {
-        let admitted = match self.profile {
-            Profile::I686None => namespace == "native",
-            Profile::I686User => namespace == "user",
-            Profile::Hosted | Profile::Vm => false,
-        };
-        if !admitted || intrinsic.is_user() != (namespace == "user") {
+        let admitted = intrinsic.is_runtime_view()
+            || (intrinsic.is_runtime_host_memory()
+                && matches!(self.profile, Profile::Hosted | Profile::Vm))
+            || match self.profile {
+                Profile::I686None => namespace == "native",
+                Profile::I686User => namespace == "user",
+                Profile::Hosted | Profile::Vm => false,
+            };
+        if !admitted
+            || (!intrinsic.is_runtime_view()
+                && !intrinsic.is_runtime_host_memory()
+                && intrinsic.is_user() != (namespace == "user"))
+        {
             self.diagnostic(
                 "E_PROFILE_CAPABILITY",
                 format!(
@@ -2447,6 +3301,136 @@ impl Analyzer {
             .types
             .intern(CanonicalType::Integer(IntegerType::Usize));
         let unit = TypeId(0);
+        if intrinsic.is_runtime_host_memory() {
+            let required_function = match intrinsic {
+                HirIntrinsic::RuntimeMemoryAlloc => "system_alloc_raw",
+                HirIntrinsic::RuntimeMemoryResize => "system_resize_raw",
+                HirIntrinsic::RuntimeMemoryFree => "system_free_raw",
+                HirIntrinsic::RuntimeMemoryRead8 => "system_read8_raw",
+                HirIntrinsic::RuntimeMemoryWrite8 => "system_write8_raw",
+                _ => unreachable!(),
+            };
+            let admitted_function = self
+                .current_function_source_name
+                .as_deref()
+                .is_some_and(|name| name.ends_with(required_function));
+            if !admitted_function {
+                self.diagnostic(
+                    "E_RUNTIME_CAPABILITY_PRIVATE",
+                    "host memory operations are reserved for the versioned runtime module",
+                    span,
+                );
+            }
+            let pointer = self.types.intern(CanonicalType::Pointer {
+                mutable: true,
+                pointee: u8_ty,
+            });
+            let bool_ty = self.types.intern(CanonicalType::Bool);
+            let (expected, result) = match intrinsic {
+                HirIntrinsic::RuntimeMemoryAlloc => (vec![Some(usize_ty), Some(usize_ty)], pointer),
+                HirIntrinsic::RuntimeMemoryResize => (
+                    vec![
+                        Some(pointer),
+                        Some(usize_ty),
+                        Some(usize_ty),
+                        Some(usize_ty),
+                    ],
+                    pointer,
+                ),
+                HirIntrinsic::RuntimeMemoryFree => {
+                    (vec![Some(pointer), Some(usize_ty), Some(usize_ty)], bool_ty)
+                }
+                HirIntrinsic::RuntimeMemoryRead8 => (vec![Some(pointer), Some(usize_ty)], u8_ty),
+                HirIntrinsic::RuntimeMemoryWrite8 => {
+                    (vec![Some(pointer), Some(usize_ty), Some(u8_ty)], unit)
+                }
+                _ => unreachable!(),
+            };
+            if args.len() != expected.len() {
+                self.diagnostic(
+                    "E_ARGUMENT_COUNT",
+                    format!(
+                        "runtime memory operation expects {} arguments, found {}",
+                        expected.len(),
+                        args.len()
+                    ),
+                    span,
+                );
+                return None;
+            }
+            for (argument, expected) in args.iter().zip(expected) {
+                self.check_expr_expected(argument, expected, generics, ownership, false);
+            }
+            return Some(result);
+        }
+        if intrinsic.is_runtime_view() {
+            let required_function = match intrinsic {
+                HirIntrinsic::RuntimeSliceFromRaw => "as_slice",
+                HirIntrinsic::RuntimeMutSliceFromRaw => "as_mut_slice",
+                HirIntrinsic::RuntimeStringViewFromRaw => "as_view",
+                _ => unreachable!(),
+            };
+            let admitted_function = self
+                .current_function_source_name
+                .as_deref()
+                .is_some_and(|name| name.ends_with(required_function));
+            if !admitted_function {
+                self.diagnostic(
+                    "E_RUNTIME_CAPABILITY_PRIVATE",
+                    "raw view construction is reserved for the versioned runtime module",
+                    span,
+                );
+            }
+            if args.len() != 2 {
+                self.diagnostic(
+                    "E_ARGUMENT_COUNT",
+                    "raw view construction expects pointer and length",
+                    span,
+                );
+                return None;
+            }
+            let pointer = self.check_expr(&args[0], generics, ownership, false);
+            self.check_expr_expected(&args[1], Some(usize_ty), generics, ownership, false);
+            let result = match (
+                intrinsic,
+                pointer.map(|ty| self.types.values[ty.0 as usize].clone()),
+            ) {
+                (
+                    HirIntrinsic::RuntimeSliceFromRaw,
+                    Some(CanonicalType::Pointer { pointee, .. }),
+                ) => self.types.intern(CanonicalType::Slice {
+                    mutable: false,
+                    element: pointee,
+                }),
+                (
+                    HirIntrinsic::RuntimeMutSliceFromRaw,
+                    Some(CanonicalType::Pointer {
+                        mutable: true,
+                        pointee,
+                    }),
+                ) => self.types.intern(CanonicalType::Slice {
+                    mutable: true,
+                    element: pointee,
+                }),
+                (
+                    HirIntrinsic::RuntimeStringViewFromRaw,
+                    Some(CanonicalType::Pointer { pointee, .. }),
+                ) if self.types.values[pointee.0 as usize]
+                    == CanonicalType::Integer(IntegerType::U8) =>
+                {
+                    self.types.intern(CanonicalType::StringView)
+                }
+                _ => {
+                    self.diagnostic(
+                        "E_TYPE_MISMATCH",
+                        "raw view pointer has an incompatible canonical type",
+                        args[0].span(),
+                    );
+                    return None;
+                }
+            };
+            return Some(result);
+        }
         let (expected, result): (Vec<Option<TypeId>>, TypeId) = match intrinsic {
             HirIntrinsic::VolatileLoad8 => (vec![None], u8_ty),
             HirIntrinsic::VolatileStore8 => (vec![None, Some(u8_ty)], unit),
@@ -2483,6 +3467,14 @@ impl Analyzer {
             HirIntrinsic::UserSyscall1 => (vec![Some(u32_ty), None], i32_ty),
             HirIntrinsic::UserSyscall2 => (vec![Some(u32_ty), None, None], i32_ty),
             HirIntrinsic::UserSyscall3 => (vec![Some(u32_ty), None, None, None], i32_ty),
+            HirIntrinsic::RuntimeSliceFromRaw
+            | HirIntrinsic::RuntimeMutSliceFromRaw
+            | HirIntrinsic::RuntimeStringViewFromRaw
+            | HirIntrinsic::RuntimeMemoryAlloc
+            | HirIntrinsic::RuntimeMemoryResize
+            | HirIntrinsic::RuntimeMemoryFree
+            | HirIntrinsic::RuntimeMemoryRead8
+            | HirIntrinsic::RuntimeMemoryWrite8 => unreachable!(),
         };
         if args.len() != expected.len() {
             self.diagnostic(
@@ -2734,26 +3726,32 @@ impl Analyzer {
             }
             if let Some(annotation) = args.first().and_then(type_expression_annotation) {
                 if let Some(ty) = self.resolve_type(&annotation, generics, span) {
-                    if let Err(error) = layout_of(
-                        &HirProgram {
-                            module: ModuleId(0),
-                            profile: self.profile,
-                            layout: self.layout,
-                            types: self.types.values.clone(),
-                            definitions: self.definitions.clone(),
-                            functions: self.functions.clone(),
-                            globals: self.globals.clone(),
-                            specializations: BTreeSet::new(),
-                            generic_capabilities: BTreeMap::new(),
-                            closure_count: self.closure_count,
-                            expressions: Vec::new(),
-                            cleanup_edges: Vec::new(),
-                            resolved_addresses: BTreeMap::new(),
-                            interface_fingerprint: 0,
-                        },
-                        ty,
-                    ) {
-                        self.diagnostics.push(Diagnostic { span, ..error });
+                    if !self.type_contains_generic(ty, &mut BTreeSet::new()) {
+                        if let Err(error) = layout_of(
+                            &HirProgram {
+                                module: ModuleId(0),
+                                profile: self.profile,
+                                layout: self.layout,
+                                types: self.types.values.clone(),
+                                definitions: self.definitions.clone(),
+                                functions: self.functions.clone(),
+                                globals: self.globals.clone(),
+                                specializations: BTreeSet::new(),
+                                generic_capabilities: BTreeMap::new(),
+                                closure_count: self.closure_count,
+                                expressions: Vec::new(),
+                                allocator_origins: Vec::new(),
+                                borrow_origins: Vec::new(),
+                                function_allocator_origins: BTreeMap::new(),
+                                function_borrow_origins: BTreeMap::new(),
+                                cleanup_edges: Vec::new(),
+                                resolved_addresses: BTreeMap::new(),
+                                interface_fingerprint: 0,
+                            },
+                            ty,
+                        ) {
+                            self.diagnostics.push(Diagnostic { span, ..error });
+                        }
                     }
                 }
             } else {
@@ -2785,13 +3783,23 @@ impl Analyzer {
             if args.len() != 1 || !type_args.is_empty() || !named_args.is_empty() {
                 self.diagnostic("E_ARGUMENT_COUNT", "len expects one argument", span);
             }
-            for argument in args {
-                self.check_expr(argument, generics, ownership, false);
-            }
-            return Some(
-                self.types
-                    .intern(CanonicalType::Integer(IntegerType::Usize)),
-            );
+            let argument = args
+                .first()
+                .and_then(|argument| self.check_expr(argument, generics, ownership, false));
+            let legacy = argument.is_some_and(|ty| {
+                matches!(
+                    self.types.values[ty.0 as usize],
+                    CanonicalType::LegacyStr
+                        | CanonicalType::LegacyBytes
+                        | CanonicalType::LegacyBuffer
+                        | CanonicalType::LegacyList(_)
+                )
+            });
+            return Some(self.types.intern(CanonicalType::Integer(if legacy {
+                IntegerType::LegacyInt
+            } else {
+                IntegerType::Usize
+            })));
         }
         let local_callable = ownership
             .lookup_mut(name)
@@ -2931,6 +3939,17 @@ impl Analyzer {
             .find(|function| function.name == name)
             .cloned()
         {
+            if function.kind == FunctionKind::Drop {
+                self.diagnostic(
+                    "E_DROP_DIRECT_CALL",
+                    "drop functions can only be invoked by compiler destruction glue",
+                    span,
+                );
+                for argument in args {
+                    self.check_expr(argument, generics, ownership, false);
+                }
+                return None;
+            }
             if type_args.len() != function.generic_params.len() {
                 self.diagnostic(
                     "E_GENERIC_ARGUMENT_COUNT",
@@ -2974,11 +3993,13 @@ impl Analyzer {
                 });
             }
             if args.len() != function.params.len() || !named_args.is_empty() {
+                let source_name = display_function_name(name);
                 self.diagnostic(
                     "E_ARGUMENT_COUNT",
                     format!(
-                        "function `{name}` expects {} arguments",
-                        function.params.len()
+                        "function `{source_name}` expects {} args, got {}",
+                        function.params.len(),
+                        args.len()
                     ),
                     span,
                 );
@@ -2989,6 +4010,18 @@ impl Analyzer {
                 .cloned()
                 .zip(resolved_args)
                 .collect();
+            let result = self.resolve_type(&function.result, &substitutions, span);
+            let temporary_argument_borrows = result.is_some_and(|result| {
+                !matches!(
+                    self.types.values[result.0 as usize],
+                    CanonicalType::Borrow { .. }
+                        | CanonicalType::Slice { .. }
+                        | CanonicalType::StringView
+                )
+            });
+            if temporary_argument_borrows {
+                ownership.push_scope();
+            }
             for (index, argument) in args.iter().enumerate() {
                 let expected = function.params.get(index).and_then(|annotation| {
                     self.resolve_type(annotation, &substitutions, function.span)
@@ -3008,14 +4041,17 @@ impl Analyzer {
                     }
                 }
             }
-            return self.resolve_type(&function.result, &substitutions, span);
+            if temporary_argument_borrows {
+                ownership.pop_scope();
+            }
+            return result;
         }
         for argument in args {
             self.check_expr(argument, generics, ownership, true);
         }
         self.diagnostic(
             "E_UNKNOWN_SYMBOL",
-            format!("unknown callable `{name}`"),
+            format!("undefined function `{name}`"),
             span,
         );
         None
@@ -3135,15 +4171,29 @@ impl Analyzer {
         span: Span,
     ) -> Option<TypeId> {
         let object_type = self.check_expr(object, generics, ownership, false)?;
-        let CanonicalType::Struct { symbol, args } =
-            self.types.values[object_type.0 as usize].clone()
-        else {
-            self.diagnostic(
-                "E_FIELD_BASE_TYPE",
-                "field access requires a struct lvalue",
-                span,
-            );
-            return None;
+        let (symbol, args) = match self.types.values[object_type.0 as usize].clone() {
+            CanonicalType::Struct { symbol, args } => (symbol, args),
+            CanonicalType::Pointer { pointee, .. } | CanonicalType::Borrow { pointee, .. } => {
+                match self.types.values[pointee.0 as usize].clone() {
+                    CanonicalType::Struct { symbol, args } => (symbol, args),
+                    _ => {
+                        self.diagnostic(
+                            "E_FIELD_BASE_TYPE",
+                            "field access requires a struct lvalue",
+                            span,
+                        );
+                        return None;
+                    }
+                }
+            }
+            _ => {
+                self.diagnostic(
+                    "E_FIELD_BASE_TYPE",
+                    "field access requires a struct lvalue",
+                    span,
+                );
+                return None;
+            }
         };
         let definition = self
             .definitions
@@ -3384,26 +4434,25 @@ impl Analyzer {
     fn types_compatible(&self, actual: TypeId, expected: TypeId) -> bool {
         actual == expected
             || self.pointer_widening(actual, expected)
-            || matches!(self.profile, Profile::I686None | Profile::I686User)
-                && matches!(
-                    (
-                        &self.types.values[actual.0 as usize],
-                        &self.types.values[expected.0 as usize]
-                    ),
-                    (
-                        CanonicalType::Integer(IntegerType::I32),
-                        CanonicalType::Integer(IntegerType::LegacyInt)
-                    ) | (
-                        CanonicalType::Integer(IntegerType::LegacyInt),
-                        CanonicalType::Integer(IntegerType::I32)
-                    ) | (
-                        CanonicalType::Integer(IntegerType::U8 | IntegerType::U16),
-                        CanonicalType::Integer(IntegerType::LegacyInt)
-                    ) | (
-                        CanonicalType::Integer(IntegerType::LegacyInt),
-                        CanonicalType::Integer(IntegerType::U8 | IntegerType::U16)
-                    )
+            || matches!(
+                (
+                    &self.types.values[actual.0 as usize],
+                    &self.types.values[expected.0 as usize]
+                ),
+                (
+                    CanonicalType::Integer(IntegerType::I32),
+                    CanonicalType::Integer(IntegerType::LegacyInt)
+                ) | (
+                    CanonicalType::Integer(IntegerType::LegacyInt),
+                    CanonicalType::Integer(IntegerType::I32)
+                ) | (
+                    CanonicalType::Integer(IntegerType::U8 | IntegerType::U16),
+                    CanonicalType::Integer(IntegerType::LegacyInt)
+                ) | (
+                    CanonicalType::Integer(IntegerType::LegacyInt),
+                    CanonicalType::Integer(IntegerType::U8 | IntegerType::U16)
                 )
+            )
     }
 
     fn validate_specializations(&mut self) {
@@ -3452,6 +4501,67 @@ impl Analyzer {
         self.is_copy_inner(ty, &mut BTreeSet::new())
     }
 
+    fn type_name(&self, ty: TypeId) -> String {
+        match &self.types.values[ty.0 as usize] {
+            CanonicalType::Unit => "unit".into(),
+            CanonicalType::Integer(IntegerType::LegacyInt) => "int".into(),
+            CanonicalType::Integer(IntegerType::I32) => "int".into(),
+            CanonicalType::Integer(integer) => format!("{integer:?}").to_lowercase(),
+            CanonicalType::Float => "float".into(),
+            CanonicalType::Bool => "bool".into(),
+            CanonicalType::LegacyStr => "str".into(),
+            CanonicalType::LegacyBytes => "bytes".into(),
+            CanonicalType::LegacyBuffer => "buffer".into(),
+            CanonicalType::LegacyList(element) => {
+                format!("list[{}]", self.type_name(*element))
+            }
+            CanonicalType::Pointer { .. } => "ptr".into(),
+            CanonicalType::Borrow { .. } => "borrow".into(),
+            CanonicalType::Slice { .. } => "slice".into(),
+            CanonicalType::StringView => "str".into(),
+            CanonicalType::Array { .. } => "array".into(),
+            CanonicalType::Struct { symbol, .. } | CanonicalType::Enum { symbol, .. } => self
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol == *symbol)
+                .map_or_else(|| "aggregate".into(), |definition| definition.name.clone()),
+            CanonicalType::Function { .. } => "fn".into(),
+            CanonicalType::ClosureShape { .. } => "closure".into(),
+            CanonicalType::GenericParam { .. } => "generic".into(),
+        }
+    }
+
+    fn type_contains_generic(&self, ty: TypeId, active: &mut BTreeSet<TypeId>) -> bool {
+        if !active.insert(ty) {
+            return false;
+        }
+        let result = match &self.types.values[ty.0 as usize] {
+            CanonicalType::GenericParam { .. } => true,
+            CanonicalType::LegacyList(element)
+            | CanonicalType::Pointer {
+                pointee: element, ..
+            }
+            | CanonicalType::Borrow {
+                pointee: element, ..
+            }
+            | CanonicalType::Slice { element, .. }
+            | CanonicalType::Array { element, .. } => self.type_contains_generic(*element, active),
+            CanonicalType::Struct { args, .. } | CanonicalType::Enum { args, .. } => args
+                .iter()
+                .copied()
+                .any(|argument| self.type_contains_generic(argument, active)),
+            CanonicalType::Function { params, result, .. }
+            | CanonicalType::ClosureShape { params, result } => params
+                .iter()
+                .copied()
+                .chain(std::iter::once(*result))
+                .any(|part| self.type_contains_generic(part, active)),
+            _ => false,
+        };
+        active.remove(&ty);
+        result
+    }
+
     fn is_copy_inner(&self, ty: TypeId, active: &mut BTreeSet<TypeId>) -> bool {
         if !active.insert(ty) {
             return false;
@@ -3464,9 +4574,17 @@ impl Analyzer {
             | CanonicalType::Pointer { .. }
             | CanonicalType::Borrow { .. }
             | CanonicalType::Function { .. }
-            | CanonicalType::LegacyStr => true,
+            | CanonicalType::LegacyStr
+            | CanonicalType::LegacyBytes
+            | CanonicalType::LegacyBuffer
+            | CanonicalType::LegacyList(_) => true,
             CanonicalType::Array { element, .. } => self.is_copy_inner(*element, active),
             CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args } => {
+                if self.functions.iter().any(|function| {
+                    function.kind == FunctionKind::Drop && function.drop_target == Some(*symbol)
+                }) {
+                    return false;
+                }
                 let Some(definition) = self
                     .definitions
                     .iter()
@@ -3492,11 +4610,7 @@ impl Analyzer {
                     }),
                 }
             }
-            CanonicalType::LegacyBytes
-            | CanonicalType::LegacyBuffer
-            | CanonicalType::LegacyList(_)
-            | CanonicalType::ClosureShape { .. }
-            | CanonicalType::GenericParam { .. } => false,
+            CanonicalType::ClosureShape { .. } | CanonicalType::GenericParam { .. } => false,
             CanonicalType::Slice { .. } | CanonicalType::StringView => true,
         }
     }
@@ -3508,7 +4622,8 @@ impl Analyzer {
         active: &mut BTreeSet<TypeId>,
     ) -> bool {
         match annotation {
-            TypeAnnotation::Int
+            TypeAnnotation::Unit
+            | TypeAnnotation::Int
             | TypeAnnotation::I8
             | TypeAnnotation::U8
             | TypeAnnotation::I16
@@ -3523,6 +4638,7 @@ impl Analyzer {
             | TypeAnnotation::ConstPointer(_)
             | TypeAnnotation::Slice(_)
             | TypeAnnotation::MutSlice(_)
+            | TypeAnnotation::Borrow { .. }
             | TypeAnnotation::StringView
             | TypeAnnotation::Function { .. } => true,
             TypeAnnotation::Array { element, .. } => {
@@ -3638,6 +4754,27 @@ impl Analyzer {
                 hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
             }
         }
+        for function in self.functions.iter().filter(|function| function.public) {
+            if let Some(origin) = self.function_allocator_origins.get(&function.symbol) {
+                for byte in format!(
+                    "allocator:{:?}",
+                    self.allocator_origins.get(origin.0 as usize)
+                )
+                .bytes()
+                {
+                    hash ^= u64::from(byte);
+                    hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+                }
+            }
+            if let Some(origin) = self.function_borrow_origins.get(&function.symbol) {
+                for byte in
+                    format!("borrow:{:?}", self.borrow_origins.get(origin.0 as usize)).bytes()
+                {
+                    hash ^= u64::from(byte);
+                    hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+                }
+            }
+        }
         hash
     }
 }
@@ -3686,6 +4823,22 @@ fn is_integer_literal_expression(expression: &Expr) -> bool {
         )
 }
 
+fn drop_parameter_projection(expression: &Expr, parameter: &str) -> bool {
+    match expression {
+        Expr::Unary {
+            op: UnaryOp::Deref,
+            expr,
+            ..
+        } => matches!(expr.as_ref(), Expr::Ident(name, _) if name == parameter),
+        Expr::Member { object, .. } => drop_parameter_projection(object, parameter),
+        // Indexing through a raw pointer stored in an owning container is the
+        // low-level initialized-storage contract used by Array[T] glue; it is
+        // not a partial move of the container's pointer field itself.
+        Expr::Index { .. } => false,
+        _ => false,
+    }
+}
+
 fn constant_integer_expression(expression: &Expr) -> Option<i64> {
     match expression {
         Expr::IntLit(value, _) => Some(*value),
@@ -3727,7 +4880,7 @@ fn constant_integer_expression(expression: &Expr) -> Option<i64> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Binding {
     ty: TypeId,
     moved: bool,
@@ -3737,7 +4890,7 @@ struct Binding {
     span: Span,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, PartialEq)]
 struct Ownership {
     scopes: Vec<BTreeMap<String, Binding>>,
     borrows: Vec<Vec<(String, bool)>>,
@@ -3784,6 +4937,10 @@ impl Ownership {
             .iter_mut()
             .rev()
             .find_map(|scope| scope.get_mut(name))
+    }
+
+    fn lookup(&self, name: &str) -> Option<&Binding> {
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
     fn record_borrow(&mut self, name: String, mutable: bool) {
@@ -3963,7 +5120,14 @@ pub fn struct_field_layout(
         .cloned()
         .zip(args.iter().copied())
         .collect();
-    let field_ty = resolved_annotation(program, &fields[index].annotation, &substitutions)?;
+    let field_ty = resolved_annotation(program, &fields[index].annotation, &substitutions)
+        .map_err(|error| Diagnostic {
+            message: format!(
+                "{} while resolving field `{}.{}`",
+                error.message, definition.name, fields[index].name
+            ),
+            ..error
+        })?;
     Ok((field_ty, offsets[index]))
 }
 
@@ -4094,6 +5258,7 @@ fn layout_annotation(
     active: &mut BTreeSet<TypeId>,
 ) -> Result<Layout, Diagnostic> {
     let scalar = match annotation {
+        TypeAnnotation::Unit => Some(Layout { size: 0, align: 1 }),
         TypeAnnotation::I8 | TypeAnnotation::U8 | TypeAnnotation::Bool => {
             Some(Layout { size: 1, align: 1 })
         }
@@ -4104,12 +5269,13 @@ fn layout_annotation(
         | TypeAnnotation::Usize
         | TypeAnnotation::Float
         | TypeAnnotation::Function { .. } => Some(Layout { size: 4, align: 4 }),
-        TypeAnnotation::Pointer(_) | TypeAnnotation::ConstPointer(_) | TypeAnnotation::Str => {
-            Some(Layout {
-                size: program.layout.pointer_size,
-                align: program.layout.pointer_align,
-            })
-        }
+        TypeAnnotation::Pointer(_)
+        | TypeAnnotation::ConstPointer(_)
+        | TypeAnnotation::Borrow { .. }
+        | TypeAnnotation::Str => Some(Layout {
+            size: program.layout.pointer_size,
+            align: program.layout.pointer_align,
+        }),
         TypeAnnotation::Slice(_)
         | TypeAnnotation::MutSlice(_)
         | TypeAnnotation::StringView
@@ -4245,7 +5411,8 @@ fn annotation_matches(
     substitutions: &BTreeMap<String, TypeId>,
 ) -> bool {
     match (annotation, canonical) {
-        (TypeAnnotation::Int, CanonicalType::Integer(IntegerType::LegacyInt))
+        (TypeAnnotation::Unit, CanonicalType::Unit)
+        | (TypeAnnotation::Int, CanonicalType::Integer(IntegerType::LegacyInt))
         | (TypeAnnotation::I8, CanonicalType::Integer(IntegerType::I8))
         | (TypeAnnotation::U8, CanonicalType::Integer(IntegerType::U8))
         | (TypeAnnotation::I16, CanonicalType::Integer(IntegerType::I16))
@@ -4290,6 +5457,19 @@ fn annotation_matches(
                 pointee,
             },
         ) => annotation_matches(program, inner, program.type_of(*pointee), substitutions),
+        (
+            TypeAnnotation::Borrow {
+                mutable,
+                pointee: inner,
+            },
+            CanonicalType::Borrow {
+                mutable: candidate_mutable,
+                pointee,
+            },
+        ) => {
+            mutable == candidate_mutable
+                && annotation_matches(program, inner, program.type_of(*pointee), substitutions)
+        }
         (
             TypeAnnotation::Slice(inner),
             CanonicalType::Slice {
@@ -4423,6 +5603,103 @@ fn annotation_matches_shallow(annotation: &TypeAnnotation, canonical: &Canonical
             | (TypeAnnotation::Bool, CanonicalType::Bool)
             | (TypeAnnotation::StringView, CanonicalType::StringView)
     )
+}
+
+/// Preserve the hosted language's historical top-level inference when the
+/// project resolver promotes an imported module's `let` binding to a global.
+/// This happens before canonical type checking, so only syntax-directed
+/// literals are admitted here; every other initializer remains inferred and
+/// receives the ordinary deterministic diagnostic.
+fn infer_legacy_global_annotation(expression: &Expr) -> Option<TypeAnnotation> {
+    match expression {
+        Expr::UnitLit(_) => Some(TypeAnnotation::Unit),
+        Expr::IntLit(..) => Some(TypeAnnotation::Int),
+        Expr::FloatLit(..) => Some(TypeAnnotation::Float),
+        Expr::BoolLit(..) => Some(TypeAnnotation::Bool),
+        Expr::StrLit(..) | Expr::FStr(..) => Some(TypeAnnotation::Str),
+        Expr::BytesLit(..) => Some(TypeAnnotation::Bytes),
+        Expr::List(values, _) => {
+            let first = values.first().and_then(infer_legacy_global_annotation)?;
+            if values
+                .iter()
+                .skip(1)
+                .all(|value| infer_legacy_global_annotation(value).as_ref() == Some(&first))
+            {
+                Some(TypeAnnotation::List(Box::new(first)))
+            } else {
+                None
+            }
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => infer_legacy_global_annotation(expr),
+        _ => None,
+    }
+}
+
+fn infer_legacy_return_annotation(
+    statements: &[Stmt],
+    params: &[dbyte_ast::Param],
+) -> Option<TypeAnnotation> {
+    fn expression_type(expression: &Expr, params: &[dbyte_ast::Param]) -> Option<TypeAnnotation> {
+        match expression {
+            Expr::UnitLit(_) => Some(TypeAnnotation::Unit),
+            Expr::IntLit(..) => Some(TypeAnnotation::Int),
+            Expr::FloatLit(..) => Some(TypeAnnotation::Float),
+            Expr::BoolLit(..) => Some(TypeAnnotation::Bool),
+            Expr::StrLit(..) => Some(TypeAnnotation::Str),
+            Expr::BytesLit(..) => Some(TypeAnnotation::Bytes),
+            Expr::Ident(name, _) => params
+                .iter()
+                .find(|parameter| parameter.name == *name)
+                .map(|parameter| parameter.ty.clone()),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => expression_type(expr, params),
+            Expr::Binary { left, .. } => expression_type(left, params),
+            Expr::Call { name, .. } if name == "len" => Some(TypeAnnotation::Int),
+            _ => None,
+        }
+    }
+
+    for statement in statements {
+        match statement {
+            Stmt::Return {
+                value: Some(value), ..
+            } => return expression_type(value, params),
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                if let Some(inferred) = infer_legacy_return_annotation(then_body, params) {
+                    return Some(inferred);
+                }
+                if let Some(inferred) = else_body
+                    .as_deref()
+                    .and_then(|body| infer_legacy_return_annotation(body, params))
+                {
+                    return Some(inferred);
+                }
+            }
+            Stmt::While { body, .. } | Stmt::For { body, .. } => {
+                if let Some(inferred) = infer_legacy_return_annotation(body, params) {
+                    return Some(inferred);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn display_function_name(name: &str) -> &str {
+    for prefix in ["__dbyte_m", "__dbyte_pub_m"] {
+        if let Some(rest) = name.strip_prefix(prefix) {
+            if let Some((module, source)) = rest.split_once('_') {
+                if module.chars().all(|character| character.is_ascii_digit()) {
+                    return source;
+                }
+            }
+        }
+    }
+    name
 }
 
 fn align_up(value: u32, align: u32) -> Result<u32, Diagnostic> {
@@ -4578,8 +5855,18 @@ mod tests {
     #[test]
     fn borrowed_returns_require_one_direct_parameter_source() {
         let valid = "fn view(data: slice[u8]) -> slice[u8]:\n    return data\n";
-        analyze(&parse(valid), Profile::Hosted, TargetDataLayout::I686)
+        let hir = analyze(&parse(valid), Profile::Hosted, TargetDataLayout::I686)
             .expect("single direct borrowed parameter can be returned");
+        let function = hir
+            .functions
+            .iter()
+            .find(|function| function.name == "view")
+            .unwrap();
+        let origin = hir.function_borrow_origins[&function.symbol];
+        assert!(matches!(
+            hir.borrow_origins[origin.0 as usize],
+            BorrowOrigin::Parameter { index: 0, .. }
+        ));
 
         let ambiguous =
             "fn view(left: slice[u8], right: slice[u8]) -> slice[u8]:\n    return left\n";
@@ -4588,6 +5875,57 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "E_AMBIGUOUS_BORROWED_RETURN"));
+
+        let forwarded = "fn identity(data: slice[u8]) -> slice[u8]:\n    return data\n\nfn forward(data: slice[u8]) -> slice[u8]:\n    return identity(data)\n";
+        let hir = analyze(&parse(forwarded), Profile::Hosted, TargetDataLayout::I686)
+            .expect("borrow provenance is translated across direct calls");
+        let function = hir
+            .functions
+            .iter()
+            .find(|function| function.name == "forward")
+            .unwrap();
+        let origin = hir.function_borrow_origins[&function.symbol];
+        assert!(matches!(
+            hir.borrow_origins[origin.0 as usize],
+            BorrowOrigin::Parameter { index: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn allocator_provenance_rejects_lexical_escape_and_summarizes_parameters() {
+        let leaking = "struct Arena:\n    marker: u32\n\nstruct AllocatorRef:\n    context: ptr[u8]\n\nfn arena_initialize(arena: ptr[Arena]) -> AllocatorRef:\n    return AllocatorRef(context = null)\n\nfn leak() -> AllocatorRef:\n    let arena = Arena(marker = 0 as u32)\n    let allocator = arena_initialize(&arena)\n    return allocator\n";
+        let errors = analyze(&parse(leaking), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("lexical allocator must not escape");
+        assert!(errors
+            .iter()
+            .any(|error| error.code == "E_ALLOCATOR_LIFETIME_ESCAPE"));
+
+        let propagated = "struct AllocatorRef:\n    context: ptr[u8]\n\npub fn pass(allocator: AllocatorRef) -> AllocatorRef:\n    return allocator\n";
+        let hir = analyze(&parse(propagated), Profile::Hosted, TargetDataLayout::I686).unwrap();
+        let function = hir
+            .functions
+            .iter()
+            .find(|function| function.name == "pass")
+            .unwrap();
+        let origin = hir.function_allocator_origins[&function.symbol];
+        assert!(matches!(
+            hir.allocator_origins[origin.0 as usize],
+            AllocatorOrigin::Parameter { index: 0, .. }
+        ));
+
+        let forwarded = "struct AllocatorRef:\n    context: ptr[u8]\n\nfn pass(allocator: AllocatorRef) -> AllocatorRef:\n    return allocator\n\nfn forward(allocator: AllocatorRef) -> AllocatorRef:\n    let selected = pass(allocator)\n    let replacement = selected\n    return replacement\n";
+        let hir = analyze(&parse(forwarded), Profile::Hosted, TargetDataLayout::I686)
+            .expect("allocator provenance survives calls and assignments");
+        let function = hir
+            .functions
+            .iter()
+            .find(|function| function.name == "forward")
+            .unwrap();
+        let origin = hir.function_allocator_origins[&function.symbol];
+        assert!(matches!(
+            hir.allocator_origins[origin.0 as usize],
+            AllocatorOrigin::Parameter { index: 0, .. }
+        ));
     }
 
     #[test]
@@ -4718,6 +6056,33 @@ mod tests {
     }
 
     #[test]
+    fn raw_view_construction_is_private_to_runtime_entry_points() {
+        let source = "fn steal(data: ptr[u8], length: usize) -> slice[u8]:\n    return __dbyte_runtime.slice_from_raw(data, length)\n";
+        let diagnostics = analyze(&parse(source), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("application code cannot construct an unchecked borrowed view");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_RUNTIME_CAPABILITY_PRIVATE"));
+
+        let memory = "fn steal(size: usize) -> ptr[u8]:\n    return __dbyte_runtime.memory_alloc(size, 4 as usize)\n";
+        let diagnostics = analyze(&parse(memory), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("application code cannot invoke the host provider directly");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_RUNTIME_CAPABILITY_PRIVATE"));
+    }
+
+    #[test]
+    fn runtime_view_provenance_keeps_the_owner_borrowed() {
+        let source = "struct Text:\n    data: ptr[u8]\n    len: usize\n\ndrop fn destroy(value: borrow mut Text):\n    return unit\n\nfn as_view(text: borrow Text) -> StringView:\n    return __dbyte_runtime.string_view_from_raw((*text).data, (*text).len)\n\nfn bad(text: Text) -> unit:\n    let view = as_view(borrow text)\n    drop(text)\n    let length = len(view)\n    return unit\n";
+        let diagnostics = analyze(&parse(source), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("a StringView must keep its owner immutably borrowed");
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "E_MOVE_WHILE_BORROWED" || diagnostic.code == "E_BORROW_CONFLICT"
+        }));
+    }
+
+    #[test]
     fn user_profile_rejects_native_namespace_and_constant_kernel_pointers() {
         let source = "fn run() -> i32:\n    native.cpu_cli()\n    let pointer: ptr[u8] = 3238002688 as usize as ptr[u8]\n    return 0\n";
         let diagnostics = analyze(&parse(source), Profile::I686User, TargetDataLayout::I686)
@@ -4743,5 +6108,42 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "E_INTEGER_LITERAL_RANGE"));
+    }
+
+    #[test]
+    fn v121_drop_functions_are_nominal_unique_and_not_directly_callable() {
+        let valid = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    value.id = 0\n\nfn consume(value: Resource) -> unit:\n    drop(value)\n    return unit\n";
+        let hir = analyze(&parse(valid), Profile::Hosted, TargetDataLayout::I686)
+            .expect("canonical drop declaration analyzes");
+        let drop = hir
+            .functions
+            .iter()
+            .find(|function| function.kind == FunctionKind::Drop)
+            .expect("drop function recorded");
+        assert!(drop.drop_target.is_some());
+
+        let direct = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    value.id = 0\n\nfn bad(value: Resource):\n    destroy(borrow mut value)\n";
+        let diagnostics = analyze(&parse(direct), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("drop function must not be directly callable");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_DROP_DIRECT_CALL"));
+
+        let field_move = "struct Child:\n    id: u32\n\ndrop fn destroy_child(value: borrow mut Child):\n    (*value).id = 0 as u32\n\nstruct Parent:\n    child: Child\n\nfn consume(value: Child) -> unit:\n    return unit\n\ndrop fn destroy_parent(value: borrow mut Parent):\n    consume((*value).child)\n";
+        let diagnostics = analyze(&parse(field_move), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("a destructor cannot steal a field from structural drop glue");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_DROP_FIELD_MOVE"));
+    }
+
+    #[test]
+    fn v121_rejects_maybe_moved_control_flow_without_runtime_drop_flags() {
+        let source = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    value.id = 0\n\nfn consume(value: Resource) -> unit:\n    return unit\n\nfn branch(flag: bool, value: Resource) -> unit:\n    if flag:\n        consume(value)\n    return unit\n";
+        let diagnostics = analyze(&parse(source), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("branch-dependent moves require runtime drop flags and must be rejected");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_OWNERSHIP_MAYBE_MOVED"));
     }
 }

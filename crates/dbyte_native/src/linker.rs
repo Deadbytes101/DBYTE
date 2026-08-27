@@ -10,7 +10,7 @@ use crate::external_elf::parse_external_i386_object;
 use crate::object::{
     parse_relocatable, write_relocatable, ObjectImage, ObjectRelocation, ObjectSection,
     RelocationKind, SectionContents, SymbolBinding, SymbolDefinition, SymbolKind,
-    ENTRY_METADATA_PREFIX, PROFILE_METADATA_PREFIX, TASK_METADATA_PREFIX,
+    DROP_METADATA_PREFIX, ENTRY_METADATA_PREFIX, PROFILE_METADATA_PREFIX, TASK_METADATA_PREFIX,
 };
 use crate::x86::{Encoder, Register};
 use std::collections::{BTreeMap, BTreeSet};
@@ -271,6 +271,7 @@ pub fn link_images(inputs: &[(String, ObjectImage)]) -> Result<LinkArtifact, Dia
 
 fn link_parsed(inputs: &[ParsedInput], profile: LinkProfile) -> Result<LinkArtifact, Diagnostic> {
     validate_profiles(inputs, profile)?;
+    validate_drop_metadata(inputs)?;
     let (entry_abi, needs_task_trampoline) = if profile == LinkProfile::Kernel {
         validate_interrupt_metadata(inputs)?;
         (
@@ -323,6 +324,64 @@ fn link_parsed(inputs: &[ParsedInput], profile: LinkProfile) -> Result<LinkArtif
         layout: final_elf.layout,
         dump,
     })
+}
+
+fn validate_drop_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic> {
+    let mut owners = BTreeSet::new();
+    for input in inputs {
+        for marker in &input.image.symbols {
+            let Some(record) = marker.name.strip_prefix(DROP_METADATA_PREFIX) else {
+                continue;
+            };
+            if marker.binding != SymbolBinding::Local
+                || marker.kind != SymbolKind::Function
+                || marker.definition == SymbolDefinition::Undefined
+            {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("invalid drop metadata symbol contract '{}'", marker.name),
+                ));
+            }
+            let fields = record.split(':').collect::<Vec<_>>();
+            let [owner, function, type_id, arity] = fields.as_slice() else {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("malformed drop metadata symbol '{}'", marker.name),
+                ));
+            };
+            let Ok(arity) = arity.parse::<u32>() else {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("malformed drop metadata identity '{}'", marker.name),
+                ));
+            };
+            if type_id.parse::<u32>().is_err() {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("malformed drop metadata identity '{}'", marker.name),
+                ));
+            }
+            if !owners.insert((*owner).to_owned()) {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::DuplicateSymbol,
+                    format!("duplicate drop contract for type '{owner}'"),
+                ));
+            }
+            if arity == 0
+                && !input.image.symbols.iter().any(|symbol| {
+                    symbol.name == *function
+                        && symbol.kind == SymbolKind::Function
+                        && symbol.definition != SymbolDefinition::Undefined
+                })
+            {
+                return Err(Diagnostic::without_span(
+                    DiagnosticCategory::InvalidObject,
+                    format!("drop contract for '{owner}' lacks function '{function}'"),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_profiles(inputs: &[ParsedInput], profile: LinkProfile) -> Result<(), Diagnostic> {

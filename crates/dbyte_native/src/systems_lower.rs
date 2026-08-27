@@ -730,7 +730,7 @@ fn lower_function(
 
     let mut depth = 0usize;
     let mut returns = 0usize;
-    for instruction in &function.instructions {
+    for (index, instruction) in function.instructions.iter().enumerate() {
         lower_instruction(
             instruction,
             function,
@@ -741,7 +741,17 @@ fn lower_function(
             encoder,
             &mut depth,
             &mut returns,
-        )?;
+        )
+        .map_err(|mut error| {
+            let start = index.saturating_sub(30);
+            let context = function.instructions[start..=index]
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" | ");
+            error.message = format!("{} at instruction {index}: {context}", error.message);
+            error
+        })?;
     }
     let terminal_resume = function.instructions.iter().any(|instruction| {
         matches!(
@@ -2030,8 +2040,8 @@ fn consume(
         return Err(function_error(
             function,
             format!(
-                "systems IR stack underflow in {operation}: need {count}, have {}",
-                *depth
+                "systems IR stack underflow in `{}` {operation}: need {count}, have {}",
+                function.symbol, *depth
             ),
         ));
     }

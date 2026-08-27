@@ -5,9 +5,17 @@ use dbyte_module::{resolve_import, ImportTarget, ModuleError, ModuleState};
 use dbyte_parser::Parser;
 use memchr::memmem;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+
+mod concrete;
+pub mod memory;
+pub use concrete::{
+    execute_concrete_project, execute_concrete_project_incremental,
+    execute_concrete_project_with_args, execute_concrete_project_with_memory, ConcreteExecution,
+    ConcreteIncrementalExecution, ConcreteSession, ConcreteValue,
+};
 
 /// Top-level bindings and functions captured when loading a local file module.
 /// Used when invoking `module.pub_fn(...)` so the body sees imports, module `let`s,
@@ -19,6 +27,61 @@ pub struct ModuleLexical {
 }
 
 type NativeFn = fn(&[Value]) -> Result<Value, String>;
+
+#[doc(hidden)]
+pub fn execute_resolved_host_capability(
+    capability: dbyte_hir::HostCapabilityId,
+    arguments: &[Value],
+) -> Result<Value, String> {
+    use dbyte_hir::HostCapabilityId as C;
+    let function: NativeFn = match capability {
+        C::MathAbs => native_math_abs,
+        C::MathMin => native_math_min,
+        C::MathMax => native_math_max,
+        C::FsReadText => native_fs_read_text,
+        C::FsWriteText => native_fs_write_text,
+        C::FsReadBytes => native_fs_read_bytes,
+        C::FsWriteBytes => native_fs_write_bytes,
+        C::FsExists => native_fs_exists,
+        C::FsMkdir => native_fs_mkdir,
+        C::FsRemove => native_fs_remove,
+        C::EncodingHexEncode => native_encoding_hex_encode,
+        C::EncodingHexDecode => native_encoding_hex_decode,
+        C::HashSha256 => native_hash_sha256,
+        C::ProcessRun => native_process_run,
+        C::BufferNew => native_buffer_new,
+        C::BufferFromBytes => native_buffer_from_bytes,
+        C::BufferToBytes => native_buffer_to_bytes,
+        C::BufferLen => native_buffer_len,
+        C::BufferGet => native_buffer_get,
+        C::BufferSet => native_buffer_set,
+        C::BufferSlice => native_buffer_slice,
+        C::BufferLoad => native_buffer_load,
+        C::BufferSave => native_buffer_save,
+        C::BufferFind => native_buffer_find,
+        C::BufferReplace => native_buffer_replace,
+        C::BinaryU8 => native_binary_u8,
+        C::BinaryI8 => native_binary_i8,
+        C::BinaryU16Le => native_binary_u16_le,
+        C::BinaryU16Be => native_binary_u16_be,
+        C::BinaryI16Le => native_binary_i16_le,
+        C::BinaryI16Be => native_binary_i16_be,
+        C::BinaryU32Le => native_binary_u32_le,
+        C::BinaryU32Be => native_binary_u32_be,
+        C::BinaryI32Le => native_binary_i32_le,
+        C::BinaryI32Be => native_binary_i32_be,
+        C::BinaryPackU16Le => native_binary_pack_u16_le,
+        C::BinaryPackU16Be => native_binary_pack_u16_be,
+        C::BinaryPackU32Le => native_binary_pack_u32_le,
+        C::BinaryPackU32Be => native_binary_pack_u32_be,
+        C::BinaryWriteU16Le => native_binary_write_u16_le,
+        C::BinaryWriteU16Be => native_binary_write_u16_be,
+        C::BinaryWriteU32Le => native_binary_write_u32_le,
+        C::BinaryWriteU32Be => native_binary_write_u32_be,
+        C::Print | C::EnvArgs => return Err("capability requires executor context".into()),
+    };
+    function(arguments)
+}
 // Keep this below the host thread stack ceiling so recursion fails as a DByte
 // RuntimeError instead of aborting the Rust process.
 // V12 aggregate/closure values make each tree-interpreter Rust frame larger.
@@ -174,9 +237,15 @@ enum OutputSink {
 #[derive(Clone)]
 pub struct Interpreter {
     env: Vec<HashMap<String, Value>>,
+    scope_order: Vec<Vec<String>>,
     fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
     structs: HashMap<String, Vec<StructField>>,
     enums: HashMap<String, Vec<EnumVariant>>,
+    /// Runtime bodies for canonical `drop fn` declarations, keyed by the
+    /// nominal type they own. These are invoked explicitly by DByte cleanup;
+    /// Rust `Drop`/`Rc` lifetime is never observable language behavior.
+    drop_fns: HashMap<String, (Vec<Param>, Vec<Stmt>)>,
+    destroyed_structs: HashSet<usize>,
     current_file: Option<PathBuf>,
     module_cache: HashMap<String, ModuleState<ModuleValue>>,
     loading_stack: Vec<String>,
@@ -230,9 +299,12 @@ impl Interpreter {
         );
         Self {
             env: vec![HashMap::new()],
+            scope_order: vec![Vec::new()],
             fns: HashMap::new(),
             structs: HashMap::new(),
             enums,
+            drop_fns: HashMap::new(),
+            destroyed_structs: HashSet::new(),
             current_file: None,
             module_cache: HashMap::new(),
             loading_stack: Vec::new(),
@@ -298,9 +370,22 @@ impl Interpreter {
 
     fn push_scope(&mut self) {
         self.env.push(HashMap::new());
+        self.scope_order.push(Vec::new());
     }
-    fn pop_scope(&mut self) {
+    fn pop_scope_without_drop(&mut self) {
         self.env.pop();
+        self.scope_order.pop();
+    }
+
+    fn pop_scope(&mut self, span: Span) -> Result<(), RuntimeError> {
+        let mut scope = self.env.pop().unwrap_or_default();
+        let order = self.scope_order.pop().unwrap_or_default();
+        for name in order.into_iter().rev() {
+            if let Some(value) = scope.remove(&name) {
+                self.destroy_value(value, span)?;
+            }
+        }
+        Ok(())
     }
 
     fn get(&self, name: &str) -> Option<Value> {
@@ -312,18 +397,31 @@ impl Interpreter {
         None
     }
 
-    fn set(&mut self, name: &str, val: Value) -> bool {
+    fn replace(&mut self, name: &str, val: Value) -> Option<Value> {
         for scope in self.env.iter_mut().rev() {
-            if scope.contains_key(name) {
-                scope.insert(name.to_string(), val);
-                return true;
+            if let Some(slot) = scope.get_mut(name) {
+                return Some(std::mem::replace(slot, val));
             }
         }
-        false
+        None
     }
 
     fn define(&mut self, name: &str, val: Value) {
-        self.env.last_mut().unwrap().insert(name.to_string(), val);
+        let scope = self.env.last_mut().unwrap();
+        if !scope.contains_key(name) {
+            self.scope_order
+                .last_mut()
+                .expect("scope order")
+                .push(name.to_string());
+        }
+        scope.insert(name.to_string(), val);
+    }
+
+    fn take(&mut self, name: &str) -> Option<Value> {
+        self.env
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.remove(name))
     }
 
     fn module_key(target: &ImportTarget) -> String {
@@ -542,9 +640,11 @@ impl Interpreter {
         let program = Self::parse_module_file(path, span)?;
 
         let saved_env = std::mem::replace(&mut self.env, vec![HashMap::new()]);
+        let saved_scope_order = std::mem::replace(&mut self.scope_order, vec![Vec::new()]);
         let saved_fns = std::mem::take(&mut self.fns);
         let saved_structs = std::mem::take(&mut self.structs);
         let saved_enums = std::mem::take(&mut self.enums);
+        let saved_drop_fns = std::mem::take(&mut self.drop_fns);
         let saved_file = self.current_file.replace(path.to_path_buf());
         let saved_in_function = self.in_function;
         let saved_call_depth = self.call_depth;
@@ -587,9 +687,11 @@ impl Interpreter {
         };
 
         self.env = saved_env;
+        self.scope_order = saved_scope_order;
         self.fns = saved_fns;
         self.structs = saved_structs;
         self.enums = saved_enums;
+        self.drop_fns = saved_drop_fns;
         self.current_file = saved_file;
         self.in_function = saved_in_function;
         self.call_depth = saved_call_depth;
@@ -618,6 +720,7 @@ impl Interpreter {
 
     fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
+            Expr::UnitLit(_) => Ok(Value::Void),
             Expr::IntLit(n, _) => Ok(Value::Int(*n)),
             Expr::FloatLit(n, _) => Ok(Value::Float(*n)),
             Expr::BoolLit(b, _) => Ok(Value::Bool(*b)),
@@ -645,6 +748,11 @@ impl Interpreter {
             Expr::NullLit(_) => Ok(Value::Null),
             Expr::GenericApply { target, .. } => self.eval_expr(target),
             Expr::Borrow { expr, .. } => self.eval_expr(expr),
+            Expr::Drop { expr, span } => {
+                let value = self.eval_owned_expr(expr)?;
+                self.destroy_value(value, *span)?;
+                Ok(Value::Void)
+            }
             Expr::Try { expr, span } => match self.eval_expr(expr)? {
                 Value::Enum(value)
                     if value.enum_name == "Result"
@@ -904,7 +1012,11 @@ impl Interpreter {
                             span: *span,
                         }),
                     },
-                    UnaryOp::BitNot | UnaryOp::AddressOf | UnaryOp::Deref => Err(RuntimeError {
+                    // Canonical borrows are represented by the same reference cell in the
+                    // hosted model. Dereference therefore projects that value without
+                    // inventing a host pointer or a second ownership decision.
+                    UnaryOp::Deref => Ok(v),
+                    UnaryOp::BitNot | UnaryOp::AddressOf => Err(RuntimeError {
                         msg: "native systems unary operators are unavailable in the hosted interpreter"
                             .into(),
                         span: *span,
@@ -1141,8 +1253,37 @@ impl Interpreter {
             }
         }
 
-        let arg_vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_expr(a)).collect();
-        let arg_vals = arg_vals?;
+        let arg_vals: Result<Vec<_>, _> = args.iter().map(|a| self.eval_owned_expr(a)).collect();
+        let result = match arg_vals {
+            Ok(values) => self.call_user_function_values(name, params, body, values, span),
+            Err(error) => Err(error),
+        };
+        if module_entry.is_some() {
+            self.pop_scope_without_drop();
+            self.active_module_lexical = saved_active;
+        }
+        result
+    }
+
+    fn call_user_function_values(
+        &mut self,
+        name: &str,
+        params: &[Param],
+        body: &[Stmt],
+        arg_vals: Vec<Value>,
+        span: Span,
+    ) -> Result<Value, RuntimeError> {
+        if arg_vals.len() != params.len() {
+            return Err(RuntimeError {
+                msg: format!(
+                    "function `{}` expects {} args, got {}",
+                    name,
+                    params.len(),
+                    arg_vals.len()
+                ),
+                span,
+            });
+        }
         self.push_scope();
         self.in_function += 1;
         self.call_depth += 1;
@@ -1152,12 +1293,9 @@ impl Interpreter {
         let result = self.exec_stmts(body);
         self.call_depth -= 1;
         self.in_function -= 1;
-        self.pop_scope();
+        let cleanup = self.pop_scope(span);
 
-        if module_entry.is_some() {
-            self.pop_scope();
-            self.active_module_lexical = saved_active;
-        }
+        cleanup?;
 
         match result {
             Ok(_) => Ok(Value::Void),
@@ -1172,6 +1310,95 @@ impl Interpreter {
             }),
             Err(Signal::Error(e)) => Err(e),
         }
+    }
+
+    fn destroy_value(&mut self, value: Value, span: Span) -> Result<(), RuntimeError> {
+        if !self.value_needs_drop(&value) {
+            return Ok(());
+        }
+        match value {
+            Value::Struct(value) => {
+                let identity = Rc::as_ptr(&value) as usize;
+                if !self.destroyed_structs.insert(identity) {
+                    return Ok(());
+                }
+                let type_name = value.borrow().type_name.clone();
+                if let Some((params, body)) = self.drop_fns.get(&type_name).cloned() {
+                    self.call_user_function_values(
+                        "<drop>",
+                        &params,
+                        &body,
+                        vec![Value::Struct(Rc::clone(&value))],
+                        span,
+                    )?;
+                }
+                let fields = self.structs.get(&type_name).cloned().unwrap_or_default();
+                for field in fields.into_iter().rev() {
+                    if let Some(field_value) = value.borrow_mut().fields.remove(&field.name) {
+                        self.destroy_value(field_value, span)?;
+                    }
+                }
+                Ok(())
+            }
+            Value::Enum(mut value) => {
+                if let Some((params, body)) = self.drop_fns.get(&value.enum_name).cloned() {
+                    self.call_user_function_values(
+                        "<drop>",
+                        &params,
+                        &body,
+                        vec![Value::Enum(value.clone())],
+                        span,
+                    )?;
+                }
+                for payload in value.payload.drain(..).rev() {
+                    self.destroy_value(payload, span)?;
+                }
+                Ok(())
+            }
+            Value::List(values) => {
+                for element in values.into_iter().rev() {
+                    self.destroy_value(element, span)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn value_needs_drop(&self, value: &Value) -> bool {
+        match value {
+            Value::Struct(value) => {
+                let value = value.borrow();
+                self.drop_fns.contains_key(&value.type_name)
+                    || value
+                        .fields
+                        .values()
+                        .any(|field| self.value_needs_drop(field))
+            }
+            Value::Enum(value) => {
+                self.drop_fns.contains_key(&value.enum_name)
+                    || value
+                        .payload
+                        .iter()
+                        .any(|payload| self.value_needs_drop(payload))
+            }
+            Value::List(values) => values.iter().any(|value| self.value_needs_drop(value)),
+            _ => false,
+        }
+    }
+
+    fn eval_owned_expr(&mut self, expression: &Expr) -> Result<Value, RuntimeError> {
+        if let Expr::Ident(name, span) = expression {
+            if let Some(value) = self.get(name) {
+                if self.value_needs_drop(&value) {
+                    return self.take(name).ok_or_else(|| RuntimeError {
+                        msg: format!("owned value `{name}` was already moved"),
+                        span: *span,
+                    });
+                }
+            }
+        }
+        self.eval_expr(expression)
     }
 
     fn invoke_value(
@@ -1217,7 +1444,7 @@ impl Interpreter {
                 }
                 let values: Result<Vec<_>, _> = args
                     .iter()
-                    .map(|argument| self.eval_expr(argument))
+                    .map(|argument| self.eval_owned_expr(argument))
                     .collect();
                 let values = values?;
                 if self.call_depth >= MAX_CALL_DEPTH {
@@ -1238,7 +1465,7 @@ impl Interpreter {
                 let result = self.exec_stmts(&closure.body);
                 self.call_depth -= 1;
                 self.in_function -= 1;
-                self.pop_scope();
+                self.pop_scope(span)?;
                 match result {
                     Ok(()) => Ok(Value::Void),
                     Err(Signal::Return(value)) => Ok(value),
@@ -1282,7 +1509,10 @@ impl Interpreter {
                             span: argument.span,
                         });
                     }
-                    fields.insert(argument.name.clone(), self.eval_expr(&argument.value)?);
+                    fields.insert(
+                        argument.name.clone(),
+                        self.eval_owned_expr(&argument.value)?,
+                    );
                 }
                 if let Some(missing) = definitions
                     .iter()
@@ -1325,7 +1555,7 @@ impl Interpreter {
                 }
                 let payload: Result<Vec<_>, _> = args
                     .iter()
-                    .map(|argument| self.eval_expr(argument))
+                    .map(|argument| self.eval_owned_expr(argument))
                     .collect();
                 Ok(Value::Enum(EnumValue {
                     enum_name,
@@ -1343,25 +1573,50 @@ impl Interpreter {
     fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), Signal> {
         match stmt {
             Stmt::Let { name, value, .. } => {
-                let v = Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
+                let v = Self::complete_value(self.eval_owned_expr(value).map_err(Signal::Error)?)?;
                 self.define(name, v);
             }
 
             Stmt::Assign { name, value, span } => {
-                let v = Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
-                if !self.set(name, v) {
+                let v = Self::complete_value(self.eval_owned_expr(value).map_err(Signal::Error)?)?;
+                let Some(previous) = self.replace(name, v) else {
                     return Err(Signal::Error(RuntimeError {
                         msg: format!("undefined variable `{}`", name),
                         span: *span,
                     }));
-                }
+                };
+                self.destroy_value(previous, *span).map_err(Signal::Error)?;
             }
 
             Stmt::FnDef {
-                name, params, body, ..
+                kind,
+                name,
+                params,
+                body,
+                ..
             } => {
-                self.fns
-                    .insert(name.clone(), (params.clone(), body.clone()));
+                if *kind == FunctionKind::Drop {
+                    let target = params
+                        .first()
+                        .and_then(|parameter| match &parameter.ty {
+                            TypeAnnotation::Borrow { pointee, .. } => match pointee.as_ref() {
+                                TypeAnnotation::Named(name)
+                                | TypeAnnotation::Generic { base: name, .. } => Some(name.clone()),
+                                _ => None,
+                            },
+                            _ => None,
+                        })
+                        .ok_or_else(|| {
+                            Signal::Error(RuntimeError {
+                                msg: "drop function requires one nominal borrow parameter".into(),
+                                span: stmt.span(),
+                            })
+                        })?;
+                    self.drop_fns.insert(target, (params.clone(), body.clone()));
+                } else {
+                    self.fns
+                        .insert(name.clone(), (params.clone(), body.clone()));
+                }
             }
 
             Stmt::StructDef { name, fields, .. } => {
@@ -1388,21 +1643,24 @@ impl Interpreter {
                 };
                 let object = self.eval_expr(object).map_err(Signal::Error)?;
                 let new_value =
-                    Self::complete_value(self.eval_expr(value).map_err(Signal::Error)?)?;
+                    Self::complete_value(self.eval_owned_expr(value).map_err(Signal::Error)?)?;
                 let Value::Struct(object) = object else {
                     return Err(Signal::Error(RuntimeError {
                         msg: "field store requires a struct value".into(),
                         span: *span,
                     }));
                 };
-                let mut object = object.borrow_mut();
-                let Some(field) = object.fields.get_mut(property) else {
-                    return Err(Signal::Error(RuntimeError {
-                        msg: format!("struct has no field `{property}`"),
-                        span: *span,
-                    }));
+                let previous = {
+                    let mut object = object.borrow_mut();
+                    let Some(field) = object.fields.get_mut(property) else {
+                        return Err(Signal::Error(RuntimeError {
+                            msg: format!("struct has no field `{property}`"),
+                            span: *span,
+                        }));
+                    };
+                    std::mem::replace(field, new_value)
                 };
-                *field = new_value;
+                self.destroy_value(previous, *span).map_err(Signal::Error)?;
             }
 
             Stmt::Return { value, span } => {
@@ -1413,7 +1671,9 @@ impl Interpreter {
                     }));
                 }
                 let v = match value {
-                    Some(e) => Self::complete_value(self.eval_expr(e).map_err(Signal::Error)?)?,
+                    Some(e) => {
+                        Self::complete_value(self.eval_owned_expr(e).map_err(Signal::Error)?)?
+                    }
                     None => Value::Void,
                 };
                 return Err(Signal::Return(v));
@@ -1429,14 +1689,16 @@ impl Interpreter {
                 match cv {
                     Value::Bool(true) => {
                         self.push_scope();
-                        self.exec_stmts(then_body)?;
-                        self.pop_scope();
+                        let result = self.exec_stmts(then_body);
+                        self.pop_scope(*span).map_err(Signal::Error)?;
+                        result?;
                     }
                     Value::Bool(false) => {
                         if let Some(eb) = else_body {
                             self.push_scope();
-                            self.exec_stmts(eb)?;
-                            self.pop_scope();
+                            let result = self.exec_stmts(eb);
+                            self.pop_scope(*span).map_err(Signal::Error)?;
+                            result?;
                         }
                     }
                     _ => {
@@ -1454,7 +1716,7 @@ impl Interpreter {
                     Value::Bool(true) => {
                         self.push_scope();
                         let r = self.exec_stmts(body);
-                        self.pop_scope();
+                        self.pop_scope(*span).map_err(Signal::Error)?;
                         match r {
                             Ok(()) | Err(Signal::Continue(_)) => {}
                             Err(Signal::Break(_)) => break,
@@ -1493,7 +1755,7 @@ impl Interpreter {
                     self.push_scope();
                     self.define(var, item);
                     let r = self.exec_stmts(body);
-                    self.pop_scope();
+                    self.pop_scope(*span).map_err(Signal::Error)?;
                     match r {
                         Ok(()) | Err(Signal::Continue(_)) => {}
                         Err(Signal::Break(_)) => break,
@@ -1530,7 +1792,7 @@ impl Interpreter {
                     }
                 }
                 let result = self.exec_stmts(&arm.body);
-                self.pop_scope();
+                self.pop_scope(*span).map_err(Signal::Error)?;
                 result?;
             }
 
@@ -2259,6 +2521,33 @@ mod remainder_tests {
         interpreter.capture_output();
         interpreter.run(&parse(source)).unwrap();
         assert_eq!(interpreter.take_captured_output(), "5\n7\n");
+    }
+
+    #[test]
+    fn explicit_drop_executes_custom_then_structural_cleanup() {
+        let source = "struct Child:\n    value: int\n\ndrop fn destroy_child(value: borrow mut Child):\n    print((*value).value)\n\nstruct Parent:\n    first: Child\n    second: Child\n\ndrop fn destroy_parent(value: borrow mut Parent):\n    print(3)\n\nlet resource = Parent(first = Child(value = 1), second = Child(value = 2))\ndrop(resource)\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "3\n2\n1\n");
+    }
+
+    #[test]
+    fn automatic_drop_runs_in_reverse_activation_order_before_return() {
+        let source = "struct Resource:\n    value: int\n\ndrop fn destroy_resource(value: borrow mut Resource):\n    print((*value).value)\n\nfn work() -> int:\n    let first = Resource(value = 1)\n    let second = Resource(value = 2)\n    return 7\n\nprint(work())\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "2\n1\n7\n");
+    }
+
+    #[test]
+    fn reassignment_drops_old_value_after_rhs_succeeds() {
+        let source = "struct Resource:\n    value: int\n\ndrop fn destroy_resource(value: borrow mut Resource):\n    print((*value).value)\n\nfn work() -> int:\n    let resource = Resource(value = 1)\n    resource = Resource(value = 2)\n    return 0\n\nprint(work())\n";
+        let mut interpreter = Interpreter::new();
+        interpreter.capture_output();
+        interpreter.run(&parse(source)).unwrap();
+        assert_eq!(interpreter.take_captured_output(), "1\n2\n0\n");
     }
 
     #[test]
