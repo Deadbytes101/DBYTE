@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod executable;
 pub use executable::*;
+pub mod integer_semantics;
 mod project;
 mod source;
 pub use source::{load_source_project, load_source_project_from_program};
@@ -52,6 +53,9 @@ pub enum Profile {
     Vm,
     I686None,
     I686User,
+    X86_64None,
+    X86_64Linux,
+    X86_64Windows,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +73,31 @@ impl TargetDataLayout {
         usize_size: 4,
         usize_align: 4,
     };
+
+    pub const X86_64: Self = Self {
+        pointer_size: 8,
+        pointer_align: 8,
+        usize_size: 8,
+        usize_align: 8,
+    };
+
+    pub const fn pointer_bits(self) -> u32 {
+        self.pointer_size * 8
+    }
+
+    pub const fn usize_max(self) -> u64 {
+        match self.usize_size {
+            1 => u8::MAX as u64,
+            2 => u16::MAX as u64,
+            4 => u32::MAX as u64,
+            8 => u64::MAX,
+            _ => 0,
+        }
+    }
+
+    pub const fn contains_usize(self, value: u64) -> bool {
+        value <= self.usize_max()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +114,8 @@ pub enum IntegerType {
     U16,
     I32,
     U32,
+    I64,
+    U64,
     Usize,
     LegacyInt,
 }
@@ -283,6 +314,21 @@ pub enum HirIntrinsic {
     RuntimeMemoryFree,
     RuntimeMemoryRead8,
     RuntimeMemoryWrite8,
+    LinuxExit,
+    LinuxRead,
+    LinuxWrite,
+    LinuxMmap,
+    LinuxMunmap,
+    LinuxOpenAt,
+    LinuxClose,
+    LinuxClockGettime,
+    WindowsGetStdHandle,
+    WindowsReadFile,
+    WindowsWriteFile,
+    WindowsCloseHandle,
+    WindowsVirtualAlloc,
+    WindowsVirtualFree,
+    WindowsQueryPerformanceCounter,
 }
 
 impl HirIntrinsic {
@@ -332,6 +378,21 @@ impl HirIntrinsic {
             ("__dbyte_runtime", "memory_free") => Self::RuntimeMemoryFree,
             ("__dbyte_runtime", "memory_read8") => Self::RuntimeMemoryRead8,
             ("__dbyte_runtime", "memory_write8") => Self::RuntimeMemoryWrite8,
+            ("linux", "exit") => Self::LinuxExit,
+            ("linux", "read") => Self::LinuxRead,
+            ("linux", "write") => Self::LinuxWrite,
+            ("linux", "mmap") => Self::LinuxMmap,
+            ("linux", "munmap") => Self::LinuxMunmap,
+            ("linux", "openat") => Self::LinuxOpenAt,
+            ("linux", "close") => Self::LinuxClose,
+            ("linux", "clock_gettime") => Self::LinuxClockGettime,
+            ("windows", "get_std_handle") => Self::WindowsGetStdHandle,
+            ("windows", "read_file") => Self::WindowsReadFile,
+            ("windows", "write_file") => Self::WindowsWriteFile,
+            ("windows", "close_handle") => Self::WindowsCloseHandle,
+            ("windows", "virtual_alloc") => Self::WindowsVirtualAlloc,
+            ("windows", "virtual_free") => Self::WindowsVirtualFree,
+            ("windows", "query_performance_counter") => Self::WindowsQueryPerformanceCounter,
             _ => return None,
         };
         Some(value)
@@ -341,6 +402,33 @@ impl HirIntrinsic {
         matches!(
             self,
             Self::UserSyscall0 | Self::UserSyscall1 | Self::UserSyscall2 | Self::UserSyscall3
+        )
+    }
+
+    pub const fn is_linux(self) -> bool {
+        matches!(
+            self,
+            Self::LinuxExit
+                | Self::LinuxRead
+                | Self::LinuxWrite
+                | Self::LinuxMmap
+                | Self::LinuxMunmap
+                | Self::LinuxOpenAt
+                | Self::LinuxClose
+                | Self::LinuxClockGettime
+        )
+    }
+
+    pub const fn is_windows(self) -> bool {
+        matches!(
+            self,
+            Self::WindowsGetStdHandle
+                | Self::WindowsReadFile
+                | Self::WindowsWriteFile
+                | Self::WindowsCloseHandle
+                | Self::WindowsVirtualAlloc
+                | Self::WindowsVirtualFree
+                | Self::WindowsQueryPerformanceCounter
         )
     }
 
@@ -795,7 +883,10 @@ impl Analyzer {
                     );
                 }
                 if *call_convention == CallConvention::C
-                    && !matches!(self.profile, Profile::I686None)
+                    && !matches!(
+                        self.profile,
+                        Profile::I686None | Profile::X86_64Linux | Profile::X86_64Windows
+                    )
                 {
                     self.diagnostic(
                         "E_PROFILE_CAPABILITY",
@@ -1465,6 +1556,8 @@ impl Analyzer {
             TypeAnnotation::U16 => CanonicalType::Integer(IntegerType::U16),
             TypeAnnotation::I32 => CanonicalType::Integer(IntegerType::I32),
             TypeAnnotation::U32 => CanonicalType::Integer(IntegerType::U32),
+            TypeAnnotation::I64 => CanonicalType::Integer(IntegerType::I64),
+            TypeAnnotation::U64 => CanonicalType::Integer(IntegerType::U64),
             TypeAnnotation::Usize => CanonicalType::Integer(IntegerType::Usize),
             TypeAnnotation::Float => CanonicalType::Float,
             TypeAnnotation::Bool => CanonicalType::Bool,
@@ -3274,8 +3367,10 @@ impl Analyzer {
             || (intrinsic.is_runtime_host_memory()
                 && matches!(self.profile, Profile::Hosted | Profile::Vm))
             || match self.profile {
-                Profile::I686None => namespace == "native",
+                Profile::I686None | Profile::X86_64None => namespace == "native",
                 Profile::I686User => namespace == "user",
+                Profile::X86_64Linux => namespace == "linux",
+                Profile::X86_64Windows => namespace == "windows",
                 Profile::Hosted | Profile::Vm => false,
             };
         if !admitted
@@ -3297,10 +3392,60 @@ impl Analyzer {
         let u16_ty = self.types.intern(CanonicalType::Integer(IntegerType::U16));
         let u32_ty = self.types.intern(CanonicalType::Integer(IntegerType::U32));
         let i32_ty = self.types.intern(CanonicalType::Integer(IntegerType::I32));
+        let i64_ty = self.types.intern(CanonicalType::Integer(IntegerType::I64));
         let usize_ty = self
             .types
             .intern(CanonicalType::Integer(IntegerType::Usize));
         let unit = TypeId(0);
+        if intrinsic.is_linux() {
+            let required_suffix = match intrinsic {
+                HirIntrinsic::LinuxExit => "linux_exit_raw",
+                HirIntrinsic::LinuxRead => "linux_read_raw",
+                HirIntrinsic::LinuxWrite => "linux_write_raw",
+                HirIntrinsic::LinuxMmap => "linux_mmap_raw",
+                HirIntrinsic::LinuxMunmap => "linux_munmap_raw",
+                HirIntrinsic::LinuxOpenAt => "linux_openat_raw",
+                HirIntrinsic::LinuxClose => "linux_close_raw",
+                HirIntrinsic::LinuxClockGettime => "linux_clock_gettime_raw",
+                _ => unreachable!(),
+            };
+            if !self
+                .current_function_source_name
+                .as_deref()
+                .is_some_and(|name| name.ends_with(required_suffix))
+            {
+                self.diagnostic(
+                    "E_RUNTIME_CAPABILITY_PRIVATE",
+                    "raw Linux syscalls are reserved for versioned runtime functions",
+                    span,
+                );
+            }
+        }
+        if intrinsic.is_windows() {
+            let required_suffix = match intrinsic {
+                HirIntrinsic::WindowsGetStdHandle => "windows_get_std_handle_raw",
+                HirIntrinsic::WindowsReadFile => "windows_read_file_raw",
+                HirIntrinsic::WindowsWriteFile => "windows_write_file_raw",
+                HirIntrinsic::WindowsCloseHandle => "windows_close_handle_raw",
+                HirIntrinsic::WindowsVirtualAlloc => "windows_virtual_alloc_raw",
+                HirIntrinsic::WindowsVirtualFree => "windows_virtual_free_raw",
+                HirIntrinsic::WindowsQueryPerformanceCounter => {
+                    "windows_query_performance_counter_raw"
+                }
+                _ => unreachable!(),
+            };
+            if !self
+                .current_function_source_name
+                .as_deref()
+                .is_some_and(|name| name.ends_with(required_suffix))
+            {
+                self.diagnostic(
+                    "E_RUNTIME_CAPABILITY_PRIVATE",
+                    "raw Windows APIs are reserved for versioned runtime functions",
+                    span,
+                );
+            }
+        }
         if intrinsic.is_runtime_host_memory() {
             let required_function = match intrinsic {
                 HirIntrinsic::RuntimeMemoryAlloc => "system_alloc_raw",
@@ -3467,6 +3612,41 @@ impl Analyzer {
             HirIntrinsic::UserSyscall1 => (vec![Some(u32_ty), None], i32_ty),
             HirIntrinsic::UserSyscall2 => (vec![Some(u32_ty), None, None], i32_ty),
             HirIntrinsic::UserSyscall3 => (vec![Some(u32_ty), None, None, None], i32_ty),
+            HirIntrinsic::LinuxExit => (vec![Some(i32_ty)], unit),
+            HirIntrinsic::LinuxRead | HirIntrinsic::LinuxWrite => {
+                (vec![Some(i32_ty), None, Some(usize_ty)], i64_ty)
+            }
+            HirIntrinsic::LinuxMmap => (
+                vec![
+                    None,
+                    Some(usize_ty),
+                    Some(i32_ty),
+                    Some(i32_ty),
+                    Some(i32_ty),
+                    Some(usize_ty),
+                ],
+                i64_ty,
+            ),
+            HirIntrinsic::LinuxMunmap => (vec![None, Some(usize_ty)], i64_ty),
+            HirIntrinsic::LinuxOpenAt => {
+                (vec![Some(i32_ty), None, Some(i32_ty), Some(u32_ty)], i64_ty)
+            }
+            HirIntrinsic::LinuxClose => (vec![Some(i32_ty)], i64_ty),
+            HirIntrinsic::LinuxClockGettime => (vec![Some(i32_ty), None], i64_ty),
+            HirIntrinsic::WindowsGetStdHandle => (vec![Some(i32_ty)], usize_ty),
+            HirIntrinsic::WindowsReadFile | HirIntrinsic::WindowsWriteFile => (
+                vec![Some(usize_ty), None, Some(u32_ty), None, Some(usize_ty)],
+                i32_ty,
+            ),
+            HirIntrinsic::WindowsCloseHandle => (vec![Some(usize_ty)], i32_ty),
+            HirIntrinsic::WindowsVirtualAlloc => (
+                vec![Some(usize_ty), Some(usize_ty), Some(u32_ty), Some(u32_ty)],
+                usize_ty,
+            ),
+            HirIntrinsic::WindowsVirtualFree => {
+                (vec![Some(usize_ty), Some(usize_ty), Some(u32_ty)], i32_ty)
+            }
+            HirIntrinsic::WindowsQueryPerformanceCounter => (vec![None], i32_ty),
             HirIntrinsic::RuntimeSliceFromRaw
             | HirIntrinsic::RuntimeMutSliceFromRaw
             | HirIntrinsic::RuntimeStringViewFromRaw
@@ -4630,6 +4810,8 @@ impl Analyzer {
             | TypeAnnotation::U16
             | TypeAnnotation::I32
             | TypeAnnotation::U32
+            | TypeAnnotation::I64
+            | TypeAnnotation::U64
             | TypeAnnotation::Usize
             | TypeAnnotation::Float
             | TypeAnnotation::Bool
@@ -4801,11 +4983,14 @@ fn integer_literal_fits(integer: IntegerType, value: i64, layout: TargetDataLayo
         IntegerType::U16 => u16::try_from(value).is_ok(),
         IntegerType::I32 => i32::try_from(value).is_ok(),
         IntegerType::U32 => u32::try_from(value).is_ok(),
+        IntegerType::I64 => true,
+        IntegerType::U64 => value >= 0,
         IntegerType::Usize => match layout.usize_size {
             1 => u8::try_from(value).is_ok(),
             2 => u16::try_from(value).is_ok(),
             4 => u32::try_from(value).is_ok(),
-            _ => value >= 0,
+            8 => value >= 0,
+            _ => false,
         },
         IntegerType::LegacyInt => true,
     }
@@ -4972,15 +5157,26 @@ fn layout_of_inner(
             Layout { size: 1, align: 1 }
         }
         CanonicalType::Integer(IntegerType::I16 | IntegerType::U16) => Layout { size: 2, align: 2 },
-        CanonicalType::Integer(_) | CanonicalType::Float | CanonicalType::Function { .. } => {
-            Layout { size: 4, align: 4 }
-        }
-        CanonicalType::Pointer { .. } | CanonicalType::Borrow { .. } | CanonicalType::LegacyStr => {
-            Layout {
-                size: program.layout.pointer_size,
-                align: program.layout.pointer_align,
-            }
-        }
+        CanonicalType::Integer(IntegerType::I64 | IntegerType::U64) => Layout {
+            size: 8,
+            align: if program.layout.pointer_size == 4 {
+                4
+            } else {
+                8
+            },
+        },
+        CanonicalType::Integer(IntegerType::Usize) => Layout {
+            size: program.layout.usize_size,
+            align: program.layout.usize_align,
+        },
+        CanonicalType::Integer(_) | CanonicalType::Float => Layout { size: 4, align: 4 },
+        CanonicalType::Pointer { .. }
+        | CanonicalType::Borrow { .. }
+        | CanonicalType::Function { .. }
+        | CanonicalType::LegacyStr => Layout {
+            size: program.layout.pointer_size,
+            align: program.layout.pointer_align,
+        },
         CanonicalType::Slice { .. }
         | CanonicalType::StringView
         | CanonicalType::ClosureShape { .. } => Layout {
@@ -5263,15 +5459,25 @@ fn layout_annotation(
             Some(Layout { size: 1, align: 1 })
         }
         TypeAnnotation::I16 | TypeAnnotation::U16 => Some(Layout { size: 2, align: 2 }),
-        TypeAnnotation::Int
-        | TypeAnnotation::I32
-        | TypeAnnotation::U32
-        | TypeAnnotation::Usize
-        | TypeAnnotation::Float
-        | TypeAnnotation::Function { .. } => Some(Layout { size: 4, align: 4 }),
+        TypeAnnotation::I64 | TypeAnnotation::U64 => Some(Layout {
+            size: 8,
+            align: if program.layout.pointer_size == 4 {
+                4
+            } else {
+                8
+            },
+        }),
+        TypeAnnotation::Int | TypeAnnotation::I32 | TypeAnnotation::U32 | TypeAnnotation::Float => {
+            Some(Layout { size: 4, align: 4 })
+        }
+        TypeAnnotation::Usize => Some(Layout {
+            size: program.layout.usize_size,
+            align: program.layout.usize_align,
+        }),
         TypeAnnotation::Pointer(_)
         | TypeAnnotation::ConstPointer(_)
         | TypeAnnotation::Borrow { .. }
+        | TypeAnnotation::Function { .. }
         | TypeAnnotation::Str => Some(Layout {
             size: program.layout.pointer_size,
             align: program.layout.pointer_align,
@@ -5419,6 +5625,8 @@ fn annotation_matches(
         | (TypeAnnotation::U16, CanonicalType::Integer(IntegerType::U16))
         | (TypeAnnotation::I32, CanonicalType::Integer(IntegerType::I32))
         | (TypeAnnotation::U32, CanonicalType::Integer(IntegerType::U32))
+        | (TypeAnnotation::I64, CanonicalType::Integer(IntegerType::I64))
+        | (TypeAnnotation::U64, CanonicalType::Integer(IntegerType::U64))
         | (TypeAnnotation::Usize, CanonicalType::Integer(IntegerType::Usize))
         | (TypeAnnotation::Float, CanonicalType::Float)
         | (TypeAnnotation::Bool, CanonicalType::Bool)
@@ -5594,6 +5802,14 @@ fn annotation_matches_shallow(annotation: &TypeAnnotation, canonical: &Canonical
             | (
                 TypeAnnotation::U32,
                 CanonicalType::Integer(IntegerType::U32)
+            )
+            | (
+                TypeAnnotation::I64,
+                CanonicalType::Integer(IntegerType::I64)
+            )
+            | (
+                TypeAnnotation::U64,
+                CanonicalType::Integer(IntegerType::U64)
             )
             | (
                 TypeAnnotation::Usize,
@@ -6145,5 +6361,48 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "E_OWNERSHIP_MAYBE_MOVED"));
+    }
+
+    #[test]
+    fn v122_target_layout_changes_only_target_sized_representations() {
+        let source = "struct RuntimeWords:\n    data: ptr[u8]\n    len: usize\n    capacity: usize\n    context: ptr[u8]\n    vtable: const_ptr[u8]\n\nstruct CallbackHolder:\n    callback: fn(u64) -> u64\n\nfn use(value: RuntimeWords) -> u64:\n    return 1 as u64\n";
+        let i686 = analyze(&parse(source), Profile::Hosted, TargetDataLayout::I686).unwrap();
+        let amd64 = analyze(&parse(source), Profile::Hosted, TargetDataLayout::X86_64).unwrap();
+        let find = |program: &HirProgram| {
+            program
+                .types
+                .iter()
+                .position(|ty| matches!(ty, CanonicalType::Struct { .. }))
+                .map(|index| TypeId(index as u32))
+                .unwrap()
+        };
+        let find_function = |program: &HirProgram| {
+            program
+                .types
+                .iter()
+                .position(|ty| matches!(ty, CanonicalType::Function { .. }))
+                .map(|index| TypeId(index as u32))
+                .unwrap()
+        };
+        assert_eq!(
+            layout_of(&i686, find(&i686)).unwrap(),
+            Layout { size: 20, align: 4 }
+        );
+        assert_eq!(
+            layout_of(&amd64, find(&amd64)).unwrap(),
+            Layout { size: 40, align: 8 }
+        );
+        assert_eq!(
+            layout_of(&i686, find_function(&i686)).unwrap(),
+            Layout { size: 4, align: 4 }
+        );
+        assert_eq!(
+            layout_of(&amd64, find_function(&amd64)).unwrap(),
+            Layout { size: 8, align: 8 }
+        );
+        assert_eq!(TargetDataLayout::I686.usize_max(), u32::MAX as u64);
+        assert_eq!(TargetDataLayout::X86_64.usize_max(), u64::MAX);
+        assert!(!TargetDataLayout::I686.contains_usize(u64::from(u32::MAX) + 1));
+        assert!(TargetDataLayout::X86_64.contains_usize(u64::from(u32::MAX) + 1));
     }
 }

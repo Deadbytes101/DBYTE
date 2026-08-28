@@ -1,0 +1,58 @@
+fn put(byte: u8) -> int:
+    native.io_out8(1016 as u16, byte)
+    return 0
+
+fn wide_mix(left: i64, right: i64) -> i64:
+    return (left + right) * 3
+
+fn signed_quotient(value: i64, divisor: i64) -> i64:
+    return value / divisor
+
+fn signed_remainder(value: i64, divisor: i64) -> i64:
+    return value % divisor
+
+fn unsigned_quotient(value: u64, divisor: u64) -> u64:
+    return value / divisor
+
+fn unsigned_remainder(value: u64, divisor: u64) -> u64:
+    return value % divisor
+
+pub fn kernel_main() -> int:
+    native.io_out8(1017 as u16, 0 as u8)
+    native.io_out8(1019 as u16, 128 as u8)
+    native.io_out8(1016 as u16, 3 as u8)
+    native.io_out8(1017 as u16, 0 as u8)
+    native.io_out8(1019 as u16, 3 as u8)
+    native.io_out8(1018 as u16, 199 as u8)
+    native.io_out8(1020 as u16, 11 as u8)
+
+    let callback: fn(i64, i64) -> i64 = wide_mix
+    let mixed: i64 = callback(4294967296 as i64, 7 as i64)
+    let quotient: i64 = signed_quotient(-17 as i64, 5 as i64)
+    let remainder: i64 = signed_remainder(-17 as i64, 5 as i64)
+    let unsigned_q: u64 = unsigned_quotient(4294967303 as u64, 3 as u64)
+    let unsigned_r: u64 = unsigned_remainder(4294967303 as u64, 3 as u64)
+    if mixed == 12884901909 as i64:
+        if quotient == -3 as i64:
+            if remainder == -2 as i64:
+                if unsigned_q == 1431655767 as u64:
+                    if unsigned_r == 2 as u64:
+                        put(87 as u8)
+                        put(73 as u8)
+                        put(68 as u8)
+                        put(69 as u8)
+                        put(54 as u8)
+                        put(52 as u8)
+                        put(32 as u8)
+                        put(79 as u8)
+                        put(75 as u8)
+                        put(13 as u8)
+                        put(10 as u8)
+                        return 42
+    put(70 as u8)
+    put(65 as u8)
+    put(73 as u8)
+    put(76 as u8)
+    put(13 as u8)
+    put(10 as u8)
+    return 1

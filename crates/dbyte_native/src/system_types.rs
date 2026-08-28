@@ -24,6 +24,8 @@ pub enum SystemType {
     U16,
     I32,
     U32,
+    I64,
+    U64,
     Usize,
     Str,
     Pointer(Box<SystemType>),
@@ -35,12 +37,20 @@ impl SystemType {
     pub const fn is_integer(&self) -> bool {
         matches!(
             self,
-            Self::I8 | Self::U8 | Self::I16 | Self::U16 | Self::I32 | Self::U32 | Self::Usize
+            Self::I8
+                | Self::U8
+                | Self::I16
+                | Self::U16
+                | Self::I32
+                | Self::U32
+                | Self::I64
+                | Self::U64
+                | Self::Usize
         )
     }
 
     pub const fn is_signed_integer(&self) -> bool {
-        matches!(self, Self::I8 | Self::I16 | Self::I32)
+        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64)
     }
 
     pub const fn is_scalar(&self) -> bool {
@@ -53,6 +63,8 @@ impl SystemType {
                 | Self::U16
                 | Self::I32
                 | Self::U32
+                | Self::I64
+                | Self::U64
                 | Self::Usize
                 | Self::Str
                 | Self::Pointer(_)
@@ -63,11 +75,16 @@ impl SystemType {
         matches!(self, Self::Pointer(_))
     }
 
+    pub const fn is_wide_integer(&self) -> bool {
+        matches!(self, Self::I64 | Self::U64)
+    }
+
     pub const fn bit_width(&self) -> Option<u8> {
         match self {
             Self::I8 | Self::U8 => Some(8),
             Self::I16 | Self::U16 => Some(16),
             Self::I32 | Self::U32 | Self::Usize => Some(32),
+            Self::I64 | Self::U64 => Some(64),
             _ => None,
         }
     }
@@ -77,12 +94,16 @@ impl SystemType {
             Self::Bool | Self::I8 | Self::U8 => Some(1),
             Self::I16 | Self::U16 => Some(2),
             Self::I32 | Self::U32 | Self::Usize | Self::Str | Self::Pointer(_) => Some(4),
+            Self::I64 | Self::U64 => Some(8),
             Self::Array(_, _) | Self::Struct(_) => None,
         }
     }
 
     pub const fn scalar_alignment(&self) -> Option<u32> {
-        self.scalar_size()
+        match self {
+            Self::I64 | Self::U64 => Some(4),
+            _ => self.scalar_size(),
+        }
     }
 }
 
@@ -96,6 +117,8 @@ impl fmt::Display for SystemType {
             Self::U16 => formatter.write_str("u16"),
             Self::I32 => formatter.write_str("i32"),
             Self::U32 => formatter.write_str("u32"),
+            Self::I64 => formatter.write_str("i64"),
+            Self::U64 => formatter.write_str("u64"),
             Self::Usize => formatter.write_str("usize"),
             Self::Str => formatter.write_str("str"),
             Self::Pointer(inner) => write!(formatter, "ptr[{inner}]"),

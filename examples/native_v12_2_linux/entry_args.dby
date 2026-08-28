@@ -1,0 +1,6 @@
+pub fn main(argc: usize, argv: const_ptr[const_ptr[u8]], envp: const_ptr[const_ptr[u8]]) -> int:
+    if argv == (0 as usize as const_ptr[const_ptr[u8]]):
+        return 90
+    if envp == (0 as usize as const_ptr[const_ptr[u8]]):
+        return 91
+    return argc as int

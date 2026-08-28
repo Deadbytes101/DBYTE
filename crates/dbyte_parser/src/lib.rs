@@ -138,6 +138,14 @@ impl Parser {
                     self.advance();
                     TypeAnnotation::U32
                 }
+                "i64" => {
+                    self.advance();
+                    TypeAnnotation::I64
+                }
+                "u64" => {
+                    self.advance();
+                    TypeAnnotation::U64
+                }
                 "usize" => {
                     self.advance();
                     TypeAnnotation::Usize
@@ -2136,6 +2144,16 @@ mod tests {
                 value: Some(Expr::UnitLit(_)),
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn parses_v122_64_bit_integer_annotations() {
+        let program = parse("fn pair(left: i64, right: u64) -> u64:\n    return right\n");
+        assert!(matches!(
+            &program.stmts[0],
+            Stmt::FnDef { params, ret_ty: TypeAnnotation::U64, .. }
+                if params[0].ty == TypeAnnotation::I64 && params[1].ty == TypeAnnotation::U64
         ));
     }
 }

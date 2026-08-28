@@ -1,0 +1,42 @@
+import "../v12.1.0/alloc.dby" as alloc
+
+static mut SYSTEM: alloc.KernelAllocator
+
+fn linux_mmap_raw(size: usize) -> i64:
+    return linux.mmap(0 as usize, size, 3 as i32, 0x22 as i32, -1 as i32, 0 as usize)
+
+fn linux_munmap_raw(address: usize, size: usize) -> i64:
+    return linux.munmap(address, size)
+
+fn copy_bytes(destination: ptr[u8], source: ptr[u8], count: usize) -> unit:
+    let index: usize = 0 as usize
+    while index < count:
+        destination[index] = source[index]
+        index = index + (1 as usize)
+    return unit
+
+fn provider_allocate(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    if alloc.valid_alignment(alignment) == false:
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.UnsupportedAlignment())
+    let address = linux_mmap_raw(size)
+    if address < (0 as i64):
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.OutOfMemory())
+    return Result[ptr[u8], alloc.AllocError].Ok(address as usize as ptr[u8])
+
+fn provider_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let replacement = provider_allocate(context, new_size, alignment)?
+    let amount: usize = old_size
+    if new_size < amount:
+        amount = new_size
+    copy_bytes(replacement, pointer, amount)
+    if linux_munmap_raw(pointer as usize, old_size) != (0 as i64):
+        linux_munmap_raw(replacement as usize, new_size)
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    return Result[ptr[u8], alloc.AllocError].Ok(replacement)
+
+fn provider_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    linux_munmap_raw(pointer as usize, size)
+    return unit
+
+pub fn system_allocator() -> alloc.AllocatorRef:
+    return alloc.kernel_initialize(&SYSTEM, 0 as usize as ptr[u8], provider_allocate, provider_resize, provider_free)

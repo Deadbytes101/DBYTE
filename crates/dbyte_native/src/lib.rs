@@ -3,16 +3,21 @@
 //! This crate reuses DByte's lexer, parser, and AST. It does not invoke the
 //! hosted interpreter/VM or any external compiler, linker, or assembler.
 
+pub mod abi64;
 pub mod archive;
 #[cfg(test)]
 mod block_device_contract;
 #[cfg(test)]
 mod blocking_contract;
 pub mod cli;
+pub mod coff64;
 pub mod dbup;
 pub mod diagnostics;
 pub mod elf32;
+pub mod elf64;
+pub mod external_coff64;
 pub mod external_elf;
+pub mod external_elf64;
 #[cfg(test)]
 mod filesystem_contract;
 #[cfg(test)]
@@ -24,11 +29,16 @@ pub mod ir;
 mod irq_io_contract;
 pub mod legacy_hir;
 pub mod linker;
+pub mod linker64;
 pub mod lower;
 #[cfg(test)]
 mod memory_contract;
+pub mod modern_native;
 pub mod modules;
+pub mod multiboot2;
 pub mod object;
+pub mod object64;
+pub mod pe64;
 #[cfg(test)]
 mod scheduler_contract;
 #[cfg(test)]
@@ -37,6 +47,7 @@ pub mod system_types;
 pub mod systems_compiler;
 pub mod systems_ir;
 pub mod systems_lower;
+pub mod target;
 
 pub use inspection::inspect_elf;
 #[cfg(test)]
@@ -45,6 +56,7 @@ pub mod types;
 #[cfg(test)]
 mod user_process_contract;
 pub mod x86;
+pub mod x86_64;
 
 #[cfg(test)]
 use std::fmt::Write;

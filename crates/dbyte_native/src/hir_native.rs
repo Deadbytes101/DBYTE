@@ -949,7 +949,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             HirStatement::Expression(value) => {
                 self.lower_expr(value)?;
                 if !matches!(self.program.semantic.type_of(value.ty), CanonicalType::Unit) {
-                    self.instructions.push(SystemsInst::Pop);
+                    let lowered = lower_type(self.program, value.ty, value.span)?;
+                    if lowered.is_wide_integer() {
+                        self.instructions.push(SystemsInst::PopWords(2));
+                    } else {
+                        self.instructions.push(SystemsInst::Pop);
+                    }
                 }
             }
             HirStatement::Return { value, cleanup, .. } => {
@@ -1163,8 +1168,13 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             },
             HirExprKind::Unit => {}
             HirExprKind::Integer(value) => {
-                let bits = integer_bits(*value, &ty, expression.span)?;
-                self.instructions.push(SystemsInst::Const { bits, ty });
+                if matches!(ty, SystemType::I64 | SystemType::U64) {
+                    let bits = integer_bits64(*value, &ty, expression.span)?;
+                    self.instructions.push(SystemsInst::Const64 { bits, ty });
+                } else {
+                    let bits = integer_bits(*value, &ty, expression.span)?;
+                    self.instructions.push(SystemsInst::Const { bits, ty });
+                }
             }
             HirExprKind::Bool(value) => self.instructions.push(SystemsInst::ConstBool(*value)),
             HirExprKind::Null => self.instructions.push(SystemsInst::Const { bits: 0, ty }),
@@ -1264,6 +1274,15 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 let from = lower_type(self.program, value.ty, value.span)?;
                 self.require_scalar(&from, value.span)?;
                 if let HirExprKind::Integer(bits) = value.kind {
+                    if matches!(ty, SystemType::I64 | SystemType::U64) {
+                        if let Ok(bits) = integer_bits64(bits, &ty, value.span) {
+                            self.instructions.push(SystemsInst::Const64 {
+                                bits,
+                                ty: ty.clone(),
+                            });
+                            return Ok(());
+                        }
+                    }
                     if let Ok(bits) = integer_bits(bits, &ty, value.span) {
                         self.instructions.push(SystemsInst::Const {
                             bits,
@@ -1304,11 +1323,14 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                             expression.span,
                         )
                     })?;
-                let has_aggregate_argument = arguments
-                    .iter()
-                    .any(|argument| !self.is_scalar(argument.ty));
+                let has_packed_argument = arguments.iter().any(|argument| {
+                    !self.is_scalar(argument.ty)
+                        || self
+                            .layout(argument.ty, argument.span)
+                            .is_ok_and(|layout| layout.size > 4)
+                });
                 let aggregate_result = !self.is_scalar(expression.ty);
-                if !has_aggregate_argument && !aggregate_result {
+                if !has_packed_argument && !aggregate_result {
                     let ordered: Box<dyn Iterator<Item = &HirExpr>> =
                         if *convention == dbyte_ast::CallConvention::C {
                             Box::new(arguments.iter().rev())
@@ -1335,7 +1357,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                         self.instructions.push(SystemsInst::Pop);
                     }
                 } else {
-                    if *convention == dbyte_ast::CallConvention::C {
+                    if *convention == dbyte_ast::CallConvention::C
+                        && (arguments
+                            .iter()
+                            .any(|argument| !self.is_scalar(argument.ty))
+                            || aggregate_result)
+                    {
                         return Err(self.unsupported("aggregate C ABI call", expression.span));
                     }
                     let result_temp = if aggregate_result {
@@ -1347,8 +1374,14 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     if let Some(result) = result_temp {
                         physical.push(PackedArgument::Address(result));
                     }
-                    for argument in arguments {
-                        physical.push(PackedArgument::Value(argument));
+                    if *convention == dbyte_ast::CallConvention::C {
+                        for argument in arguments.iter().rev() {
+                            physical.push(PackedArgument::Value(argument));
+                        }
+                    } else {
+                        for argument in arguments {
+                            physical.push(PackedArgument::Value(argument));
+                        }
                     }
                     let pack = self.materialize_call_pack(&physical, expression.span)?;
                     let bytes = packed_size(&physical, self.program)?;
@@ -1490,6 +1523,58 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     ) {
                         self.instructions.push(SystemsInst::Pop);
                     }
+                    return Ok(());
+                }
+                let has_packed_argument = arguments.iter().any(|argument| {
+                    !self.is_scalar(argument.ty)
+                        || self
+                            .layout(argument.ty, argument.span)
+                            .is_ok_and(|layout| layout.size > 4)
+                });
+                if has_packed_argument && self.is_scalar(expression.ty) {
+                    if arguments
+                        .iter()
+                        .any(|argument| !self.is_scalar(argument.ty))
+                    {
+                        return Err(
+                            self.unsupported("aggregate indirect-call argument", expression.span)
+                        );
+                    }
+                    let callee_temp = self.allocate_system_temp(
+                        SystemType::Pointer(Box::new(SystemType::U8)),
+                        4,
+                        4,
+                        "indirect_callee",
+                    )?;
+                    self.lower_expr(callee)?;
+                    self.instructions.push(SystemsInst::LocalStore {
+                        local: callee_temp,
+                        ty: SystemType::Pointer(Box::new(SystemType::U8)),
+                    });
+                    let physical = if *convention == dbyte_ast::CallConvention::C {
+                        arguments
+                            .iter()
+                            .rev()
+                            .map(PackedArgument::Value)
+                            .collect::<Vec<_>>()
+                    } else {
+                        arguments
+                            .iter()
+                            .map(PackedArgument::Value)
+                            .collect::<Vec<_>>()
+                    };
+                    let pack = self.materialize_call_pack(&physical, expression.span)?;
+                    let bytes = packed_size(&physical, self.program)?;
+                    self.instructions.push(SystemsInst::LocalAddress(pack));
+                    self.instructions.push(SystemsInst::LocalLoad {
+                        local: callee_temp,
+                        ty: SystemType::Pointer(Box::new(SystemType::U8)),
+                    });
+                    self.instructions.push(SystemsInst::CallIndirectPacked {
+                        argument_bytes: bytes,
+                        result: ty,
+                        call_convention: *convention,
+                    });
                     return Ok(());
                 }
                 if arguments
@@ -1772,6 +1857,9 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             });
             return Ok(());
         }
+        if intrinsic.is_linux() {
+            return Err(self.unsupported("Linux runtime intrinsic", expression.span));
+        }
         for argument in arguments {
             self.lower_expr(argument)?;
         }
@@ -1819,7 +1907,22 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             | HirIntrinsic::RuntimeMemoryResize
             | HirIntrinsic::RuntimeMemoryFree
             | HirIntrinsic::RuntimeMemoryRead8
-            | HirIntrinsic::RuntimeMemoryWrite8 => unreachable!(),
+            | HirIntrinsic::RuntimeMemoryWrite8
+            | HirIntrinsic::LinuxExit
+            | HirIntrinsic::LinuxRead
+            | HirIntrinsic::LinuxWrite
+            | HirIntrinsic::LinuxMmap
+            | HirIntrinsic::LinuxMunmap
+            | HirIntrinsic::LinuxOpenAt
+            | HirIntrinsic::LinuxClose
+            | HirIntrinsic::LinuxClockGettime
+            | HirIntrinsic::WindowsGetStdHandle
+            | HirIntrinsic::WindowsReadFile
+            | HirIntrinsic::WindowsWriteFile
+            | HirIntrinsic::WindowsCloseHandle
+            | HirIntrinsic::WindowsVirtualAlloc
+            | HirIntrinsic::WindowsVirtualFree
+            | HirIntrinsic::WindowsQueryPerformanceCounter => unreachable!(),
         };
         let result = if matches!(
             self.program.semantic.type_of(expression.ty),
@@ -2650,10 +2753,17 @@ fn hir_static_bits(
     initializer: &HirExpr,
     ty: TypeId,
     span: Span,
-) -> NativeResult<u32> {
+) -> NativeResult<u64> {
     match &initializer.kind {
-        HirExprKind::Integer(value) => integer_bits(*value, &lower_type(program, ty, span)?, span),
-        HirExprKind::Bool(value) => Ok(u32::from(*value)),
+        HirExprKind::Integer(value) => {
+            let lowered = lower_type(program, ty, span)?;
+            if lowered.is_wide_integer() {
+                integer_bits64(*value, &lowered, span)
+            } else {
+                integer_bits(*value, &lowered, span).map(u64::from)
+            }
+        }
+        HirExprKind::Bool(value) => Ok(u64::from(*value)),
         HirExprKind::Null => Ok(0),
         HirExprKind::Cast { value, .. } | HirExprKind::Constant { value, .. } => {
             hir_static_bits(program, value, ty, span)
@@ -2719,6 +2829,8 @@ fn lower_type(program: &ConcreteHirProgram, ty: TypeId, span: Span) -> NativeRes
             IntegerType::U16 => SystemType::U16,
             IntegerType::I32 | IntegerType::LegacyInt => SystemType::I32,
             IntegerType::U32 => SystemType::U32,
+            IntegerType::I64 => SystemType::I64,
+            IntegerType::U64 => SystemType::U64,
             IntegerType::Usize => SystemType::Usize,
         },
         CanonicalType::LegacyStr => SystemType::Str,
@@ -2895,6 +3007,22 @@ fn integer_bits(value: i64, ty: &SystemType, span: Span) -> NativeResult<u32> {
         ));
     }
     Ok(value as u32)
+}
+
+fn integer_bits64(value: i64, ty: &SystemType, span: Span) -> NativeResult<u64> {
+    let fits = match ty {
+        SystemType::I64 => true,
+        SystemType::U64 => value >= 0,
+        _ => false,
+    };
+    if !fits {
+        return Err(Diagnostic::new(
+            DiagnosticCategory::IntegerOutOfRange,
+            format!("integer literal `{value}` is outside `{ty}`"),
+            span,
+        ));
+    }
+    Ok(value as u64)
 }
 
 fn compare(op: BinOp) -> CompareOp {

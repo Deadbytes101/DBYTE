@@ -3409,6 +3409,8 @@ fn annotation_matches(
         (CanonicalType::Integer(super::IntegerType::U16), A::U16) => true,
         (CanonicalType::Integer(super::IntegerType::I32), A::I32) => true,
         (CanonicalType::Integer(super::IntegerType::U32), A::U32) => true,
+        (CanonicalType::Integer(super::IntegerType::I64), A::I64) => true,
+        (CanonicalType::Integer(super::IntegerType::U64), A::U64) => true,
         (CanonicalType::Integer(super::IntegerType::Usize), A::Usize) => true,
         (CanonicalType::Float, A::Float)
         | (CanonicalType::Bool, A::Bool)

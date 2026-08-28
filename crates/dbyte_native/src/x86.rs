@@ -762,6 +762,22 @@ impl Encoder {
         self.emit_raw(&[0x29, modrm(0b11, source.code(), destination.code())])
     }
 
+    pub fn adc_reg_reg(
+        &mut self,
+        destination: Register,
+        source: Register,
+    ) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x11, modrm(0b11, source.code(), destination.code())])
+    }
+
+    pub fn sbb_reg_reg(
+        &mut self,
+        destination: Register,
+        source: Register,
+    ) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x19, modrm(0b11, source.code(), destination.code())])
+    }
+
     pub fn and_reg_reg(
         &mut self,
         destination: Register,
@@ -792,6 +808,10 @@ impl Encoder {
         source: Register,
     ) -> Result<(), EncoderError> {
         self.emit_raw(&[0x0f, 0xaf, modrm(0b11, destination.code(), source.code())])
+    }
+
+    pub fn mul_reg(&mut self, source: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xf7, modrm(0b11, 4, source.code())])
     }
 
     pub fn cdq(&mut self) -> Result<(), EncoderError> {
@@ -833,6 +853,30 @@ impl Encoder {
             modrm(0b11, kind.opcode_extension(), register.code()),
             amount,
         ])
+    }
+
+    pub fn rcl_reg_one(&mut self, register: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xd1, modrm(0b11, 2, register.code())])
+    }
+
+    pub fn dec_reg(&mut self, register: Register) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x48 + register.code()])
+    }
+
+    pub fn shld_reg_reg_cl(
+        &mut self,
+        destination: Register,
+        source: Register,
+    ) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0xa5, modrm(0b11, source.code(), destination.code())])
+    }
+
+    pub fn shrd_reg_reg_cl(
+        &mut self,
+        destination: Register,
+        source: Register,
+    ) -> Result<(), EncoderError> {
+        self.emit_raw(&[0x0f, 0xad, modrm(0b11, source.code(), destination.code())])
     }
 
     pub fn cmp_reg_reg(&mut self, left: Register, right: Register) -> Result<(), EncoderError> {

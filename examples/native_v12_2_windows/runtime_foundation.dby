@@ -1,0 +1,135 @@
+import "../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../runtime/v12.1.0/array.dby" as arrays
+import "../../runtime/v12.1.0/string.dby" as string
+import "../../runtime/v12.2.0/windows_system_allocator.dby" as platform_alloc
+
+struct Pair:
+    first: u64
+    second: u64
+
+fn windows_get_std_handle_raw(kind: i32) -> usize:
+    return windows.get_std_handle(kind)
+
+fn windows_write_file_raw(handle: usize, buffer: str, length: u32) -> i32:
+    return windows.write_file(handle, buffer, length, 0 as usize, 0 as usize)
+
+fn line(output: usize, text: str, length: u32) -> unit:
+    windows_write_file_raw(output, text, length)
+    windows_write_file_raw(output, "\r\n", 2 as u32)
+    return unit
+
+
+fn make_pair(first: u64, second: u64) -> Pair:
+    return Pair(first = first, second = second)
+
+fn compute(enabled: bool) -> Result[u64, u32]:
+    if enabled:
+        return Result[u64, u32].Ok(41 as u64)
+    return Result[u64, u32].Err(9 as u32)
+
+fn propagate(enabled: bool) -> Result[u64, u32]:
+    let value = compute(enabled)?
+    return Result[u64, u32].Ok(value + (1 as u64))
+
+fn sum(values: borrow arrays.Array[u64]) -> u64:
+    let view = arrays.as_slice[u64](values)
+    return view[0 as usize] + view[1 as usize]
+
+fn closure_check() -> u64:
+    let total: u64 = 1 as u64
+    let add = fn [borrow mut total](value: u64) -> u64:
+        total = total + value
+        return total
+    return add(41 as u64)
+
+pub fn main() -> int:
+    let output = windows_get_std_handle_raw(-11)
+    if output == (0 as usize):
+        return 1
+    line(output, "DBYTE X86_64 WINDOWS", 20 as u32)
+    line(output, "PE32+ ONLINE", 12 as u32)
+    line(output, "WIN64 ABI ONLINE", 16 as u32)
+
+    let system = platform_alloc.system_allocator()
+    let values = arrays.with_allocator[u64](system)
+    match arrays.push[u64](borrow mut values, 40 as u64):
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return 2
+    match arrays.push[u64](borrow mut values, 2 as u64):
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return 3
+    if sum(borrow values) != (42 as u64):
+        return 4
+    if closure_check() != (42 as u64):
+        return 12
+    let cloned_result = arrays.clone[u64](borrow values)
+    match cloned_result:
+        case Result.Ok(cloned):
+            if sum(borrow cloned) != (42 as u64):
+                return 13
+            drop(cloned)
+        case Result.Err(error):
+            return 14
+    let cloned_in_result = arrays.clone_in[u64](borrow values, system)
+    match cloned_in_result:
+        case Result.Ok(cloned_in):
+            if sum(borrow cloned_in) != (42 as u64):
+                return 15
+            drop(cloned_in)
+        case Result.Err(error):
+            return 16
+    let pair = make_pair(40 as u64, 2 as u64)
+    if pair.first + pair.second != (42 as u64):
+        return 5
+    let propagated = propagate(true)
+    match propagated:
+        case Result.Ok(value):
+            if value != (42 as u64):
+                return 6
+        case Result.Err(error):
+            return 7
+    let old_capacity: usize = arrays.capacity[u64](borrow values)
+    let impossible = arrays.reserve[u64](borrow mut values, 0xffffffff as u32 as usize)
+    match impossible:
+        case Result.Ok(value):
+            return 8
+        case Result.Err(error):
+            if arrays.capacity[u64](borrow values) != old_capacity:
+                return 9
+    line(output, "ALLOCATOR ONLINE", 16 as u32)
+    drop(values)
+    line(output, "DROP ONLINE", 11 as u32)
+    line(output, "ARRAY ONLINE", 12 as u32)
+
+    let made = string.from_view("DByte64 Windows", system)
+    match made:
+        case Result.Ok(text):
+            if string.length(borrow text) != (15 as usize):
+                return 10
+            let text_clone_result = string.clone(borrow text)
+            match text_clone_result:
+                case Result.Ok(text_clone):
+                    if string.length(borrow text_clone) != (15 as usize):
+                        return 17
+                    drop(text_clone)
+                case Result.Err(error):
+                    return 18
+            let text_clone_in_result = string.clone_in(borrow text, system)
+            match text_clone_in_result:
+                case Result.Ok(text_clone_in):
+                    if string.length(borrow text_clone_in) != (15 as usize):
+                        return 19
+                    drop(text_clone_in)
+                case Result.Err(error):
+                    return 20
+            drop(text)
+        case Result.Err(error):
+            return 11
+    line(output, "STRING ONLINE", 13 as u32)
+    line(output, "C ABI ONLINE", 12 as u32)
+    line(output, "WINDOWS CHECK OK", 16 as u32)
+    return 0

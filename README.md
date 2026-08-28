@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v12.1.0**
+- Snapshot version: **v12.2.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -207,6 +207,19 @@ powershell -ExecutionPolicy Bypass -File scripts/verify_native_runtime_foundatio
 See [Runtime Foundation](docs/RUNTIME.md), [Allocators](docs/ALLOCATORS.md),
 [Array](docs/ARRAY.md), and [String](docs/STRING.md) for the normative v12.1
 contracts.
+
+The `v12.2.0` modern native foundation adds one target-driven native seam for
+`x86_64-dbyte-none`, `x86_64-dbyte-linux`, and `x86_64-dbyte-windows`. DByte's
+internal toolchain emits ELF64, deterministic archives, AMD64 COFF, static
+Linux executables, Multiboot2 long-mode images, and PE32+ console executables
+without an external production linker. The same Concrete HIR executes the
+DBYTE64 ABI, `i64`/`u64`, runtime ownership, allocators, Array, String, and the
+target-selected SysV64 or Win64 C ABI.
+
+See [Modern Native Targets](docs/MODERN_NATIVE_TARGETS.md),
+[DBYTE64 ABI](docs/DBYTE64_ABI.md), [ELF64 and Multiboot2](docs/ELF64_MULTIBOOT2.md),
+[Linux Runtime](docs/LINUX_RUNTIME.md), [COFF and PE32+](docs/COFF_PE32_PLUS.md),
+and [Windows Runtime](docs/WINDOWS_RUNTIME.md) for the normative v12.2 contracts.
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.

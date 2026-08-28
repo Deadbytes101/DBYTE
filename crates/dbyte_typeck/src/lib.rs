@@ -78,6 +78,8 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         | TypeAnnotation::U16
         | TypeAnnotation::I32
         | TypeAnnotation::U32
+        | TypeAnnotation::I64
+        | TypeAnnotation::U64
         | TypeAnnotation::Usize
         | TypeAnnotation::Pointer(_)
         | TypeAnnotation::ConstPointer(_)

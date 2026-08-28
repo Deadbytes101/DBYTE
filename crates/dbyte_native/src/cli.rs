@@ -14,7 +14,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link <object.o|archive.a>... -o <output.elf>";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -124,12 +124,16 @@ struct BuildOptions {
 enum BuildTarget {
     Kernel,
     User,
+    X86_64None,
+    X86_64Linux,
+    X86_64Windows,
 }
 
 #[derive(Debug)]
 struct LinkOptions {
     inputs: Vec<PathBuf>,
     output: PathBuf,
+    target: Option<crate::target::TargetSpec>,
 }
 
 #[derive(Debug)]
@@ -187,7 +191,12 @@ pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
     reject_source_as_output(&options.source, &options.output)?;
 
     let product = compile_build_product(&options, &source_text)?;
-    validate_selected_output(&options.source, &options.emit, &product.bytes)?;
+    validate_selected_output(
+        &options.source,
+        options.target,
+        &options.emit,
+        &product.bytes,
+    )?;
 
     write_requested_dumps(&product, &options)?;
     replace_output_transactionally(&options.output, &product.bytes)
@@ -195,15 +204,39 @@ pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
 
 pub fn run_link_args(args: &[String]) -> Result<(), CliError> {
     let options = parse_link_args(args)?;
-    let mut inputs = Vec::with_capacity(options.inputs.len());
+    let mut raw_inputs = Vec::with_capacity(options.inputs.len());
     for path in &options.inputs {
         reject_source_as_output(path, &options.output)?;
         let bytes = fs::read(path).map_err(|error| CliError::Input {
             path: path.clone(),
             kind: error.kind(),
         })?;
-        inputs.push(LinkInput::new(path.to_string_lossy(), bytes));
+        raw_inputs.push((path.to_string_lossy().into_owned(), bytes));
     }
+
+    if let Some(target) = options.target {
+        if target.machine == crate::target::MachineTarget::X86_64 {
+            let inputs: Vec<_> = raw_inputs
+                .into_iter()
+                .map(|(name, bytes)| crate::linker64::LinkInput::new(name, bytes))
+                .collect();
+            if target == crate::target::X86_64_WINDOWS {
+                let image = crate::modern_native::link_windows_object_bytes(&inputs)
+                    .map_err(|error| CliError::link(error.0))?;
+                crate::pe64::inspect(&image.bytes).map_err(|error| CliError::link(error.0))?;
+                return replace_output_transactionally(&options.output, &image.bytes);
+            }
+            let image = crate::modern_native::link_object_bytes(&inputs, target)
+                .map_err(|error| CliError::link(error.0))?;
+            crate::elf64::inspect(&image.bytes).map_err(|error| CliError::link(error.0))?;
+            return replace_output_transactionally(&options.output, &image.bytes);
+        }
+    }
+
+    let inputs: Vec<_> = raw_inputs
+        .into_iter()
+        .map(|(name, bytes)| LinkInput::new(name, bytes))
+        .collect();
 
     let linked =
         link_object_bytes(&inputs).map_err(|diagnostic| CliError::link(diagnostic.to_string()))?;
@@ -215,6 +248,77 @@ fn compile_build_product(
     options: &BuildOptions,
     _source_text: &str,
 ) -> Result<BuildProduct, CliError> {
+    if matches!(
+        options.target,
+        BuildTarget::X86_64None | BuildTarget::X86_64Linux | BuildTarget::X86_64Windows
+    ) {
+        let target = match options.target {
+            BuildTarget::X86_64None => crate::target::X86_64_NONE,
+            BuildTarget::X86_64Linux => crate::target::X86_64_LINUX,
+            BuildTarget::X86_64Windows => crate::target::X86_64_WINDOWS,
+            BuildTarget::Kernel | BuildTarget::User => unreachable!(),
+        };
+        return match options.emit {
+            EmitKind::Elf if options.target != BuildTarget::X86_64Windows => {
+                let artifact = crate::modern_native::compile_source(&options.source, target)
+                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                Ok(BuildProduct {
+                    bytes: artifact.elf.bytes,
+                    ir_dump: artifact.hir_dump,
+                    machine_dump: artifact.machine_dump,
+                })
+            }
+            EmitKind::Elf => {
+                let artifact = crate::modern_native::compile_windows_source(&options.source)
+                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                Ok(BuildProduct {
+                    bytes: artifact.bytes,
+                    ir_dump: format!("profile {}\nlayout pointer=8 usize=8\n", target.triple),
+                    machine_dump: format!(
+                        "PE32+ entry=0x{:016x} imports={}\n",
+                        artifact.entry, artifact.import_count
+                    ),
+                })
+            }
+            EmitKind::Obj => {
+                let artifact = crate::modern_native::compile_object_source(&options.source, target)
+                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                Ok(BuildProduct {
+                    bytes: artifact.object.bytes,
+                    ir_dump: artifact.hir_dump,
+                    machine_dump: artifact.machine_dump,
+                })
+            }
+            EmitKind::StaticLib => {
+                let artifact = crate::modern_native::compile_object_source(&options.source, target)
+                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let bytes = crate::archive::write_archive(&[crate::archive::ArchiveMember {
+                    name: "m0000.o".into(),
+                    bytes: artifact.object.bytes,
+                }])
+                .map_err(|error| CliError::compile(&options.source, error.to_string()))?;
+                Ok(BuildProduct {
+                    bytes,
+                    ir_dump: artifact.hir_dump,
+                    machine_dump: artifact.machine_dump,
+                })
+            }
+            EmitKind::Bin if options.target == BuildTarget::X86_64None => {
+                let artifact = crate::modern_native::compile_source(&options.source, target)
+                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                Ok(BuildProduct {
+                    // The address tag describes the same deterministic bytes
+                    // as a flat load at 1 MiB, with no external objcopy step.
+                    bytes: artifact.elf.bytes,
+                    ir_dump: artifact.hir_dump,
+                    machine_dump: artifact.machine_dump,
+                })
+            }
+            EmitKind::Bin => Err(CliError::argument(
+                "DBYTE64 BIN emission is supported only for x86_64-dbyte-none",
+            )),
+        };
+    }
     if options.target == BuildTarget::User {
         return match options.emit {
             EmitKind::Bin => Err(CliError::argument(
@@ -398,9 +502,12 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
     let target = match target.as_str() {
         TARGET => BuildTarget::Kernel,
         USER_TARGET => BuildTarget::User,
+        "x86_64-dbyte-none" => BuildTarget::X86_64None,
+        "x86_64-dbyte-linux" => BuildTarget::X86_64Linux,
+        "x86_64-dbyte-windows" => BuildTarget::X86_64Windows,
         _ => {
             return Err(CliError::argument(format!(
-                "unsupported target '{target}'; expected '{TARGET}' or '{USER_TARGET}'"
+                "unsupported target '{target}'; expected '{TARGET}', '{USER_TARGET}', 'x86_64-dbyte-none', 'x86_64-dbyte-linux', or 'x86_64-dbyte-windows'"
             )))
         }
     };
@@ -426,10 +533,25 @@ fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
 
     let mut inputs = Vec::new();
     let mut output: Option<PathBuf> = None;
+    let mut target = None;
     let mut index = 0;
     while index < args.len() {
         let argument = args[index].as_str();
         match argument {
+            "--target" => {
+                reject_duplicate(target.is_some(), "--target")?;
+                let value = take_option_value(args, &mut index, "--target")?;
+                target = Some(crate::target::parse_target(value).ok_or_else(|| {
+                    CliError::argument(format!("unsupported link target '{value}'"))
+                })?);
+            }
+            _ if argument.starts_with("--target=") => {
+                reject_duplicate(target.is_some(), "--target")?;
+                let value = &argument["--target=".len()..];
+                target = Some(crate::target::parse_target(value).ok_or_else(|| {
+                    CliError::argument(format!("unsupported link target '{value}'"))
+                })?);
+            }
             "-o" | "--output" => {
                 reject_duplicate(output.is_some(), "-o/--output")?;
                 output = Some(PathBuf::from(take_option_value(
@@ -450,7 +572,11 @@ fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
         ));
     }
     let output = output.ok_or_else(|| CliError::argument("missing required -o/--output"))?;
-    Ok(LinkOptions { inputs, output })
+    Ok(LinkOptions {
+        inputs,
+        output,
+        target,
+    })
 }
 
 fn parse_pack_user_args(args: &[String]) -> Result<PackUserOptions, CliError> {
@@ -520,8 +646,9 @@ fn parse_emit(value: &str) -> Result<EmitKind, CliError> {
         "bin" => Ok(EmitKind::Bin),
         "obj" => Ok(EmitKind::Obj),
         "staticlib" => Ok(EmitKind::StaticLib),
+        "exe" => Ok(EmitKind::Elf),
         _ => Err(CliError::argument(format!(
-            "unsupported emit kind '{value}'; expected 'elf', 'bin', or 'obj'"
+            "unsupported emit kind '{value}'; expected 'elf', 'bin', 'obj', 'staticlib', or 'exe'"
         ))),
     }
 }
@@ -537,7 +664,68 @@ fn reject_source_as_output(source: &Path, output: &Path) -> Result<(), CliError>
     Ok(())
 }
 
-fn validate_selected_output(source: &Path, emit: &EmitKind, bytes: &[u8]) -> Result<(), CliError> {
+fn validate_selected_output(
+    source: &Path,
+    target: BuildTarget,
+    emit: &EmitKind,
+    bytes: &[u8],
+) -> Result<(), CliError> {
+    if matches!(
+        target,
+        BuildTarget::X86_64None | BuildTarget::X86_64Linux | BuildTarget::X86_64Windows
+    ) {
+        return match emit {
+            EmitKind::Elf if target == BuildTarget::X86_64Windows => {
+                crate::pe64::inspect(bytes).map_err(|error| CliError::compile(source, error.0))
+            }
+            EmitKind::Elf => crate::elf64::inspect(bytes)
+                .and_then(|info| {
+                    if info.object_type == 2 && !info.has_interp && !info.has_dynamic {
+                        Ok(info)
+                    } else {
+                        Err(crate::elf64::Elf64Error(
+                            "E_ELF64_STATIC: expected static ET_EXEC".into(),
+                        ))
+                    }
+                })
+                .map(|_| ())
+                .map_err(|error| CliError::compile(source, error.0)),
+            EmitKind::Obj if target == BuildTarget::X86_64Windows => {
+                crate::coff64::parse_object(bytes)
+                    .map(|_| ())
+                    .map_err(|error| CliError::compile(source, error.0))
+            }
+            EmitKind::Obj => crate::object64::parse_relocatable(bytes)
+                .and_then(|object| {
+                    if object.target
+                        == match target {
+                            BuildTarget::X86_64None => crate::target::X86_64_NONE,
+                            BuildTarget::X86_64Linux => crate::target::X86_64_LINUX,
+                            BuildTarget::X86_64Windows => crate::target::X86_64_WINDOWS,
+                            BuildTarget::Kernel | BuildTarget::User => unreachable!(),
+                        }
+                    {
+                        Ok(object)
+                    } else {
+                        Err(crate::object64::ObjectError(
+                            "E_TARGET_MISMATCH: emitted object target differs from request".into(),
+                        ))
+                    }
+                })
+                .map(|_| ())
+                .map_err(|error| CliError::compile(source, error.0)),
+            EmitKind::StaticLib => crate::archive::parse_archive(bytes)
+                .map(|_| ())
+                .map_err(|error| CliError::compile(source, error.to_string())),
+            EmitKind::Bin if target == BuildTarget::X86_64None => crate::elf64::inspect(bytes)
+                .map(|_| ())
+                .map_err(|error| CliError::compile(source, error.0)),
+            EmitKind::Bin => Err(CliError::compile(
+                source,
+                "E_MODERN_EMIT: BIN is supported only for x86_64-dbyte-none",
+            )),
+        };
+    }
     match emit {
         EmitKind::Bin if bytes.is_empty() => Err(CliError::compile(
             source,
@@ -994,7 +1182,7 @@ mod tests {
         .expect_err("duplicate output should fail");
         assert!(duplicate_output.to_string().contains("more than once"));
 
-        let unsupported = parse_link_args(&args(&[
+        let targeted = parse_link_args(&args(&[
             "link",
             "kernel.o",
             "--target",
@@ -1002,10 +1190,8 @@ mod tests {
             "-o",
             "kernel.elf",
         ]))
-        .expect_err("link-only options should remain narrow");
-        assert!(unsupported
-            .to_string()
-            .contains("unknown option '--target'"));
+        .expect("link target should parse");
+        assert_eq!(targeted.target, Some(crate::target::I686_NONE));
     }
 
     #[test]
@@ -1013,7 +1199,7 @@ mod tests {
         let error = parse_build_args(&args(&[
             "kernel.dby",
             "--target",
-            "x86_64-dbyte-none",
+            "x86_64-dbyte-macos",
             "--emit",
             "elf",
             "-o",
@@ -1180,6 +1366,33 @@ mod tests {
         assert!(!fs::read(&bin_output)
             .expect("read integrated binary")
             .is_empty());
+        assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn x86_64_none_bin_is_the_checked_multiboot2_load_image() {
+        let test_dir = TestDirectory::new("modern-none-bin");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_v12_2_none/bootstrap.dby");
+        let elf_output = test_dir.path.join("kernel.elf");
+        let bin_output = test_dir.path.join("kernel.bin");
+        for (emit, output) in [("elf", &elf_output), ("bin", &bin_output)] {
+            run_args(&[
+                "build".to_owned(),
+                source.to_string_lossy().into_owned(),
+                "--target".to_owned(),
+                "x86_64-dbyte-none".to_owned(),
+                "--emit".to_owned(),
+                emit.to_owned(),
+                "-o".to_owned(),
+                output.to_string_lossy().into_owned(),
+            ])
+            .expect("x86_64-none output should build");
+        }
+        let elf = fs::read(&elf_output).expect("read modern ELF");
+        let bin = fs::read(&bin_output).expect("read modern BIN");
+        assert_eq!(bin, elf);
+        crate::elf64::inspect(&bin).expect("flat load image retains checked ELF transport");
         assert_no_temporary_files(&test_dir.path);
     }
 

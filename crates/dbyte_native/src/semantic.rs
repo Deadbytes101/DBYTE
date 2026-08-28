@@ -909,6 +909,8 @@ fn explicit_native_type(
         | TypeAnnotation::I16
         | TypeAnnotation::U16
         | TypeAnnotation::U32
+        | TypeAnnotation::I64
+        | TypeAnnotation::U64
         | TypeAnnotation::Usize
         | TypeAnnotation::Pointer(_)
         | TypeAnnotation::ConstPointer(_)

@@ -1,4 +1,4 @@
-//! Deterministic System V/GNU `ar` archives for DByte ELF32 objects.
+//! Deterministic System V/GNU `ar` archives for DByte ELF32/ELF64 objects.
 
 use crate::diagnostics::{Diagnostic, DiagnosticCategory};
 use crate::object::{parse_relocatable, SymbolBinding, SymbolDefinition};
@@ -37,15 +37,20 @@ pub fn write_archive(members: &[ArchiveMember]) -> Result<Vec<u8>, Diagnostic> {
         }
     }
     let mut symbols = Vec::<(String, usize)>::new();
+    let mut archive_target = None::<String>;
     for (member_index, member) in canonical.iter().enumerate() {
         validate_name(&member.name)?;
-        let object = parse_relocatable(&member.bytes)?;
-        for symbol in object.symbols {
-            if symbol.binding == SymbolBinding::Global
-                && matches!(symbol.definition, SymbolDefinition::Defined { .. })
-                && !symbol.name.starts_with("__dbyte_")
-            {
-                symbols.push((symbol.name, member_index));
+        let (target, member_symbols) = defined_global_symbols(&member.bytes)?;
+        if archive_target
+            .as_ref()
+            .is_some_and(|current| current != &target)
+        {
+            return Err(error("archive members have mixed object targets"));
+        }
+        archive_target.get_or_insert(target);
+        for symbol in member_symbols {
+            if !symbol.starts_with("__dbyte_") {
+                symbols.push((symbol, member_index));
             }
         }
     }
@@ -111,6 +116,61 @@ pub fn write_archive(members: &[ArchiveMember]) -> Result<Vec<u8>, Diagnostic> {
         append_member(&mut output, &format!("{}/", member.name), &member.bytes)?;
     }
     Ok(output)
+}
+
+fn defined_global_symbols(bytes: &[u8]) -> Result<(String, Vec<String>), Diagnostic> {
+    if bytes.get(0..4) != Some(b"\x7fELF") {
+        let object =
+            crate::coff64::parse_object(bytes).map_err(|failure| error(failure.to_string()))?;
+        let target = format!("coff-amd64:{}", object.target.triple);
+        let symbols = object
+            .symbols
+            .into_iter()
+            .filter(|symbol| {
+                symbol.binding == crate::object64::Binding::Global
+                    && matches!(
+                        symbol.definition,
+                        crate::object64::Definition::Defined { .. }
+                    )
+            })
+            .map(|symbol| symbol.name)
+            .collect();
+        return Ok((target, symbols));
+    }
+    match bytes.get(4).copied() {
+        Some(1) => {
+            let object = parse_relocatable(bytes)?;
+            let symbols = object
+                .symbols
+                .into_iter()
+                .filter(|symbol| {
+                    symbol.binding == SymbolBinding::Global
+                        && matches!(symbol.definition, SymbolDefinition::Defined { .. })
+                })
+                .map(|symbol| symbol.name)
+                .collect();
+            Ok(("elf32-i386".into(), symbols))
+        }
+        Some(2) => {
+            let object = crate::object64::parse_relocatable(bytes)
+                .map_err(|failure| error(failure.to_string()))?;
+            let target = format!("elf64-x86-64:{}", object.target.triple);
+            let symbols = object
+                .symbols
+                .into_iter()
+                .filter(|symbol| {
+                    symbol.binding == crate::object64::Binding::Global
+                        && matches!(
+                            symbol.definition,
+                            crate::object64::Definition::Defined { .. }
+                        )
+                })
+                .map(|symbol| symbol.name)
+                .collect();
+            Ok((target, symbols))
+        }
+        _ => Err(error("archive member has unsupported ELF class")),
+    }
 }
 
 pub fn parse_archive(bytes: &[u8]) -> Result<Vec<ArchiveMember>, Diagnostic> {
@@ -354,5 +414,60 @@ mod tests {
         .unwrap();
         archive[8 + 58] = b'!';
         assert!(parse_archive(&archive).is_err());
+    }
+
+    #[test]
+    fn elf64_members_have_canonical_symbol_index_and_mixed_targets_fail() {
+        use crate::object64::{
+            write_relocatable as write64, Binding as Binding64, Definition as Definition64,
+            ObjectImage as ObjectImage64, Symbol as Symbol64, SymbolKind as SymbolKind64,
+        };
+        use crate::target::{X86_64_LINUX, X86_64_NONE};
+        use std::collections::BTreeMap;
+
+        let object64 = |target, symbol: &str| {
+            write64(&ObjectImage64 {
+                target,
+                entry_abi: None,
+                sections: BTreeMap::new(),
+                symbols: vec![Symbol64 {
+                    name: symbol.into(),
+                    binding: Binding64::Global,
+                    kind: SymbolKind64::Function,
+                    definition: Definition64::Defined {
+                        section: crate::object64::Section::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                }],
+                relocations: vec![],
+            })
+            .unwrap()
+            .bytes
+        };
+        let archive = write_archive(&[
+            ArchiveMember {
+                name: "b.o".into(),
+                bytes: object64(X86_64_LINUX, "beta64"),
+            },
+            ArchiveMember {
+                name: "a.o".into(),
+                bytes: object64(X86_64_LINUX, "alpha64"),
+            },
+        ])
+        .unwrap();
+        assert_eq!(parse_archive(&archive).unwrap().len(), 2);
+
+        let mixed = write_archive(&[
+            ArchiveMember {
+                name: "linux.o".into(),
+                bytes: object64(X86_64_LINUX, "linux_symbol"),
+            },
+            ArchiveMember {
+                name: "none.o".into(),
+                bytes: object64(X86_64_NONE, "none_symbol"),
+            },
+        ]);
+        assert!(mixed.unwrap_err().message.contains("mixed object targets"));
     }
 }

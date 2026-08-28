@@ -1,0 +1,28 @@
+@repr(C)
+struct CPair:
+    tag: u8
+    value: u32
+
+extern "C" fn c_contract(signed_byte: i8, unsigned_byte: u8, signed_word: i16, unsigned_word: u16, word: ptr[u32], pair: ptr[CPair], tail: u64) -> u64
+
+fn linux_write_raw(fd: i32, buffer: str, length: usize) -> i64:
+    return linux.write(fd, buffer, length)
+
+pub extern "C" fn dbyte_callback(value: u64, word: ptr[u32]) -> u64:
+    *word = *word + (2 as u32)
+    return value + (2 as u64)
+
+pub fn main() -> i64:
+    let word: u32 = 40 as u32
+    let pair = CPair(tag = 0 as u8, value = 0 as u32)
+    let result: u64 = c_contract(-7 as i8, 250 as u8, -300 as i16, 60000 as u16, &word, &pair, 100 as u64)
+    if result != (107 as u64):
+        return 1
+    if word != (42 as u32):
+        return 2
+    if pair.tag != (7 as u8):
+        return 3
+    if pair.value != (0x12345678 as u32):
+        return 4
+    linux_write_raw(1 as i32, "DBYTE SYSV C ABI OK\n", 20 as usize)
+    return 0

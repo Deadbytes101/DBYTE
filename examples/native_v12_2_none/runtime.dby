@@ -1,0 +1,145 @@
+import "../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../runtime/v12.1.0/array.dby" as arrays
+import "../../runtime/v12.1.0/string.dby" as string
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+static mut ARENA_MEMORY: array[u32, 2048]
+static mut FIXED_MEMORY: array[u32, 1024]
+static mut ARENA: alloc.ArenaAllocator
+static mut FIXED: alloc.FixedAllocator
+static mut KERNEL: alloc.KernelAllocator
+static mut KERNEL_BACKING: alloc.AllocatorRef
+
+fn line(text: str, length: usize) -> unit:
+    serial.write(text, length)
+    serial.newline()
+    return unit
+
+fn kernel_allocate(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let backing: ptr[alloc.AllocatorRef] = context as usize as ptr[alloc.AllocatorRef]
+    let allocator = alloc.AllocatorRef(context = (*backing).context, vtable = (*backing).vtable)
+    return alloc.allocate(allocator, size, alignment)
+
+fn kernel_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let backing: ptr[alloc.AllocatorRef] = context as usize as ptr[alloc.AllocatorRef]
+    let allocator = alloc.AllocatorRef(context = (*backing).context, vtable = (*backing).vtable)
+    return alloc.resize(allocator, pointer, old_size, new_size, alignment)
+
+fn kernel_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    let backing: ptr[alloc.AllocatorRef] = context as usize as ptr[alloc.AllocatorRef]
+    let allocator = alloc.AllocatorRef(context = (*backing).context, vtable = (*backing).vtable)
+    alloc.release(allocator, pointer, size, alignment)
+    return unit
+
+fn sum(values: borrow arrays.Array[u64]) -> u64:
+    let view = arrays.as_slice[u64](values)
+    return view[0 as usize] + view[1 as usize]
+
+fn closure_check() -> u64:
+    let total: u64 = 1 as u64
+    let add = fn [borrow mut total](value: u64) -> u64:
+        total = total + value
+        return total
+    return add(41 as u64)
+
+pub fn kernel_main() -> int:
+    serial.init()
+    line("DBYTE X86_64 NONE", 17 as usize)
+    line("ELF64 ONLINE", 12 as usize)
+    line("DBYTE64 ABI ONLINE", 18 as usize)
+
+    let arena = alloc.arena_initialize(&ARENA, &ARENA_MEMORY as usize as ptr[u8], 8192 as usize)
+    let fixed = alloc.fixed_initialize(&FIXED, &FIXED_MEMORY as usize as ptr[u8], 4096 as usize)
+    KERNEL_BACKING = fixed
+    let kernel = alloc.kernel_initialize(&KERNEL, &KERNEL_BACKING as usize as ptr[u8], kernel_allocate, kernel_resize, kernel_free)
+    let kernel_block = alloc.allocate(kernel, 64 as usize, 16 as usize)
+    match kernel_block:
+        case Result.Ok(pointer):
+            alloc.release(kernel, pointer, 64 as usize, 16 as usize)
+        case Result.Err(error):
+            return 1
+    if alloc.kernel_allocation_calls(&KERNEL) != (1 as u32):
+        return 2
+    if alloc.kernel_free_calls(&KERNEL) != (1 as u32):
+        return 3
+    let reused = alloc.allocate(fixed, 64 as usize, 16 as usize)
+    match reused:
+        case Result.Ok(pointer):
+            alloc.release(fixed, pointer, 64 as usize, 16 as usize)
+        case Result.Err(error):
+            return 4
+    line("ALLOCATOR ONLINE", 16 as usize)
+
+    let values = arrays.with_allocator[u64](arena)
+    match arrays.push[u64](borrow mut values, 40 as u64):
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return 5
+    match arrays.push[u64](borrow mut values, 2 as u64):
+        case Result.Ok(value):
+            let accepted: u32 = 0 as u32
+        case Result.Err(error):
+            return 6
+    if sum(borrow values) != (42 as u64):
+        return 7
+    if closure_check() != (42 as u64):
+        return 11
+    let cloned_result = arrays.clone[u64](borrow values)
+    match cloned_result:
+        case Result.Ok(cloned):
+            if sum(borrow cloned) != (42 as u64):
+                return 12
+            drop(cloned)
+        case Result.Err(error):
+            return 13
+    let cloned_in_result = arrays.clone_in[u64](borrow values, fixed)
+    match cloned_in_result:
+        case Result.Ok(cloned_in):
+            if sum(borrow cloned_in) != (42 as u64):
+                return 14
+            drop(cloned_in)
+        case Result.Err(error):
+            return 15
+    let old_capacity: usize = arrays.capacity[u64](borrow values)
+    let impossible = arrays.reserve[u64](borrow mut values, 0xffffffff as u32 as usize)
+    match impossible:
+        case Result.Ok(value):
+            return 16
+        case Result.Err(error):
+            if arrays.capacity[u64](borrow values) != old_capacity:
+                return 17
+    let free_before: u32 = alloc.arena_free_calls(&ARENA)
+    drop(values)
+    if alloc.arena_free_calls(&ARENA) != free_before + (1 as u32):
+        return 8
+    line("DROP ONLINE", 11 as usize)
+    line("ARRAY ONLINE", 12 as usize)
+
+    let made = string.from_view("DByte64", arena)
+    match made:
+        case Result.Ok(text):
+            if string.length(borrow text) != (7 as usize):
+                return 9
+            let text_clone_result = string.clone(borrow text)
+            match text_clone_result:
+                case Result.Ok(text_clone):
+                    if string.length(borrow text_clone) != (7 as usize):
+                        return 18
+                    drop(text_clone)
+                case Result.Err(error):
+                    return 19
+            let text_clone_in_result = string.clone_in(borrow text, fixed)
+            match text_clone_in_result:
+                case Result.Ok(text_clone_in):
+                    if string.length(borrow text_clone_in) != (7 as usize):
+                        return 20
+                    drop(text_clone_in)
+                case Result.Err(error):
+                    return 21
+            drop(text)
+        case Result.Err(error):
+            return 10
+    line("STRING ONLINE", 13 as usize)
+    line("NONE CHECK OK", 13 as usize)
+    return 0

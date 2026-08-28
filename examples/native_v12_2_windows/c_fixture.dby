@@ -1,0 +1,33 @@
+@repr(C)
+struct CPair:
+    tag: u8
+    value: u32
+
+extern "C" fn c_contract(signed_byte: i8, unsigned_byte: u8, signed_word: i16, unsigned_word: u16, word: ptr[u32], pair: ptr[CPair], tail: u64) -> u64
+
+fn windows_get_std_handle_raw(kind: i32) -> usize:
+    return windows.get_std_handle(kind)
+
+fn windows_write_file_raw(handle: usize, buffer: str, length: u32) -> i32:
+    return windows.write_file(handle, buffer, length, 0 as usize, 0 as usize)
+
+pub extern "C" fn dbyte_callback(value: u64, word: ptr[u32]) -> u64:
+    *word = *word + (2 as u32)
+    return value + (2 as u64)
+
+pub fn main() -> i32:
+    let word: u32 = 40 as u32
+    let pair = CPair(tag = 0 as u8, value = 0 as u32)
+    let result: u64 = c_contract(-7 as i8, 250 as u8, -300 as i16, 60000 as u16, &word, &pair, 100 as u64)
+    if result != (107 as u64):
+        return 1
+    if word != (42 as u32):
+        return 2
+    if pair.tag != (7 as u8):
+        return 3
+    if pair.value != (0x12345678 as u32):
+        return 4
+    let output = windows_get_std_handle_raw(-11)
+    if windows_write_file_raw(output, "DBYTE WIN64 C ABI OK\r\n", 22 as u32) == 0:
+        return 5
+    return 0

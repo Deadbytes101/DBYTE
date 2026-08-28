@@ -1,0 +1,42 @@
+import "../v12.1.0/alloc.dby" as alloc
+
+static mut SYSTEM: alloc.KernelAllocator
+
+fn windows_virtual_alloc_raw(size: usize) -> usize:
+    return windows.virtual_alloc(0 as usize, size, 0x3000 as u32, 4 as u32)
+
+fn windows_virtual_free_raw(address: usize) -> i32:
+    return windows.virtual_free(address, 0 as usize, 0x8000 as u32)
+
+fn copy_bytes(destination: ptr[u8], source: ptr[u8], count: usize) -> unit:
+    let index: usize = 0 as usize
+    while index < count:
+        destination[index] = source[index]
+        index = index + (1 as usize)
+    return unit
+
+fn provider_allocate(context: ptr[u8], size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    if alloc.valid_alignment(alignment) == false:
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.UnsupportedAlignment())
+    let address = windows_virtual_alloc_raw(size)
+    if address == (0 as usize):
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.OutOfMemory())
+    return Result[ptr[u8], alloc.AllocError].Ok(address as ptr[u8])
+
+fn provider_resize(context: ptr[u8], pointer: ptr[u8], old_size: usize, new_size: usize, alignment: usize) -> Result[ptr[u8], alloc.AllocError]:
+    let replacement = provider_allocate(context, new_size, alignment)?
+    let amount: usize = old_size
+    if new_size < amount:
+        amount = new_size
+    copy_bytes(replacement, pointer, amount)
+    if windows_virtual_free_raw(pointer as usize) == 0:
+        windows_virtual_free_raw(replacement as usize)
+        return Result[ptr[u8], alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    return Result[ptr[u8], alloc.AllocError].Ok(replacement)
+
+fn provider_free(context: ptr[u8], pointer: ptr[u8], size: usize, alignment: usize) -> unit:
+    windows_virtual_free_raw(pointer as usize)
+    return unit
+
+pub fn system_allocator() -> alloc.AllocatorRef:
+    return alloc.kernel_initialize(&SYSTEM, 0 as usize as ptr[u8], provider_allocate, provider_resize, provider_free)

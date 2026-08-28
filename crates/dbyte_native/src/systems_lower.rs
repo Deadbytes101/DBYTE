@@ -624,6 +624,9 @@ fn lower_function(
                 } | SystemsInst::CallPacked {
                     call_convention: dbyte_ast::CallConvention::C,
                     ..
+                } | SystemsInst::CallIndirectPacked {
+                    call_convention: dbyte_ast::CallConvention::C,
+                    ..
                 }
             )
         });
@@ -680,7 +683,24 @@ fn lower_function(
             function_error(function, "native incoming parameter offset exceeds i32")
         })?;
         let destination = frame.offset(parameter.slot, function)?;
-        if parameter.ty.is_scalar() {
+        if parameter.ty.is_wide_integer() {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_from_ebp_disp32(Register::Eax, incoming)
+            })?;
+            let incoming_high = incoming
+                .checked_add(4)
+                .ok_or_else(|| function_error(function, "native wide parameter offset overflow"))?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_from_ebp_disp32(Register::Edx, incoming_high)
+            })?;
+            store_wide_memory(
+                encoder,
+                function,
+                MemoryOperand::new(Register::Ebp, destination),
+                Register::Eax,
+                Register::Edx,
+            )?;
+        } else if parameter.ty.is_scalar() {
             emit(encoder, function, |encoder| {
                 encoder.mov_reg_from_ebp_disp32(Register::Eax, incoming)
             })?;
@@ -806,6 +826,20 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
+        SystemsInst::Const64 { bits, ty } => {
+            if !ty.is_wide_integer() {
+                return Err(function_error(function, "const64 requires i64/u64 type"));
+            }
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_imm32(Register::Eax, *bits as u32)
+            })?;
+            push(encoder, function, Register::Eax)?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_imm32(Register::Eax, (*bits >> 32) as u32)
+            })?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 2;
+        }
         SystemsInst::ConstBool(value) => {
             emit(encoder, function, |encoder| {
                 encoder.mov_reg_imm32(Register::Eax, u32::from(*value))
@@ -830,6 +864,12 @@ fn lower_instruction(
         }
         SystemsInst::LocalLoad { local, ty } => {
             let offset = frame.offset(*local, function)?;
+            if ty.is_wide_integer() {
+                load_wide_memory(encoder, function, MemoryOperand::new(Register::Ebp, offset))?;
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+                return Ok(());
+            }
             load_memory(
                 encoder,
                 function,
@@ -841,6 +881,19 @@ fn lower_instruction(
             *depth += 1;
         }
         SystemsInst::LocalStore { local, ty } => {
+            if ty.is_wide_integer() {
+                consume(depth, 2, function, "local.store.i64")?;
+                pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+                let offset = frame.offset(*local, function)?;
+                store_wide_memory(
+                    encoder,
+                    function,
+                    MemoryOperand::new(Register::Ebp, offset),
+                    Register::Eax,
+                    Register::Edx,
+                )?;
+                return Ok(());
+            }
             consume(depth, 1, function, "local.store")?;
             pop(encoder, function, Register::Eax)?;
             let offset = frame.offset(*local, function)?;
@@ -865,6 +918,15 @@ fn lower_instruction(
         SystemsInst::Load(ty) => {
             consume(depth, 1, function, "load")?;
             pop(encoder, function, Register::Edx)?;
+            if ty.is_wide_integer() {
+                emit(encoder, function, |encoder| {
+                    encoder.mov_reg_reg(Register::Ebx, Register::Edx)
+                })?;
+                load_wide_memory(encoder, function, MemoryOperand::new(Register::Ebx, 0))?;
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+                return Ok(());
+            }
             load_memory(
                 encoder,
                 function,
@@ -876,6 +938,19 @@ fn lower_instruction(
             *depth += 1;
         }
         SystemsInst::Store(ty) => {
+            if ty.is_wide_integer() {
+                consume(depth, 3, function, "store.i64")?;
+                pop_wide(encoder, function, Register::Eax, Register::Ecx)?;
+                pop(encoder, function, Register::Edx)?;
+                store_wide_memory(
+                    encoder,
+                    function,
+                    MemoryOperand::new(Register::Edx, 0),
+                    Register::Eax,
+                    Register::Ecx,
+                )?;
+                return Ok(());
+            }
             consume(depth, 2, function, "store")?;
             pop(encoder, function, Register::Eax)?;
             pop(encoder, function, Register::Edx)?;
@@ -914,6 +989,13 @@ fn lower_instruction(
         | SystemsInst::BitAnd(ty)
         | SystemsInst::BitOr(ty)
         | SystemsInst::BitXor(ty) => {
+            if ty.is_wide_integer() {
+                consume(depth, 4, function, "wide binary operation")?;
+                lower_wide_binary(instruction, function, encoder)?;
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+                return Ok(());
+            }
             consume(depth, 2, function, "binary operation")?;
             pop(encoder, function, Register::Ecx)?;
             pop(encoder, function, Register::Eax)?;
@@ -943,6 +1025,13 @@ fn lower_instruction(
             *depth += 1;
         }
         SystemsInst::Div(ty) | SystemsInst::Rem(ty) => {
+            if ty.is_wide_integer() {
+                consume(depth, 4, function, "wide division")?;
+                lower_wide_division(instruction, ty, function, encoder)?;
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+                return Ok(());
+            }
             consume(depth, 2, function, "division")?;
             pop(encoder, function, Register::Ecx)?;
             pop(encoder, function, Register::Eax)?;
@@ -965,6 +1054,33 @@ fn lower_instruction(
             *depth += 1;
         }
         SystemsInst::Neg(ty) | SystemsInst::BitNot(ty) => {
+            if ty.is_wide_integer() {
+                consume(depth, 2, function, "wide unary integer operation")?;
+                pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+                match instruction {
+                    SystemsInst::Neg(_) => {
+                        emit(encoder, function, |encoder| encoder.not_reg(Register::Eax))?;
+                        emit(encoder, function, |encoder| encoder.not_reg(Register::Edx))?;
+                        emit(encoder, function, |encoder| {
+                            encoder.add_reg_imm32(Register::Eax, 1)
+                        })?;
+                        emit(encoder, function, |encoder| {
+                            encoder.xor_reg_reg(Register::Ecx, Register::Ecx)
+                        })?;
+                        emit(encoder, function, |encoder| {
+                            encoder.adc_reg_reg(Register::Edx, Register::Ecx)
+                        })?;
+                    }
+                    SystemsInst::BitNot(_) => {
+                        emit(encoder, function, |encoder| encoder.not_reg(Register::Eax))?;
+                        emit(encoder, function, |encoder| encoder.not_reg(Register::Edx))?;
+                    }
+                    _ => unreachable!(),
+                }
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+                return Ok(());
+            }
             consume(depth, 1, function, "unary integer operation")?;
             pop(encoder, function, Register::Eax)?;
             match instruction {
@@ -981,6 +1097,13 @@ fn lower_instruction(
             *depth += 1;
         }
         SystemsInst::ShiftLeft(ty) | SystemsInst::ShiftRight(ty) => {
+            if ty.is_wide_integer() {
+                consume(depth, 4, function, "wide shift")?;
+                lower_wide_shift(instruction, ty, function, encoder)?;
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+                return Ok(());
+            }
             consume(depth, 2, function, "shift")?;
             pop(encoder, function, Register::Ecx)?;
             pop(encoder, function, Register::Eax)?;
@@ -997,7 +1120,11 @@ fn lower_instruction(
             push(encoder, function, Register::Eax)?;
             *depth += 1;
         }
-        SystemsInst::Cast { to, .. } => {
+        SystemsInst::Cast { from, to } => {
+            if from.is_wide_integer() || to.is_wide_integer() {
+                lower_wide_cast(from, to, function, encoder, depth)?;
+                return Ok(());
+            }
             consume(depth, 1, function, "cast")?;
             pop(encoder, function, Register::Eax)?;
             normalize(encoder, function, Register::Eax, to)?;
@@ -1020,6 +1147,13 @@ fn lower_instruction(
             *depth += 1;
         }
         SystemsInst::Compare { op, operand_type } => {
+            if operand_type.is_wide_integer() {
+                consume(depth, 4, function, "wide compare")?;
+                lower_wide_compare(*op, operand_type, function, encoder)?;
+                push(encoder, function, Register::Eax)?;
+                *depth += 1;
+                return Ok(());
+            }
             consume(depth, 2, function, "compare")?;
             pop(encoder, function, Register::Ecx)?;
             pop(encoder, function, Register::Eax)?;
@@ -1099,8 +1233,8 @@ fn lower_instruction(
         SystemsInst::Call {
             symbol,
             argument_count,
+            result,
             call_convention,
-            ..
         } => {
             let depth_before = *depth;
             consume(depth, *argument_count, function, "call")?;
@@ -1165,34 +1299,54 @@ fn lower_instruction(
                     )
                 })?;
             }
-            push(encoder, function, Register::Eax)?;
-            *depth += 1;
+            if result.is_wide_integer() {
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+            } else {
+                push(encoder, function, Register::Eax)?;
+                *depth += 1;
+            }
         }
         SystemsInst::CallPacked {
             symbol,
             argument_bytes,
+            result,
             call_convention,
-            ..
         } => {
-            if *call_convention == dbyte_ast::CallConvention::C {
-                return Err(function_error(
-                    function,
-                    "packed aggregate calls are unavailable for the C ABI",
-                ));
-            }
             consume(depth, 1, function, "call.packed")?;
             pop(encoder, function, Register::Esi)?;
-            if *argument_bytes != 0 {
-                emit(encoder, function, |encoder| {
-                    encoder.sub_esp_imm32(*argument_bytes)
+            let padding = if *call_convention == dbyte_ast::CallConvention::C {
+                let saved = if function.call_convention == dbyte_ast::CallConvention::C {
+                    12usize
+                } else {
+                    0
+                };
+                let bytes = usize::try_from(*argument_bytes).map_err(|_| {
+                    function_error(function, "packed C argument size exceeds usize")
                 })?;
+                (16 - ((frame.size as usize + saved + bytes) & 15)) & 15
+            } else {
+                0
+            };
+            let call_bytes = argument_bytes
+                .checked_add(
+                    u32::try_from(padding)
+                        .map_err(|_| function_error(function, "packed C padding exceeds u32"))?,
+                )
+                .ok_or_else(|| function_error(function, "packed call area overflow"))?;
+            if call_bytes != 0 {
                 emit(encoder, function, |encoder| {
-                    encoder.mov_reg_reg(Register::Edi, Register::Esp)
+                    encoder.sub_esp_imm32(call_bytes)
                 })?;
-                emit(encoder, function, |encoder| {
-                    encoder.mov_reg_imm32(Register::Ecx, *argument_bytes)
-                })?;
-                emit(encoder, function, Encoder::rep_movsb)?;
+                if *argument_bytes != 0 {
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_reg_reg(Register::Edi, Register::Esp)
+                    })?;
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_reg_imm32(Register::Ecx, *argument_bytes)
+                    })?;
+                    emit(encoder, function, Encoder::rep_movsb)?;
+                }
             }
             let symbol_id = lookup_symbol(symbols, symbol)?;
             let immediate = encoder
@@ -1205,18 +1359,23 @@ fn lower_instruction(
                 kind: RelocationKind::Pc32,
                 addend: -4,
             });
-            if *argument_bytes != 0 {
+            if call_bytes != 0 {
                 emit(encoder, function, |encoder| {
-                    encoder.add_esp_imm32(*argument_bytes)
+                    encoder.add_esp_imm32(call_bytes)
                 })?;
             }
-            push(encoder, function, Register::Eax)?;
-            *depth += 1;
+            if result.is_wide_integer() {
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+            } else {
+                push(encoder, function, Register::Eax)?;
+                *depth += 1;
+            }
         }
         SystemsInst::CallIndirect {
             argument_count,
+            result,
             call_convention,
-            ..
         } => {
             let depth_before = *depth;
             consume(depth, argument_count + 1, function, "call.indirect")?;
@@ -1282,8 +1441,70 @@ fn lower_instruction(
             )
             .map_err(|_| function_error(function, "indirect cleanup exceeds u32"))?;
             emit(encoder, function, |encoder| encoder.add_esp_imm32(cleanup))?;
-            push(encoder, function, Register::Eax)?;
-            *depth += 1;
+            if result.is_wide_integer() {
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+            } else {
+                push(encoder, function, Register::Eax)?;
+                *depth += 1;
+            }
+        }
+        SystemsInst::CallIndirectPacked {
+            argument_bytes,
+            result,
+            call_convention,
+        } => {
+            consume(depth, 2, function, "call.indirect.packed")?;
+            pop(encoder, function, Register::Eax)?;
+            pop(encoder, function, Register::Esi)?;
+            let padding = if *call_convention == dbyte_ast::CallConvention::C {
+                let saved = if function.call_convention == dbyte_ast::CallConvention::C {
+                    12usize
+                } else {
+                    0
+                };
+                let bytes = usize::try_from(*argument_bytes).map_err(|_| {
+                    function_error(function, "packed indirect C argument size exceeds usize")
+                })?;
+                (16 - ((frame.size as usize + saved + bytes) & 15)) & 15
+            } else {
+                0
+            };
+            let call_bytes = argument_bytes
+                .checked_add(u32::try_from(padding).map_err(|_| {
+                    function_error(function, "packed indirect C padding exceeds u32")
+                })?)
+                .ok_or_else(|| function_error(function, "packed indirect call area overflow"))?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Ebx, Register::Eax)
+            })?;
+            if call_bytes != 0 {
+                emit(encoder, function, |encoder| {
+                    encoder.sub_esp_imm32(call_bytes)
+                })?;
+                if *argument_bytes != 0 {
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_reg_reg(Register::Edi, Register::Esp)
+                    })?;
+                    emit(encoder, function, |encoder| {
+                        encoder.mov_reg_imm32(Register::Ecx, *argument_bytes)
+                    })?;
+                    emit(encoder, function, Encoder::rep_movsb)?;
+                }
+            }
+            emit(encoder, function, |encoder| encoder.call_reg(Register::Ebx))?;
+            if call_bytes != 0 {
+                emit(encoder, function, |encoder| {
+                    encoder.add_esp_imm32(call_bytes)
+                })?;
+            }
+            if result.is_wide_integer() {
+                push_wide(encoder, function, Register::Eax, Register::Edx)?;
+                *depth += 2;
+            } else {
+                push(encoder, function, Register::Eax)?;
+                *depth += 1;
+            }
         }
         SystemsInst::InterruptAddress { symbol, .. } => {
             emit_absolute_address(encoder, function, symbols, relocations, symbol)?;
@@ -1338,9 +1559,25 @@ fn lower_instruction(
             consume(depth, 1, function, "pop")?;
             pop(encoder, function, Register::Eax)?;
         }
+        SystemsInst::PopWords(words) => {
+            let words = usize::from(*words);
+            consume(depth, words, function, "pop.words")?;
+            let bytes = words
+                .checked_mul(4)
+                .and_then(|bytes| u32::try_from(bytes).ok())
+                .ok_or_else(|| function_error(function, "pop.words cleanup overflow"))?;
+            if bytes != 0 {
+                emit(encoder, function, |encoder| encoder.add_esp_imm32(bytes))?;
+            }
+        }
         SystemsInst::Return => {
-            consume(depth, 1, function, "return")?;
-            pop(encoder, function, Register::Eax)?;
+            if function.return_type.is_wide_integer() {
+                consume(depth, 2, function, "return.i64")?;
+                pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+            } else {
+                consume(depth, 1, function, "return")?;
+                pop(encoder, function, Register::Eax)?;
+            }
             if function.call_convention == dbyte_ast::CallConvention::C {
                 emit(encoder, function, |encoder| encoder.pop_reg(Register::Edi))?;
                 emit(encoder, function, |encoder| encoder.pop_reg(Register::Esi))?;
@@ -1355,6 +1592,593 @@ fn lower_instruction(
         }
     }
     Ok(())
+}
+
+fn lower_wide_binary(
+    instruction: &SystemsInst,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    pop_wide(encoder, function, Register::Ecx, Register::Ebx)?;
+    pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+    match instruction {
+        SystemsInst::Add(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.add_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.adc_reg_reg(Register::Edx, Register::Ebx)
+            })
+        }
+        SystemsInst::Sub(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.sub_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.sbb_reg_reg(Register::Edx, Register::Ebx)
+            })
+        }
+        SystemsInst::BitAnd(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.and_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.and_reg_reg(Register::Edx, Register::Ebx)
+            })
+        }
+        SystemsInst::BitOr(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.or_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.or_reg_reg(Register::Edx, Register::Ebx)
+            })
+        }
+        SystemsInst::BitXor(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.xor_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.xor_reg_reg(Register::Edx, Register::Ebx)
+            })
+        }
+        SystemsInst::Mul(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Esi, Register::Eax)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Edi, Register::Edx)
+            })?;
+            emit(encoder, function, |encoder| encoder.mul_reg(Register::Ecx))?;
+            emit(encoder, function, |encoder| {
+                encoder.imul_reg_reg(Register::Edi, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.imul_reg_reg(Register::Esi, Register::Ebx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.add_reg_reg(Register::Edx, Register::Edi)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.add_reg_reg(Register::Edx, Register::Esi)
+            })
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn lower_wide_division(
+    instruction: &SystemsInst,
+    ty: &SystemType,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    // Dividend: EDX:EAX. Divisor: EBX:ECX. The helper is emitted inline so
+    // Freestanding objects never acquire external arithmetic runtime dependencies.
+    pop_wide(encoder, function, Register::Ecx, Register::Ebx)?;
+    pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+
+    let divisor_valid = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_reg(Register::Esi, Register::Ecx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.or_reg_reg(Register::Esi, Register::Ebx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.test_reg_reg(Register::Esi, Register::Esi)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::NotEqual, divisor_valid)
+    })?;
+    // Architectural #DE, deliberately produced by DIV with a zero divisor.
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Edx, Register::Edx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Eax, Register::Eax)
+    })?;
+    emit(encoder, function, |encoder| encoder.div_reg(Register::Esi))?;
+    encoder
+        .bind_label(divisor_valid)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+
+    if ty.is_signed_integer() {
+        emit_signed_wide_division_prelude(function, encoder)?;
+    }
+
+    emit_unsigned_wide_division(function, encoder)?;
+
+    if ty.is_signed_integer() {
+        emit_signed_wide_division_finish(function, encoder)?;
+    }
+
+    if matches!(instruction, SystemsInst::Rem(_)) {
+        emit(encoder, function, |encoder| {
+            encoder.mov_reg_reg(Register::Eax, Register::Esi)
+        })?;
+        emit(encoder, function, |encoder| {
+            encoder.mov_reg_reg(Register::Edx, Register::Edi)
+        })?;
+    }
+    Ok(())
+}
+
+fn emit_signed_wide_division_prelude(
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    let not_overflow = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    let check_divisor = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_imm32(Register::Edx, i32::MIN)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::Equal, check_divisor)
+    })?;
+    emit(encoder, function, |encoder| encoder.jump(not_overflow))?;
+    encoder
+        .bind_label(check_divisor)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.test_reg_reg(Register::Eax, Register::Eax)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::NotEqual, not_overflow)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_imm32(Register::Ebx, -1)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::NotEqual, not_overflow)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_imm32(Register::Ecx, -1)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::NotEqual, not_overflow)
+    })?;
+    // Architectural signed-overflow #DE using the equivalent i32 boundary.
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_imm32(Register::Eax, 0x8000_0000)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_imm32(Register::Edx, u32::MAX)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_imm32(Register::Ecx, u32::MAX)
+    })?;
+    emit(encoder, function, |encoder| encoder.idiv_reg(Register::Ecx))?;
+    encoder
+        .bind_label(not_overflow)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+
+    // Save remainder sign then quotient sign below the helper's balanced EBP
+    // save. Only the sign bit is observed when the values are restored.
+    push(encoder, function, Register::Edx)?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_reg(Register::Esi, Register::Edx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Esi, Register::Ebx)
+    })?;
+    push(encoder, function, Register::Esi)?;
+
+    emit_abs_wide(Register::Eax, Register::Edx, function, encoder)?;
+    emit_abs_wide(Register::Ecx, Register::Ebx, function, encoder)
+}
+
+fn emit_abs_wide(
+    low: Register,
+    high: Register,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    let done = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.test_reg_reg(high, high)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::GreaterOrEqual, done)
+    })?;
+    emit(encoder, function, |encoder| encoder.not_reg(low))?;
+    emit(encoder, function, |encoder| encoder.not_reg(high))?;
+    emit(encoder, function, |encoder| encoder.add_reg_imm32(low, 1))?;
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Esi, Register::Esi)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.adc_reg_reg(high, Register::Esi)
+    })?;
+    encoder
+        .bind_label(done)
+        .map_err(|error| encoder_error(error, Some(function)))
+}
+
+fn emit_unsigned_wide_division(
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    let loop_head = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    let subtract = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    let skip_subtract = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+
+    emit(encoder, function, |encoder| encoder.push_reg(Register::Ebp))?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_imm32(Register::Ebp, 64)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Esi, Register::Esi)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Edi, Register::Edi)
+    })?;
+    encoder
+        .bind_label(loop_head)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.shift_reg_imm8(Register::Eax, ShiftKind::LeftLogical, 1)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.rcl_reg_one(Register::Edx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.rcl_reg_one(Register::Esi)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.rcl_reg_one(Register::Edi)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_reg(Register::Edi, Register::Ebx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::Above, subtract)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::Below, skip_subtract)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_reg(Register::Esi, Register::Ecx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::Below, skip_subtract)
+    })?;
+    encoder
+        .bind_label(subtract)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.sub_reg_reg(Register::Esi, Register::Ecx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.sbb_reg_reg(Register::Edi, Register::Ebx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.add_reg_imm32(Register::Eax, 1)
+    })?;
+    encoder
+        .bind_label(skip_subtract)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| encoder.dec_reg(Register::Ebp))?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::NotEqual, loop_head)
+    })?;
+    emit(encoder, function, |encoder| encoder.pop_reg(Register::Ebp))
+}
+
+fn emit_signed_wide_division_finish(
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    // Quotient sign is on top, followed by the dividend/remainder sign.
+    pop(encoder, function, Register::Ecx)?;
+    let quotient_done = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.test_reg_reg(Register::Ecx, Register::Ecx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::GreaterOrEqual, quotient_done)
+    })?;
+    emit_negate_wide(Register::Eax, Register::Edx, function, encoder)?;
+    encoder
+        .bind_label(quotient_done)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+
+    pop(encoder, function, Register::Ecx)?;
+    let remainder_done = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.test_reg_reg(Register::Ecx, Register::Ecx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::GreaterOrEqual, remainder_done)
+    })?;
+    emit_negate_wide(Register::Esi, Register::Edi, function, encoder)?;
+    encoder
+        .bind_label(remainder_done)
+        .map_err(|error| encoder_error(error, Some(function)))
+}
+
+fn emit_negate_wide(
+    low: Register,
+    high: Register,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    emit(encoder, function, |encoder| encoder.not_reg(low))?;
+    emit(encoder, function, |encoder| encoder.not_reg(high))?;
+    emit(encoder, function, |encoder| encoder.add_reg_imm32(low, 1))?;
+    emit(encoder, function, |encoder| {
+        encoder.xor_reg_reg(Register::Ecx, Register::Ecx)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.adc_reg_reg(high, Register::Ecx)
+    })
+}
+
+fn lower_wide_shift(
+    instruction: &SystemsInst,
+    ty: &SystemType,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    pop_wide(encoder, function, Register::Ecx, Register::Ebx)?;
+    pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+    emit(encoder, function, |encoder| {
+        encoder.and_reg_imm32(Register::Ecx, 63)
+    })?;
+    let large = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    let done = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_imm32(Register::Ecx, 32)
+    })?;
+    emit(encoder, function, |encoder| {
+        encoder.jump_if(Condition::AboveOrEqual, large)
+    })?;
+    match instruction {
+        SystemsInst::ShiftLeft(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.shld_reg_reg_cl(Register::Edx, Register::Eax)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.shift_reg_by_cl(Register::Eax, ShiftKind::LeftLogical)
+            })?;
+        }
+        SystemsInst::ShiftRight(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.shrd_reg_reg_cl(Register::Eax, Register::Edx)
+            })?;
+            let kind = if ty.is_signed_integer() {
+                ShiftKind::RightArithmetic
+            } else {
+                ShiftKind::RightLogical
+            };
+            emit(encoder, function, |encoder| {
+                encoder.shift_reg_by_cl(Register::Edx, kind)
+            })?;
+        }
+        _ => unreachable!(),
+    }
+    emit(encoder, function, |encoder| encoder.jump(done))?;
+    encoder
+        .bind_label(large)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.sub_reg_imm32(Register::Ecx, 32)
+    })?;
+    match instruction {
+        SystemsInst::ShiftLeft(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Edx, Register::Eax)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.xor_reg_reg(Register::Eax, Register::Eax)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.shift_reg_by_cl(Register::Edx, ShiftKind::LeftLogical)
+            })?;
+        }
+        SystemsInst::ShiftRight(_) if ty.is_signed_integer() => {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Eax, Register::Edx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.shift_reg_imm8(Register::Edx, ShiftKind::RightArithmetic, 31)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.shift_reg_by_cl(Register::Eax, ShiftKind::RightArithmetic)
+            })?;
+        }
+        SystemsInst::ShiftRight(_) => {
+            emit(encoder, function, |encoder| {
+                encoder.mov_reg_reg(Register::Eax, Register::Edx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.xor_reg_reg(Register::Edx, Register::Edx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.shift_reg_by_cl(Register::Eax, ShiftKind::RightLogical)
+            })?;
+        }
+        _ => unreachable!(),
+    }
+    encoder
+        .bind_label(done)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    Ok(())
+}
+
+fn lower_wide_compare(
+    operator: CompareOp,
+    ty: &SystemType,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+) -> NativeResult<()> {
+    pop_wide(encoder, function, Register::Ecx, Register::Ebx)?;
+    pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+    let is_true = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    let is_false = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    let done = encoder
+        .new_label()
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.cmp_reg_reg(Register::Edx, Register::Ebx)
+    })?;
+    match operator {
+        CompareOp::Eq | CompareOp::NotEq => {
+            let mismatch = if operator == CompareOp::Eq {
+                is_false
+            } else {
+                is_true
+            };
+            let match_result = if operator == CompareOp::Eq {
+                is_true
+            } else {
+                is_false
+            };
+            emit(encoder, function, |encoder| {
+                encoder.jump_if(Condition::NotEqual, mismatch)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.cmp_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.jump_if(Condition::Equal, match_result)
+            })?;
+            emit(encoder, function, |encoder| encoder.jump(mismatch))?;
+        }
+        _ => {
+            let (high_true, high_false, low_true) = match (operator, ty.is_signed_integer()) {
+                (CompareOp::Lt, true) => (Condition::Less, Condition::Greater, Condition::Below),
+                (CompareOp::LtEq, true) => {
+                    (Condition::Less, Condition::Greater, Condition::BelowOrEqual)
+                }
+                (CompareOp::Gt, true) => (Condition::Greater, Condition::Less, Condition::Above),
+                (CompareOp::GtEq, true) => {
+                    (Condition::Greater, Condition::Less, Condition::AboveOrEqual)
+                }
+                (CompareOp::Lt, false) => (Condition::Below, Condition::Above, Condition::Below),
+                (CompareOp::LtEq, false) => {
+                    (Condition::Below, Condition::Above, Condition::BelowOrEqual)
+                }
+                (CompareOp::Gt, false) => (Condition::Above, Condition::Below, Condition::Above),
+                (CompareOp::GtEq, false) => {
+                    (Condition::Above, Condition::Below, Condition::AboveOrEqual)
+                }
+                _ => unreachable!(),
+            };
+            emit(encoder, function, |encoder| {
+                encoder.jump_if(high_true, is_true)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.jump_if(high_false, is_false)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.cmp_reg_reg(Register::Eax, Register::Ecx)
+            })?;
+            emit(encoder, function, |encoder| {
+                encoder.jump_if(low_true, is_true)
+            })?;
+            emit(encoder, function, |encoder| encoder.jump(is_false))?;
+        }
+    }
+    encoder
+        .bind_label(is_false)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_imm32(Register::Eax, 0)
+    })?;
+    emit(encoder, function, |encoder| encoder.jump(done))?;
+    encoder
+        .bind_label(is_true)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_imm32(Register::Eax, 1)
+    })?;
+    encoder
+        .bind_label(done)
+        .map_err(|error| encoder_error(error, Some(function)))?;
+    Ok(())
+}
+
+fn lower_wide_cast(
+    from: &SystemType,
+    to: &SystemType,
+    function: &SystemsFunction,
+    encoder: &mut Encoder,
+    depth: &mut usize,
+) -> NativeResult<()> {
+    match (from.is_wide_integer(), to.is_wide_integer()) {
+        (true, true) => Ok(()),
+        (true, false) => {
+            consume(depth, 2, function, "wide-to-narrow cast")?;
+            pop_wide(encoder, function, Register::Eax, Register::Edx)?;
+            normalize(encoder, function, Register::Eax, to)?;
+            push(encoder, function, Register::Eax)?;
+            *depth += 1;
+            Ok(())
+        }
+        (false, true) => {
+            consume(depth, 1, function, "narrow-to-wide cast")?;
+            pop(encoder, function, Register::Eax)?;
+            normalize(encoder, function, Register::Eax, from)?;
+            if from.is_signed_integer() {
+                emit(encoder, function, Encoder::cdq)?;
+            } else {
+                emit(encoder, function, |encoder| {
+                    encoder.xor_reg_reg(Register::Edx, Register::Edx)
+                })?;
+            }
+            push_wide(encoder, function, Register::Eax, Register::Edx)?;
+            *depth += 2;
+            Ok(())
+        }
+        (false, false) => unreachable!(),
+    }
 }
 
 fn lower_intrinsic(
@@ -1630,6 +2454,68 @@ fn store_memory(
     })
 }
 
+fn load_wide_memory(
+    encoder: &mut Encoder,
+    function: &SystemsFunction,
+    source: MemoryOperand,
+) -> NativeResult<()> {
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_from_memory(Register::Eax, source, OperandWidth::Dword, None)
+    })?;
+    let high = MemoryOperand::new(
+        source.base,
+        source
+            .displacement
+            .checked_add(4)
+            .ok_or_else(|| function_error(function, "wide load displacement overflows"))?,
+    );
+    emit(encoder, function, |encoder| {
+        encoder.mov_reg_from_memory(Register::Edx, high, OperandWidth::Dword, None)
+    })
+}
+
+fn store_wide_memory(
+    encoder: &mut Encoder,
+    function: &SystemsFunction,
+    destination: MemoryOperand,
+    low: Register,
+    high: Register,
+) -> NativeResult<()> {
+    emit(encoder, function, |encoder| {
+        encoder.mov_memory_from_reg(destination, low, OperandWidth::Dword)
+    })?;
+    let high_destination = MemoryOperand::new(
+        destination.base,
+        destination
+            .displacement
+            .checked_add(4)
+            .ok_or_else(|| function_error(function, "wide store displacement overflows"))?,
+    );
+    emit(encoder, function, |encoder| {
+        encoder.mov_memory_from_reg(high_destination, high, OperandWidth::Dword)
+    })
+}
+
+fn push_wide(
+    encoder: &mut Encoder,
+    function: &SystemsFunction,
+    low: Register,
+    high: Register,
+) -> NativeResult<()> {
+    push(encoder, function, low)?;
+    push(encoder, function, high)
+}
+
+fn pop_wide(
+    encoder: &mut Encoder,
+    function: &SystemsFunction,
+    low: Register,
+    high: Register,
+) -> NativeResult<()> {
+    pop(encoder, function, high)?;
+    pop(encoder, function, low)
+}
+
 fn normalize(
     encoder: &mut Encoder,
     function: &SystemsFunction,
@@ -1662,6 +2548,10 @@ fn normalize(
         | SystemType::Usize
         | SystemType::Str
         | SystemType::Pointer(_) => Ok(()),
+        SystemType::I64 | SystemType::U64 => Err(function_error(
+            function,
+            format!("E_NATIVE_HIR_UNSUPPORTED: 64-bit scalar `{ty}` requires a DBYTE64 or i686 multiword lowering"),
+        )),
         SystemType::Array(_, _) | SystemType::Struct(_) => Err(function_error(
             function,
             format!("cannot normalize aggregate native type '{ty}'"),
@@ -1678,6 +2568,7 @@ fn operand_width(ty: &SystemType) -> Option<OperandWidth> {
         | SystemType::Usize
         | SystemType::Str
         | SystemType::Pointer(_) => Some(OperandWidth::Dword),
+        SystemType::I64 | SystemType::U64 => None,
         SystemType::Array(_, _) | SystemType::Struct(_) => None,
     }
 }
@@ -1693,6 +2584,7 @@ fn memory_load_form(ty: &SystemType) -> Option<(OperandWidth, Option<Extension>)
         | SystemType::Usize
         | SystemType::Str
         | SystemType::Pointer(_) => Some((OperandWidth::Dword, None)),
+        SystemType::I64 | SystemType::U64 => None,
         SystemType::Array(_, _) | SystemType::Struct(_) => None,
     }
 }
