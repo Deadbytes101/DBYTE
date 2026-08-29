@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v12.2.0**
+- Snapshot version: **v12.2.1**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -220,6 +220,12 @@ See [Modern Native Targets](docs/MODERN_NATIVE_TARGETS.md),
 [DBYTE64 ABI](docs/DBYTE64_ABI.md), [ELF64 and Multiboot2](docs/ELF64_MULTIBOOT2.md),
 [Linux Runtime](docs/LINUX_RUNTIME.md), [COFF and PE32+](docs/COFF_PE32_PLUS.md),
 and [Windows Runtime](docs/WINDOWS_RUNTIME.md) for the normative v12.2 contracts.
+
+`v12.2.1` is a packaging-only correction. Windows ZIPs are now assembled from
+an exact tracked-file manifest, include the versioned `runtime/` tree, and are
+verified for deterministic tag provenance. It does not change language,
+runtime, HIR, native ABI, object, linker, or executable semantics. See
+[Windows Runtime Packaging Correction](docs/WINDOWS_RUNTIME_PACKAGING.md).
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.
