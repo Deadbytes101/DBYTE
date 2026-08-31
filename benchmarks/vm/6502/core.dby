@@ -1,0 +1,507 @@
+pub struct Cpu:
+    a: u8
+    x: u8
+    y: u8
+    sp: u8
+    status: u8
+    pc: u16
+    halted: bool
+    illegal_opcode: u8
+    instructions: u64
+
+pub fn initialize(pc: u16) -> Cpu:
+    return Cpu(a = 0 as u8, x = 0 as u8, y = 0 as u8, sp = 253 as u8, status = 36 as u8, pc = pc, halted = false, illegal_opcode = 0 as u8, instructions = 0 as u64)
+
+fn read(memory: mut_slice[u8], address: u16) -> u8:
+    return memory[address as usize]
+
+fn write(memory: mut_slice[u8], address: u16, value: u8) -> unit:
+    memory[address as usize] = value
+    return unit
+
+fn fetch(cpu: borrow mut Cpu, memory: mut_slice[u8]) -> u8:
+    let value: u8 = read(memory, (*cpu).pc)
+    (*cpu).pc = (*cpu).pc + (1 as u16)
+    return value
+
+fn fetch16(cpu: borrow mut Cpu, memory: mut_slice[u8]) -> u16:
+    let low: u16 = fetch(cpu, memory) as u16
+    let high: u16 = fetch(cpu, memory) as u16
+    return low | (high << (8 as u16))
+
+fn read16(memory: mut_slice[u8], address: u16) -> u16:
+    let low: u16 = read(memory, address) as u16
+    let high: u16 = read(memory, address + (1 as u16)) as u16
+    return low | (high << (8 as u16))
+
+fn read16_zero_page(memory: mut_slice[u8], address: u8) -> u16:
+    let low: u16 = read(memory, address as u16) as u16
+    let high_address: u8 = address + (1 as u8)
+    let high: u16 = read(memory, high_address as u16) as u16
+    return low | (high << (8 as u16))
+
+fn read16_indirect_bug(memory: mut_slice[u8], address: u16) -> u16:
+    let low: u16 = read(memory, address) as u16
+    let high_address: u16 = (address & (65280 as u16)) | ((address + (1 as u16)) & (255 as u16))
+    let high: u16 = read(memory, high_address) as u16
+    return low | (high << (8 as u16))
+
+fn push(cpu: borrow mut Cpu, memory: mut_slice[u8], value: u8) -> unit:
+    write(memory, (256 as u16) | ((*cpu).sp as u16), value)
+    (*cpu).sp = (*cpu).sp - (1 as u8)
+    return unit
+
+fn pop(cpu: borrow mut Cpu, memory: mut_slice[u8]) -> u8:
+    (*cpu).sp = (*cpu).sp + (1 as u8)
+    return read(memory, (256 as u16) | ((*cpu).sp as u16))
+
+fn set_flag(cpu: borrow mut Cpu, mask: u8, enabled: bool) -> unit:
+    if enabled:
+        (*cpu).status = (*cpu).status | mask
+    else:
+        (*cpu).status = (*cpu).status & (~mask)
+    return unit
+
+fn flag(cpu: borrow Cpu, mask: u8) -> bool:
+    return ((*cpu).status & mask) != (0 as u8)
+
+fn set_nz(cpu: borrow mut Cpu, value: u8) -> unit:
+    set_flag(cpu, 2 as u8, value == (0 as u8))
+    set_flag(cpu, 128 as u8, (value & (128 as u8)) != (0 as u8))
+    return unit
+
+fn compare(cpu: borrow mut Cpu, left: u8, right: u8) -> unit:
+    let result: u8 = left - right
+    set_flag(cpu, 1 as u8, left >= right)
+    set_nz(cpu, result)
+    return unit
+
+fn adc(cpu: borrow mut Cpu, value: u8) -> unit:
+    let carry: u16 = ((*cpu).status & (1 as u8)) as u16
+    let binary: u16 = ((*cpu).a as u16) + (value as u16) + carry
+    let binary_result: u8 = binary as u8
+    set_flag(cpu, 64 as u8, (((~((*cpu).a ^ value)) & ((*cpu).a ^ binary_result)) & (128 as u8)) != (0 as u8))
+    if flag(borrow *cpu, 8 as u8):
+        let decimal: u16 = binary
+        if (((*cpu).a & (15 as u8)) as u16) + ((value & (15 as u8)) as u16) + carry > (9 as u16):
+            decimal = decimal + (6 as u16)
+        if decimal > (153 as u16):
+            decimal = decimal + (96 as u16)
+        set_flag(cpu, 1 as u8, decimal > (255 as u16))
+        (*cpu).a = decimal as u8
+        set_nz(cpu, binary_result)
+    else:
+        set_flag(cpu, 1 as u8, binary > (255 as u16))
+        (*cpu).a = binary_result
+        set_nz(cpu, (*cpu).a)
+    return unit
+
+fn sbc(cpu: borrow mut Cpu, value: u8) -> unit:
+    let carry: i16 = ((*cpu).status & (1 as u8)) as i16
+    let difference: i16 = ((*cpu).a as i16) - (value as i16) - ((1 as i16) - carry)
+    let binary_result: u8 = difference as u8
+    set_flag(cpu, 64 as u8, ((((*cpu).a ^ binary_result) & ((*cpu).a ^ value)) & (128 as u8)) != (0 as u8))
+    set_flag(cpu, 1 as u8, difference >= (0 as i16))
+    if flag(borrow *cpu, 8 as u8):
+        let low: i16 = (((*cpu).a & (15 as u8)) as i16) - ((value & (15 as u8)) as i16) - ((1 as i16) - carry)
+        let high: i16 = (((*cpu).a >> (4 as u8)) & (15 as u8)) as i16 - (((value >> (4 as u8)) & (15 as u8)) as i16)
+        if low < (0 as i16):
+            low = low - (6 as i16)
+            high = high - (1 as i16)
+        if high < (0 as i16):
+            high = high - (6 as i16)
+        (*cpu).a = (((high as u8) << (4 as u8)) | ((low as u8) & (15 as u8))) as u8
+        set_nz(cpu, binary_result)
+    else:
+        (*cpu).a = binary_result
+        set_nz(cpu, (*cpu).a)
+    return unit
+
+fn branch(cpu: borrow mut Cpu, memory: mut_slice[u8], take: bool) -> unit:
+    let offset: u8 = fetch(cpu, memory)
+    if take:
+        if offset < (128 as u8):
+            (*cpu).pc = (*cpu).pc + (offset as u16)
+        else:
+            (*cpu).pc = (*cpu).pc - (((0 as u8) - offset) as u16)
+    return unit
+
+fn group_one_address(cpu: borrow mut Cpu, memory: mut_slice[u8], mode: u8) -> u16:
+    if mode == (0 as u8):
+        let pointer: u8 = fetch(cpu, memory) + (*cpu).x
+        return read16_zero_page(memory, pointer)
+    if mode == (1 as u8):
+        return fetch(cpu, memory) as u16
+    if mode == (2 as u8):
+        let address: u16 = (*cpu).pc
+        (*cpu).pc = (*cpu).pc + (1 as u16)
+        return address
+    if mode == (3 as u8):
+        return fetch16(cpu, memory)
+    if mode == (4 as u8):
+        let pointer: u8 = fetch(cpu, memory)
+        return read16_zero_page(memory, pointer) + ((*cpu).y as u16)
+    if mode == (5 as u8):
+        return (fetch(cpu, memory) + (*cpu).x) as u16
+    if mode == (6 as u8):
+        return fetch16(cpu, memory) + ((*cpu).y as u16)
+    return fetch16(cpu, memory) + ((*cpu).x as u16)
+
+fn execute_group_one(cpu: borrow mut Cpu, memory: mut_slice[u8], opcode: u8) -> bool:
+    let operation: u8 = opcode >> (5 as u8)
+    let mode: u8 = (opcode >> (2 as u8)) & (7 as u8)
+    if operation == (4 as u8):
+        if mode == (2 as u8):
+            return false
+        let address: u16 = group_one_address(cpu, memory, mode)
+        write(memory, address, (*cpu).a)
+        return true
+    let address: u16 = group_one_address(cpu, memory, mode)
+    let value: u8 = read(memory, address)
+    if operation == (0 as u8):
+        (*cpu).a = (*cpu).a | value
+        set_nz(cpu, (*cpu).a)
+    if operation == (1 as u8):
+        (*cpu).a = (*cpu).a & value
+        set_nz(cpu, (*cpu).a)
+    if operation == (2 as u8):
+        (*cpu).a = (*cpu).a ^ value
+        set_nz(cpu, (*cpu).a)
+    if operation == (3 as u8):
+        adc(cpu, value)
+    if operation == (5 as u8):
+        (*cpu).a = value
+        set_nz(cpu, (*cpu).a)
+    if operation == (6 as u8):
+        compare(cpu, (*cpu).a, value)
+    if operation == (7 as u8):
+        sbc(cpu, value)
+    return true
+
+fn group_two_address(cpu: borrow mut Cpu, memory: mut_slice[u8], mode: u8, y_index: bool) -> u16:
+    if mode == (0 as u8):
+        let address: u16 = (*cpu).pc
+        (*cpu).pc = (*cpu).pc + (1 as u16)
+        return address
+    if mode == (1 as u8):
+        return fetch(cpu, memory) as u16
+    if mode == (3 as u8):
+        return fetch16(cpu, memory)
+    if mode == (5 as u8):
+        if y_index:
+            return (fetch(cpu, memory) + (*cpu).y) as u16
+        return (fetch(cpu, memory) + (*cpu).x) as u16
+    if y_index:
+        return fetch16(cpu, memory) + ((*cpu).y as u16)
+    return fetch16(cpu, memory) + ((*cpu).x as u16)
+
+fn execute_shift(cpu: borrow mut Cpu, memory: mut_slice[u8], operation: u8, mode: u8) -> bool:
+    if mode != (1 as u8):
+        if mode != (2 as u8):
+            if mode != (3 as u8):
+                if mode != (5 as u8):
+                    if mode != (7 as u8):
+                        return false
+    let accumulator: bool = mode == (2 as u8)
+    let value: u8 = (*cpu).a
+    let address: u16 = 0 as u16
+    if accumulator == false:
+        address = group_two_address(cpu, memory, mode, false)
+        value = read(memory, address)
+    let result: u8 = value
+    if operation == (0 as u8):
+        set_flag(cpu, 1 as u8, (value & (128 as u8)) != (0 as u8))
+        result = value << (1 as u8)
+    if operation == (1 as u8):
+        let carry: u8 = (*cpu).status & (1 as u8)
+        set_flag(cpu, 1 as u8, (value & (128 as u8)) != (0 as u8))
+        result = (value << (1 as u8)) | carry
+    if operation == (2 as u8):
+        set_flag(cpu, 1 as u8, (value & (1 as u8)) != (0 as u8))
+        result = value >> (1 as u8)
+    if operation == (3 as u8):
+        let carry: u8 = (*cpu).status & (1 as u8)
+        set_flag(cpu, 1 as u8, (value & (1 as u8)) != (0 as u8))
+        result = (value >> (1 as u8)) | (carry << (7 as u8))
+    if accumulator:
+        (*cpu).a = result
+    else:
+        write(memory, address, result)
+    set_nz(cpu, result)
+    return true
+
+fn execute_group_two(cpu: borrow mut Cpu, memory: mut_slice[u8], opcode: u8) -> bool:
+    let operation: u8 = opcode >> (5 as u8)
+    let mode: u8 = (opcode >> (2 as u8)) & (7 as u8)
+    if operation < (4 as u8):
+        return execute_shift(cpu, memory, operation, mode)
+    if operation == (4 as u8):
+        if mode != (1 as u8):
+            if mode != (3 as u8):
+                if mode != (5 as u8):
+                    return false
+        write(memory, group_two_address(cpu, memory, mode, true), (*cpu).x)
+        return true
+    if operation == (5 as u8):
+        if mode != (0 as u8):
+            if mode != (1 as u8):
+                if mode != (3 as u8):
+                    if mode != (5 as u8):
+                        if mode != (7 as u8):
+                            return false
+        (*cpu).x = read(memory, group_two_address(cpu, memory, mode, true))
+        set_nz(cpu, (*cpu).x)
+        return true
+    if mode != (1 as u8):
+        if mode != (3 as u8):
+            if mode != (5 as u8):
+                if mode != (7 as u8):
+                    return false
+    let address: u16 = group_two_address(cpu, memory, mode, false)
+    let value: u8 = read(memory, address)
+    if operation == (6 as u8):
+        write(memory, address, value - (1 as u8))
+        set_nz(cpu, value - (1 as u8))
+    else:
+        write(memory, address, value + (1 as u8))
+        set_nz(cpu, value + (1 as u8))
+    return true
+
+fn load_y(cpu: borrow mut Cpu, memory: mut_slice[u8], opcode: u8) -> bool:
+    let mode: u8 = (opcode >> (2 as u8)) & (7 as u8)
+    if mode != (0 as u8):
+        if mode != (1 as u8):
+            if mode != (3 as u8):
+                if mode != (5 as u8):
+                    if mode != (7 as u8):
+                        return false
+    (*cpu).y = read(memory, group_two_address(cpu, memory, mode, false))
+    set_nz(cpu, (*cpu).y)
+    return true
+
+fn compare_index(cpu: borrow mut Cpu, memory: mut_slice[u8], opcode: u8, value: u8) -> bool:
+    let mode: u8 = (opcode >> (2 as u8)) & (7 as u8)
+    if mode != (0 as u8):
+        if mode != (1 as u8):
+            if mode != (3 as u8):
+                return false
+    compare(cpu, value, read(memory, group_two_address(cpu, memory, mode, false)))
+    return true
+
+fn execute_group_zero(cpu: borrow mut Cpu, memory: mut_slice[u8], opcode: u8) -> bool:
+    if opcode == (0x00 as u8):
+        (*cpu).pc = (*cpu).pc + (1 as u16)
+        push(cpu, memory, ((*cpu).pc >> (8 as u16)) as u8)
+        push(cpu, memory, (*cpu).pc as u8)
+        push(cpu, memory, (*cpu).status | (48 as u8))
+        set_flag(cpu, 4 as u8, true)
+        (*cpu).pc = read16(memory, 65534 as u16)
+        return true
+    if opcode == (0x08 as u8):
+        push(cpu, memory, (*cpu).status | (48 as u8))
+        return true
+    if opcode == (0x10 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 128 as u8) == false)
+        return true
+    if opcode == (0x18 as u8):
+        set_flag(cpu, 1 as u8, false)
+        return true
+    if opcode == (0x20 as u8):
+        let target: u16 = fetch16(cpu, memory)
+        let return_address: u16 = (*cpu).pc - (1 as u16)
+        push(cpu, memory, (return_address >> (8 as u16)) as u8)
+        push(cpu, memory, return_address as u8)
+        (*cpu).pc = target
+        return true
+    if opcode == (0x24 as u8):
+        let value: u8 = read(memory, fetch(cpu, memory) as u16)
+        set_flag(cpu, 2 as u8, ((*cpu).a & value) == (0 as u8))
+        set_flag(cpu, 64 as u8, (value & (64 as u8)) != (0 as u8))
+        set_flag(cpu, 128 as u8, (value & (128 as u8)) != (0 as u8))
+        return true
+    if opcode == (0x2c as u8):
+        let value: u8 = read(memory, fetch16(cpu, memory))
+        set_flag(cpu, 2 as u8, ((*cpu).a & value) == (0 as u8))
+        set_flag(cpu, 64 as u8, (value & (64 as u8)) != (0 as u8))
+        set_flag(cpu, 128 as u8, (value & (128 as u8)) != (0 as u8))
+        return true
+    if opcode == (0x28 as u8):
+        (*cpu).status = (pop(cpu, memory) | (32 as u8)) & (239 as u8)
+        return true
+    if opcode == (0x30 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 128 as u8))
+        return true
+    if opcode == (0x38 as u8):
+        set_flag(cpu, 1 as u8, true)
+        return true
+    if opcode == (0x40 as u8):
+        (*cpu).status = (pop(cpu, memory) | (32 as u8)) & (239 as u8)
+        let low: u16 = pop(cpu, memory) as u16
+        (*cpu).pc = low | ((pop(cpu, memory) as u16) << (8 as u16))
+        return true
+    if opcode == (0x48 as u8):
+        push(cpu, memory, (*cpu).a)
+        return true
+    if opcode == (0x4c as u8):
+        (*cpu).pc = fetch16(cpu, memory)
+        return true
+    if opcode == (0x50 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 64 as u8) == false)
+        return true
+    if opcode == (0x58 as u8):
+        set_flag(cpu, 4 as u8, false)
+        return true
+    if opcode == (0x60 as u8):
+        let low: u16 = pop(cpu, memory) as u16
+        (*cpu).pc = (low | ((pop(cpu, memory) as u16) << (8 as u16))) + (1 as u16)
+        return true
+    if opcode == (0x68 as u8):
+        (*cpu).a = pop(cpu, memory)
+        set_nz(cpu, (*cpu).a)
+        return true
+    if opcode == (0x6c as u8):
+        (*cpu).pc = read16_indirect_bug(memory, fetch16(cpu, memory))
+        return true
+    if opcode == (0x70 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 64 as u8))
+        return true
+    if opcode == (0x78 as u8):
+        set_flag(cpu, 4 as u8, true)
+        return true
+    if opcode == (0x84 as u8):
+        write(memory, fetch(cpu, memory) as u16, (*cpu).y)
+        return true
+    if opcode == (0x8c as u8):
+        write(memory, fetch16(cpu, memory), (*cpu).y)
+        return true
+    if opcode == (0x88 as u8):
+        (*cpu).y = (*cpu).y - (1 as u8)
+        set_nz(cpu, (*cpu).y)
+        return true
+    if opcode == (0x8a as u8):
+        (*cpu).a = (*cpu).x
+        set_nz(cpu, (*cpu).a)
+        return true
+    if opcode == (0x90 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 1 as u8) == false)
+        return true
+    if opcode == (0x94 as u8):
+        write(memory, (fetch(cpu, memory) + (*cpu).x) as u16, (*cpu).y)
+        return true
+    if opcode == (0x98 as u8):
+        (*cpu).a = (*cpu).y
+        set_nz(cpu, (*cpu).a)
+        return true
+    if opcode == (0x9a as u8):
+        (*cpu).sp = (*cpu).x
+        return true
+    if opcode == (0xa0 as u8):
+        return load_y(cpu, memory, opcode)
+    if opcode == (0xa4 as u8):
+        return load_y(cpu, memory, opcode)
+    if opcode == (0xac as u8):
+        return load_y(cpu, memory, opcode)
+    if opcode == (0xb4 as u8):
+        return load_y(cpu, memory, opcode)
+    if opcode == (0xbc as u8):
+        return load_y(cpu, memory, opcode)
+    if opcode == (0xa8 as u8):
+        (*cpu).y = (*cpu).a
+        set_nz(cpu, (*cpu).y)
+        return true
+    if opcode == (0xaa as u8):
+        (*cpu).x = (*cpu).a
+        set_nz(cpu, (*cpu).x)
+        return true
+    if opcode == (0xb0 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 1 as u8))
+        return true
+    if opcode == (0xb8 as u8):
+        set_flag(cpu, 64 as u8, false)
+        return true
+    if opcode == (0xba as u8):
+        (*cpu).x = (*cpu).sp
+        set_nz(cpu, (*cpu).x)
+        return true
+    if opcode == (0xc0 as u8):
+        return compare_index(cpu, memory, opcode, (*cpu).y)
+    if opcode == (0xc4 as u8):
+        return compare_index(cpu, memory, opcode, (*cpu).y)
+    if opcode == (0xcc as u8):
+        return compare_index(cpu, memory, opcode, (*cpu).y)
+    if opcode == (0xc8 as u8):
+        (*cpu).y = (*cpu).y + (1 as u8)
+        set_nz(cpu, (*cpu).y)
+        return true
+    if opcode == (0xca as u8):
+        (*cpu).x = (*cpu).x - (1 as u8)
+        set_nz(cpu, (*cpu).x)
+        return true
+    if opcode == (0xd0 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 2 as u8) == false)
+        return true
+    if opcode == (0xd8 as u8):
+        set_flag(cpu, 8 as u8, false)
+        return true
+    if opcode == (0xe0 as u8):
+        return compare_index(cpu, memory, opcode, (*cpu).x)
+    if opcode == (0xe4 as u8):
+        return compare_index(cpu, memory, opcode, (*cpu).x)
+    if opcode == (0xec as u8):
+        return compare_index(cpu, memory, opcode, (*cpu).x)
+    if opcode == (0xe8 as u8):
+        (*cpu).x = (*cpu).x + (1 as u8)
+        set_nz(cpu, (*cpu).x)
+        return true
+    if opcode == (0xea as u8):
+        return true
+    if opcode == (0xf0 as u8):
+        branch(cpu, memory, flag(borrow *cpu, 2 as u8))
+        return true
+    if opcode == (0xf8 as u8):
+        set_flag(cpu, 8 as u8, true)
+        return true
+    return false
+
+pub fn step(cpu: borrow mut Cpu, memory: mut_slice[u8]) -> bool:
+    if (*cpu).halted:
+        return false
+    let opcode: u8 = fetch(cpu, memory)
+    let legal: bool = execute_group_zero(cpu, memory, opcode)
+    if legal == false:
+        if (opcode & (3 as u8)) == (1 as u8):
+            legal = execute_group_one(cpu, memory, opcode)
+        else:
+            if (opcode & (3 as u8)) == (2 as u8):
+                legal = execute_group_two(cpu, memory, opcode)
+    if legal == false:
+        (*cpu).halted = true
+        (*cpu).illegal_opcode = opcode
+        return false
+    (*cpu).instructions = (*cpu).instructions + (1 as u64)
+    return true
+
+pub fn state_hash(cpu: borrow Cpu) -> u64:
+    let value: u64 = (*cpu).a as u64
+    value = ((value * (257 as u64)) + ((*cpu).x as u64)) & (268435455 as u64)
+    value = ((value * (257 as u64)) + ((*cpu).y as u64)) & (268435455 as u64)
+    value = ((value * (257 as u64)) + ((*cpu).sp as u64)) & (268435455 as u64)
+    value = ((value * (257 as u64)) + ((*cpu).status as u64)) & (268435455 as u64)
+    value = ((value * (65537 as u64)) + ((*cpu).pc as u64)) & (268435455 as u64)
+    value = ((value * (257 as u64)) + ((*cpu).illegal_opcode as u64)) & (268435455 as u64)
+    return (value * (1048573 as u64)) + (*cpu).instructions
+
+pub fn accumulator(cpu: borrow Cpu) -> u8:
+    return (*cpu).a
+
+pub fn x_register(cpu: borrow Cpu) -> u8:
+    return (*cpu).x
+
+pub fn stack_pointer(cpu: borrow Cpu) -> u8:
+    return (*cpu).sp
+
+pub fn program_counter(cpu: borrow Cpu) -> u16:
+    return (*cpu).pc
+
+pub fn status(cpu: borrow Cpu) -> u8:
+    return (*cpu).status

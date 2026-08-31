@@ -1,0 +1,186 @@
+import "../v12.1.0/alloc.dby" as alloc
+import "../v12.1.0/hosted_alloc.dby" as host
+import "hash.dby" as hash
+import "hash_map.dby" as maps
+import "hash_set.dby" as sets
+import "deque.dby" as deques
+import "queue.dby" as queues
+import "buffer.dby" as buffers
+
+fn initialize(index: usize) -> u64:
+    return ((index as u64) * (10 as u64)) + (2 as u64)
+
+fn constant_hash(value: borrow u32) -> u64:
+    return 7 as u64
+
+fn u32_equal(left: borrow u32, right: borrow u32) -> bool:
+    return *left == *right
+
+fn check_map() -> Result[int, alloc.AllocError]:
+    let map = maps.with_allocator[u64, u32](host.system_allocator(), hash.u64_hash, hash.u64_equal)?
+    maps.insert[u64, u32](borrow mut map, 1 as u64, 10 as u32)?
+    maps.insert[u64, u32](borrow mut map, 9 as u64, 90 as u32)?
+    let previous = maps.insert[u64, u32](borrow mut map, 1 as u64, 11 as u32)?
+    let one: u64 = 1 as u64
+    let nine: u64 = 9 as u64
+    let valid: bool = false
+    if true:
+        let found = maps.get[u64, u32](borrow map, borrow one)
+        match found:
+            case Option.Some(value):
+                valid = (*value == (11 as u32))
+            case Option.None:
+                valid = false
+    if valid == false:
+        return Result[int, alloc.AllocError].Ok(0)
+    if maps.length[u64, u32](borrow map) != (2 as usize):
+        return Result[int, alloc.AllocError].Ok(0)
+    let removed = maps.remove[u64, u32](borrow mut map, borrow nine)
+    match removed:
+        case Option.Some(value):
+            if value != (90 as u32):
+                return Result[int, alloc.AllocError].Ok(0)
+        case Option.None:
+            return Result[int, alloc.AllocError].Ok(0)
+    return Result[int, alloc.AllocError].Ok(1)
+
+fn check_set() -> Result[int, alloc.AllocError]:
+    let set = sets.with_allocator[u64](host.system_allocator(), hash.u64_hash, hash.u64_equal)?
+    let first = sets.insert[u64](borrow mut set, 42 as u64)?
+    let second = sets.insert[u64](borrow mut set, 42 as u64)?
+    let key: u64 = 42 as u64
+    if first == false:
+        return Result[int, alloc.AllocError].Ok(0)
+    if second:
+        return Result[int, alloc.AllocError].Ok(0)
+    if sets.contains[u64](borrow set, borrow key) == false:
+        return Result[int, alloc.AllocError].Ok(0)
+    if sets.remove[u64](borrow mut set, borrow key) == false:
+        return Result[int, alloc.AllocError].Ok(0)
+    return Result[int, alloc.AllocError].Ok(1)
+
+fn check_collisions() -> Result[int, alloc.AllocError]:
+    let map = maps.with_allocator[u32, u32](host.system_allocator(), constant_hash, u32_equal)?
+    let index: u32 = 0 as u32
+    while index < (12 as u32):
+        maps.insert[u32, u32](borrow mut map, index, index + (100 as u32))?
+        index = index + (1 as u32)
+    let removed_key: u32 = 5 as u32
+    let removed = maps.remove[u32, u32](borrow mut map, borrow removed_key)
+    match removed:
+        case Option.Some(value):
+            if value != (105 as u32):
+                return Result[int, alloc.AllocError].Ok(0)
+        case Option.None:
+            return Result[int, alloc.AllocError].Ok(0)
+    let probe: u32 = 6 as u32
+    let valid: bool = false
+    if true:
+        let found = maps.get[u32, u32](borrow map, borrow probe)
+        match found:
+            case Option.Some(value):
+                valid = (*value == (106 as u32))
+            case Option.None:
+                valid = false
+    if valid == false:
+        return Result[int, alloc.AllocError].Ok(0)
+    if maps.length[u32, u32](borrow map) != (11 as usize):
+        return Result[int, alloc.AllocError].Ok(0)
+    return Result[int, alloc.AllocError].Ok(1)
+
+fn check_deque() -> Result[int, alloc.AllocError]:
+    let values = deques.with_allocator[u32](host.system_allocator())
+    deques.push_back[u32](borrow mut values, 2 as u32)?
+    deques.push_front[u32](borrow mut values, 1 as u32)?
+    deques.push_back[u32](borrow mut values, 3 as u32)?
+    let front = deques.pop_front[u32](borrow mut values)
+    let back = deques.pop_back[u32](borrow mut values)
+    match front:
+        case Option.Some(value):
+            if value != (1 as u32):
+                return Result[int, alloc.AllocError].Ok(0)
+        case Option.None:
+            return Result[int, alloc.AllocError].Ok(0)
+    match back:
+        case Option.Some(value):
+            if value != (3 as u32):
+                return Result[int, alloc.AllocError].Ok(0)
+        case Option.None:
+            return Result[int, alloc.AllocError].Ok(0)
+    return Result[int, alloc.AllocError].Ok(1)
+
+fn check_queue() -> Result[int, alloc.AllocError]:
+    let queue = queues.with_allocator[u32](host.system_allocator())
+    queues.enqueue[u32](borrow mut queue, 4 as u32)?
+    queues.enqueue[u32](borrow mut queue, 5 as u32)?
+    let first = queues.dequeue[u32](borrow mut queue)
+    let second = queues.dequeue[u32](borrow mut queue)
+    match first:
+        case Option.Some(value):
+            if value != (4 as u32):
+                return Result[int, alloc.AllocError].Ok(0)
+        case Option.None:
+            return Result[int, alloc.AllocError].Ok(0)
+    match second:
+        case Option.Some(value):
+            if value != (5 as u32):
+                return Result[int, alloc.AllocError].Ok(0)
+        case Option.None:
+            return Result[int, alloc.AllocError].Ok(0)
+    return Result[int, alloc.AllocError].Ok(1)
+
+fn check_buffer() -> Result[int, alloc.AllocError]:
+    let values = buffers.from_fn[u64](4 as usize, host.system_allocator(), initialize)?
+    let valid: bool = false
+    if true:
+        let found = buffers.get[u64](borrow values, 3 as usize)
+        match found:
+            case Option.Some(value):
+                valid = (*value == (32 as u64))
+            case Option.None:
+                valid = false
+    if valid:
+        return Result[int, alloc.AllocError].Ok(1)
+    return Result[int, alloc.AllocError].Ok(0)
+
+let map = check_map()
+match map:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)
+
+let set = check_set()
+match set:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)
+
+let collisions = check_collisions()
+match collisions:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)
+
+let deque = check_deque()
+match deque:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)
+
+let queue = check_queue()
+match queue:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)
+
+let buffer = check_buffer()
+match buffer:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)

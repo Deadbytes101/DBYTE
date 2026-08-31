@@ -16,8 +16,9 @@ use std::rc::Rc;
 
 mod canonical;
 pub use canonical::{
-    execute_canonical_bytecode, execute_canonical_bytecode_with_args,
-    execute_canonical_bytecode_with_memory, CanonicalVmExecution,
+    execute_canonical_bytecode, execute_canonical_bytecode_profiled,
+    execute_canonical_bytecode_with_args, execute_canonical_bytecode_with_memory,
+    CanonicalVmExecution, CanonicalVmMetrics, ProfiledCanonicalVmExecution,
 };
 
 // Keep this below the host thread stack ceiling so recursion fails as a DByte

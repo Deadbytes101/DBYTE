@@ -15,11 +15,12 @@ members = [
     "crates/dbyte_vm",
     "crates/dbyte_embed",
     "crates/dbyte_kernel_vm",
+    "tools/vm_benchmark_runner",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "12.2.1"
+version = "12.3.0"
 edition = "2021"
 authors = ["Deadbyte"]
 license = "GPL-2.0-only"

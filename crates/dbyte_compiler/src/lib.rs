@@ -2,7 +2,9 @@ use dbyte_ast::*;
 use dbyte_bytecode::{BytecodeFunction, Chunk, LocalKind, NativeFn, Op, Value};
 
 mod canonical;
-pub use canonical::lower_concrete_project_to_bytecode;
+pub use canonical::{
+    lower_concrete_project_to_bytecode, lower_concrete_project_to_bytecode_at_level,
+};
 
 use std::collections::HashMap;
 use std::path::PathBuf;

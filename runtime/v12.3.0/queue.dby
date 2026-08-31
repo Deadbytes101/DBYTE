@@ -1,0 +1,32 @@
+import "../v12.1.0/alloc.dby" as alloc
+import "deque.dby" as deque
+
+pub struct Queue[T]:
+    values: deque.Deque[T]
+
+pub fn with_allocator[T](allocator: alloc.AllocatorRef) -> Queue[T]:
+    return Queue[T](values = deque.with_allocator[T](allocator))
+
+pub fn enqueue[T](queue: borrow mut Queue[T], value: T) -> Result[unit, alloc.AllocError]:
+    return deque.push_back[T](borrow mut (*queue).values, value)
+
+pub fn dequeue[T](queue: borrow mut Queue[T]) -> Option[T]:
+    return deque.pop_front[T](borrow mut (*queue).values)
+
+pub fn peek[T](queue: borrow Queue[T]) -> Option[borrow T]:
+    return deque.get[T](borrow (*queue).values, 0 as usize)
+
+pub fn peek_mut[T](queue: borrow mut Queue[T]) -> Option[borrow mut T]:
+    return deque.get_mut[T](borrow mut (*queue).values, 0 as usize)
+
+pub fn reserve[T](queue: borrow mut Queue[T], additional: usize) -> Result[unit, alloc.AllocError]:
+    return deque.reserve[T](borrow mut (*queue).values, additional)
+
+pub fn clear[T](queue: borrow mut Queue[T]) -> unit:
+    return deque.clear[T](borrow mut (*queue).values)
+
+pub fn length[T](queue: borrow Queue[T]) -> usize:
+    return deque.length[T](borrow (*queue).values)
+
+pub fn is_empty[T](queue: borrow Queue[T]) -> bool:
+    return deque.is_empty[T](borrow (*queue).values)

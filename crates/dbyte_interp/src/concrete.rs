@@ -7,6 +7,7 @@
 use crate::memory::{AllocationEvent, DeterministicMemory};
 use crate::RuntimeError;
 use dbyte_ast::{BinOp, CaptureMode, MatchMode, Span, UnaryOp};
+use dbyte_hir::integer_semantics::{IntegerBinaryOp, IntegerError, IntegerValue};
 use dbyte_hir::{
     enum_variant_layout, layout_of, struct_field_layout, CanonicalType, ConcreteHirFunction,
     ConcreteHirProject, FieldId, FunctionInstanceKey, HirBlock, HirExpr, HirExprKind,
@@ -709,9 +710,20 @@ impl Executor<'_> {
                 .collect::<Result<Vec<_>, _>>()
                 .map(ConcreteValue::List),
             HirExprKind::Binary { left, op, right } => {
+                let integer = match self.project.executable.semantic.type_of(left.ty) {
+                    CanonicalType::Integer(kind) => Some(*kind),
+                    _ => None,
+                };
                 let left = self.execute_hir_expr(left)?;
                 let right = self.execute_hir_expr(right)?;
-                binary(left, op, right, expression.span)
+                binary(
+                    left,
+                    op,
+                    right,
+                    integer,
+                    self.project.executable.semantic.layout,
+                    expression.span,
+                )
             }
             HirExprKind::Unary { op, value } => {
                 let value = self.execute_hir_expr(value)?;
@@ -1745,6 +1757,8 @@ fn binary(
     left: ConcreteValue,
     op: &BinOp,
     right: ConcreteValue,
+    integer_type: Option<IntegerType>,
+    layout: dbyte_hir::TargetDataLayout,
     span: Span,
 ) -> Result<ConcreteValue, RuntimeError> {
     use BinOp::*;
@@ -1771,37 +1785,64 @@ fn binary(
             Ok(ConcreteValue::Bool(*op == EqEq))
         }
         (ConcreteValue::Integer(left), ConcreteValue::Integer(right)) => {
-            let integer = |value| Ok(ConcreteValue::Integer(value));
-            match op {
-                Add => left.checked_add(right).map(ConcreteValue::Integer),
-                Sub => left.checked_sub(right).map(ConcreteValue::Integer),
-                Mul => left.checked_mul(right).map(ConcreteValue::Integer),
-                Div => left.checked_div(right).map(ConcreteValue::Integer),
-                Rem => left.checked_rem(right).map(ConcreteValue::Integer),
-                BitAnd => return integer(left & right),
-                BitOr => return integer(left | right),
-                BitXor => return integer(left ^ right),
-                Shl => left.checked_shl(right as u32).map(ConcreteValue::Integer),
-                Shr => left.checked_shr(right as u32).map(ConcreteValue::Integer),
-                EqEq => return Ok(ConcreteValue::Bool(left == right)),
-                NotEq => return Ok(ConcreteValue::Bool(left != right)),
-                Lt => return Ok(ConcreteValue::Bool(left < right)),
-                LtEq => return Ok(ConcreteValue::Bool(left <= right)),
-                Gt => return Ok(ConcreteValue::Bool(left > right)),
-                GtEq => return Ok(ConcreteValue::Bool(left >= right)),
-            }
-            .ok_or_else(|| {
-                runtime_error(
-                    if matches!(op, Div | Rem) && right == 0 {
-                        "division by zero"
-                    } else if matches!(op, Shl | Shr) {
-                        "invalid shift"
-                    } else {
-                        "integer overflow"
-                    },
+            let Some(kind) = integer_type else {
+                return Err(runtime_error(
+                    "integer operation lost its canonical type",
                     span,
-                )
-            })
+                ));
+            };
+            if kind == IntegerType::LegacyInt {
+                return legacy_integer_binary(left, op, right, span);
+            }
+            let left_value = IntegerValue::from_bits(left as u64, kind, layout);
+            let right_value = IntegerValue::from_bits(right as u64, kind, layout);
+            match op {
+                EqEq => return Ok(ConcreteValue::Bool(left_value.bits() == right_value.bits())),
+                NotEq => return Ok(ConcreteValue::Bool(left_value.bits() != right_value.bits())),
+                Lt | LtEq | Gt | GtEq => {
+                    let ordering = if dbyte_hir::integer_semantics::is_signed(kind) {
+                        left_value.signed(layout).cmp(&right_value.signed(layout))
+                    } else {
+                        left_value.bits().cmp(&right_value.bits())
+                    };
+                    return Ok(ConcreteValue::Bool(match op {
+                        Lt => ordering.is_lt(),
+                        LtEq => ordering.is_le(),
+                        Gt => ordering.is_gt(),
+                        GtEq => ordering.is_ge(),
+                        _ => unreachable!(),
+                    }));
+                }
+                _ => {}
+            }
+            let operation = match op {
+                Add => IntegerBinaryOp::Add,
+                Sub => IntegerBinaryOp::Sub,
+                Mul => IntegerBinaryOp::Mul,
+                Div => IntegerBinaryOp::Div,
+                Rem => IntegerBinaryOp::Rem,
+                BitAnd => IntegerBinaryOp::BitAnd,
+                BitOr => IntegerBinaryOp::BitOr,
+                BitXor => IntegerBinaryOp::BitXor,
+                Shl => IntegerBinaryOp::ShiftLeft,
+                Shr => IntegerBinaryOp::ShiftRight,
+                EqEq | NotEq | Lt | LtEq | Gt | GtEq => unreachable!(),
+            };
+            left_value
+                .binary(operation, right_value, layout)
+                .map(|value| ConcreteValue::Integer(value.bits() as i64))
+                .map_err(|failure| {
+                    runtime_error(
+                        match failure {
+                            IntegerError::DivisionByZero => "division by zero",
+                            IntegerError::SignedDivisionOverflow => "integer overflow",
+                            IntegerError::LiteralOutOfRange | IntegerError::TypeMismatch => {
+                                "integer type mismatch"
+                            }
+                        },
+                        span,
+                    )
+                })
         }
         (ConcreteValue::Float(left), ConcreteValue::Float(right)) => match op {
             Add => Ok(ConcreteValue::Float(left + right)),
@@ -1832,6 +1873,45 @@ fn binary(
         },
         _ => Err(runtime_error("binary operand type mismatch", span)),
     }
+}
+
+fn legacy_integer_binary(
+    left: i64,
+    op: &BinOp,
+    right: i64,
+    span: Span,
+) -> Result<ConcreteValue, RuntimeError> {
+    use BinOp::*;
+    let checked = match op {
+        Add => left.checked_add(right),
+        Sub => left.checked_sub(right),
+        Mul => left.checked_mul(right),
+        Div => left.checked_div(right),
+        Rem => left.checked_rem(right),
+        Shl => left.checked_shl(right as u32),
+        Shr => left.checked_shr(right as u32),
+        BitAnd => return Ok(ConcreteValue::Integer(left & right)),
+        BitOr => return Ok(ConcreteValue::Integer(left | right)),
+        BitXor => return Ok(ConcreteValue::Integer(left ^ right)),
+        EqEq => return Ok(ConcreteValue::Bool(left == right)),
+        NotEq => return Ok(ConcreteValue::Bool(left != right)),
+        Lt => return Ok(ConcreteValue::Bool(left < right)),
+        LtEq => return Ok(ConcreteValue::Bool(left <= right)),
+        Gt => return Ok(ConcreteValue::Bool(left > right)),
+        GtEq => return Ok(ConcreteValue::Bool(left >= right)),
+    };
+    checked.map(ConcreteValue::Integer).ok_or_else(|| {
+        runtime_error(
+            if matches!(op, Div | Rem) && right == 0 {
+                "division by zero"
+            } else if matches!(op, Shl | Shr) {
+                "invalid shift"
+            } else {
+                "integer overflow"
+            },
+            span,
+        )
+    })
 }
 
 fn cast(

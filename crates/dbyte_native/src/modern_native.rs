@@ -86,19 +86,39 @@ pub fn link_windows_object_bytes(
     let mut linked_inputs =
         vec![crate::pe64::import_object().map_err(|failure| ModernNativeError(failure.0))?];
     linked_inputs.extend_from_slice(inputs);
-    let linked = crate::linker64::link_objects(
+    let legacy = crate::pe64::LEGACY_LAYOUT;
+    let mut linked = crate::linker64::link_objects(
         &linked_inputs,
         crate::target::X86_64_WINDOWS,
         crate::linker64::SectionAddresses {
-            text: crate::pe64::IMAGE_BASE + u64::from(crate::pe64::DBYTE_TEXT_RVA),
-            rodata: crate::pe64::IMAGE_BASE + u64::from(crate::pe64::RODATA_RVA),
-            data: crate::pe64::IMAGE_BASE + u64::from(crate::pe64::DATA_RVA),
-            bss: crate::pe64::IMAGE_BASE + u64::from(crate::pe64::BSS_RVA),
+            text: crate::pe64::IMAGE_BASE + u64::from(legacy.text_rva),
+            rodata: crate::pe64::IMAGE_BASE + u64::from(legacy.rodata_rva),
+            data: crate::pe64::IMAGE_BASE + u64::from(legacy.data_rva),
+            bss: crate::pe64::IMAGE_BASE + u64::from(legacy.bss_rva),
         },
         "main",
     )
     .map_err(|failure| ModernNativeError(failure.0))?;
-    crate::pe64::write_console_image(&linked).map_err(|failure| ModernNativeError(failure.0))
+    let layout =
+        crate::pe64::layout_for(&linked).map_err(|failure| ModernNativeError(failure.0))?;
+    if layout != legacy {
+        linked_inputs[0] = crate::pe64::import_object_at(layout.rodata_rva)
+            .map_err(|failure| ModernNativeError(failure.0))?;
+        linked = crate::linker64::link_objects(
+            &linked_inputs,
+            crate::target::X86_64_WINDOWS,
+            crate::linker64::SectionAddresses {
+                text: crate::pe64::IMAGE_BASE + u64::from(layout.text_rva),
+                rodata: crate::pe64::IMAGE_BASE + u64::from(layout.rodata_rva),
+                data: crate::pe64::IMAGE_BASE + u64::from(layout.data_rva),
+                bss: crate::pe64::IMAGE_BASE + u64::from(layout.bss_rva),
+            },
+            "main",
+        )
+        .map_err(|failure| ModernNativeError(failure.0))?;
+    }
+    crate::pe64::write_console_image_at(&linked, layout)
+        .map_err(|failure| ModernNativeError(failure.0))
 }
 
 pub fn compile_concrete_linux(
@@ -1287,11 +1307,8 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                 }
                 let layout = dbyte_hir::layout_of(&project.executable.semantic, parameter.ty)
                     .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-                if !layout.size.is_multiple_of(8) {
-                    return Err(unsupported("DBYTE64 aggregate parameter", "non-qword size"));
-                }
                 stack_offset = align_i32(stack_offset, layout.align.max(8))?;
-                for chunk in (0..layout.size).step_by(8) {
+                for (chunk, width) in physical_chunks(layout.size) {
                     let chunk = i32::try_from(chunk)
                         .map_err(|_| error("E_AMD64_FRAME", "aggregate parameter is too large"))?;
                     encoder
@@ -1299,7 +1316,7 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                             Register::Rax,
                             Register::Rbp,
                             stack_offset + chunk,
-                            Width::Qword,
+                            width,
                         )
                         .map_err(encode_error)?;
                     encoder
@@ -1307,12 +1324,13 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                             Register::Rbp,
                             destination + chunk,
                             Register::Rax,
-                            Width::Qword,
+                            width,
                         )
                         .map_err(encode_error)?;
                 }
+                let physical_size = align_u32(layout.size, 8)?;
                 stack_offset = stack_offset
-                    .checked_add(layout.size as i32)
+                    .checked_add(physical_size as i32)
                     .ok_or_else(|| error("E_AMD64_FRAME", "aggregate parameter overflows"))?;
             }
         }
@@ -1653,7 +1671,14 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
             HirExprKind::Local(local) => self.load_local(*local),
             HirExprKind::Global(symbol) => {
                 self.lower_global_address(*symbol)?;
-                if abi_scalar(&self.project.executable.semantic, expression.ty) {
+                if matches!(
+                    self.project.executable.semantic.type_of(expression.ty),
+                    CanonicalType::Unit
+                ) {
+                    self.encoder
+                        .mov_imm64(Register::Rax, 0)
+                        .map_err(encode_error)?;
+                } else if abi_scalar(&self.project.executable.semantic, expression.ty) {
                     self.load_physical(
                         Register::Rax,
                         Register::Rax,
@@ -1683,10 +1708,15 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                 });
                 Ok(())
             }
-            HirExprKind::Struct { .. } => Err(unsupported(
-                "DBYTE64 aggregate expression",
-                "struct value outside direct local initialization",
-            )),
+            HirExprKind::Struct { .. } => {
+                let storage = self.try_slot.ok_or_else(|| {
+                    unsupported("DBYTE64 struct expression", "temporary aggregate storage")
+                })?;
+                self.initialize_struct_at_offset(storage, expression)?;
+                self.encoder
+                    .lea_base_disp32(Register::Rax, Register::Rbp, storage)
+                    .map_err(encode_error)
+            }
             HirExprKind::Enum { .. } => {
                 let storage = self.try_slot.ok_or_else(|| {
                     unsupported("DBYTE64 enum expression", "temporary aggregate storage")
@@ -1752,7 +1782,14 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                 value,
             } => {
                 self.lower_expr(value)?;
-                if abi_scalar(&self.project.executable.semantic, expression.ty) {
+                if matches!(
+                    self.project.executable.semantic.type_of(expression.ty),
+                    CanonicalType::Unit
+                ) {
+                    self.encoder
+                        .mov_imm64(Register::Rax, 0)
+                        .map_err(encode_error)?;
+                } else if abi_scalar(&self.project.executable.semantic, expression.ty) {
                     self.load_physical(
                         Register::Rax,
                         Register::Rax,
@@ -2131,13 +2168,10 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                 }
                 let layout = dbyte_hir::layout_of(&self.project.executable.semantic, argument.ty)
                     .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-                if !layout.size.is_multiple_of(8) {
-                    return Err(unsupported("DBYTE64 aggregate argument", "non-qword size"));
-                }
                 stack_cursor = align_u32(stack_cursor, layout.align.max(8))?;
                 stack_items.push((index, stack_cursor, layout.size));
                 stack_cursor = stack_cursor
-                    .checked_add(layout.size)
+                    .checked_add(align_u32(layout.size, 8)?)
                     .ok_or_else(|| error("E_AMD64_CALL", "aggregate argument overflows"))?;
             }
         }
@@ -2166,21 +2200,16 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                     )
                     .map_err(encode_error)?;
             } else {
-                for chunk in (0..size).step_by(8) {
+                for (chunk, width) in physical_chunks(size) {
                     self.encoder
-                        .mov_reg_from_base_disp32(
-                            Register::Rax,
-                            Register::R11,
-                            chunk as i32,
-                            Width::Qword,
-                        )
+                        .mov_reg_from_base_disp32(Register::Rax, Register::R11, chunk as i32, width)
                         .map_err(encode_error)?;
                     self.encoder
                         .mov_base_disp32_from_reg(
                             Register::Rsp,
                             (offset + chunk) as i32,
                             Register::Rax,
-                            Width::Qword,
+                            width,
                         )
                         .map_err(encode_error)?;
                 }
@@ -2368,26 +2397,25 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
         local: LocalId,
         expression: &HirExpr,
     ) -> Result<(), ModernNativeError> {
+        self.initialize_struct_at_offset(self.local_offset(local)?, expression)
+    }
+
+    fn initialize_struct_at_offset(
+        &mut self,
+        base: i32,
+        expression: &HirExpr,
+    ) -> Result<(), ModernNativeError> {
         let HirExprKind::Struct { fields, .. } = &expression.kind else {
             unreachable!()
         };
         let layout = dbyte_hir::layout_of(&self.project.executable.semantic, expression.ty)
             .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-        if !layout.size.is_multiple_of(8) {
-            return Err(unsupported("DBYTE64 struct", "non-qword aggregate size"));
-        }
-        let base = self.local_offset(local)?;
         self.encoder
             .mov_imm64(Register::Rax, 0)
             .map_err(encode_error)?;
-        for chunk in (0..layout.size).step_by(8) {
+        for (chunk, width) in physical_chunks(layout.size) {
             self.encoder
-                .mov_base_disp32_from_reg(
-                    Register::Rbp,
-                    base + chunk as i32,
-                    Register::Rax,
-                    Width::Qword,
-                )
+                .mov_base_disp32_from_reg(Register::Rbp, base + chunk as i32, Register::Rax, width)
                 .map_err(encode_error)?;
         }
         for (field, value) in fields {
@@ -2397,23 +2425,61 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                 *field,
             )
             .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-            if !abi_scalar(&self.project.executable.semantic, value.ty) {
-                return Err(unsupported(
-                    "DBYTE64 struct field",
-                    "nested aggregate value",
-                ));
-            }
+            self.initialize_value_at_offset(base + offset as i32, value)?;
+        }
+        Ok(())
+    }
+
+    fn initialize_value_at_offset(
+        &mut self,
+        base: i32,
+        value: &HirExpr,
+    ) -> Result<(), ModernNativeError> {
+        if matches!(
+            self.project.executable.semantic.type_of(value.ty),
+            CanonicalType::Unit
+        ) {
+            return Ok(());
+        }
+        if abi_scalar(&self.project.executable.semantic, value.ty) {
             self.lower_expr(value)?;
-            self.encoder
+            return self
+                .encoder
                 .mov_base_disp32_from_reg(
                     Register::Rbp,
-                    base + offset as i32,
+                    base,
                     Register::Rax,
                     scalar_width(&self.project.executable.semantic, value.ty)?,
                 )
-                .map_err(encode_error)?;
+                .map_err(encode_error);
         }
-        Ok(())
+        match &value.kind {
+            HirExprKind::Struct { .. } => self.initialize_struct_at_offset(base, value),
+            HirExprKind::Enum { .. } => self.initialize_enum_at_offset(base, value),
+            HirExprKind::DirectCall { .. } | HirExprKind::IndirectCall { .. } => {
+                self.lower_aggregate_call_into_offset(base, value)
+            }
+            _ => {
+                self.lower_expr(value)?;
+                let layout = dbyte_hir::layout_of(&self.project.executable.semantic, value.ty)
+                    .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+                self.encoder
+                    .mov_reg(Register::R11, Register::Rax, Width::Qword)
+                    .map_err(encode_error)?;
+                for (chunk, width) in physical_chunks(layout.size) {
+                    self.load_physical(Register::Rax, Register::R11, chunk as i32, width)?;
+                    self.encoder
+                        .mov_base_disp32_from_reg(
+                            Register::Rbp,
+                            base + chunk as i32,
+                            Register::Rax,
+                            width,
+                        )
+                        .map_err(encode_error)?;
+                }
+                Ok(())
+            }
+        }
     }
 
     fn initialize_enum_local(
@@ -2461,40 +2527,7 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
         )
         .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
         for (value, (_, offset)) in payload.iter().zip(fields) {
-            self.lower_expr(value)?;
-            if matches!(
-                self.project.executable.semantic.type_of(value.ty),
-                CanonicalType::Unit
-            ) {
-                continue;
-            }
-            if abi_scalar(&self.project.executable.semantic, value.ty) {
-                self.encoder
-                    .mov_base_disp32_from_reg(
-                        Register::Rbp,
-                        base + offset as i32,
-                        Register::Rax,
-                        scalar_width(&self.project.executable.semantic, value.ty)?,
-                    )
-                    .map_err(encode_error)?;
-            } else {
-                let nested = dbyte_hir::layout_of(&self.project.executable.semantic, value.ty)
-                    .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-                self.encoder
-                    .mov_reg(Register::R11, Register::Rax, Width::Qword)
-                    .map_err(encode_error)?;
-                for (chunk, width) in physical_chunks(nested.size) {
-                    self.load_physical(Register::Rax, Register::R11, chunk as i32, width)?;
-                    self.encoder
-                        .mov_base_disp32_from_reg(
-                            Register::Rbp,
-                            base + offset as i32 + chunk as i32,
-                            Register::Rax,
-                            width,
-                        )
-                        .map_err(encode_error)?;
-                }
-            }
+            self.initialize_value_at_offset(base + offset as i32, value)?;
         }
         Ok(())
     }
@@ -2670,24 +2703,16 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
             .ok_or_else(|| error("E_AMD64_SRET", "aggregate return has no sret slot"))?;
         let layout = dbyte_hir::layout_of(&self.project.executable.semantic, value.ty)
             .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-        if !layout.size.is_multiple_of(8) {
-            return Err(unsupported("DBYTE64 aggregate return", "non-qword size"));
-        }
         if let HirExprKind::Struct { fields, .. } = &value.kind {
             self.encoder
                 .mov_imm64(Register::Rax, 0)
                 .map_err(encode_error)?;
-            for chunk in (0..layout.size).step_by(8) {
+            for (chunk, width) in physical_chunks(layout.size) {
                 self.encoder
                     .mov_reg_from_base_disp32(Register::R11, Register::Rbp, sret_slot, Width::Qword)
                     .map_err(encode_error)?;
                 self.encoder
-                    .mov_base_disp32_from_reg(
-                        Register::R11,
-                        chunk as i32,
-                        Register::Rax,
-                        Width::Qword,
-                    )
+                    .mov_base_disp32_from_reg(Register::R11, chunk as i32, Register::Rax, width)
                     .map_err(encode_error)?;
             }
             for (field, field_value) in fields {
@@ -2697,18 +2722,52 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
                     *field,
                 )
                 .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+                if matches!(
+                    self.project.executable.semantic.type_of(field_value.ty),
+                    CanonicalType::Unit
+                ) {
+                    continue;
+                }
                 self.lower_expr(field_value)?;
                 self.encoder
                     .mov_reg_from_base_disp32(Register::R11, Register::Rbp, sret_slot, Width::Qword)
                     .map_err(encode_error)?;
-                self.encoder
-                    .mov_base_disp32_from_reg(
-                        Register::R11,
-                        offset as i32,
-                        Register::Rax,
-                        scalar_width(&self.project.executable.semantic, field_value.ty)?,
-                    )
-                    .map_err(encode_error)?;
+                if abi_scalar(&self.project.executable.semantic, field_value.ty) {
+                    self.encoder
+                        .mov_base_disp32_from_reg(
+                            Register::R11,
+                            offset as i32,
+                            Register::Rax,
+                            scalar_width(&self.project.executable.semantic, field_value.ty)?,
+                        )
+                        .map_err(encode_error)?;
+                } else {
+                    let field_layout =
+                        dbyte_hir::layout_of(&self.project.executable.semantic, field_value.ty)
+                            .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+                    self.encoder
+                        .mov_reg(Register::R10, Register::Rax, Width::Qword)
+                        .map_err(encode_error)?;
+                    for (chunk, width) in physical_chunks(field_layout.size) {
+                        self.load_physical(Register::Rax, Register::R10, chunk as i32, width)?;
+                        self.encoder
+                            .mov_reg_from_base_disp32(
+                                Register::R11,
+                                Register::Rbp,
+                                sret_slot,
+                                Width::Qword,
+                            )
+                            .map_err(encode_error)?;
+                        self.encoder
+                            .mov_base_disp32_from_reg(
+                                Register::R11,
+                                offset as i32 + chunk as i32,
+                                Register::Rax,
+                                width,
+                            )
+                            .map_err(encode_error)?;
+                    }
+                }
             }
         } else if let HirExprKind::Enum {
             variant,
@@ -2720,17 +2779,12 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
             self.encoder
                 .mov_imm64(Register::Rax, 0)
                 .map_err(encode_error)?;
-            for chunk in (0..layout.size).step_by(8) {
+            for (chunk, width) in physical_chunks(layout.size) {
                 self.encoder
                     .mov_reg_from_base_disp32(Register::R11, Register::Rbp, sret_slot, Width::Qword)
                     .map_err(encode_error)?;
                 self.encoder
-                    .mov_base_disp32_from_reg(
-                        Register::R11,
-                        chunk as i32,
-                        Register::Rax,
-                        Width::Qword,
-                    )
+                    .mov_base_disp32_from_reg(Register::R11, chunk as i32, Register::Rax, width)
                     .map_err(encode_error)?;
             }
             self.encoder
@@ -2809,22 +2863,12 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
             self.encoder
                 .mov_reg_from_base_disp32(Register::R11, Register::Rbp, sret_slot, Width::Qword)
                 .map_err(encode_error)?;
-            for chunk in (0..layout.size).step_by(8) {
+            for (chunk, width) in physical_chunks(layout.size) {
                 self.encoder
-                    .mov_reg_from_base_disp32(
-                        Register::Rax,
-                        Register::R10,
-                        chunk as i32,
-                        Width::Qword,
-                    )
+                    .mov_reg_from_base_disp32(Register::Rax, Register::R10, chunk as i32, width)
                     .map_err(encode_error)?;
                 self.encoder
-                    .mov_base_disp32_from_reg(
-                        Register::R11,
-                        chunk as i32,
-                        Register::Rax,
-                        Width::Qword,
-                    )
+                    .mov_base_disp32_from_reg(Register::R11, chunk as i32, Register::Rax, width)
                     .map_err(encode_error)?;
             }
         }
@@ -3036,23 +3080,20 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
     ) -> Result<(), ModernNativeError> {
         let layout = dbyte_hir::layout_of(&self.project.executable.semantic, ty)
             .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
-        if !layout.size.is_multiple_of(8) {
-            return Err(unsupported("DBYTE64 aggregate copy", "non-qword size"));
-        }
         let destination = self.local_offset(local)?;
         self.encoder
             .mov_reg(Register::R11, Register::Rax, Width::Qword)
             .map_err(encode_error)?;
-        for chunk in (0..layout.size).step_by(8) {
+        for (chunk, width) in physical_chunks(layout.size) {
             self.encoder
-                .mov_reg_from_base_disp32(Register::Rax, Register::R11, chunk as i32, Width::Qword)
+                .mov_reg_from_base_disp32(Register::Rax, Register::R11, chunk as i32, width)
                 .map_err(encode_error)?;
             self.encoder
                 .mov_base_disp32_from_reg(
                     Register::Rbp,
                     destination + chunk as i32,
                     Register::Rax,
-                    Width::Qword,
+                    width,
                 )
                 .map_err(encode_error)?;
         }
@@ -3157,7 +3198,14 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
 
     fn lower_place_value(&mut self, place: &dbyte_hir::HirPlace) -> Result<(), ModernNativeError> {
         self.lower_place_address(place)?;
-        if abi_scalar(&self.project.executable.semantic, place.ty) {
+        if matches!(
+            self.project.executable.semantic.type_of(place.ty),
+            CanonicalType::Unit
+        ) {
+            self.encoder
+                .mov_imm64(Register::Rax, 0)
+                .map_err(encode_error)?;
+        } else if abi_scalar(&self.project.executable.semantic, place.ty) {
             self.load_physical(
                 Register::Rax,
                 Register::Rax,
@@ -3178,6 +3226,12 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
             .mov_base_disp32_from_reg(Register::Rbp, self.return_slot, Register::Rax, Width::Qword)
             .map_err(encode_error)?;
         self.lower_expr(value)?;
+        if matches!(
+            self.project.executable.semantic.type_of(value.ty),
+            CanonicalType::Unit
+        ) {
+            return Ok(());
+        }
         if abi_scalar(&self.project.executable.semantic, value.ty) {
             self.encoder
                 .mov_reg_from_base_disp32(
@@ -3283,7 +3337,14 @@ impl<'a, 's> Amd64FunctionLowerer<'a, 's> {
             .map(|candidate| candidate.ty)
             .ok_or_else(|| error("E_AMD64_LOCAL", "local type is missing"))?;
         self.lower_local_address(local)?;
-        if abi_scalar(&self.project.executable.semantic, ty) {
+        if matches!(
+            self.project.executable.semantic.type_of(ty),
+            CanonicalType::Unit
+        ) {
+            self.encoder
+                .mov_imm64(Register::Rax, 0)
+                .map_err(encode_error)
+        } else if abi_scalar(&self.project.executable.semantic, ty) {
             self.load_physical(
                 Register::Rax,
                 Register::Rax,
@@ -3856,5 +3917,15 @@ mod tests {
             .bytes
             .windows(7)
             .any(|bytes| bytes[..3] == [0x48, 0x8d, 0x85]));
+    }
+
+    #[test]
+    fn dbyte64_nested_and_non_qword_aggregates_use_the_general_sret_path() {
+        let executable = compile_concrete_linux(&project(
+            "struct Tiny:\n    value: u32\n\nstruct Wrapper:\n    inner: Tiny\n    marker: u8\n\nfn identity(value: Tiny) -> Tiny:\n    return value\n\nfn make() -> Result[Wrapper, u8]:\n    return Result[Wrapper, u8].Ok(Wrapper(inner = identity(Tiny(value = 42 as u32)), marker = 1 as u8))\n\npub fn main() -> i64:\n    let made = make()\n    match made:\n        case Result.Ok(value):\n            return value.inner.value as i64\n        case Result.Err(error):\n            return error as i64\n",
+        ))
+        .unwrap();
+        assert!(executable.elf.bytes.starts_with(b"\x7fELF"));
+        assert!(!executable.elf.bytes.is_empty());
     }
 }

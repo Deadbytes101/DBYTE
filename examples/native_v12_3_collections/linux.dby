@@ -1,0 +1,27 @@
+import "../../runtime/v12.2.0/linux_system_allocator.dby" as platform
+import "../../runtime/v12.3.0/linux_output.dby" as output
+import "shared.dby" as proof
+
+pub fn main() -> int:
+    let allocator = platform.system_allocator()
+    output.line("DBYTE COLLECTIONS V12.3", 23 as usize)
+    if proof.check_hash_map(allocator) == false:
+        return 1
+    output.line("HASHMAP ONLINE", 14 as usize)
+    if proof.check_hash_set(allocator) == false:
+        return 2
+    output.line("HASHSET ONLINE", 14 as usize)
+    if proof.check_deque(allocator) == false:
+        return 3
+    output.line("DEQUE ONLINE", 12 as usize)
+    if proof.check_queue(allocator) == false:
+        return 4
+    output.line("QUEUE ONLINE", 12 as usize)
+    if proof.check_buffer(allocator) == false:
+        return 5
+    output.line("BUFFER ONLINE", 13 as usize)
+    if proof.check_6502_array_buffer(allocator) == false:
+        return 6
+    output.line("6502 ARRAY BUFFER MATCH", 23 as usize)
+    output.line("COLLECTIONS CHECK OK", 20 as usize)
+    return 0

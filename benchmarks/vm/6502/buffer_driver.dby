@@ -1,0 +1,18 @@
+import "../../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../../runtime/v12.1.0/hosted_alloc.dby" as host
+import "../../../runtime/v12.3.0/buffer.dby" as buffers
+import "workload.dby" as workload
+
+fn zero(index: usize) -> u8:
+    return 0 as u8
+
+fn run() -> Result[u64, alloc.AllocError]:
+    let memory = buffers.from_fn[u8](4096 as usize, host.system_allocator(), zero)?
+    return Result[u64, alloc.AllocError].Ok(workload.execute(buffers.as_mut_slice[u8](borrow mut memory), 1000000 as usize))
+
+let result = run()
+match result:
+    case Result.Ok(checksum):
+        print(checksum)
+    case Result.Err(error):
+        print(0)

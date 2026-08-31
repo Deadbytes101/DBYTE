@@ -1,0 +1,36 @@
+import "../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../runtime/v12.1.0/serial.dby" as serial
+import "shared.dby" as proof
+
+static mut STORAGE: array[u64, 32768]
+static mut FIXED: alloc.FixedAllocator
+
+fn line(text: str, length: usize) -> unit:
+    serial.write(text, length)
+    serial.newline()
+    return unit
+
+pub fn kernel_main() -> int:
+    serial.init()
+    let allocator = alloc.fixed_initialize(&FIXED, &STORAGE as usize as ptr[u8], 262144 as usize)
+    line("DBYTE COLLECTIONS V12.3", 23 as usize)
+    if proof.check_hash_map(allocator) == false:
+        return 1
+    line("HASHMAP ONLINE", 14 as usize)
+    if proof.check_hash_set(allocator) == false:
+        return 2
+    line("HASHSET ONLINE", 14 as usize)
+    if proof.check_deque(allocator) == false:
+        return 3
+    line("DEQUE ONLINE", 12 as usize)
+    if proof.check_queue(allocator) == false:
+        return 4
+    line("QUEUE ONLINE", 12 as usize)
+    if proof.check_buffer(allocator) == false:
+        return 5
+    line("BUFFER ONLINE", 13 as usize)
+    if proof.check_6502_array_buffer(allocator) == false:
+        return 6
+    line("6502 ARRAY BUFFER MATCH", 23 as usize)
+    line("COLLECTIONS CHECK OK", 20 as usize)
+    return 0

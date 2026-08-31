@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v12.2.1**
+- Snapshot version: **v12.3.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -226,6 +226,13 @@ an exact tracked-file manifest, include the versioned `runtime/` tree, and are
 verified for deterministic tag provenance. It does not change language,
 runtime, HIR, native ABI, object, linker, or executable semantics. See
 [Windows Runtime Packaging Correction](docs/WINDOWS_RUNTIME_PACKAGING.md).
+
+The `v12.3.0` VM performance and collections foundation replaces nested VM
+execution with deterministic flat per-function bytecode, dense frame slots,
+an explicit instruction pointer, and a reusable non-recursive frame stack. It
+also adds the versioned DByte `HashMap`, `HashSet`, `Deque`, `Queue`, and fixed
+owned `Buffer[T]` runtimes plus a tracked 151-opcode NMOS 6502 authority corpus.
+See [VM Performance and Collections](docs/VM_PERFORMANCE_AND_COLLECTIONS.md).
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.

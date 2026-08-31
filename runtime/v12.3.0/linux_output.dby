@@ -1,0 +1,7 @@
+fn linux_write_raw(fd: i32, text: str, length: usize) -> i64:
+    return linux.write(fd, text, length)
+
+pub fn line(text: str, length: usize) -> unit:
+    linux_write_raw(1 as i32, text, length)
+    linux_write_raw(1 as i32, "\n", 1 as usize)
+    return unit

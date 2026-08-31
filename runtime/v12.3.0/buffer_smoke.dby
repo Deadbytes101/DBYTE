@@ -1,0 +1,23 @@
+import "buffer.dby" as buffers
+import "hosted_buffer.dby" as hosted
+
+fn initialize(index: usize) -> u32:
+    return ((index as u32) * (10 as u32)) + (2 as u32)
+
+let result = hosted.from_fn[u32](4 as usize, initialize)
+match result:
+    case Result.Ok(values):
+        print(buffers.length[u32](borrow values))
+        match buffers.get[u32](borrow values, 0 as usize):
+            case Option.Some(value):
+                print(*value)
+            case Option.None:
+                print(0)
+        match buffers.get[u32](borrow values, 3 as usize):
+            case Option.Some(value):
+                print(*value)
+            case Option.None:
+                print(0)
+        drop(values)
+    case Result.Err(error):
+        print("BUFFER ERROR")

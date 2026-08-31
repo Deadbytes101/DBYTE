@@ -1,0 +1,30 @@
+import "../../runtime/v12.2.0/windows_system_allocator.dby" as platform
+import "../../runtime/v12.3.0/windows_output.dby" as output
+import "shared.dby" as proof
+
+pub fn main() -> int:
+    let handle = output.standard_output()
+    if handle == (0 as usize):
+        return 1
+    let allocator = platform.system_allocator()
+    output.line(handle, "DBYTE COLLECTIONS V12.3", 23 as u32)
+    if proof.check_hash_map(allocator) == false:
+        return 2
+    output.line(handle, "HASHMAP ONLINE", 14 as u32)
+    if proof.check_hash_set(allocator) == false:
+        return 3
+    output.line(handle, "HASHSET ONLINE", 14 as u32)
+    if proof.check_deque(allocator) == false:
+        return 4
+    output.line(handle, "DEQUE ONLINE", 12 as u32)
+    if proof.check_queue(allocator) == false:
+        return 5
+    output.line(handle, "QUEUE ONLINE", 12 as u32)
+    if proof.check_buffer(allocator) == false:
+        return 6
+    output.line(handle, "BUFFER ONLINE", 13 as u32)
+    if proof.check_6502_array_buffer(allocator) == false:
+        return 7
+    output.line(handle, "6502 ARRAY BUFFER MATCH", 23 as u32)
+    output.line(handle, "COLLECTIONS CHECK OK", 20 as u32)
+    return 0

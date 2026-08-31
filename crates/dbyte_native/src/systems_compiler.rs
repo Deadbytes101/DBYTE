@@ -648,6 +648,27 @@ mod tests {
     }
 
     #[test]
+    fn canonical_i686_project_links_v123_collection_helpers_across_modules() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_v12_3_collections/none.dby");
+        let objects = compile_canonical_project_objects(&root, dbyte_hir::Profile::I686None)
+            .unwrap_or_else(|error| panic!("collection project failed: {error}"));
+        let dump = objects.combined_ir_dump();
+        for helper in [
+            "__dbyte_buffer_usize_max",
+            "__dbyte_deque_usize_max",
+            "__dbyte_hash_map_usize_max",
+        ] {
+            assert!(
+                dump.contains(&format!("fn {helper}")),
+                "missing {helper}\n{dump}"
+            );
+        }
+        link_compiled_project(&objects)
+            .unwrap_or_else(|error| panic!("collection project link failed: {error}"));
+    }
+
+    #[test]
     fn real_project_emits_one_object_per_module_and_links_same_bytes_twice() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/native_kernel_multimodule/kernel.dby");

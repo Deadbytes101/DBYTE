@@ -1,0 +1,48 @@
+import "../v12.1.0/alloc.dby" as alloc
+import "hash_map.dby" as hash_map
+
+pub struct HashSet[T]:
+    map: hash_map.HashMap[T, unit]
+
+pub fn with_allocator[T](allocator: alloc.AllocatorRef, hash: fn(borrow T) -> u64, equal: fn(borrow T, borrow T) -> bool) -> Result[HashSet[T], alloc.AllocError]:
+    let result = hash_map.with_allocator[T, unit](allocator, hash, equal)
+    match result:
+        case Result.Ok(map):
+            return Result[HashSet[T], alloc.AllocError].Ok(HashSet[T](map = map))
+        case Result.Err(error):
+            return Result[HashSet[T], alloc.AllocError].Err(error)
+
+pub fn insert[T](set: borrow mut HashSet[T], value: T) -> Result[bool, alloc.AllocError]:
+    let result = hash_map.insert[T, unit](borrow mut (*set).map, value, unit)
+    match result:
+        case Result.Ok(previous):
+            match previous:
+                case Option.Some(old):
+                    return Result[bool, alloc.AllocError].Ok(false)
+                case Option.None:
+                    return Result[bool, alloc.AllocError].Ok(true)
+        case Result.Err(error):
+            return Result[bool, alloc.AllocError].Err(error)
+
+pub fn contains[T](set: borrow HashSet[T], value: borrow T) -> bool:
+    return hash_map.contains_key[T, unit](borrow (*set).map, value)
+
+pub fn remove[T](set: borrow mut HashSet[T], value: borrow T) -> bool:
+    let result = hash_map.remove[T, unit](borrow mut (*set).map, value)
+    match result:
+        case Option.Some(removed):
+            return true
+        case Option.None:
+            return false
+
+pub fn reserve[T](set: borrow mut HashSet[T], additional: usize) -> Result[unit, alloc.AllocError]:
+    return hash_map.reserve[T, unit](borrow mut (*set).map, additional)
+
+pub fn clear[T](set: borrow mut HashSet[T]) -> unit:
+    return hash_map.clear[T, unit](borrow mut (*set).map)
+
+pub fn length[T](set: borrow HashSet[T]) -> usize:
+    return hash_map.length[T, unit](borrow (*set).map)
+
+pub fn is_empty[T](set: borrow HashSet[T]) -> bool:
+    return hash_map.is_empty[T, unit](borrow (*set).map)

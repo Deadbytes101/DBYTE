@@ -1,0 +1,18 @@
+import "../v12.1.0/alloc.dby" as alloc
+import "../v12.1.0/hosted_alloc.dby" as host
+import "hash_map.dby" as maps
+import "hash_set.dby" as sets
+import "deque.dby" as deques
+import "queue.dby" as queues
+
+pub fn hash_map_new[K, V](hash: fn(borrow K) -> u64, equal: fn(borrow K, borrow K) -> bool) -> Result[maps.HashMap[K, V], alloc.AllocError]:
+    return maps.with_allocator[K, V](host.system_allocator(), hash, equal)
+
+pub fn hash_set_new[T](hash: fn(borrow T) -> u64, equal: fn(borrow T, borrow T) -> bool) -> Result[sets.HashSet[T], alloc.AllocError]:
+    return sets.with_allocator[T](host.system_allocator(), hash, equal)
+
+pub fn deque_new[T]() -> deques.Deque[T]:
+    return deques.with_allocator[T](host.system_allocator())
+
+pub fn queue_new[T]() -> queues.Queue[T]:
+    return queues.with_allocator[T](host.system_allocator())

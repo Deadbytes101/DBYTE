@@ -1,0 +1,96 @@
+import "../v12.1.0/string.dby" as strings
+
+pub fn splitmix64(value: u64) -> u64:
+    let mixed: u64 = value + ((-7046029254386353131 as i64) as u64)
+    mixed = (mixed ^ (mixed >> (30 as u64))) * ((-4658895280553007687 as i64) as u64)
+    mixed = (mixed ^ (mixed >> (27 as u64))) * ((-7723592293110705685 as i64) as u64)
+    return mixed ^ (mixed >> (31 as u64))
+
+pub fn u64_hash(value: borrow u64) -> u64:
+    return splitmix64(*value)
+
+pub fn u64_equal(left: borrow u64, right: borrow u64) -> bool:
+    return *left == *right
+
+pub fn u32_hash(value: borrow u32) -> u64:
+    return splitmix64((*value) as u64)
+
+pub fn u32_equal(left: borrow u32, right: borrow u32) -> bool:
+    return *left == *right
+
+pub fn i64_hash(value: borrow i64) -> u64:
+    return splitmix64((*value) as u64)
+
+pub fn i64_equal(left: borrow i64, right: borrow i64) -> bool:
+    return *left == *right
+
+pub fn i32_hash(value: borrow i32) -> u64:
+    return splitmix64(((*value) as i64) as u64)
+
+pub fn i32_equal(left: borrow i32, right: borrow i32) -> bool:
+    return *left == *right
+
+pub fn u16_hash(value: borrow u16) -> u64:
+    return splitmix64((*value) as u64)
+
+pub fn u16_equal(left: borrow u16, right: borrow u16) -> bool:
+    return *left == *right
+
+pub fn i16_hash(value: borrow i16) -> u64:
+    return splitmix64(((*value) as i64) as u64)
+
+pub fn i16_equal(left: borrow i16, right: borrow i16) -> bool:
+    return *left == *right
+
+pub fn u8_hash(value: borrow u8) -> u64:
+    return splitmix64((*value) as u64)
+
+pub fn u8_equal(left: borrow u8, right: borrow u8) -> bool:
+    return *left == *right
+
+pub fn i8_hash(value: borrow i8) -> u64:
+    return splitmix64(((*value) as i64) as u64)
+
+pub fn i8_equal(left: borrow i8, right: borrow i8) -> bool:
+    return *left == *right
+
+pub fn usize_hash(value: borrow usize) -> u64:
+    return splitmix64((*value) as u64)
+
+pub fn usize_equal(left: borrow usize, right: borrow usize) -> bool:
+    return *left == *right
+
+pub fn bool_hash(value: borrow bool) -> u64:
+    if *value:
+        return splitmix64(1 as u64)
+    return splitmix64(0 as u64)
+
+pub fn bool_equal(left: borrow bool, right: borrow bool) -> bool:
+    return *left == *right
+
+pub fn string_view_hash(value: borrow StringView) -> u64:
+    let hash: u64 = (-3750763034362895579 as i64) as u64
+    let index: usize = 0 as usize
+    while index < len(*value):
+        hash = (hash ^ ((*value)[index] as u64)) * (0x100000001b3 as u64)
+        index = index + (1 as usize)
+    return hash
+
+pub fn string_view_equal(left: borrow StringView, right: borrow StringView) -> bool:
+    if len(*left) != len(*right):
+        return false
+    let index: usize = 0 as usize
+    while index < len(*left):
+        if (*left)[index] != (*right)[index]:
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn string_hash(value: borrow strings.String) -> u64:
+    let view = strings.as_view(value)
+    return string_view_hash(borrow view)
+
+pub fn string_equal(left: borrow strings.String, right: borrow strings.String) -> bool:
+    let left_view = strings.as_view(left)
+    let right_view = strings.as_view(right)
+    return string_view_equal(borrow left_view, borrow right_view)

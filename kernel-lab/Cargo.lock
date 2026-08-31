@@ -11,4 +11,4 @@ dependencies = [
 
 [[package]]
 name = "dbyte_kernel_vm"
-version = "12.2.1"
+version = "12.3.0"

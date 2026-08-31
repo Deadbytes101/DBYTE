@@ -13,9 +13,9 @@ use crate::systems_ir::{
 };
 use dbyte_ast::{BinOp, CaptureMode, FunctionKind, Span, UnaryOp};
 use dbyte_hir::{
-    layout_of, CanonicalType, ConcreteHirFunction, ConcreteHirProgram, HirBlock, HirExpr,
-    HirExprKind, HirIntrinsic, HirMatchArm, HirPlace, HirPlaceBase, HirProjection, HirStatement,
-    IntegerType, TypeId,
+    collect_called_instances_block, layout_of, CanonicalType, ConcreteHirFunction,
+    ConcreteHirProgram, HirBlock, HirExpr, HirExprKind, HirIntrinsic, HirMatchArm, HirPlace,
+    HirPlaceBase, HirProjection, HirStatement, IntegerType, TypeId,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -143,6 +143,35 @@ fn lower_selected_hir_module_to_native_ir(
         .iter()
         .map(|function| (function.key.clone(), function.symbol_name.clone()))
         .collect();
+    // A consumer-owned generic specialization can legitimately call a
+    // source-private helper in the generic's defining module. Such a helper
+    // remains source-private, but its deterministic module-qualified symbol
+    // must have global object binding so the specialization can resolve it
+    // across ET_REL objects.
+    let mut cross_object_helpers = BTreeSet::new();
+    if let Some((_, owners, _)) = selection {
+        for caller in program
+            .functions
+            .iter()
+            .filter(|function| !function.declaration_only)
+        {
+            let Some(caller_owner) = owners.get(&caller.key) else {
+                continue;
+            };
+            let mut callees = BTreeSet::new();
+            collect_called_instances_block(&caller.body, &mut callees);
+            for callee in callees {
+                if owners
+                    .get(&callee)
+                    .is_some_and(|owner| owner != caller_owner)
+                {
+                    if let Some(symbol) = symbols.get(&callee) {
+                        cross_object_helpers.insert(symbol.clone());
+                    }
+                }
+            }
+        }
+    }
     // Preserve the frozen native string-pool contract independently of the
     // monomorphization worklist order. Concrete functions are intentionally
     // keyed by canonical identities, while legacy objects interned literals
@@ -174,6 +203,11 @@ fn lower_selected_hir_module_to_native_ir(
                     .is_none_or(|(module, owners, _)| owners.get(&function.key) == Some(&module))
         })
         .collect::<Vec<_>>();
+    let runtime_drop_enabled = program
+        .semantic
+        .functions
+        .iter()
+        .any(|function| function.kind == FunctionKind::Drop);
     let mut closure_infos = Vec::new();
     for function in &selected_functions {
         collect_closures_block(&function.body, function, &mut closure_infos);
@@ -191,8 +225,15 @@ fn lower_selected_hir_module_to_native_ir(
     let mut functions = Vec::with_capacity(program.functions.len() + closure_infos.len());
     for function in selected_functions {
         functions.push(
-            FunctionLowerer::new(program, function, &symbols, &closure_symbols, &mut strings)?
-                .lower()?,
+            FunctionLowerer::new(
+                program,
+                function,
+                &symbols,
+                &closure_symbols,
+                &mut strings,
+                runtime_drop_enabled,
+            )?
+            .lower()?,
         );
     }
     for closure in &closure_infos {
@@ -203,9 +244,15 @@ fn lower_selected_hir_module_to_native_ir(
                 &symbols,
                 &closure_symbols,
                 &mut strings,
+                runtime_drop_enabled,
             )?
             .lower()?,
         );
+    }
+    for function in &mut functions {
+        if cross_object_helpers.contains(&function.symbol) {
+            function.visibility = Visibility::Public;
+        }
     }
     let mut referenced_functions = BTreeSet::new();
     let mut referenced_globals = BTreeSet::new();
@@ -616,6 +663,7 @@ struct FunctionLowerer<'a, 's> {
     loops: Vec<(LabelId, LabelId)>,
     sret: Option<NativeLocalId>,
     capture_env: Option<CaptureEnvironment>,
+    runtime_drop_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -649,11 +697,7 @@ enum PackedArgument<'a> {
 
 impl<'a, 's> FunctionLowerer<'a, 's> {
     fn runtime_drop_enabled(&self) -> bool {
-        self.program
-            .semantic
-            .functions
-            .iter()
-            .any(|function| function.kind == FunctionKind::Drop)
+        self.runtime_drop_enabled
     }
 
     fn new(
@@ -662,6 +706,7 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
         symbols: &'a BTreeMap<dbyte_hir::FunctionInstanceKey, String>,
         closure_symbols: &'a BTreeMap<dbyte_hir::ClosureId, String>,
         strings: &'s mut Vec<Vec<u8>>,
+        runtime_drop_enabled: bool,
     ) -> NativeResult<Self> {
         Self::from_function(
             program,
@@ -670,6 +715,7 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             closure_symbols,
             strings,
             None,
+            runtime_drop_enabled,
         )
     }
 
@@ -679,6 +725,7 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
         symbols: &'a BTreeMap<dbyte_hir::FunctionInstanceKey, String>,
         closure_symbols: &'a BTreeMap<dbyte_hir::ClosureId, String>,
         strings: &'s mut Vec<Vec<u8>>,
+        runtime_drop_enabled: bool,
     ) -> NativeResult<Self> {
         let parameter_ids = closure
             .parameters
@@ -705,8 +752,15 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             body: closure.body.clone(),
             span: closure.span,
         };
-        let mut lowerer =
-            Self::from_function(program, function, symbols, closure_symbols, strings, None)?;
+        let mut lowerer = Self::from_function(
+            program,
+            function,
+            symbols,
+            closure_symbols,
+            strings,
+            None,
+            runtime_drop_enabled,
+        )?;
         let env_id = NativeLocalId(lowerer.slots.len() as u32);
         let env_ty = SystemType::Pointer(Box::new(SystemType::U8));
         lowerer.slots.push(SystemsSlot {
@@ -740,6 +794,7 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
         closure_symbols: &'a BTreeMap<dbyte_hir::ClosureId, String>,
         strings: &'s mut Vec<Vec<u8>>,
         capture_env: Option<CaptureEnvironment>,
+        runtime_drop_enabled: bool,
     ) -> NativeResult<Self> {
         let mut slots = Vec::new();
         let mut params = Vec::new();
@@ -811,6 +866,7 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             loops: Vec::new(),
             sret,
             capture_env,
+            runtime_drop_enabled,
         })
     }
 
@@ -926,12 +982,15 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 {
                     if projections.is_empty() {
                         let ty = lower_type(self.program, value.ty, value.span)?;
-                        self.require_scalar(&ty, value.span)?;
-                        self.lower_expr(value)?;
-                        self.instructions.push(SystemsInst::LocalStore {
-                            local: NativeLocalId(local.0),
-                            ty,
-                        });
+                        if ty.is_scalar() {
+                            self.lower_expr(value)?;
+                            self.instructions.push(SystemsInst::LocalStore {
+                                local: NativeLocalId(local.0),
+                                ty,
+                            });
+                        } else {
+                            self.lower_aggregate_to_local(NativeLocalId(local.0), value)?;
+                        }
                         return Ok(());
                     }
                 }
@@ -948,7 +1007,9 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             }
             HirStatement::Expression(value) => {
                 self.lower_expr(value)?;
-                if !matches!(self.program.semantic.type_of(value.ty), CanonicalType::Unit) {
+                if matches!(value.kind, HirExprKind::Unit) {
+                    self.instructions.push(SystemsInst::Pop);
+                } else if !matches!(self.program.semantic.type_of(value.ty), CanonicalType::Unit) {
                     let lowered = lower_type(self.program, value.ty, value.span)?;
                     if lowered.is_wide_integer() {
                         self.instructions.push(SystemsInst::PopWords(2));
@@ -1166,7 +1227,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     ));
                 }
             },
-            HirExprKind::Unit => {}
+            // DBYTE32 gives source-level unit a deterministic physical word
+            // when it participates in an aggregate or packed call ABI.
+            HirExprKind::Unit => self.instructions.push(SystemsInst::Const {
+                bits: 0,
+                ty: SystemType::I32,
+            }),
             HirExprKind::Integer(value) => {
                 if matches!(ty, SystemType::I64 | SystemType::U64) {
                     let bits = integer_bits64(*value, &ty, expression.span)?;
@@ -1218,12 +1284,23 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             HirExprKind::Place(place) => {
                 let place_ty = lower_type(self.program, place.ty, place.span)?;
                 self.lower_place_address(place)?;
-                if place_ty.is_scalar() {
+                // A canonical borrow place records its pointer provenance in
+                // `place.ty`, so dereferencing it uses the expression's
+                // pointee width. Other legacy places retain their established
+                // load-then-normalize sequence byte-for-byte.
+                if matches!(
+                    self.program.semantic.type_of(place.ty),
+                    CanonicalType::Borrow { .. }
+                ) {
+                    if ty.is_scalar() {
+                        self.instructions.push(SystemsInst::Load(ty.clone()));
+                    }
+                } else if place_ty.is_scalar() {
                     self.instructions.push(SystemsInst::Load(place_ty.clone()));
                     if place_ty != ty {
                         self.instructions.push(SystemsInst::Cast {
                             from: place_ty,
-                            to: ty,
+                            to: ty.clone(),
                         });
                     }
                 }
@@ -1311,18 +1388,6 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                         expression.span,
                     )
                 })?;
-                let target = self
-                    .program
-                    .functions
-                    .iter()
-                    .find(|function| function.key == *callee)
-                    .ok_or_else(|| {
-                        self.error(
-                            DiagnosticCategory::UnresolvedFunction,
-                            "concrete call signature is missing",
-                            expression.span,
-                        )
-                    })?;
                 let has_packed_argument = arguments.iter().any(|argument| {
                     !self.is_scalar(argument.ty)
                         || self
@@ -1371,23 +1436,35 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                         None
                     };
                     let mut physical = Vec::new();
-                    if let Some(result) = result_temp {
-                        physical.push(PackedArgument::Address(result));
-                    }
                     if *convention == dbyte_ast::CallConvention::C {
                         for argument in arguments.iter().rev() {
                             physical.push(PackedArgument::Value(argument));
                         }
                     } else {
+                        // DBYTE32 evaluates and pushes the hidden sret first,
+                        // followed by source arguments in declaration order.
+                        // Consequently the last source argument occupies the
+                        // lowest stack address (EBP+8), while sret is highest.
+                        if let Some(result) = result_temp {
+                            physical.push(PackedArgument::Address(result));
+                        }
                         for argument in arguments {
                             physical.push(PackedArgument::Value(argument));
+                        }
+                    }
+                    if *convention == dbyte_ast::CallConvention::C {
+                        if let Some(result) = result_temp {
+                            physical.insert(0, PackedArgument::Address(result));
                         }
                     }
                     let pack = self.materialize_call_pack(&physical, expression.span)?;
                     let bytes = packed_size(&physical, self.program)?;
                     self.instructions.push(SystemsInst::LocalAddress(pack));
                     self.instructions.push(SystemsInst::CallPacked {
-                        symbol: target.symbol_name.clone(),
+                        // Use the concrete instance's deterministic link name,
+                        // including module ownership and specialization. The
+                        // source-level name is not a linkable identity.
+                        symbol: symbol.clone(),
                         argument_bytes: bytes,
                         result: if aggregate_result {
                             SystemType::I32
@@ -2209,7 +2286,14 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             HirPlaceBase::Pointer(pointer)
                 if matches!(place.projections.first(), Some(HirProjection::Index { .. })) =>
             {
-                pointer.ty
+                // Raw-pointer indexing operates on the pointer's pointee, but
+                // an explicit dereference of a borrowed aggregate (for
+                // example `(*view)[index]`) must first expose that aggregate's
+                // canonical representation before applying the index.
+                match self.program.semantic.type_of(pointer.ty) {
+                    CanonicalType::Borrow { pointee, .. } => *pointee,
+                    _ => pointer.ty,
+                }
             }
             HirPlaceBase::Pointer(pointer) => match self.program.semantic.type_of(pointer.ty) {
                 CanonicalType::Pointer { pointee, .. } | CanonicalType::Borrow { pointee, .. } => {
@@ -2460,7 +2544,15 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                     if matches!(
                         self.program.semantic.type_of(binding.ty),
                         CanonicalType::Borrow { .. }
+                    ) && !matches!(
+                        self.program.semantic.type_of(payload_ty),
+                        CanonicalType::Borrow { .. }
                     ) {
+                        // `match borrow` creates a view into an owned payload.
+                        // A payload which is already a borrow, however, stores
+                        // the pointer value itself and must be loaded below;
+                        // taking the payload slot address adds a bogus level
+                        // of indirection.
                         self.instructions.push(SystemsInst::LocalLoad {
                             local: enum_pointer,
                             ty: SystemType::Pointer(Box::new(SystemType::U8)),
@@ -2794,9 +2886,17 @@ fn packed_argument_size(
     let size = match argument {
         PackedArgument::Address(_) => 4,
         PackedArgument::Value(value) => {
-            layout_of(&program.semantic, value.ty)
-                .map_err(hir_diagnostic)?
-                .size
+            if matches!(program.semantic.type_of(value.ty), CanonicalType::Unit) {
+                // Unit has zero semantic storage, but the legacy DBYTE32 call
+                // ABI materializes it as the same deterministic i32 zero used
+                // by scalar calls. Packed calls must reserve that physical
+                // slot or every preceding argument is shifted at the callee.
+                4
+            } else {
+                layout_of(&program.semantic, value.ty)
+                    .map_err(hir_diagnostic)?
+                    .size
+            }
         }
     };
     Ok((size + 3) & !3)
@@ -3101,6 +3201,22 @@ mod tests {
     }
 
     #[test]
+    fn borrowed_enum_payload_match_loads_the_stored_pointer() {
+        let program = concrete(
+            "fn select(value: ptr[u32]) -> Option[borrow u32]:\n    return Option[borrow u32].Some(borrow *value)\n\npub fn kernel_main() -> int:\n    let answer: u32 = 42 as u32\n    let selected = select(&answer)\n    match selected:\n        case Option.Some(value):\n            return *value as int\n        case Option.None:\n            return 0\n",
+        );
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(
+            dump.contains("address.field +4\n")
+                && dump.contains("load.ptr[u32]\n")
+                && dump.contains("local.store.ptr[u32]"),
+            "{dump}"
+        );
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
     fn result_propagation_is_explicit_hir_control_flow() {
         let program = concrete("fn attempt(input: Result[i32, i32]) -> Result[i32, i32]:\n    let value = input?\n    return Result[i32, i32].Ok(value + 1)\n\npub fn kernel_main() -> int:\n    let result = attempt(Result[i32, i32].Err(7))\n    match result:\n        case Result.Ok(value):\n            return value as int\n        case Result.Err(error):\n            return error as int\n");
         let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
@@ -3133,6 +3249,17 @@ mod tests {
         let dump = lowered.dump();
         assert!(dump.contains("trap.ud2"));
         assert!(dump.contains("call.packed.DByte first bytes=8"), "{dump}");
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn packed_dbyte32_unit_arguments_reserve_a_physical_slot() {
+        let program = concrete(
+            "fn first(data: slice[u8], marker: unit) -> Option[u8]:\n    return Option[u8].Some(data[0])\n\npub fn kernel_main() -> int:\n    let bytes: array[u8, 1] = [42 as u8]\n    let view: slice[u8] = borrow bytes\n    let result = first(view, unit)\n    match result:\n        case Option.Some(value):\n            return value as int\n        case Option.None:\n            return 0\n",
+        );
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("call.packed.DByte first bytes=16"), "{dump}");
         crate::systems_lower::lower_systems_module(&lowered).unwrap();
     }
 
@@ -3191,6 +3318,21 @@ mod tests {
         let dump = lowered.dump();
         assert!(dump.contains("address.index scale=1"));
         assert!(dump.contains("address.string"));
+        crate::systems_lower::lower_systems_module(&lowered).unwrap();
+    }
+
+    #[test]
+    fn scalar_borrow_dereference_loads_the_pointee_width() {
+        let program = concrete(
+            "fn read(value: borrow u32) -> u32:\n    return *value\n\npub fn kernel_main() -> int:\n    let value: u32 = 42 as u32\n    return read(borrow value) as int\n",
+        );
+        let lowered = lower_hir_module_to_native_ir("kernel", &program).unwrap();
+        let dump = lowered.dump();
+        assert!(dump.contains("private fn read(ptr[u32]) -> u32"), "{dump}");
+        assert!(
+            dump.contains("local.load.ptr[u32] %l0\n  0001 load.u32"),
+            "{dump}"
+        );
         crate::systems_lower::lower_systems_module(&lowered).unwrap();
     }
 

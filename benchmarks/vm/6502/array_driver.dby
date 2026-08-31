@@ -1,0 +1,19 @@
+import "../../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../../runtime/v12.1.0/array.dby" as arrays
+import "../../../runtime/v12.1.0/hosted_alloc.dby" as host
+import "workload.dby" as workload
+
+fn run() -> Result[u64, alloc.AllocError]:
+    let memory = arrays.with_capacity[u8](4096 as usize, host.system_allocator())?
+    let index: usize = 0 as usize
+    while index < (4096 as usize):
+        arrays.push[u8](borrow mut memory, 0 as u8)?
+        index = index + (1 as usize)
+    return Result[u64, alloc.AllocError].Ok(workload.execute(arrays.as_mut_slice[u8](borrow mut memory), 1000000 as usize))
+
+let result = run()
+match result:
+    case Result.Ok(checksum):
+        print(checksum)
+    case Result.Err(error):
+        print(0)

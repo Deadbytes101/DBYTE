@@ -25,6 +25,21 @@ const IMPORT_NAMES: [&str; 8] = [
     "QueryPerformanceCounter",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeLayout {
+    pub text_rva: u32,
+    pub rodata_rva: u32,
+    pub data_rva: u32,
+    pub bss_rva: u32,
+}
+
+pub const LEGACY_LAYOUT: PeLayout = PeLayout {
+    text_rva: DBYTE_TEXT_RVA,
+    rodata_rva: RODATA_RVA,
+    data_rva: DATA_RVA,
+    bss_rva: BSS_RVA,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeArtifact {
     pub bytes: Vec<u8>,
@@ -42,22 +57,63 @@ impl std::fmt::Display for PeError {
 impl std::error::Error for PeError {}
 
 pub fn write_console_image(linked: &LinkedSections) -> Result<PeArtifact, PeError> {
-    if linked.target != X86_64_WINDOWS || linked.entry < IMAGE_BASE + u64::from(DBYTE_TEXT_RVA) {
-        return Err(err("E_PE_TARGET", "invalid Windows DBYTE64 linked image"));
+    write_console_image_at(linked, LEGACY_LAYOUT)
+}
+
+pub fn layout_for(linked: &LinkedSections) -> Result<PeLayout, PeError> {
+    let text_end = (DBYTE_TEXT_RVA as usize)
+        .checked_add(linked.text.len())
+        .ok_or_else(|| err("E_PE_RANGE", "text layout overflow"))?;
+    let rodata_rva = RODATA_RVA.max(u32v(align(text_end, SECTION_ALIGN)?)?);
+    let rodata_end = (rodata_rva as usize)
+        .checked_add(linked.rodata.len())
+        .ok_or_else(|| err("E_PE_RANGE", "rodata layout overflow"))?;
+    let data_rva = DATA_RVA.max(u32v(align(rodata_end, SECTION_ALIGN)?)?);
+    let data_end = (data_rva as usize)
+        .checked_add(linked.data.len())
+        .ok_or_else(|| err("E_PE_RANGE", "data layout overflow"))?;
+    let bss_rva = BSS_RVA.max(u32v(align(data_end, SECTION_ALIGN)?)?);
+    Ok(PeLayout {
+        text_rva: DBYTE_TEXT_RVA,
+        rodata_rva,
+        data_rva,
+        bss_rva,
+    })
+}
+
+pub fn write_console_image_at(
+    linked: &LinkedSections,
+    layout: PeLayout,
+) -> Result<PeArtifact, PeError> {
+    if linked.target != X86_64_WINDOWS
+        || linked.entry < IMAGE_BASE + u64::from(layout.text_rva)
+        || linked.entry >= IMAGE_BASE + u64::from(layout.rodata_rva)
+        || layout.text_rva < ENTRY_RVA
+        || layout.rodata_rva <= layout.text_rva
+        || layout.data_rva <= layout.rodata_rva
+        || layout.bss_rva < layout.data_rva
+    {
+        return Err(err(
+            "E_PE_TARGET",
+            &format!(
+                "invalid Windows DBYTE64 linked image target={:?} entry=0x{:x} layout={layout:?}",
+                linked.target, linked.entry
+            ),
+        ));
     }
     let mut rdata = linked.rodata.clone();
-    let imports = imports(RODATA_RVA, 0)?;
+    let imports = imports(layout.rodata_rva, 0)?;
     if !rdata.starts_with(&imports.bytes) {
         return Err(err(
             "E_PE_IMPORT",
             "linked image is missing canonical import object",
         ));
     }
-    let mut text = vec![0xcc; (DBYTE_TEXT_RVA - ENTRY_RVA) as usize];
+    let mut text = vec![0xcc; (layout.text_rva - ENTRY_RVA) as usize];
     let stub = entry_stub(linked.entry, IMAGE_BASE + u64::from(imports.iat_rva))?;
     text[..stub.len()].copy_from_slice(&stub);
     text.extend_from_slice(&linked.text);
-    let text_window = (RODATA_RVA - ENTRY_RVA) as usize;
+    let text_window = (layout.rodata_rva - ENTRY_RVA) as usize;
     if text.len() > text_window {
         return Err(err(
             "E_PE_LAYOUT",
@@ -66,7 +122,7 @@ pub fn write_console_image(linked: &LinkedSections) -> Result<PeArtifact, PeErro
     }
     text.resize(text_window, 0xcc);
     if !linked.data.is_empty() || linked.bss_size != 0 {
-        let rodata_window = (DATA_RVA - RODATA_RVA) as usize;
+        let rodata_window = (layout.data_rva - layout.rodata_rva) as usize;
         if rdata.len() > rodata_window {
             return Err(err("E_PE_LAYOUT", "linked rodata exceeds fixed PE window"));
         }
@@ -85,9 +141,9 @@ pub fn write_console_image(linked: &LinkedSections) -> Result<PeArtifact, PeErro
     let rdata_file = text_file + text_raw;
     let data_file = rdata_file + rdata_raw;
     let image_end = if sections == 3 {
-        BSS_RVA as usize + linked.bss_size as usize
+        layout.bss_rva as usize + linked.bss_size as usize
     } else {
-        RODATA_RVA as usize + rdata.len()
+        layout.rodata_rva as usize + rdata.len()
     };
 
     let mut out = vec![0u8; HEADERS];
@@ -147,7 +203,7 @@ pub fn write_console_image(linked: &LinkedSections) -> Result<PeArtifact, PeErro
         sh + 40,
         b".rdata\0\0",
         rdata.len(),
-        RODATA_RVA,
+        layout.rodata_rva,
         rdata_raw,
         rdata_file,
         0x4000_0040,
@@ -156,14 +212,14 @@ pub fn write_console_image(linked: &LinkedSections) -> Result<PeArtifact, PeErro
         let virtual_size = if linked.bss_size == 0 {
             linked.data.len()
         } else {
-            (BSS_RVA - DATA_RVA) as usize + linked.bss_size as usize
+            (layout.bss_rva - layout.data_rva) as usize + linked.bss_size as usize
         };
         section(
             &mut out,
             sh + 80,
             b".data\0\0\0",
             virtual_size,
-            DATA_RVA,
+            layout.data_rva,
             data_raw,
             data_file,
             0xc000_0040,
@@ -259,10 +315,14 @@ fn imports(rva: u32, offset: usize) -> Result<Imports, PeError> {
 }
 
 pub fn import_object() -> Result<crate::linker64::LinkInput, PeError> {
+    import_object_at(RODATA_RVA)
+}
+
+pub fn import_object_at(rodata_rva: u32) -> Result<crate::linker64::LinkInput, PeError> {
     use crate::object64::{
         Binding, Contents, Definition, ObjectImage, Section, SectionData, Symbol, SymbolKind,
     };
-    let imports = imports(RODATA_RVA, 0)?;
+    let imports = imports(rodata_rva, 0)?;
     let symbols = imports
         .iat_offsets
         .into_iter()
@@ -408,5 +468,30 @@ mod tests {
         for input in ["D:\\proof\\runtime.obj", "/tmp/runtime.obj", "runtime.obj"] {
             assert!(synthetic.name.as_str() < input);
         }
+    }
+
+    #[test]
+    fn large_text_selects_a_checked_extended_layout_transactionally() {
+        let import_bytes = imports(RODATA_RVA, 0).unwrap().bytes;
+        let probe = LinkedSections {
+            target: X86_64_WINDOWS,
+            entry_abi: None,
+            text: vec![0x90; 0x20_000],
+            rodata: import_bytes,
+            data: vec![1, 2, 3, 4],
+            bss_size: 0x1000,
+            entry: IMAGE_BASE + u64::from(DBYTE_TEXT_RVA),
+            symbols: BTreeMap::new(),
+            relocation_count: 0,
+        };
+        let layout = layout_for(&probe).unwrap();
+        assert!(layout.rodata_rva > RODATA_RVA);
+        assert!(layout.data_rva > layout.rodata_rva);
+        assert!(layout.bss_rva > layout.data_rva);
+        let mut linked = probe;
+        linked.entry = IMAGE_BASE + u64::from(layout.text_rva);
+        linked.rodata = imports(layout.rodata_rva, 0).unwrap().bytes;
+        let image = write_console_image_at(&linked, layout).unwrap();
+        inspect(&image.bytes).unwrap();
     }
 }

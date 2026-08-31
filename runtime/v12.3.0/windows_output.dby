@@ -1,0 +1,13 @@
+fn windows_get_std_handle_raw(kind: i32) -> usize:
+    return windows.get_std_handle(kind)
+
+fn windows_write_file_raw(handle: usize, text: str, length: u32) -> i32:
+    return windows.write_file(handle, text, length, 0 as usize, 0 as usize)
+
+pub fn standard_output() -> usize:
+    return windows_get_std_handle_raw(-11)
+
+pub fn line(handle: usize, text: str, length: u32) -> unit:
+    windows_write_file_raw(handle, text, length)
+    windows_write_file_raw(handle, "\r\n", 2 as u32)
+    return unit

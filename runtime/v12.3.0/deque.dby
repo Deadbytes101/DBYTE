@@ -1,0 +1,141 @@
+import "../v12.1.0/alloc.dby" as alloc
+
+pub struct Deque[T]:
+    data: ptr[T]
+    len: usize
+    capacity: usize
+    head: usize
+    allocator_context: ptr[u8]
+    allocator_vtable: const_ptr[alloc.AllocatorVTable]
+
+fn allocator_of[T](values: borrow Deque[T]) -> alloc.AllocatorRef:
+    return alloc.AllocatorRef(context = (*values).allocator_context, vtable = (*values).allocator_vtable)
+
+fn usize_max() -> usize:
+    return (0 as usize) - (1 as usize)
+
+fn checked_bytes[T](elements: usize) -> Result[usize, alloc.AllocError]:
+    let element_size: usize = size_of(T)
+    if element_size == (0 as usize):
+        return Result[usize, alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    if elements > (usize_max() / element_size):
+        return Result[usize, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    return Result[usize, alloc.AllocError].Ok(elements * element_size)
+
+pub fn with_allocator[T](allocator: alloc.AllocatorRef) -> Deque[T]:
+    let empty = alloc.allocate(allocator, 0 as usize, align_of(T))
+    match empty:
+        case Result.Ok(pointer):
+            return Deque[T](data = pointer as usize as ptr[T], len = 0 as usize, capacity = 0 as usize, head = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable)
+        case Result.Err(error):
+            return Deque[T](data = align_of(T) as ptr[T], len = 0 as usize, capacity = 0 as usize, head = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable)
+
+pub fn reserve[T](values: borrow mut Deque[T], additional: usize) -> Result[unit, alloc.AllocError]:
+    if additional > (usize_max() - (*values).len):
+        return Result[unit, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    let required: usize = (*values).len + additional
+    if required <= (*values).capacity:
+        return Result[unit, alloc.AllocError].Ok(unit)
+    let new_capacity: usize = (*values).capacity
+    if new_capacity == (0 as usize):
+        new_capacity = 8 as usize
+    while new_capacity < required:
+        if new_capacity > (usize_max() / (2 as usize)):
+            new_capacity = required
+        else:
+            new_capacity = new_capacity * (2 as usize)
+    let new_bytes = checked_bytes[T](new_capacity)?
+    let allocator = allocator_of[T](borrow *values)
+    let allocation = alloc.allocate(allocator, new_bytes, align_of(T))
+    match allocation:
+        case Result.Err(error):
+            return Result[unit, alloc.AllocError].Err(error)
+        case Result.Ok(pointer):
+            let replacement: ptr[T] = pointer as usize as ptr[T]
+            let index: usize = 0 as usize
+            while index < (*values).len:
+                let source: usize = ((*values).head + index) % (*values).capacity
+                replacement[index] = (*values).data[source]
+                index = index + (1 as usize)
+            let old_bytes = checked_bytes[T]((*values).capacity)?
+            let old_data: ptr[u8] = (*values).data as usize as ptr[u8]
+            (*values).data = replacement
+            (*values).capacity = new_capacity
+            (*values).head = 0 as usize
+            alloc.release(allocator, old_data, old_bytes, align_of(T))
+            return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn push_back[T](values: borrow mut Deque[T], value: T) -> Result[unit, alloc.AllocError]:
+    reserve[T](values, 1 as usize)?
+    let index: usize = ((*values).head + (*values).len) % (*values).capacity
+    (*values).data[index] = value
+    (*values).len = (*values).len + (1 as usize)
+    return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn push_front[T](values: borrow mut Deque[T], value: T) -> Result[unit, alloc.AllocError]:
+    reserve[T](values, 1 as usize)?
+    if (*values).head == (0 as usize):
+        (*values).head = (*values).capacity - (1 as usize)
+    else:
+        (*values).head = (*values).head - (1 as usize)
+    (*values).data[(*values).head] = value
+    (*values).len = (*values).len + (1 as usize)
+    return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn pop_front[T](values: borrow mut Deque[T]) -> Option[T]:
+    if (*values).len == (0 as usize):
+        return Option[T].None()
+    let value: T = (*values).data[(*values).head]
+    (*values).head = ((*values).head + (1 as usize)) % (*values).capacity
+    (*values).len = (*values).len - (1 as usize)
+    if (*values).len == (0 as usize):
+        (*values).head = 0 as usize
+    return Option[T].Some(value)
+
+pub fn pop_back[T](values: borrow mut Deque[T]) -> Option[T]:
+    if (*values).len == (0 as usize):
+        return Option[T].None()
+    let index: usize = ((*values).head + (*values).len - (1 as usize)) % (*values).capacity
+    let value: T = (*values).data[index]
+    (*values).len = (*values).len - (1 as usize)
+    if (*values).len == (0 as usize):
+        (*values).head = 0 as usize
+    return Option[T].Some(value)
+
+pub fn get[T](values: borrow Deque[T], index: usize) -> Option[borrow T]:
+    if index >= (*values).len:
+        return Option[borrow T].None()
+    let physical: usize = ((*values).head + index) % (*values).capacity
+    return Option[borrow T].Some(borrow (*values).data[physical])
+
+pub fn get_mut[T](values: borrow mut Deque[T], index: usize) -> Option[borrow mut T]:
+    if index >= (*values).len:
+        return Option[borrow mut T].None()
+    let physical: usize = ((*values).head + index) % (*values).capacity
+    return Option[borrow mut T].Some(borrow mut (*values).data[physical])
+
+pub fn clear[T](values: borrow mut Deque[T]) -> unit:
+    while (*values).len > (0 as usize):
+        let index: usize = ((*values).head + (*values).len - (1 as usize)) % (*values).capacity
+        drop((*values).data[index])
+        (*values).len = (*values).len - (1 as usize)
+    (*values).head = 0 as usize
+    return unit
+
+pub fn length[T](values: borrow Deque[T]) -> usize:
+    return (*values).len
+
+pub fn is_empty[T](values: borrow Deque[T]) -> bool:
+    return (*values).len == (0 as usize)
+
+drop fn destroy[T](values: borrow mut Deque[T]):
+    clear[T](values)
+    let bytes = checked_bytes[T]((*values).capacity)
+    match bytes:
+        case Result.Ok(size):
+            alloc.release(allocator_of[T](borrow *values), (*values).data as usize as ptr[u8], size, align_of(T))
+        case Result.Err(error):
+            return unit
+    (*values).data = align_of(T) as ptr[T]
+    (*values).capacity = 0 as usize
+    return unit

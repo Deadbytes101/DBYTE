@@ -1,0 +1,108 @@
+import "../../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../../runtime/v12.1.0/array.dby" as arrays
+import "../../../runtime/v12.1.0/hosted_alloc.dby" as host
+import "core.dby" as nmos
+
+fn execute_steps(cpu: borrow mut nmos.Cpu, memory: mut_slice[u8], count: usize) -> bool:
+    let index: usize = 0 as usize
+    while index < count:
+        if nmos.step(cpu, memory) == false:
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn run_trace() -> Result[int, alloc.AllocError]:
+    let memory = arrays.with_capacity[u8](65536 as usize, host.system_allocator())?
+    let fill: usize = 0 as usize
+    while fill < (65536 as usize):
+        arrays.push[u8](borrow mut memory, 0 as u8)?
+        fill = fill + (1 as usize)
+    let view = arrays.as_mut_slice[u8](borrow mut memory)
+
+    view[512 as usize] = 0xa9 as u8
+    view[513 as usize] = 0x15 as u8
+    view[514 as usize] = 0xf8 as u8
+    view[515 as usize] = 0x18 as u8
+    view[516 as usize] = 0x69 as u8
+    view[517 as usize] = 0x27 as u8
+    view[518 as usize] = 0xd8 as u8
+    view[519 as usize] = 0x48 as u8
+    view[520 as usize] = 0xa9 as u8
+    view[521 as usize] = 0x00 as u8
+    view[522 as usize] = 0x68 as u8
+    view[523 as usize] = 0x20 as u8
+    view[524 as usize] = 0x20 as u8
+    view[525 as usize] = 0x02 as u8
+    view[526 as usize] = 0xea as u8
+    view[544 as usize] = 0xe8 as u8
+    view[545 as usize] = 0x60 as u8
+    let arithmetic = nmos.initialize(512 as u16)
+    let arithmetic_ok: bool = execute_steps(borrow mut arithmetic, view, 12 as usize)
+    if nmos.accumulator(borrow arithmetic) != (0x42 as u8):
+        arithmetic_ok = false
+    if nmos.x_register(borrow arithmetic) != (1 as u8):
+        arithmetic_ok = false
+    if nmos.stack_pointer(borrow arithmetic) != (253 as u8):
+        arithmetic_ok = false
+    if nmos.program_counter(borrow arithmetic) != (527 as u16):
+        arithmetic_ok = false
+    print(arithmetic_ok)
+
+    view[768 as usize] = 0xa9 as u8
+    view[769 as usize] = 0x42 as u8
+    view[770 as usize] = 0xf8 as u8
+    view[771 as usize] = 0x38 as u8
+    view[772 as usize] = 0xe9 as u8
+    view[773 as usize] = 0x27 as u8
+    let decimal = nmos.initialize(768 as u16)
+    let decimal_ok: bool = execute_steps(borrow mut decimal, view, 4 as usize)
+    if nmos.accumulator(borrow decimal) != (0x15 as u8):
+        decimal_ok = false
+    print(decimal_ok)
+
+    view[1024 as usize] = 0xa9 as u8
+    view[1025 as usize] = 1 as u8
+    view[1026 as usize] = 0xd0 as u8
+    view[1027 as usize] = 0xfe as u8
+    let branch = nmos.initialize(1024 as u16)
+    let branch_ok: bool = execute_steps(borrow mut branch, view, 2 as usize)
+    if nmos.program_counter(borrow branch) != (1026 as u16):
+        branch_ok = false
+    print(branch_ok)
+
+    view[1280 as usize] = 0x6c as u8
+    view[1281 as usize] = 0xff as u8
+    view[1282 as usize] = 0x12 as u8
+    view[4863 as usize] = 0x34 as u8
+    view[4608 as usize] = 0x56 as u8
+    let indirect = nmos.initialize(1280 as u16)
+    let indirect_ok: bool = nmos.step(borrow mut indirect, view)
+    if nmos.program_counter(borrow indirect) != (0x5634 as u16):
+        indirect_ok = false
+    print(indirect_ok)
+
+    view[1536 as usize] = 0xb1 as u8
+    view[1537 as usize] = 0xff as u8
+    view[255 as usize] = 0x00 as u8
+    view[0 as usize] = 0x04 as u8
+    view[1024 as usize] = 0x7b as u8
+    let zero_page = nmos.initialize(1536 as u16)
+    let zero_page_ok: bool = nmos.step(borrow mut zero_page, view)
+    if nmos.accumulator(borrow zero_page) != (0x7b as u8):
+        zero_page_ok = false
+    print(zero_page_ok)
+
+    view[1792 as usize] = 0x02 as u8
+    let illegal = nmos.initialize(1792 as u16)
+    let illegal_ok: bool = nmos.step(borrow mut illegal, view) == false
+    if nmos.step(borrow mut illegal, view):
+        illegal_ok = false
+    print(illegal_ok)
+    return Result[int, alloc.AllocError].Ok(1)
+
+let result = run_trace()
+match result:
+    case Result.Ok(value):
+        print(value)
+    case Result.Err(error):
+        print(0)

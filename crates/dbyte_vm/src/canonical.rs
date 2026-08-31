@@ -1,10 +1,11 @@
-//! VM execution for canonical-ID bytecode emitted from Concrete HIR.
+//! Non-recursive VM execution for flat canonical bytecode emitted from Concrete HIR.
 
 use crate::VmError;
 use dbyte_ast::{BinOp, CaptureMode, MatchMode, Span, UnaryOp};
 use dbyte_bytecode::*;
 use dbyte_hir::{
-    layout_of, struct_field_layout, CanonicalType, FieldId, FunctionInstanceKey, HirIntrinsic,
+    integer_semantics::{is_signed, IntegerBinaryOp, IntegerError, IntegerValue},
+    layout_of, struct_field_layout, CanonicalType, FieldId, FunctionInstanceId, HirIntrinsic,
     IntegerType, LocalId, OwnershipAction, SymbolId, TypeDefKind, TypeId, VariantId,
 };
 use dbyte_interp::memory::{AllocationEvent, DeterministicMemory};
@@ -13,6 +14,14 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 type Slot = Rc<RefCell<Option<VmValue>>>;
+
+#[derive(Debug, Clone)]
+enum ResolvedPlace {
+    Local { frame: usize, local: usize },
+    Global(usize),
+    Cell(Slot),
+    Memory { address: u64, ty: TypeId },
+}
 
 #[derive(Debug, Clone)]
 enum VmValue {
@@ -30,7 +39,7 @@ enum VmValue {
         variant: VariantId,
         payload: Vec<Slot>,
     },
-    Function(FunctionInstanceKey),
+    Function(FunctionInstanceId),
     MemoryPointer {
         address: u64,
         pointee: TypeId,
@@ -44,14 +53,13 @@ enum VmValue {
     },
     Reference(Slot),
     Closure(Rc<VmClosure>),
-    EarlyReturn(Box<VmValue>),
+    Place(ResolvedPlace),
 }
 
 #[derive(Debug)]
 struct VmClosure {
-    captures: BTreeMap<LocalId, Slot>,
-    parameters: Vec<dbyte_hir::HirLocal>,
-    body: CanonicalBytecodeBlock,
+    closure: dbyte_hir::ClosureId,
+    captures: Vec<(LocalId, Slot)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,25 +69,63 @@ pub struct CanonicalVmExecution {
     pub live_allocations: usize,
 }
 
-enum Flow {
-    Normal,
-    Return(VmValue),
-    Break,
-    Continue,
-}
-struct Frame {
-    locals: BTreeMap<LocalId, Slot>,
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CanonicalVmMetrics {
+    pub total_opcodes: u64,
+    pub per_opcode: BTreeMap<&'static str, u64>,
+    pub function_calls: u64,
+    pub allocations: u64,
+    pub bytecode_ops: usize,
+    pub peak_frames: usize,
+    pub peak_value_stack: usize,
+    pub peak_live_allocations: usize,
 }
 
-struct CanonicalVm<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfiledCanonicalVmExecution {
+    pub execution: CanonicalVmExecution,
+    pub metrics: CanonicalVmMetrics,
+}
+
+enum LocalSlot {
+    Inline(Option<VmValue>),
+    Cell(Slot),
+}
+
+#[derive(Clone, Copy)]
+enum CodeUnit {
+    Entry,
+    Function(FunctionInstanceId),
+    Closure(dbyte_hir::ClosureId),
+}
+
+struct IteratorState {
+    local: LocalId,
+    items: Vec<VmValue>,
+    next: usize,
+    previous: Option<VmValue>,
+}
+
+struct Frame {
+    code: CodeUnit,
+    ip: usize,
+    locals: Vec<LocalSlot>,
+    stack_base: usize,
+    iterators: Vec<IteratorState>,
+    match_restore: Vec<Vec<(LocalId, Option<VmValue>)>>,
+}
+
+struct CanonicalVm<'a, const PROFILE: bool> {
     project: &'a CanonicalBytecodeProject,
-    globals: BTreeMap<SymbolId, Slot>,
+    globals: Vec<Option<Slot>>,
     frames: Vec<Frame>,
+    frame_pool: Vec<Vec<LocalSlot>>,
     output: String,
-    call_depth: usize,
     script_args: Vec<String>,
     memory: DeterministicMemory,
     memory_values: BTreeMap<u64, (TypeId, VmValue)>,
+    value_stack: Vec<VmValue>,
+    metrics: CanonicalVmMetrics,
 }
 
 pub fn execute_canonical_bytecode(
@@ -107,204 +153,568 @@ fn execute_canonical_bytecode_inner(
     script_args: Vec<String>,
     memory: DeterministicMemory,
 ) -> Result<CanonicalVmExecution, VmError> {
-    let mut vm = CanonicalVm {
+    execute_canonical_bytecode_inner_profiled::<false>(project, script_args, memory)
+        .map(|result| result.execution)
+}
+
+pub fn execute_canonical_bytecode_profiled(
+    project: &CanonicalBytecodeProject,
+) -> Result<ProfiledCanonicalVmExecution, VmError> {
+    execute_canonical_bytecode_inner_profiled::<true>(
         project,
-        globals: BTreeMap::new(),
-        frames: vec![Frame {
-            locals: BTreeMap::new(),
-        }],
+        Vec::new(),
+        DeterministicMemory::system(),
+    )
+}
+
+fn execute_canonical_bytecode_inner_profiled<const PROFILE: bool>(
+    project: &CanonicalBytecodeProject,
+    script_args: Vec<String>,
+    memory: DeterministicMemory,
+) -> Result<ProfiledCanonicalVmExecution, VmError> {
+    let mut vm = CanonicalVm::<PROFILE> {
+        project,
+        globals: Vec::new(),
+        frames: Vec::new(),
+        frame_pool: Vec::new(),
         output: String::new(),
-        call_depth: 0,
         script_args,
         memory,
         memory_values: BTreeMap::new(),
+        value_stack: Vec::with_capacity(32),
+        metrics: CanonicalVmMetrics {
+            bytecode_ops: bytecode_op_count(project),
+            peak_frames: 1,
+            ..CanonicalVmMetrics::default()
+        },
     };
     for global in &project.globals {
-        vm.globals.insert(global.symbol, slot(None));
-    }
-    for global in &project.globals {
-        if let Some(code) = &global.initializer {
-            let value = vm.eval(code)?;
-            vm.global(global.symbol, global.span)?
-                .borrow_mut()
-                .replace(value);
+        let index = global.symbol.0 as usize;
+        if vm.globals.len() <= index {
+            vm.globals.resize_with(index + 1, || None);
         }
+        vm.globals[index] = Some(slot(None));
     }
-    match vm.block(&project.top_level)? {
-        Flow::Normal => Ok(CanonicalVmExecution {
+    let locals = vm.allocate_locals(&project.entry.frame);
+    vm.frames.push(Frame {
+        code: CodeUnit::Entry,
+        ip: 0,
+        locals,
+        stack_base: 0,
+        iterators: Vec::new(),
+        match_restore: Vec::new(),
+    });
+    vm.run()?;
+    if PROFILE {
+        vm.metrics.allocations = vm
+            .memory
+            .telemetry()
+            .iter()
+            .filter(|event| matches!(event, AllocationEvent::Alloc { .. }))
+            .count() as u64;
+    }
+    Ok(ProfiledCanonicalVmExecution {
+        execution: CanonicalVmExecution {
             output: vm.output,
             allocator_events: vm.memory.telemetry().to_vec(),
             live_allocations: vm.memory.live_allocations(),
-        }),
-        _ => Err(error(
-            "control flow escaped top-level bytecode",
-            Span::zero(),
-        )),
+        },
+        metrics: vm.metrics,
+    })
+}
+
+fn bytecode_op_count(project: &CanonicalBytecodeProject) -> usize {
+    project.entry.instructions.len()
+        + project
+            .functions
+            .iter()
+            .map(|function| function.body.instructions.len())
+            .sum::<usize>()
+        + project
+            .closures
+            .iter()
+            .map(|closure| closure.body.instructions.len())
+            .sum::<usize>()
+}
+
+fn opcode_name(op: &CanonicalOpcode) -> &'static str {
+    match op {
+        CanonicalOpcode::PushUnit => "PUSH_UNIT",
+        CanonicalOpcode::PushInteger(_) => "PUSH_INTEGER",
+        CanonicalOpcode::PushLayout { .. } => "PUSH_LAYOUT",
+        CanonicalOpcode::PushFloat(_) => "PUSH_FLOAT",
+        CanonicalOpcode::PushBool(_) => "PUSH_BOOL",
+        CanonicalOpcode::PushString(_) => "PUSH_STRING",
+        CanonicalOpcode::PushBytes(_) => "PUSH_BYTES",
+        CanonicalOpcode::PushNull => "PUSH_NULL",
+        CanonicalOpcode::LoadLocal { .. } => "LOAD_LOCAL",
+        CanonicalOpcode::LoadGlobal { .. } => "LOAD_GLOBAL",
+        CanonicalOpcode::PushFunction { .. } => "PUSH_FUNCTION",
+        CanonicalOpcode::MakeList(_) => "MAKE_LIST",
+        CanonicalOpcode::Binary { operand, .. } => match operand {
+            CanonicalOperandType::Integer(IntegerType::I8) => "BINARY_I8",
+            CanonicalOperandType::Integer(IntegerType::U8) => "BINARY_U8",
+            CanonicalOperandType::Integer(IntegerType::I16) => "BINARY_I16",
+            CanonicalOperandType::Integer(IntegerType::U16) => "BINARY_U16",
+            CanonicalOperandType::Integer(IntegerType::I32) => "BINARY_I32",
+            CanonicalOperandType::Integer(IntegerType::U32) => "BINARY_U32",
+            CanonicalOperandType::Integer(IntegerType::I64) => "BINARY_I64",
+            CanonicalOperandType::Integer(IntegerType::U64) => "BINARY_U64",
+            CanonicalOperandType::Integer(IntegerType::Usize) => "BINARY_USIZE",
+            CanonicalOperandType::Integer(IntegerType::LegacyInt) => "BINARY_LEGACY_INT",
+            CanonicalOperandType::Bool => "BINARY_BOOL",
+            CanonicalOperandType::Float => "BINARY_F64",
+            CanonicalOperandType::Pointer => "BINARY_PTR",
+            CanonicalOperandType::String => "BINARY_STRING",
+            CanonicalOperandType::Other(_) => "BINARY_AGGREGATE",
+        },
+        CanonicalOpcode::Unary { .. } => "UNARY",
+        CanonicalOpcode::Cast(_) => "CAST",
+        CanonicalOpcode::Length => "LENGTH",
+        CanonicalOpcode::CallDirect { .. } => "CALL_DIRECT",
+        CanonicalOpcode::CallIndirect { .. } => "CALL_INDIRECT",
+        CanonicalOpcode::Intrinsic { .. } => "INTRINSIC",
+        CanonicalOpcode::HostCall { .. } => "HOST_CALL",
+        CanonicalOpcode::Format { .. } => "FORMAT",
+        CanonicalOpcode::MakeStruct { .. } => "MAKE_STRUCT",
+        CanonicalOpcode::MakeEnum { .. } => "MAKE_ENUM",
+        CanonicalOpcode::ResolvePlace(_) => "RESOLVE_PLACE",
+        CanonicalOpcode::ReadPlace(_) => "READ_PLACE",
+        CanonicalOpcode::BorrowPlace { .. } => "BORROW_PLACE",
+        CanonicalOpcode::StorePlace => "STORE_PLACE",
+        CanonicalOpcode::ClearPlace => "CLEAR_PLACE",
+        CanonicalOpcode::StoreLocal(_) => "STORE_LOCAL",
+        CanonicalOpcode::StoreGlobal(_) => "STORE_GLOBAL",
+        CanonicalOpcode::Pop => "POP",
+        CanonicalOpcode::Jump(_) => "JUMP",
+        CanonicalOpcode::JumpIfFalse(_) => "JUMP_IF_FALSE",
+        CanonicalOpcode::ResultUnwrapOrJump { .. } => "RESULT_UNWRAP",
+        CanonicalOpcode::IteratorBegin { .. } => "ITERATOR_BEGIN",
+        CanonicalOpcode::IteratorNext { .. } => "ITERATOR_NEXT",
+        CanonicalOpcode::IteratorEnd { .. } => "ITERATOR_END",
+        CanonicalOpcode::MatchDispatch { .. } => "MATCH_DISPATCH",
+        CanonicalOpcode::MatchRestore => "MATCH_RESTORE",
+        CanonicalOpcode::MakeClosure { .. } => "MAKE_CLOSURE",
+        CanonicalOpcode::Return => "RETURN",
+        CanonicalOpcode::Halt => "HALT",
     }
 }
 
-impl CanonicalVm<'_> {
-    fn block(&mut self, block: &CanonicalBytecodeBlock) -> Result<Flow, VmError> {
-        for statement in &block.statements {
-            let flow = self.statement(statement)?;
-            if !matches!(flow, Flow::Normal) {
-                return Ok(flow);
+fn body(project: &CanonicalBytecodeProject, code: CodeUnit) -> &CanonicalBytecodeBody {
+    match code {
+        CodeUnit::Entry => &project.entry,
+        CodeUnit::Function(instance) => &project.functions[instance.0 as usize].body,
+        CodeUnit::Closure(closure) => &project.closures[closure.0 as usize].body,
+    }
+}
+
+impl<const PROFILE: bool> CanonicalVm<'_, PROFILE> {
+    fn run(&mut self) -> Result<(), VmError> {
+        // Keep the immutable bytecode project outside the mutable VM borrow so
+        // the dispatcher can execute instructions in place. Cloning an opcode
+        // on every dispatch made flat bytecode slower precisely on the tight
+        // local/branch workloads this representation is meant to improve.
+        let project = self.project;
+        while !self.frames.is_empty() {
+            let instruction = {
+                let frame = self.frames.last().expect("checked frame");
+                body(project, frame.code)
+                    .instructions
+                    .get(frame.ip)
+                    .ok_or_else(|| error("instruction pointer out of range", Span::zero()))?
+            };
+            self.frames.last_mut().expect("checked frame").ip += 1;
+            if PROFILE {
+                self.metrics.total_opcodes += 1;
+                *self
+                    .metrics
+                    .per_opcode
+                    .entry(opcode_name(&instruction.opcode))
+                    .or_default() += 1;
+            }
+            // The common scalar/local/control instructions are interpreted by
+            // reference. Cold aggregate/host instructions retain the simpler
+            // owned executor, so their variable-sized operands are cloned only
+            // when they actually execute.
+            let handled = match &instruction.opcode {
+                CanonicalOpcode::PushUnit => {
+                    self.value_stack.push(VmValue::Unit);
+                    true
+                }
+                CanonicalOpcode::PushInteger(value) => {
+                    self.value_stack.push(VmValue::Integer(*value));
+                    true
+                }
+                CanonicalOpcode::PushBool(value) => {
+                    self.value_stack.push(VmValue::Bool(*value));
+                    true
+                }
+                CanonicalOpcode::LoadLocal { local, action } => {
+                    let value = self.read_local(*local, *action, instruction.span)?;
+                    self.value_stack.push(value);
+                    true
+                }
+                CanonicalOpcode::StoreLocal(local) => {
+                    let value = pop(&mut self.value_stack, instruction.span)?;
+                    self.write_local(*local, value, instruction.span)?;
+                    true
+                }
+                CanonicalOpcode::Binary { op, operand } => {
+                    let right = pop(&mut self.value_stack, instruction.span)?;
+                    let left = pop(&mut self.value_stack, instruction.span)?;
+                    self.value_stack.push(binary(
+                        left,
+                        op,
+                        right,
+                        *operand,
+                        self.project.semantic.layout,
+                        instruction.span,
+                    )?);
+                    true
+                }
+                CanonicalOpcode::Pop => {
+                    pop(&mut self.value_stack, instruction.span)?;
+                    true
+                }
+                CanonicalOpcode::Jump(target) => {
+                    self.set_ip(*target, instruction.span)?;
+                    true
+                }
+                CanonicalOpcode::JumpIfFalse(target) => {
+                    if !pop(&mut self.value_stack, instruction.span)?.truthy(instruction.span)? {
+                        self.set_ip(*target, instruction.span)?;
+                    }
+                    true
+                }
+                _ => false,
+            };
+            if !handled {
+                self.execute(instruction.clone())?;
+            }
+            if PROFILE {
+                self.metrics.peak_value_stack =
+                    self.metrics.peak_value_stack.max(self.value_stack.len());
+                self.metrics.peak_live_allocations = self
+                    .metrics
+                    .peak_live_allocations
+                    .max(self.memory.live_allocations());
             }
         }
-        Ok(Flow::Normal)
+        Ok(())
     }
 
-    fn statement(&mut self, statement: &CanonicalBytecodeStatement) -> Result<Flow, VmError> {
-        match statement {
-            CanonicalBytecodeStatement::Let { local, value, span } => {
-                let value = self.eval(value)?;
-                if let VmValue::EarlyReturn(value) = value {
-                    return Ok(Flow::Return(*value));
-                }
-                self.ensure_local(*local, *span)?
-                    .borrow_mut()
-                    .replace(value);
-                Ok(Flow::Normal)
+    fn execute(&mut self, instruction: CanonicalInstruction) -> Result<(), VmError> {
+        let span = instruction.span;
+        match instruction.opcode {
+            CanonicalOpcode::PushUnit => self.value_stack.push(VmValue::Unit),
+            CanonicalOpcode::PushInteger(value) => self.value_stack.push(VmValue::Integer(value)),
+            CanonicalOpcode::PushLayout { target, alignment } => {
+                let layout = layout_of(&self.project.semantic, target)
+                    .map_err(|e| error(&e.to_string(), span))?;
+                self.value_stack
+                    .push(VmValue::Integer(i64::from(if alignment {
+                        layout.align
+                    } else {
+                        layout.size
+                    })));
             }
-            CanonicalBytecodeStatement::Assign {
-                place,
-                value,
-                cleanup_before_commit,
+            CanonicalOpcode::PushFloat(value) => self.value_stack.push(VmValue::Float(value)),
+            CanonicalOpcode::PushBool(value) => self.value_stack.push(VmValue::Bool(value)),
+            CanonicalOpcode::PushString(value) => self.value_stack.push(VmValue::String(value)),
+            CanonicalOpcode::PushBytes(value) => self.value_stack.push(VmValue::Bytes(value)),
+            CanonicalOpcode::PushNull => self.value_stack.push(VmValue::Null),
+            CanonicalOpcode::LoadLocal { local, action } => {
+                let value = self.read_local(local, action, span)?;
+                self.value_stack.push(value);
+            }
+            CanonicalOpcode::LoadGlobal { symbol, action } => {
+                self.value_stack
+                    .push(read(&self.global(symbol, span)?, action, span)?)
+            }
+            CanonicalOpcode::PushFunction { instance, .. } => {
+                self.value_stack.push(VmValue::Function(instance))
+            }
+            CanonicalOpcode::MakeList(count) => {
+                let values = pop_many(&mut self.value_stack, count, span)?;
+                self.value_stack.push(VmValue::List(
+                    values.into_iter().map(|value| slot(Some(value))).collect(),
+                ));
+            }
+            CanonicalOpcode::Binary { op, operand } => {
+                let right = pop(&mut self.value_stack, span)?;
+                let left = pop(&mut self.value_stack, span)?;
+                self.value_stack.push(binary(
+                    left,
+                    &op,
+                    right,
+                    operand,
+                    self.project.semantic.layout,
+                    span,
+                )?);
+            }
+            CanonicalOpcode::Unary { op, operand: _ } => {
+                let value = pop(&mut self.value_stack, span)?;
+                self.value_stack.push(unary(&op, value, span)?);
+            }
+            CanonicalOpcode::Cast(target) => {
+                let value = pop(&mut self.value_stack, span)?;
+                self.value_stack
+                    .push(cast(value, self.project.semantic.type_of(target), span)?);
+            }
+            CanonicalOpcode::Length => {
+                let value = pop(&mut self.value_stack, span)?;
+                self.value_stack.push(length(value, span)?);
+            }
+            CanonicalOpcode::CallDirect {
+                callee,
+                argument_count,
                 ..
             } => {
-                let value = self.eval(value)?;
-                if let VmValue::EarlyReturn(value) = value {
-                    return Ok(Flow::Return(*value));
-                }
-                let memory_destination = self.memory_place(place)?;
-                if let Some(cleanup) = cleanup_before_commit {
-                    self.cleanup(std::slice::from_ref(cleanup))?;
-                }
-                if let Some((address, ty)) = memory_destination {
-                    self.write_memory_value(address, ty, value, place.span)?;
-                } else {
-                    self.place(place)?.borrow_mut().replace(value);
-                }
-                Ok(Flow::Normal)
+                let args = pop_many(&mut self.value_stack, argument_count, span)?;
+                self.push_function(callee, args, span)?;
             }
-            CanonicalBytecodeStatement::Expression(code) => {
-                if let VmValue::EarlyReturn(value) = self.eval(code)? {
-                    return Ok(Flow::Return(*value));
+            CanonicalOpcode::CallIndirect { argument_count, .. } => {
+                let args = pop_many(&mut self.value_stack, argument_count, span)?;
+                let callee = pop(&mut self.value_stack, span)?;
+                match callee {
+                    VmValue::Function(instance) => self.push_function(instance, args, span)?,
+                    VmValue::Closure(closure) => self.push_closure(&closure, args, span)?,
+                    _ => return Err(error("indirect callee is not callable", span)),
                 }
-                Ok(Flow::Normal)
             }
-            CanonicalBytecodeStatement::Return { value, cleanup, .. } => {
-                let value = value
-                    .as_ref()
-                    .map(|value| self.eval(value))
-                    .transpose()?
-                    .unwrap_or(VmValue::Unit);
-                if let VmValue::EarlyReturn(value) = value {
-                    return Ok(Flow::Return(*value));
-                }
-                self.cleanup(cleanup)?;
-                Ok(Flow::Return(value))
+            CanonicalOpcode::Intrinsic {
+                intrinsic,
+                argument_count,
+                result,
+            } if intrinsic.is_runtime_host_memory() => {
+                let args = pop_many(&mut self.value_stack, argument_count, span)?;
+                let value = self.runtime_memory(intrinsic, &args, result, span)?;
+                self.value_stack.push(value);
             }
-            CanonicalBytecodeStatement::If {
-                condition,
-                then_block,
-                else_block,
-                span,
+            CanonicalOpcode::Intrinsic {
+                intrinsic,
+                argument_count,
+                result,
+            } if intrinsic.is_runtime_view() => {
+                let args = pop_many(&mut self.value_stack, argument_count, span)?;
+                let value = self.runtime_view(intrinsic, &args, result, span)?;
+                self.value_stack.push(value);
+            }
+            CanonicalOpcode::Intrinsic { .. } => {
+                return Err(error("target intrinsic in hosted VM bytecode", span))
+            }
+            CanonicalOpcode::HostCall {
+                capability,
+                argument_count,
             } => {
-                let condition = self.eval(condition)?;
-                if let VmValue::EarlyReturn(value) = condition {
-                    return Ok(Flow::Return(*value));
-                }
-                if condition.truthy(*span)? {
-                    self.block(then_block)
-                } else if let Some(block) = else_block {
-                    self.block(block)
-                } else {
-                    Ok(Flow::Normal)
-                }
-            }
-            CanonicalBytecodeStatement::While {
-                condition, body, ..
-            } => {
-                loop {
-                    let value = self.eval(condition)?;
-                    if let VmValue::EarlyReturn(value) = value {
-                        return Ok(Flow::Return(*value));
-                    }
-                    if !value.truthy(condition.span)? {
-                        break;
-                    }
-                    match self.block(body)? {
-                        Flow::Normal | Flow::Continue => {}
-                        Flow::Break => break,
-                        flow @ Flow::Return(_) => return Ok(flow),
-                    }
-                }
-                Ok(Flow::Normal)
-            }
-            CanonicalBytecodeStatement::For {
-                local,
-                iterable,
-                body,
-                ..
-            } => {
-                let value = self.eval(iterable)?;
-                if let VmValue::EarlyReturn(value) = value {
-                    return Ok(Flow::Return(*value));
-                }
-                let items = match value {
-                    VmValue::List(items) => items
-                        .into_iter()
-                        .map(|item| {
-                            item.borrow()
-                                .as_ref()
-                                .cloned()
-                                .ok_or_else(|| error("for item was moved", local.span))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    VmValue::String(bytes) => String::from_utf8(bytes)
-                        .map_err(|_| error("hosted str is not UTF-8", local.span))?
-                        .chars()
-                        .map(|value| VmValue::String(value.to_string().into_bytes()))
-                        .collect(),
-                    _ => return Err(error("value is not iterable", local.span)),
-                };
-                let destination = self.ensure_local(local.id, local.span)?;
-                let previous = destination.borrow_mut().take();
-                for item in items {
-                    destination.borrow_mut().replace(item);
-                    match self.block(body)? {
-                        Flow::Normal | Flow::Continue => {}
-                        Flow::Break => break,
-                        flow @ Flow::Return(_) => {
-                            *destination.borrow_mut() = previous;
-                            return Ok(flow);
+                let args = pop_many(&mut self.value_stack, argument_count, span)?;
+                match capability {
+                    dbyte_hir::HostCapabilityId::Print => {
+                        for (index, value) in args.iter().enumerate() {
+                            if index != 0 {
+                                self.output.push(' ');
+                            }
+                            self.output.push_str(&value.display());
                         }
+                        self.output.push('\n');
+                        self.value_stack.push(VmValue::Unit);
+                    }
+                    dbyte_hir::HostCapabilityId::EnvArgs => {
+                        self.value_stack.push(VmValue::List(
+                            self.script_args
+                                .iter()
+                                .map(|argument| {
+                                    slot(Some(VmValue::String(argument.as_bytes().to_vec())))
+                                })
+                                .collect(),
+                        ));
+                    }
+                    capability => {
+                        let args = args
+                            .into_iter()
+                            .map(to_host_value)
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let value =
+                            dbyte_interp::execute_resolved_host_capability(capability, &args)
+                                .map_err(|message| error(&message, span))?;
+                        self.value_stack.push(from_host_value(value)?);
                     }
                 }
-                *destination.borrow_mut() = previous;
-                Ok(Flow::Normal)
             }
-            CanonicalBytecodeStatement::Match {
-                mode,
-                value,
-                arms,
-                span,
-            } => {
-                let value = self.eval(value)?;
-                if let VmValue::EarlyReturn(value) = value {
-                    return Ok(Flow::Return(*value));
+            CanonicalOpcode::Format { parts, value_count } => {
+                let values = pop_many(&mut self.value_stack, value_count, span)?;
+                let mut values = values.into_iter();
+                let mut bytes = Vec::new();
+                for part in parts {
+                    match part {
+                        CanonicalFormatPart::Literal(value) => bytes.extend_from_slice(&value),
+                        CanonicalFormatPart::Value => bytes.extend_from_slice(
+                            values
+                                .next()
+                                .ok_or_else(|| error("format stack underflow", span))?
+                                .display()
+                                .as_bytes(),
+                        ),
+                    }
                 }
+                self.value_stack.push(VmValue::String(bytes));
+            }
+            CanonicalOpcode::MakeStruct { fields, .. } => {
+                let values = pop_many(&mut self.value_stack, fields.len(), span)?;
+                self.value_stack.push(VmValue::Struct(
+                    fields
+                        .iter()
+                        .copied()
+                        .zip(values)
+                        .map(|(field, value)| (field, slot(Some(value))))
+                        .collect(),
+                ));
+            }
+            CanonicalOpcode::MakeEnum {
+                variant,
+                payload_count,
+                ..
+            } => {
+                let values = pop_many(&mut self.value_stack, payload_count, span)?;
+                self.value_stack.push(VmValue::Enum {
+                    variant,
+                    payload: values.into_iter().map(|value| slot(Some(value))).collect(),
+                });
+            }
+            CanonicalOpcode::ResolvePlace(place) => {
+                let place = self.resolve_place(&place, span)?;
+                self.value_stack.push(VmValue::Place(place));
+            }
+            CanonicalOpcode::ReadPlace(action) => {
+                let place = take_place(&mut self.value_stack, span)?;
+                let value = self.read_place(place, action, span)?;
+                self.value_stack.push(value);
+            }
+            CanonicalOpcode::BorrowPlace { .. } => {
+                let place = take_place(&mut self.value_stack, span)?;
+                let value = self.borrow_place(place, span)?;
+                self.value_stack.push(value);
+            }
+            CanonicalOpcode::StorePlace => {
+                let place = take_place(&mut self.value_stack, span)?;
+                let value = pop(&mut self.value_stack, span)?;
+                self.write_place(place, value, span)?;
+            }
+            CanonicalOpcode::ClearPlace => {
+                let place = take_place(&mut self.value_stack, span)?;
+                self.clear_place(place, span)?;
+            }
+            CanonicalOpcode::StoreLocal(local) => {
+                let value = pop(&mut self.value_stack, span)?;
+                self.write_local(local, value, span)?;
+            }
+            CanonicalOpcode::StoreGlobal(symbol) => {
+                let value = pop(&mut self.value_stack, span)?;
+                self.global(symbol, span)?.borrow_mut().replace(value);
+            }
+            CanonicalOpcode::Pop => {
+                pop(&mut self.value_stack, span)?;
+            }
+            CanonicalOpcode::Jump(target) => self.set_ip(target, span)?,
+            CanonicalOpcode::JumpIfFalse(target) => {
+                if !pop(&mut self.value_stack, span)?.truthy(span)? {
+                    self.set_ip(target, span)?;
+                }
+            }
+            CanonicalOpcode::ResultUnwrapOrJump {
+                ok_variant,
+                err_variant,
+                error_target,
+            } => {
+                let value = pop(&mut self.value_stack, span)?;
                 let VmValue::Enum { variant, payload } = value else {
-                    return Err(error("match value is not enum", *span));
+                    return Err(error("? operand is not Result", span));
+                };
+                if variant == ok_variant {
+                    self.value_stack.push(
+                        payload
+                            .first()
+                            .map(|value| {
+                                value
+                                    .borrow_mut()
+                                    .take()
+                                    .ok_or_else(|| error("Ok payload moved", span))
+                            })
+                            .transpose()?
+                            .unwrap_or(VmValue::Unit),
+                    );
+                } else if variant == err_variant {
+                    self.value_stack.push(VmValue::Enum { variant, payload });
+                    self.set_ip(error_target, span)?;
+                } else {
+                    return Err(error("invalid Result tag", span));
+                }
+            }
+            CanonicalOpcode::IteratorBegin { local, .. } => {
+                let value = pop(&mut self.value_stack, span)?;
+                let items = iterable_items(value, span)?;
+                let previous = self.take_local(local, span)?;
+                self.frames
+                    .last_mut()
+                    .expect("active frame")
+                    .iterators
+                    .push(IteratorState {
+                        local,
+                        items,
+                        next: 0,
+                        previous,
+                    });
+            }
+            CanonicalOpcode::IteratorNext { local, end_target } => {
+                let next = {
+                    let state = self
+                        .frames
+                        .last_mut()
+                        .expect("active frame")
+                        .iterators
+                        .last_mut()
+                        .ok_or_else(|| error("iterator state missing", span))?;
+                    if state.local != local {
+                        return Err(error("iterator local mismatch", span));
+                    }
+                    if state.next == state.items.len() {
+                        None
+                    } else {
+                        let value = state.items[state.next].clone();
+                        state.next += 1;
+                        Some(value)
+                    }
+                };
+                if let Some(value) = next {
+                    self.write_local(local, value, span)?;
+                } else {
+                    self.set_ip(end_target, span)?;
+                }
+            }
+            CanonicalOpcode::IteratorEnd { local } => {
+                let state = self
+                    .frames
+                    .last_mut()
+                    .expect("active frame")
+                    .iterators
+                    .pop()
+                    .ok_or_else(|| error("iterator state missing", span))?;
+                if state.local != local {
+                    return Err(error("iterator local mismatch", span));
+                }
+                self.replace_local(local, state.previous, span)?;
+            }
+            CanonicalOpcode::MatchDispatch { mode, arms } => {
+                let value = pop(&mut self.value_stack, span)?;
+                let VmValue::Enum { variant, payload } = value else {
+                    return Err(error("match value is not enum", span));
                 };
                 let arm = arms
-                    .iter()
+                    .into_iter()
                     .find(|arm| arm.variant.is_none_or(|candidate| candidate == variant))
-                    .ok_or_else(|| error("exhaustive match has no arm", *span))?;
+                    .ok_or_else(|| error("exhaustive match has no arm", span))?;
                 let mut restore = Vec::new();
                 for (binding, source) in arm.bindings.iter().zip(payload) {
-                    let destination = self.ensure_local(binding.id, binding.span)?;
                     let value = match mode {
                         MatchMode::Move => source
                             .borrow_mut()
@@ -312,293 +722,59 @@ impl CanonicalVm<'_> {
                             .ok_or_else(|| error("match payload moved", binding.span))?,
                         MatchMode::Borrow | MatchMode::BorrowMut => VmValue::Reference(source),
                     };
-                    restore.push((destination.clone(), destination.borrow_mut().replace(value)));
+                    restore.push((binding.id, self.take_local(binding.id, binding.span)?));
+                    self.write_local(binding.id, value, binding.span)?;
                 }
-                let result = self.block(&arm.body);
-                for (slot, prior) in restore.into_iter().rev() {
-                    *slot.borrow_mut() = prior;
+                self.frames
+                    .last_mut()
+                    .expect("active frame")
+                    .match_restore
+                    .push(restore);
+                self.set_ip(arm.target, span)?;
+            }
+            CanonicalOpcode::MatchRestore => {
+                let restore = self
+                    .frames
+                    .last_mut()
+                    .expect("active frame")
+                    .match_restore
+                    .pop()
+                    .ok_or_else(|| error("match restore state missing", span))?;
+                for (local, prior) in restore.into_iter().rev() {
+                    self.replace_local(local, prior, span)?;
                 }
-                result
             }
-            CanonicalBytecodeStatement::RegisterDefer => Ok(Flow::Normal),
-            CanonicalBytecodeStatement::Break { cleanup, .. } => {
-                self.cleanup(cleanup)?;
-                Ok(Flow::Break)
+            CanonicalOpcode::MakeClosure { closure, captures } => {
+                let mut captured = Vec::with_capacity(captures.len());
+                for capture in captures {
+                    let stored = match capture.mode {
+                        CaptureMode::Move => slot(Some(
+                            self.take_local(capture.local, capture.span)?
+                                .ok_or_else(|| error("capture moved", capture.span))?,
+                        )),
+                        CaptureMode::Borrow | CaptureMode::BorrowMut => {
+                            self.local_cell(capture.local, capture.span)?
+                        }
+                    };
+                    captured.push((capture.local, stored));
+                }
+                self.value_stack.push(VmValue::Closure(Rc::new(VmClosure {
+                    closure,
+                    captures: captured,
+                })));
             }
-            CanonicalBytecodeStatement::Continue { cleanup, .. } => {
-                self.cleanup(cleanup)?;
-                Ok(Flow::Continue)
-            }
-        }
-    }
-
-    fn cleanup(&mut self, blocks: &[CanonicalBytecodeBlock]) -> Result<(), VmError> {
-        for block in blocks {
-            if !matches!(self.block(block)?, Flow::Normal) {
-                return Err(error("cleanup attempted control flow", Span::zero()));
+            CanonicalOpcode::Return => self.return_frame(span)?,
+            CanonicalOpcode::Halt => {
+                if !matches!(
+                    self.frames.last().map(|frame| frame.code),
+                    Some(CodeUnit::Entry)
+                ) {
+                    return Err(error("HALT outside entry bytecode", span));
+                }
+                self.pop_frame(false, span)?;
             }
         }
         Ok(())
-    }
-
-    fn eval(&mut self, code: &CanonicalExprCode) -> Result<VmValue, VmError> {
-        let mut stack = Vec::new();
-        for op in &code.ops {
-            match op {
-                CanonicalOp::PushUnit => stack.push(VmValue::Unit),
-                CanonicalOp::PushInteger(value) => stack.push(VmValue::Integer(*value)),
-                CanonicalOp::PushLayout { target, alignment } => {
-                    let layout = layout_of(&self.project.semantic, *target)
-                        .map_err(|e| error(&e.to_string(), code.span))?;
-                    stack.push(VmValue::Integer(i64::from(if *alignment {
-                        layout.align
-                    } else {
-                        layout.size
-                    })));
-                }
-                CanonicalOp::PushFloat(value) => stack.push(VmValue::Float(*value)),
-                CanonicalOp::PushBool(value) => stack.push(VmValue::Bool(*value)),
-                CanonicalOp::PushString(value) => stack.push(VmValue::String(value.clone())),
-                CanonicalOp::PushBytes(value) => stack.push(VmValue::Bytes(value.clone())),
-                CanonicalOp::PushNull => stack.push(VmValue::Null),
-                CanonicalOp::LoadLocal { local, action } => {
-                    stack.push(read(&self.local(*local, code.span)?, *action, code.span)?)
-                }
-                CanonicalOp::LoadGlobal { symbol, action } => {
-                    stack.push(read(&self.global(*symbol, code.span)?, *action, code.span)?)
-                }
-                CanonicalOp::PushFunction(key) => stack.push(VmValue::Function(key.clone())),
-                CanonicalOp::MakeList(count) => {
-                    let values = pop_many(&mut stack, *count, code.span)?;
-                    stack.push(VmValue::List(
-                        values.into_iter().map(|value| slot(Some(value))).collect(),
-                    ));
-                }
-                CanonicalOp::Binary(op) => {
-                    let right = pop(&mut stack, code.span)?;
-                    let left = pop(&mut stack, code.span)?;
-                    stack.push(binary(left, op, right, code.span)?);
-                }
-                CanonicalOp::Unary(op) => {
-                    let value = pop(&mut stack, code.span)?;
-                    stack.push(unary(op, value, code.span)?);
-                }
-                CanonicalOp::Cast(target) => {
-                    let value = pop(&mut stack, code.span)?;
-                    stack.push(cast(
-                        value,
-                        self.project.semantic.type_of(*target),
-                        code.span,
-                    )?);
-                }
-                CanonicalOp::Length => {
-                    let value = pop(&mut stack, code.span)?;
-                    stack.push(length(value, code.span)?);
-                }
-                CanonicalOp::CallDirect {
-                    callee,
-                    argument_count,
-                    ..
-                } => {
-                    let args = pop_many(&mut stack, *argument_count, code.span)?;
-                    stack.push(self.call(callee, args, code.span)?);
-                }
-                CanonicalOp::CallIndirect { argument_count, .. } => {
-                    let args = pop_many(&mut stack, *argument_count, code.span)?;
-                    let callee = pop(&mut stack, code.span)?;
-                    let value = match callee {
-                        VmValue::Function(key) => self.call(&key, args, code.span)?,
-                        VmValue::Closure(closure) => {
-                            self.call_closure(&closure, args, code.span)?
-                        }
-                        _ => return Err(error("indirect callee is not callable", code.span)),
-                    };
-                    stack.push(value);
-                }
-                CanonicalOp::Intrinsic {
-                    intrinsic,
-                    argument_count,
-                    result,
-                } if intrinsic.is_runtime_host_memory() => {
-                    let args = pop_many(&mut stack, *argument_count, code.span)?;
-                    stack.push(self.runtime_memory(*intrinsic, &args, *result, code.span)?);
-                }
-                CanonicalOp::Intrinsic {
-                    intrinsic,
-                    argument_count,
-                    result,
-                } if intrinsic.is_runtime_view() => {
-                    let args = pop_many(&mut stack, *argument_count, code.span)?;
-                    stack.push(self.runtime_view(*intrinsic, &args, *result, code.span)?);
-                }
-                CanonicalOp::Intrinsic { .. } => {
-                    return Err(error("target intrinsic in hosted VM bytecode", code.span))
-                }
-                CanonicalOp::HostCall {
-                    capability,
-                    argument_count,
-                } => {
-                    let args = pop_many(&mut stack, *argument_count, code.span)?;
-                    match capability {
-                        dbyte_hir::HostCapabilityId::Print => {
-                            for (index, value) in args.iter().enumerate() {
-                                if index != 0 {
-                                    self.output.push(' ');
-                                }
-                                self.output.push_str(&value.display());
-                            }
-                            self.output.push('\n');
-                            stack.push(VmValue::Unit);
-                        }
-                        dbyte_hir::HostCapabilityId::EnvArgs => {
-                            stack.push(VmValue::List(
-                                self.script_args
-                                    .iter()
-                                    .map(|argument| {
-                                        slot(Some(VmValue::String(argument.as_bytes().to_vec())))
-                                    })
-                                    .collect(),
-                            ));
-                        }
-                        capability => {
-                            let args = args
-                                .into_iter()
-                                .map(to_host_value)
-                                .collect::<Result<Vec<_>, _>>()?;
-                            let value =
-                                dbyte_interp::execute_resolved_host_capability(*capability, &args)
-                                    .map_err(|message| error(&message, code.span))?;
-                            stack.push(from_host_value(value)?);
-                        }
-                    }
-                }
-                CanonicalOp::Format { parts, value_count } => {
-                    let values = pop_many(&mut stack, *value_count, code.span)?;
-                    let mut values = values.into_iter();
-                    let mut bytes = Vec::new();
-                    for part in parts {
-                        match part {
-                            CanonicalFormatPart::Literal(value) => bytes.extend_from_slice(value),
-                            CanonicalFormatPart::Value => bytes.extend_from_slice(
-                                values
-                                    .next()
-                                    .ok_or_else(|| error("format stack underflow", code.span))?
-                                    .display()
-                                    .as_bytes(),
-                            ),
-                        }
-                    }
-                    stack.push(VmValue::String(bytes));
-                }
-                CanonicalOp::MakeStruct { fields, .. } => {
-                    let values = pop_many(&mut stack, fields.len(), code.span)?;
-                    stack.push(VmValue::Struct(
-                        fields
-                            .iter()
-                            .copied()
-                            .zip(values)
-                            .map(|(field, value)| (field, slot(Some(value))))
-                            .collect(),
-                    ));
-                }
-                CanonicalOp::MakeEnum {
-                    variant,
-                    payload_count,
-                    ..
-                } => {
-                    let values = pop_many(&mut stack, *payload_count, code.span)?;
-                    stack.push(VmValue::Enum {
-                        variant: *variant,
-                        payload: values.into_iter().map(|value| slot(Some(value))).collect(),
-                    });
-                }
-                CanonicalOp::LoadPlace { place, action } => {
-                    if let Some((address, ty)) = self.memory_place(place)? {
-                        stack.push(self.read_memory_value(address, ty, *action, code.span)?);
-                    } else {
-                        stack.push(read(&self.place(place)?, *action, code.span)?)
-                    }
-                }
-                CanonicalOp::BorrowPlace { place, .. } => match self.memory_place(place)? {
-                    Some((address, ty)) => stack.push(VmValue::MemoryPointer {
-                        address,
-                        pointee: ty,
-                    }),
-                    None => stack.push(VmValue::Reference(self.place(place)?)),
-                },
-                CanonicalOp::PropagateResult {
-                    ok_variant,
-                    err_variant,
-                    cleanup,
-                } => {
-                    let value = pop(&mut stack, code.span)?;
-                    let VmValue::Enum { variant, payload } = value else {
-                        return Err(error("? operand is not Result", code.span));
-                    };
-                    if variant == *ok_variant {
-                        stack.push(
-                            payload
-                                .first()
-                                .map(|value| {
-                                    value
-                                        .borrow_mut()
-                                        .take()
-                                        .ok_or_else(|| error("Ok payload moved", code.span))
-                                })
-                                .transpose()?
-                                .unwrap_or(VmValue::Unit),
-                        );
-                    } else if variant == *err_variant {
-                        self.cleanup(cleanup)?;
-                        stack.push(VmValue::EarlyReturn(Box::new(VmValue::Enum {
-                            variant,
-                            payload,
-                        })));
-                    } else {
-                        return Err(error("invalid Result tag", code.span));
-                    }
-                }
-                CanonicalOp::DropPlace { place, cleanup } => {
-                    self.block(cleanup)?;
-                    if let Some((address, _)) = self.memory_place(place)? {
-                        self.memory_values.remove(&address);
-                    } else {
-                        self.place(place)?.borrow_mut().take();
-                    }
-                    stack.push(VmValue::Unit);
-                }
-                CanonicalOp::MakeClosure {
-                    captures,
-                    parameters,
-                    body,
-                    ..
-                } => {
-                    let mut captured = BTreeMap::new();
-                    for capture in captures {
-                        let source = self.local(capture.local, capture.span)?;
-                        let stored = match capture.mode {
-                            CaptureMode::Move => slot(Some(
-                                source
-                                    .borrow_mut()
-                                    .take()
-                                    .ok_or_else(|| error("capture moved", capture.span))?,
-                            )),
-                            CaptureMode::Borrow | CaptureMode::BorrowMut => source,
-                        };
-                        captured.insert(capture.local, stored);
-                    }
-                    stack.push(VmValue::Closure(Rc::new(VmClosure {
-                        captures: captured,
-                        parameters: parameters.clone(),
-                        body: body.clone(),
-                    })));
-                }
-            }
-        }
-        if stack.len() != 1 {
-            return Err(error("canonical expression stack imbalance", code.span));
-        }
-        pop(&mut stack, code.span)
     }
 
     fn runtime_memory(
@@ -728,138 +904,292 @@ impl CanonicalVm<'_> {
         })
     }
 
-    fn place(&mut self, place: &CanonicalPlace) -> Result<Slot, VmError> {
-        let mut current = match &place.base {
-            CanonicalPlaceBase::Local(local) => self.local(*local, place.span)?,
-            CanonicalPlaceBase::Global(symbol) => self.global(*symbol, place.span)?,
-            CanonicalPlaceBase::Pointer(code) => match self.eval(code)? {
-                VmValue::Reference(slot) => dereference_slot(slot),
-                _ => return Err(error("pointer place is invalid", place.span)),
+    fn resolve_place(
+        &mut self,
+        place: &CanonicalPlace,
+        span: Span,
+    ) -> Result<ResolvedPlace, VmError> {
+        let operand_count = usize::from(matches!(place.base, CanonicalPlaceBase::StackPointer))
+            + place
+                .projections
+                .iter()
+                .filter(|projection| matches!(projection, CanonicalProjection::StackIndex { .. }))
+                .count();
+        let operands = pop_many(&mut self.value_stack, operand_count, span)?;
+        let mut operands = operands.into_iter();
+        let frame = self
+            .frames
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| error("execution frame missing", span))?;
+        let mut resolved = match place.base {
+            CanonicalPlaceBase::Local(local) => ResolvedPlace::Local {
+                frame,
+                local: local.0 as usize,
+            },
+            CanonicalPlaceBase::Global(symbol) => ResolvedPlace::Global(symbol.0 as usize),
+            CanonicalPlaceBase::StackPointer => match operands
+                .next()
+                .ok_or_else(|| error("pointer place operand missing", span))?
+            {
+                VmValue::Reference(slot) => ResolvedPlace::Cell(dereference_slot(slot)),
+                VmValue::MemoryPointer { address, pointee } => ResolvedPlace::Memory {
+                    address,
+                    ty: pointee,
+                },
+                VmValue::View {
+                    address, element, ..
+                } => ResolvedPlace::Memory {
+                    address,
+                    ty: element,
+                },
+                _ => return Err(error("pointer place is invalid", span)),
             },
         };
+        let mut view_length = self
+            .place_value(&resolved, span)?
+            .and_then(|value| match value {
+                VmValue::View { length, .. } => Some(length),
+                _ => None,
+            });
         for projection in &place.projections {
-            current = match projection {
-                CanonicalProjection::Field { field, .. } => {
-                    let mut value = current.borrow_mut();
-                    if value.is_none() {
-                        *value = Some(VmValue::Struct(BTreeMap::new()));
-                    }
-                    match value.as_mut() {
-                        Some(VmValue::Struct(fields)) => {
-                            fields.entry(*field).or_insert_with(|| slot(None)).clone()
+            resolved = match projection {
+                CanonicalProjection::Field { field, ty, offset } => match resolved {
+                    ResolvedPlace::Memory { address, .. } => ResolvedPlace::Memory {
+                        address: address
+                            .checked_add(u64::from(*offset))
+                            .ok_or_else(|| error("runtime memory address overflow", span))?,
+                        ty: *ty,
+                    },
+                    other => {
+                        let cell = self.place_cell(other, span)?;
+                        let mut value = cell.borrow_mut();
+                        if value.is_none() {
+                            *value = Some(VmValue::Struct(BTreeMap::new()));
                         }
-                        _ => return Err(error("field base is not struct", place.span)),
-                    }
-                }
-                CanonicalProjection::Payload { variant, index, .. } => {
-                    match current.borrow().as_ref() {
-                        Some(VmValue::Enum {
-                            variant: active,
-                            payload,
-                        }) if active == variant => payload
-                            .get(*index as usize)
-                            .cloned()
-                            .ok_or_else(|| error("payload missing", place.span))?,
-                        Some(VmValue::Enum { .. }) => {
-                            return Err(error("inactive payload", place.span))
+                        match value.as_mut() {
+                            Some(VmValue::Struct(fields)) => ResolvedPlace::Cell(
+                                fields.entry(*field).or_insert_with(|| slot(None)).clone(),
+                            ),
+                            _ => return Err(error("field base is not struct", span)),
                         }
-                        _ => return Err(error("payload base is not enum", place.span)),
                     }
-                }
-                CanonicalProjection::Index { index, .. } => {
-                    let raw_offset = self.eval(index)?.integer(index.span)?;
-                    let length = match current.borrow().as_ref() {
-                        Some(VmValue::List(values)) => values.len(),
-                        Some(VmValue::String(bytes) | VmValue::Bytes(bytes)) => bytes.len(),
-                        _ => 0,
-                    };
-                    let normalized = if raw_offset < 0 {
-                        (length as i64).checked_add(raw_offset)
-                    } else {
-                        Some(raw_offset)
-                    };
-                    let offset = normalized
-                        .and_then(|value| usize::try_from(value).ok())
-                        .filter(|value| *value < length)
-                        .ok_or_else(|| error("index out of range", index.span))?;
-                    match current.borrow().as_ref() {
-                        Some(VmValue::List(values)) => values
-                            .get(offset)
-                            .cloned()
-                            .ok_or_else(|| error("index out of range", place.span))?,
-                        Some(VmValue::String(bytes) | VmValue::Bytes(bytes)) => {
-                            let byte = bytes
-                                .get(offset)
-                                .copied()
-                                .ok_or_else(|| error("index out of range", place.span))?;
-                            slot(Some(VmValue::Integer(i64::from(byte))))
-                        }
-                        _ => return Err(error("index base is not list", place.span)),
-                    }
-                }
-            };
-        }
-        Ok(current)
-    }
-
-    fn memory_place(&mut self, place: &CanonicalPlace) -> Result<Option<(u64, TypeId)>, VmError> {
-        let base = match &place.base {
-            CanonicalPlaceBase::Pointer(code) => self.eval(code)?,
-            CanonicalPlaceBase::Local(local) => self
-                .local(*local, place.span)?
-                .borrow()
-                .as_ref()
-                .cloned()
-                .unwrap_or(VmValue::Unit),
-            CanonicalPlaceBase::Global(symbol) => self
-                .global(*symbol, place.span)?
-                .borrow()
-                .as_ref()
-                .cloned()
-                .unwrap_or(VmValue::Unit),
-        };
-        let (mut address, mut pointee, view_length) = match base {
-            VmValue::MemoryPointer { address, pointee } => (address, pointee, None),
-            VmValue::View {
-                address,
-                length,
-                element,
-                ..
-            } => (address, element, Some(length)),
-            _ => return Ok(None),
-        };
-        for projection in &place.projections {
-            match projection {
-                CanonicalProjection::Field { ty, offset, .. }
-                | CanonicalProjection::Payload { ty, offset, .. } => {
-                    address = address
-                        .checked_add(u64::from(*offset))
-                        .ok_or_else(|| error("runtime memory address overflow", place.span))?;
-                    pointee = *ty;
-                }
-                CanonicalProjection::Index {
+                },
+                CanonicalProjection::Payload {
+                    variant,
                     index,
+                    ty,
+                    offset,
+                } => match resolved {
+                    ResolvedPlace::Memory { address, .. } => ResolvedPlace::Memory {
+                        address: address
+                            .checked_add(u64::from(*offset))
+                            .ok_or_else(|| error("runtime memory address overflow", span))?,
+                        ty: *ty,
+                    },
+                    other => {
+                        let cell = self.place_cell(other, span)?;
+                        let borrowed = cell.borrow();
+                        match borrowed.as_ref() {
+                            Some(VmValue::Enum {
+                                variant: active,
+                                payload,
+                            }) if active == variant => ResolvedPlace::Cell(
+                                payload
+                                    .get(*index as usize)
+                                    .cloned()
+                                    .ok_or_else(|| error("payload missing", span))?,
+                            ),
+                            Some(VmValue::Enum { .. }) => {
+                                return Err(error("inactive payload", span))
+                            }
+                            _ => return Err(error("payload base is not enum", span)),
+                        }
+                    }
+                },
+                CanonicalProjection::StackIndex {
                     element,
                     element_size,
                 } => {
-                    let index_span = index.span;
-                    let index = self.eval(index)?.integer(index_span)?;
-                    let index = u64::try_from(index)
-                        .map_err(|_| error("negative runtime memory index", index_span))?;
-                    if view_length.is_some_and(|length| index >= length) {
-                        return Err(error("view index out of bounds", index_span));
+                    let raw = operands
+                        .next()
+                        .ok_or_else(|| error("index operand missing", span))?
+                        .integer(span)?;
+                    if !matches!(resolved, ResolvedPlace::Memory { .. }) {
+                        if let Some(value) = self.place_value(&resolved, span)? {
+                            match value {
+                                VmValue::MemoryPointer { address, pointee } => {
+                                    resolved = ResolvedPlace::Memory {
+                                        address,
+                                        ty: pointee,
+                                    };
+                                    view_length = None;
+                                }
+                                VmValue::View {
+                                    address,
+                                    length,
+                                    element,
+                                    ..
+                                } => {
+                                    resolved = ResolvedPlace::Memory {
+                                        address,
+                                        ty: element,
+                                    };
+                                    view_length = Some(length);
+                                }
+                                _ => {}
+                            }
+                        }
                     }
-                    let offset = index
-                        .checked_mul(u64::from(*element_size))
-                        .ok_or_else(|| error("runtime memory index overflow", place.span))?;
-                    address = address
-                        .checked_add(offset)
-                        .ok_or_else(|| error("runtime memory address overflow", place.span))?;
-                    pointee = *element;
+                    match resolved {
+                        ResolvedPlace::Memory { address, .. } => {
+                            let index = u64::try_from(raw)
+                                .map_err(|_| error("negative runtime memory index", span))?;
+                            if view_length.is_some_and(|length| index >= length) {
+                                return Err(error("view index out of bounds", span));
+                            }
+                            let offset = index
+                                .checked_mul(u64::from(*element_size))
+                                .ok_or_else(|| error("runtime memory index overflow", span))?;
+                            ResolvedPlace::Memory {
+                                address: address.checked_add(offset).ok_or_else(|| {
+                                    error("runtime memory address overflow", span)
+                                })?,
+                                ty: *element,
+                            }
+                        }
+                        other => {
+                            let cell = self.place_cell(other, span)?;
+                            let length = match cell.borrow().as_ref() {
+                                Some(VmValue::List(values)) => values.len(),
+                                Some(VmValue::String(bytes) | VmValue::Bytes(bytes)) => bytes.len(),
+                                _ => 0,
+                            };
+                            let normalized = if raw < 0 {
+                                (length as i64).checked_add(raw)
+                            } else {
+                                Some(raw)
+                            };
+                            let index = normalized
+                                .and_then(|value| usize::try_from(value).ok())
+                                .filter(|value| *value < length)
+                                .ok_or_else(|| {
+                                    error(
+                                        &format!("index out of range: index={raw} length={length}"),
+                                        span,
+                                    )
+                                })?;
+                            let resolved = match cell.borrow().as_ref() {
+                                Some(VmValue::List(values)) => {
+                                    ResolvedPlace::Cell(values[index].clone())
+                                }
+                                Some(VmValue::String(bytes) | VmValue::Bytes(bytes)) => {
+                                    ResolvedPlace::Cell(slot(Some(VmValue::Integer(i64::from(
+                                        bytes[index],
+                                    )))))
+                                }
+                                _ => return Err(error("index base is not list", span)),
+                            };
+                            resolved
+                        }
+                    }
                 }
+            };
+            view_length = None;
+        }
+        Ok(resolved)
+    }
+
+    fn place_value(
+        &mut self,
+        place: &ResolvedPlace,
+        span: Span,
+    ) -> Result<Option<VmValue>, VmError> {
+        Ok(match place {
+            ResolvedPlace::Local { frame, local } => self.local_value(*frame, *local, span)?,
+            ResolvedPlace::Global(index) => self
+                .globals
+                .get(*index)
+                .and_then(Option::as_ref)
+                .and_then(|slot| slot.borrow().clone()),
+            ResolvedPlace::Cell(slot) => slot.borrow().clone(),
+            ResolvedPlace::Memory { .. } => None,
+        })
+    }
+
+    fn place_cell(&mut self, place: ResolvedPlace, span: Span) -> Result<Slot, VmError> {
+        match place {
+            ResolvedPlace::Local { frame, local } => self.local_cell_at(frame, local, span),
+            ResolvedPlace::Global(index) => self
+                .globals
+                .get(index)
+                .and_then(Option::as_ref)
+                .cloned()
+                .ok_or_else(|| error("global slot missing", span)),
+            ResolvedPlace::Cell(slot) => Ok(slot),
+            ResolvedPlace::Memory { .. } => Err(error("memory place is not a hosted cell", span)),
+        }
+    }
+
+    fn read_place(
+        &mut self,
+        place: ResolvedPlace,
+        action: OwnershipAction,
+        span: Span,
+    ) -> Result<VmValue, VmError> {
+        match place {
+            ResolvedPlace::Memory { address, ty } => {
+                self.read_memory_value(address, ty, action, span)
+            }
+            ResolvedPlace::Local { frame, local } => self.read_local_at(frame, local, action, span),
+            other => read(&self.place_cell(other, span)?, action, span),
+        }
+    }
+
+    fn borrow_place(&mut self, place: ResolvedPlace, span: Span) -> Result<VmValue, VmError> {
+        match place {
+            ResolvedPlace::Memory { address, ty } => Ok(VmValue::MemoryPointer {
+                address,
+                pointee: ty,
+            }),
+            other => Ok(VmValue::Reference(self.place_cell(other, span)?)),
+        }
+    }
+
+    fn write_place(
+        &mut self,
+        place: ResolvedPlace,
+        value: VmValue,
+        span: Span,
+    ) -> Result<(), VmError> {
+        match place {
+            ResolvedPlace::Memory { address, ty } => {
+                self.write_memory_value(address, ty, value, span)
+            }
+            ResolvedPlace::Local { frame, local } => {
+                self.replace_local_at(frame, local, Some(value), span)
+            }
+            other => {
+                self.place_cell(other, span)?.borrow_mut().replace(value);
+                Ok(())
             }
         }
-        Ok(Some((address, pointee)))
+    }
+
+    fn clear_place(&mut self, place: ResolvedPlace, span: Span) -> Result<(), VmError> {
+        match place {
+            ResolvedPlace::Memory { address, .. } => {
+                self.memory_values.remove(&address);
+                Ok(())
+            }
+            ResolvedPlace::Local { frame, local } => {
+                self.replace_local_at(frame, local, None, span)
+            }
+            other => {
+                self.place_cell(other, span)?.borrow_mut().take();
+                Ok(())
+            }
+        }
     }
 
     fn read_memory_value(
@@ -1036,90 +1366,334 @@ impl CanonicalVm<'_> {
         self.memory_values.extend(moved);
     }
 
-    fn call(
+    fn body(&self, code: CodeUnit) -> &CanonicalBytecodeBody {
+        match code {
+            CodeUnit::Entry => &self.project.entry,
+            CodeUnit::Function(instance) => &self.project.functions[instance.0 as usize].body,
+            CodeUnit::Closure(closure) => &self.project.closures[closure.0 as usize].body,
+        }
+    }
+
+    fn allocate_locals(&mut self, layout: &CanonicalFrameLayout) -> Vec<LocalSlot> {
+        let mut locals = self.frame_pool.pop().unwrap_or_default();
+        locals.clear();
+        locals.extend((0..layout.local_count).map(|index| {
+            if layout.stable_cells.get(index).copied().unwrap_or(false) {
+                LocalSlot::Cell(slot(None))
+            } else {
+                LocalSlot::Inline(None)
+            }
+        }));
+        locals
+    }
+
+    fn push_function(
         &mut self,
-        key: &FunctionInstanceKey,
+        instance: FunctionInstanceId,
         args: Vec<VmValue>,
         span: Span,
-    ) -> Result<VmValue, VmError> {
+    ) -> Result<(), VmError> {
+        if self.frames.len().saturating_sub(1) >= 16 {
+            return Err(error("maximum call depth exceeded", span));
+        }
         let function = self
             .project
             .functions
-            .iter()
-            .find(|function| function.key == *key)
-            .cloned()
+            .get(instance.0 as usize)
             .ok_or_else(|| error("function instance missing", span))?;
-        if self.call_depth >= 16 {
-            return Err(error("maximum call depth exceeded", span));
+        if function.instance != instance {
+            return Err(error("function instance table is not canonical", span));
         }
         if function.declaration_only || args.len() != function.parameters.len() {
             return Err(error("invalid canonical function entry", span));
         }
-        let mut locals = BTreeMap::new();
-        for local in &function.locals {
-            locals.insert(local.id, slot(None));
+        let parameters = function.parameters.clone();
+        let layout = function.body.frame.clone();
+        let mut locals = self.allocate_locals(&layout);
+        for (parameter, value) in parameters.iter().zip(args) {
+            replace_local_slot(&mut locals, parameter.id.0 as usize, Some(value), span)?;
         }
-        for (parameter, value) in function.parameters.iter().zip(args) {
-            locals
-                .entry(parameter.id)
-                .or_insert_with(|| slot(None))
-                .borrow_mut()
-                .replace(value);
+        let stack_base = self.value_stack.len();
+        self.frames.push(Frame {
+            code: CodeUnit::Function(instance),
+            ip: 0,
+            locals,
+            stack_base,
+            iterators: Vec::new(),
+            match_restore: Vec::new(),
+        });
+        if PROFILE {
+            self.metrics.function_calls += 1;
+            self.metrics.peak_frames = self.metrics.peak_frames.max(self.frames.len());
         }
-        self.frames.push(Frame { locals });
-        self.call_depth += 1;
-        let result = self.block(&function.body);
-        self.call_depth -= 1;
-        self.frames.pop();
-        match result? {
-            Flow::Normal => Ok(VmValue::Unit),
-            Flow::Return(value) => Ok(value),
-            _ => Err(error("loop control escaped function", span)),
-        }
+        Ok(())
     }
 
-    fn call_closure(
+    fn push_closure(
         &mut self,
         closure: &VmClosure,
         args: Vec<VmValue>,
         span: Span,
-    ) -> Result<VmValue, VmError> {
-        if args.len() != closure.parameters.len() {
+    ) -> Result<(), VmError> {
+        if self.frames.len().saturating_sub(1) >= 16 {
+            return Err(error("maximum call depth exceeded", span));
+        }
+        let definition = self
+            .project
+            .closures
+            .get(closure.closure.0 as usize)
+            .ok_or_else(|| error("closure code missing", span))?;
+        if definition.closure != closure.closure || args.len() != definition.parameters.len() {
             return Err(error("closure arity mismatch", span));
         }
-        let mut locals = closure.captures.clone();
-        for (parameter, value) in closure.parameters.iter().zip(args) {
-            locals.insert(parameter.id, slot(Some(value)));
+        let parameters = definition.parameters.clone();
+        let layout = definition.body.frame.clone();
+        let mut locals = self.allocate_locals(&layout);
+        for (local, value) in &closure.captures {
+            let index = local.0 as usize;
+            if index >= locals.len() {
+                return Err(error("closure capture slot missing", span));
+            }
+            locals[index] = LocalSlot::Cell(value.clone());
         }
-        self.frames.push(Frame { locals });
-        let result = self.block(&closure.body);
-        self.frames.pop();
-        match result? {
-            Flow::Normal => Ok(VmValue::Unit),
-            Flow::Return(value) => Ok(value),
-            _ => Err(error("loop control escaped closure", span)),
+        for (parameter, value) in parameters.iter().zip(args) {
+            replace_local_slot(&mut locals, parameter.id.0 as usize, Some(value), span)?;
+        }
+        let stack_base = self.value_stack.len();
+        self.frames.push(Frame {
+            code: CodeUnit::Closure(closure.closure),
+            ip: 0,
+            locals,
+            stack_base,
+            iterators: Vec::new(),
+            match_restore: Vec::new(),
+        });
+        if PROFILE {
+            self.metrics.function_calls += 1;
+            self.metrics.peak_frames = self.metrics.peak_frames.max(self.frames.len());
+        }
+        Ok(())
+    }
+
+    fn return_frame(&mut self, span: Span) -> Result<(), VmError> {
+        let value = pop(&mut self.value_stack, span)?;
+        self.pop_frame(true, span)?;
+        self.value_stack.push(value);
+        Ok(())
+    }
+
+    fn pop_frame(&mut self, require_caller: bool, span: Span) -> Result<(), VmError> {
+        let frame = self
+            .frames
+            .pop()
+            .ok_or_else(|| error("execution frame missing", span))?;
+        if require_caller && self.frames.is_empty() {
+            return Err(error("function return escaped entry", span));
+        }
+        self.value_stack.truncate(frame.stack_base);
+        let mut locals = frame.locals;
+        for local in &mut locals {
+            *local = LocalSlot::Inline(None);
+        }
+        self.frame_pool.push(locals);
+        Ok(())
+    }
+
+    fn set_ip(&mut self, target: usize, span: Span) -> Result<(), VmError> {
+        let code = self
+            .frames
+            .last()
+            .ok_or_else(|| error("execution frame missing", span))?
+            .code;
+        if target >= self.body(code).instructions.len() {
+            return Err(error("branch target out of range", span));
+        }
+        self.frames.last_mut().expect("checked frame").ip = target;
+        Ok(())
+    }
+
+    fn read_local(
+        &mut self,
+        id: LocalId,
+        action: OwnershipAction,
+        span: Span,
+    ) -> Result<VmValue, VmError> {
+        let frame = self
+            .frames
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| error("execution frame missing", span))?;
+        self.read_local_at(frame, id.0 as usize, action, span)
+    }
+
+    fn read_local_at(
+        &mut self,
+        frame: usize,
+        local: usize,
+        action: OwnershipAction,
+        span: Span,
+    ) -> Result<VmValue, VmError> {
+        let slot = self
+            .frames
+            .get_mut(frame)
+            .and_then(|frame| frame.locals.get_mut(local))
+            .ok_or_else(|| error("local slot missing", span))?;
+        match slot {
+            LocalSlot::Inline(value) => match action {
+                OwnershipAction::Move => value
+                    .take()
+                    .ok_or_else(|| error("value already moved", span)),
+                _ => value
+                    .clone()
+                    .ok_or_else(|| error("value already moved", span)),
+            },
+            LocalSlot::Cell(value) => read(value, action, span),
         }
     }
 
-    fn local(&self, id: LocalId, span: Span) -> Result<Slot, VmError> {
-        self.frames
-            .last()
-            .and_then(|frame| frame.locals.get(&id))
-            .cloned()
-            .ok_or_else(|| error("local slot missing", span))
+    fn write_local(&mut self, id: LocalId, value: VmValue, span: Span) -> Result<(), VmError> {
+        self.replace_local(id, Some(value), span)
     }
-    fn ensure_local(&mut self, id: LocalId, span: Span) -> Result<Slot, VmError> {
+
+    fn replace_local(
+        &mut self,
+        id: LocalId,
+        value: Option<VmValue>,
+        span: Span,
+    ) -> Result<(), VmError> {
+        let frame = self
+            .frames
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| error("execution frame missing", span))?;
+        self.replace_local_at(frame, id.0 as usize, value, span)
+    }
+
+    fn replace_local_at(
+        &mut self,
+        frame: usize,
+        local: usize,
+        value: Option<VmValue>,
+        span: Span,
+    ) -> Result<(), VmError> {
+        let target = self
+            .frames
+            .get_mut(frame)
+            .and_then(|frame| frame.locals.get_mut(local))
+            .ok_or_else(|| error("local slot missing", span))?;
+        match target {
+            LocalSlot::Inline(current) => *current = value,
+            LocalSlot::Cell(cell) => *cell.borrow_mut() = value,
+        }
+        Ok(())
+    }
+
+    fn take_local(&mut self, id: LocalId, span: Span) -> Result<Option<VmValue>, VmError> {
         let frame = self
             .frames
             .last_mut()
             .ok_or_else(|| error("execution frame missing", span))?;
-        Ok(frame.locals.entry(id).or_insert_with(|| slot(None)).clone())
+        let target = frame
+            .locals
+            .get_mut(id.0 as usize)
+            .ok_or_else(|| error("local slot missing", span))?;
+        Ok(match target {
+            LocalSlot::Inline(value) => value.take(),
+            LocalSlot::Cell(cell) => cell.borrow_mut().take(),
+        })
     }
+
+    fn local_value(
+        &self,
+        frame: usize,
+        local: usize,
+        span: Span,
+    ) -> Result<Option<VmValue>, VmError> {
+        let target = self
+            .frames
+            .get(frame)
+            .and_then(|frame| frame.locals.get(local))
+            .ok_or_else(|| error("local slot missing", span))?;
+        Ok(match target {
+            LocalSlot::Inline(value) => value.clone(),
+            LocalSlot::Cell(cell) => cell.borrow().clone(),
+        })
+    }
+
+    fn local_cell(&mut self, id: LocalId, span: Span) -> Result<Slot, VmError> {
+        let frame = self
+            .frames
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| error("execution frame missing", span))?;
+        self.local_cell_at(frame, id.0 as usize, span)
+    }
+
+    fn local_cell_at(&mut self, frame: usize, local: usize, span: Span) -> Result<Slot, VmError> {
+        let target = self
+            .frames
+            .get_mut(frame)
+            .and_then(|frame| frame.locals.get_mut(local))
+            .ok_or_else(|| error("local slot missing", span))?;
+        if let LocalSlot::Inline(value) = target {
+            let cell = slot(value.take());
+            *target = LocalSlot::Cell(cell);
+        }
+        match target {
+            LocalSlot::Cell(cell) => Ok(cell.clone()),
+            LocalSlot::Inline(_) => unreachable!(),
+        }
+    }
+
     fn global(&self, id: SymbolId, span: Span) -> Result<Slot, VmError> {
         self.globals
-            .get(&id)
+            .get(id.0 as usize)
+            .and_then(Option::as_ref)
             .cloned()
             .ok_or_else(|| error("global slot missing", span))
+    }
+}
+
+fn replace_local_slot(
+    locals: &mut [LocalSlot],
+    index: usize,
+    value: Option<VmValue>,
+    span: Span,
+) -> Result<(), VmError> {
+    let target = locals
+        .get_mut(index)
+        .ok_or_else(|| error("local slot missing", span))?;
+    match target {
+        LocalSlot::Inline(current) => *current = value,
+        LocalSlot::Cell(cell) => *cell.borrow_mut() = value,
+    }
+    Ok(())
+}
+
+fn take_place(stack: &mut Vec<VmValue>, span: Span) -> Result<ResolvedPlace, VmError> {
+    match pop(stack, span)? {
+        VmValue::Place(place) => Ok(place),
+        _ => Err(error("resolved place missing", span)),
+    }
+}
+
+fn iterable_items(value: VmValue, span: Span) -> Result<Vec<VmValue>, VmError> {
+    match value {
+        VmValue::List(items) => items
+            .into_iter()
+            .map(|item| {
+                item.borrow()
+                    .as_ref()
+                    .cloned()
+                    .ok_or_else(|| error("for item was moved", span))
+            })
+            .collect(),
+        VmValue::String(bytes) => Ok(String::from_utf8(bytes)
+            .map_err(|_| error("hosted str is not UTF-8", span))?
+            .chars()
+            .map(|value| VmValue::String(value.to_string().into_bytes()))
+            .collect::<Vec<_>>()),
+        _ => Err(error("value is not iterable", span)),
     }
 }
 
@@ -1155,7 +1729,7 @@ impl VmValue {
             }
             Self::Reference(_) => "<borrow>".into(),
             Self::Closure(_) => "<closure>".into(),
-            Self::EarlyReturn(v) => v.display(),
+            Self::Place(_) => "<place>".into(),
         }
     }
     fn truthy(&self, span: Span) -> Result<bool, VmError> {
@@ -1253,7 +1827,14 @@ fn unary(op: &UnaryOp, value: VmValue, span: Span) -> Result<VmValue, VmError> {
         _ => Err(error("invalid unary operand", span)),
     }
 }
-fn binary(left: VmValue, op: &BinOp, right: VmValue, span: Span) -> Result<VmValue, VmError> {
+fn binary(
+    left: VmValue,
+    op: &BinOp,
+    right: VmValue,
+    operand: CanonicalOperandType,
+    layout: dbyte_hir::TargetDataLayout,
+    span: Span,
+) -> Result<VmValue, VmError> {
     use BinOp::*;
     match (left, right) {
         (VmValue::MemoryPointer { address, .. }, VmValue::Null)
@@ -1277,36 +1858,61 @@ fn binary(left: VmValue, op: &BinOp, right: VmValue, span: Span) -> Result<VmVal
         (VmValue::Null, VmValue::Null) if matches!(op, EqEq | NotEq) => {
             Ok(VmValue::Bool(*op == EqEq))
         }
-        (VmValue::Integer(a), VmValue::Integer(b)) => match op {
-            Add => a.checked_add(b).map(VmValue::Integer),
-            Sub => a.checked_sub(b).map(VmValue::Integer),
-            Mul => a.checked_mul(b).map(VmValue::Integer),
-            Div => a.checked_div(b).map(VmValue::Integer),
-            Rem => a.checked_rem(b).map(VmValue::Integer),
-            BitAnd => return Ok(VmValue::Integer(a & b)),
-            BitOr => return Ok(VmValue::Integer(a | b)),
-            BitXor => return Ok(VmValue::Integer(a ^ b)),
-            Shl => a.checked_shl(b as u32).map(VmValue::Integer),
-            Shr => a.checked_shr(b as u32).map(VmValue::Integer),
-            EqEq => return Ok(VmValue::Bool(a == b)),
-            NotEq => return Ok(VmValue::Bool(a != b)),
-            Lt => return Ok(VmValue::Bool(a < b)),
-            LtEq => return Ok(VmValue::Bool(a <= b)),
-            Gt => return Ok(VmValue::Bool(a > b)),
-            GtEq => return Ok(VmValue::Bool(a >= b)),
+        (VmValue::Integer(a), VmValue::Integer(b)) => {
+            let CanonicalOperandType::Integer(kind) = operand else {
+                return Err(error("integer opcode has non-integer type", span));
+            };
+            if kind == IntegerType::LegacyInt {
+                return legacy_integer_binary(a, op, b, span);
+            }
+            let left = IntegerValue::from_bits(a as u64, kind, layout);
+            let right = IntegerValue::from_bits(b as u64, kind, layout);
+            let comparison = if is_signed(kind) {
+                (left.signed(layout), right.signed(layout))
+            } else {
+                (left.bits() as i64, right.bits() as i64)
+            };
+            match op {
+                EqEq => Ok(VmValue::Bool(left.bits() == right.bits())),
+                NotEq => Ok(VmValue::Bool(left.bits() != right.bits())),
+                Lt if is_signed(kind) => Ok(VmValue::Bool(comparison.0 < comparison.1)),
+                LtEq if is_signed(kind) => Ok(VmValue::Bool(comparison.0 <= comparison.1)),
+                Gt if is_signed(kind) => Ok(VmValue::Bool(comparison.0 > comparison.1)),
+                GtEq if is_signed(kind) => Ok(VmValue::Bool(comparison.0 >= comparison.1)),
+                Lt => Ok(VmValue::Bool(left.bits() < right.bits())),
+                LtEq => Ok(VmValue::Bool(left.bits() <= right.bits())),
+                Gt => Ok(VmValue::Bool(left.bits() > right.bits())),
+                GtEq => Ok(VmValue::Bool(left.bits() >= right.bits())),
+                operation => {
+                    let operation = match operation {
+                        Add => IntegerBinaryOp::Add,
+                        Sub => IntegerBinaryOp::Sub,
+                        Mul => IntegerBinaryOp::Mul,
+                        Div => IntegerBinaryOp::Div,
+                        Rem => IntegerBinaryOp::Rem,
+                        BitAnd => IntegerBinaryOp::BitAnd,
+                        BitOr => IntegerBinaryOp::BitOr,
+                        BitXor => IntegerBinaryOp::BitXor,
+                        Shl => IntegerBinaryOp::ShiftLeft,
+                        Shr => IntegerBinaryOp::ShiftRight,
+                        EqEq | NotEq | Lt | LtEq | Gt | GtEq => unreachable!(),
+                    };
+                    left.binary(operation, right, layout)
+                        .map(|value| VmValue::Integer(value.bits() as i64))
+                        .map_err(|failure| {
+                            error(
+                                match failure {
+                                    IntegerError::DivisionByZero => "division by zero",
+                                    IntegerError::SignedDivisionOverflow => "integer overflow",
+                                    IntegerError::LiteralOutOfRange
+                                    | IntegerError::TypeMismatch => "integer type mismatch",
+                                },
+                                span,
+                            )
+                        })
+                }
+            }
         }
-        .ok_or_else(|| {
-            error(
-                if matches!(op, Div | Rem) && b == 0 {
-                    "division by zero"
-                } else if matches!(op, Shl | Shr) {
-                    "invalid shift"
-                } else {
-                    "integer overflow"
-                },
-                span,
-            )
-        }),
         (VmValue::String(mut a), VmValue::String(b)) => match op {
             Add => {
                 a.extend_from_slice(&b);
@@ -1321,6 +1927,45 @@ fn binary(left: VmValue, op: &BinOp, right: VmValue, span: Span) -> Result<VmVal
         }
         _ => Err(error("binary operand mismatch", span)),
     }
+}
+
+fn legacy_integer_binary(
+    left: i64,
+    op: &BinOp,
+    right: i64,
+    span: Span,
+) -> Result<VmValue, VmError> {
+    use BinOp::*;
+    let checked = match op {
+        Add => left.checked_add(right),
+        Sub => left.checked_sub(right),
+        Mul => left.checked_mul(right),
+        Div => left.checked_div(right),
+        Rem => left.checked_rem(right),
+        Shl => left.checked_shl(right as u32),
+        Shr => left.checked_shr(right as u32),
+        BitAnd => return Ok(VmValue::Integer(left & right)),
+        BitOr => return Ok(VmValue::Integer(left | right)),
+        BitXor => return Ok(VmValue::Integer(left ^ right)),
+        EqEq => return Ok(VmValue::Bool(left == right)),
+        NotEq => return Ok(VmValue::Bool(left != right)),
+        Lt => return Ok(VmValue::Bool(left < right)),
+        LtEq => return Ok(VmValue::Bool(left <= right)),
+        Gt => return Ok(VmValue::Bool(left > right)),
+        GtEq => return Ok(VmValue::Bool(left >= right)),
+    };
+    checked.map(VmValue::Integer).ok_or_else(|| {
+        error(
+            if matches!(op, Div | Rem) && right == 0 {
+                "division by zero"
+            } else if matches!(op, Shl | Shr) {
+                "invalid shift"
+            } else {
+                "integer overflow"
+            },
+            span,
+        )
+    })
 }
 fn cast(value: VmValue, target: &CanonicalType, span: Span) -> Result<VmValue, VmError> {
     match (value, target) {
@@ -1421,15 +2066,73 @@ fn from_host_value(value: dbyte_interp::Value) -> Result<VmValue, VmError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dbyte_compiler::lower_concrete_project_to_bytecode;
+    use dbyte_compiler::{
+        lower_concrete_project_to_bytecode, lower_concrete_project_to_bytecode_at_level,
+    };
     use dbyte_hir::{
-        analyze_project, load_source_project_from_program, monomorphize_project, ModuleId, Profile,
-        ProjectInput, ProjectModuleInput, TargetDataLayout,
+        analyze_project, load_source_project, load_source_project_from_program,
+        monomorphize_project, ModuleId, Profile, ProjectInput, ProjectModuleInput,
+        TargetDataLayout,
     };
     use dbyte_lexer::Lexer;
     use dbyte_parser::Parser;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn nmos_6502_legal_opcode_matrix_is_complete_and_unique() {
+        const MATRIX: &str = include_str!("../../../benchmarks/vm/6502/opcodes.csv");
+        const EXPECTED: &[u8] = &[
+            0x00, 0x01, 0x05, 0x06, 0x08, 0x09, 0x0a, 0x0d, 0x0e, 0x10, 0x11, 0x15, 0x16, 0x18,
+            0x19, 0x1d, 0x1e, 0x20, 0x21, 0x24, 0x25, 0x26, 0x28, 0x29, 0x2a, 0x2c, 0x2d, 0x2e,
+            0x30, 0x31, 0x35, 0x36, 0x38, 0x39, 0x3d, 0x3e, 0x40, 0x41, 0x45, 0x46, 0x48, 0x49,
+            0x4a, 0x4c, 0x4d, 0x4e, 0x50, 0x51, 0x55, 0x56, 0x58, 0x59, 0x5d, 0x5e, 0x60, 0x61,
+            0x65, 0x66, 0x68, 0x69, 0x6a, 0x6c, 0x6d, 0x6e, 0x70, 0x71, 0x75, 0x76, 0x78, 0x79,
+            0x7d, 0x7e, 0x81, 0x84, 0x85, 0x86, 0x88, 0x8a, 0x8c, 0x8d, 0x8e, 0x90, 0x91, 0x94,
+            0x95, 0x96, 0x98, 0x99, 0x9a, 0x9d, 0xa0, 0xa1, 0xa2, 0xa4, 0xa5, 0xa6, 0xa8, 0xa9,
+            0xaa, 0xac, 0xad, 0xae, 0xb0, 0xb1, 0xb4, 0xb5, 0xb6, 0xb8, 0xb9, 0xba, 0xbc, 0xbd,
+            0xbe, 0xc0, 0xc1, 0xc4, 0xc5, 0xc6, 0xc8, 0xc9, 0xca, 0xcc, 0xcd, 0xce, 0xd0, 0xd1,
+            0xd5, 0xd6, 0xd8, 0xd9, 0xdd, 0xde, 0xe0, 0xe1, 0xe4, 0xe5, 0xe6, 0xe8, 0xe9, 0xea,
+            0xec, 0xed, 0xee, 0xf0, 0xf1, 0xf5, 0xf6, 0xf8, 0xf9, 0xfd, 0xfe,
+        ];
+        let modes = [
+            "implied",
+            "accumulator",
+            "immediate",
+            "zero_page",
+            "zero_page_x",
+            "zero_page_y",
+            "relative",
+            "absolute",
+            "absolute_x",
+            "absolute_y",
+            "indirect",
+            "indexed_indirect",
+            "indirect_indexed",
+        ];
+        let mut actual = Vec::new();
+        for (line, record) in MATRIX.lines().enumerate().skip(1) {
+            let fields = record.split(',').collect::<Vec<_>>();
+            assert_eq!(fields.len(), 3, "malformed opcode row {}", line + 1);
+            let opcode = u8::from_str_radix(fields[0], 16).expect("hex opcode");
+            assert!(!fields[1].is_empty(), "empty mnemonic at row {}", line + 1);
+            assert!(
+                modes.contains(&fields[2]),
+                "unknown mode at row {}",
+                line + 1
+            );
+            actual.push(opcode);
+        }
+        let unique = actual.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(actual.len(), 151, "expected legal opcode rows");
+        assert_eq!(unique.len(), 151, "duplicate legal opcode byte");
+        assert_eq!(actual, EXPECTED, "missing or reordered legal opcode byte");
+    }
 
     fn bytecode(source: &str) -> CanonicalBytecodeProject {
+        bytecode_at(source, VmOptimizationLevel::O1)
+    }
+
+    fn bytecode_at(source: &str, optimization: VmOptimizationLevel) -> CanonicalBytecodeProject {
         let program = Parser::new(Lexer::new(source).tokenize().unwrap())
             .parse_program()
             .unwrap();
@@ -1448,7 +2151,7 @@ mod tests {
         )
         .unwrap();
         let concrete = monomorphize_project(&analyzed).unwrap();
-        lower_concrete_project_to_bytecode(&concrete).unwrap()
+        lower_concrete_project_to_bytecode_at_level(&concrete, optimization).unwrap()
     }
 
     #[test]
@@ -1463,6 +2166,72 @@ mod tests {
         let source = "fn id[T](value: T) -> T:\n    return value\n\nlet total = 0\nfor value in [1, 2, 3]:\n    total = total + value\nprint(\"TOTAL {total}\")\nlet factor: int = 2\nlet add = fn [borrow factor](value: int) -> int:\n    return value + factor\nlet answer = add(id[int](40))\nprint(\"VALUE {answer}\")\n";
         let execution = execute_canonical_bytecode(&bytecode(source)).unwrap();
         assert_eq!(execution.output, "TOTAL 6\nVALUE 42\n");
+    }
+
+    #[test]
+    fn flat_dispatcher_enforces_the_exact_call_depth_boundary() {
+        let source = "fn recurse() -> int:\n    return recurse()\n\nprint(recurse())\n";
+        let failure = execute_canonical_bytecode(&bytecode(source)).unwrap_err();
+        assert_eq!(failure.msg, "maximum call depth exceeded");
+        assert_eq!(failure.span, Span { line: 2, col: 13 });
+    }
+
+    #[test]
+    fn flat_dispatcher_repeats_control_flow_without_rust_recursion() {
+        let source = "let count: u32 = 0 as u32\nwhile count < (50000 as u32):\n    count = count + (1 as u32)\nprint(count)\n";
+        let execution = execute_canonical_bytecode(&bytecode(source)).unwrap();
+        assert_eq!(execution.output, "50000\n");
+    }
+
+    #[test]
+    fn profiled_executor_is_semantically_identical_and_reports_canonical_ops() {
+        let source = "fn add(value: int) -> int:\n    return value + 1\n\nlet answer = add(41)\nprint(answer)\n";
+        let bytecode = bytecode(source);
+        let normal = execute_canonical_bytecode(&bytecode).unwrap();
+        let profiled = execute_canonical_bytecode_profiled(&bytecode).unwrap();
+        assert_eq!(profiled.execution, normal);
+        assert_eq!(profiled.metrics.function_calls, 1);
+        assert!(profiled.metrics.total_opcodes >= 6);
+        assert_eq!(profiled.metrics.per_opcode["CALL_DIRECT"], 1);
+        assert_eq!(profiled.metrics.per_opcode["BINARY_LEGACY_INT"], 1);
+        assert!(profiled.metrics.bytecode_ops >= profiled.metrics.total_opcodes as usize);
+        assert_eq!(profiled.metrics.peak_frames, 2);
+    }
+
+    #[test]
+    fn optimized_and_o0_bytecode_preserve_output_drop_and_allocator_events() {
+        let source = "struct Resource:\n    value: int\n\ndrop fn destroy(value: borrow mut Resource):\n    print((*value).value)\n\nlet resource = Resource(value = 40 + 2)\nprint(6 * 7)\ndrop(resource)\n";
+        let o0 = execute_canonical_bytecode(&bytecode_at(source, VmOptimizationLevel::O0)).unwrap();
+        let optimized =
+            execute_canonical_bytecode(&bytecode_at(source, VmOptimizationLevel::O1)).unwrap();
+        assert_eq!(optimized, o0);
+        assert_eq!(optimized.output, "42\n42\n");
+    }
+
+    #[test]
+    fn nmos_6502_matrix_and_trace_match_tree_contract_at_o0_and_o1() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (relative, expected) in [
+            ("benchmarks/vm/6502/matrix.dby", "151\n151\n0\n"),
+            (
+                "benchmarks/vm/6502/trace.dby",
+                "true\ntrue\ntrue\ntrue\ntrue\ntrue\n1\n",
+            ),
+        ] {
+            let input = load_source_project(&root.join(relative)).unwrap();
+            let analyzed = analyze_project(&input, Profile::Vm, TargetDataLayout::I686).unwrap();
+            let concrete = monomorphize_project(&analyzed).unwrap();
+            let o0 =
+                lower_concrete_project_to_bytecode_at_level(&concrete, VmOptimizationLevel::O0)
+                    .unwrap();
+            let o1 =
+                lower_concrete_project_to_bytecode_at_level(&concrete, VmOptimizationLevel::O1)
+                    .unwrap();
+            let o0_execution = execute_canonical_bytecode(&o0).unwrap();
+            let o1_execution = execute_canonical_bytecode(&o1).unwrap();
+            assert_eq!(o0_execution.output, expected, "O0 {relative}");
+            assert_eq!(o1_execution, o0_execution, "O1 parity {relative}");
+        }
     }
 
     #[test]
@@ -1617,5 +2386,63 @@ mod tests {
             hosted.allocator_events[21],
             AllocationEvent::Free { address, .. } if address == nested_array
         ));
+    }
+
+    #[test]
+    fn versioned_v123_collections_preserve_hosted_o0_o1_and_ownership_parity() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let input = load_source_project(&root.join("runtime/v12.3.0/collections_smoke.dby"))
+            .expect("load tracked v12.3 collections proof");
+        let analyzed = analyze_project(&input, Profile::Hosted, TargetDataLayout::I686)
+            .expect("analyze collections through canonical HIR");
+        let concrete = monomorphize_project(&analyzed).expect("monomorphize collections");
+
+        let hosted = dbyte_interp::execute_concrete_project(&concrete)
+            .expect("execute collections through hosted HIR");
+        let o0 = lower_concrete_project_to_bytecode_at_level(&concrete, VmOptimizationLevel::O0)
+            .expect("lower O0 collections");
+        let o1 = lower_concrete_project_to_bytecode_at_level(&concrete, VmOptimizationLevel::O1)
+            .expect("lower optimized collections");
+        let o0 = execute_canonical_bytecode(&o0).expect("execute O0 collections");
+        let o1 = execute_canonical_bytecode(&o1).expect("execute optimized collections");
+
+        assert_eq!(hosted.output, "1\n1\n1\n1\n1\n1\n");
+        assert_eq!(o0.output, hosted.output);
+        assert_eq!(o1.output, hosted.output);
+        assert_eq!(o0.allocator_events, hosted.allocator_events);
+        assert_eq!(o1.allocator_events, hosted.allocator_events);
+        assert_eq!(
+            hosted.live_allocations, 0,
+            "hosted collection allocations leaked: {:?}",
+            hosted.allocator_events
+        );
+        assert_eq!(
+            o0.live_allocations, 0,
+            "O0 collection allocations leaked: {:?}",
+            o0.allocator_events
+        );
+        assert_eq!(
+            o1.live_allocations, 0,
+            "O1 collection allocations leaked: {:?}",
+            o1.allocator_events
+        );
+        let allocations = hosted
+            .allocator_events
+            .iter()
+            .filter(|event| matches!(event, AllocationEvent::Alloc { .. }))
+            .count();
+        let frees = hosted
+            .allocator_events
+            .iter()
+            .filter(|event| matches!(event, AllocationEvent::Free { .. }))
+            .count();
+        assert!(
+            allocations >= 7,
+            "collections proof did not exercise growth"
+        );
+        assert_eq!(
+            frees, allocations,
+            "every collection allocation must be freed"
+        );
     }
 }

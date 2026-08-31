@@ -34,6 +34,7 @@ pub struct ExecutableHirProgram {
     pub functions: Vec<HirFunction>,
     pub globals: Vec<HirGlobal>,
     pub top_level: HirBlock,
+    pub requires_nested_owned_graph: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +43,7 @@ pub struct ConcreteHirProgram {
     pub functions: Vec<ConcreteHirFunction>,
     pub globals: Vec<HirGlobal>,
     pub top_level: HirBlock,
+    pub requires_nested_owned_graph: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -444,6 +446,7 @@ pub enum HirPlaceBase {
 pub enum HirProjection {
     Field {
         field: FieldId,
+        owner: TypeId,
         ty: TypeId,
         offset: u32,
     },
@@ -465,9 +468,166 @@ pub enum HirProjection {
 /// performs type inference or ownership validation.
 pub fn executable_from_analyzed(
     program: &Program,
-    semantic: HirProgram,
+    mut semantic: HirProgram,
 ) -> Result<ExecutableHirProgram, Diagnostic> {
-    ExecutableBuilder::new(&semantic).build(program, semantic.clone())
+    let closed_nested_owned_types = intern_nested_owned_types(&mut semantic);
+    if closed_nested_owned_types {
+        intern_drop_borrow_types(&mut semantic);
+    }
+    ExecutableBuilder::new(&semantic, closed_nested_owned_types).build(program, semantic.clone())
+}
+
+/// Close the canonical type graph over aggregate fields before executable
+/// ownership/drop lowering. Semantic expression analysis may only mention an
+/// outer wrapper (for example `HashSet[u64]`); its owning field
+/// `HashMap[u64, unit]` still needs a stable TypeId so structural glue never
+/// has to rediscover or synthesize a type in a backend.
+fn intern_nested_owned_types(semantic: &mut HirProgram) -> bool {
+    let initial = semantic.types.len();
+    loop {
+        let before = semantic.types.len();
+        let nominal = semantic
+            .types
+            .iter()
+            .filter_map(|ty| match ty {
+                CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args } => {
+                    Some((*symbol, args.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (symbol, args) in nominal {
+            let Some(definition) = semantic
+                .definitions
+                .iter()
+                .find(|definition| definition.symbol == symbol)
+                .cloned()
+            else {
+                continue;
+            };
+            let substitutions = definition
+                .generic_params
+                .iter()
+                .cloned()
+                .zip(args)
+                .collect::<BTreeMap<_, _>>();
+            match definition.kind {
+                TypeDefKind::Struct { fields, .. } => {
+                    for field in fields {
+                        let _ = intern_annotation_type(semantic, &field.annotation, &substitutions);
+                    }
+                }
+                TypeDefKind::Enum { variants } => {
+                    for payload in variants.into_iter().flat_map(|variant| variant.payload) {
+                        let _ = intern_annotation_type(semantic, &payload, &substitutions);
+                    }
+                }
+            }
+        }
+        if semantic.types.len() == before {
+            break;
+        }
+    }
+    semantic.types[initial..].iter().any(|ty| {
+        matches!(
+            ty,
+            CanonicalType::Struct { .. } | CanonicalType::Enum { .. }
+        )
+    })
+}
+
+fn intern_annotation_type(
+    semantic: &mut HirProgram,
+    annotation: &dbyte_ast::TypeAnnotation,
+    substitutions: &BTreeMap<String, TypeId>,
+) -> Option<TypeId> {
+    if let dbyte_ast::TypeAnnotation::Named(name) = annotation {
+        if let Some(ty) = substitutions.get(name) {
+            return Some(*ty);
+        }
+    }
+    if let Ok(existing) = super::resolved_annotation(semantic, annotation, substitutions) {
+        return Some(existing);
+    }
+    use dbyte_ast::TypeAnnotation;
+    let candidate = match annotation {
+        TypeAnnotation::Generic { base, args } => {
+            let definition = semantic
+                .definitions
+                .iter()
+                .find(|definition| definition_name_matches(&definition.name, base))?
+                .clone();
+            let arguments = args
+                .iter()
+                .map(|argument| intern_annotation_type(semantic, argument, substitutions))
+                .collect::<Option<Vec<_>>>()?;
+            match definition.kind {
+                TypeDefKind::Struct { .. } => CanonicalType::Struct {
+                    symbol: definition.symbol,
+                    args: arguments,
+                },
+                TypeDefKind::Enum { .. } => CanonicalType::Enum {
+                    symbol: definition.symbol,
+                    args: arguments,
+                },
+            }
+        }
+        TypeAnnotation::Array { element, length } => CanonicalType::Array {
+            element: intern_annotation_type(semantic, element, substitutions)?,
+            length: *length,
+        },
+        TypeAnnotation::Pointer(pointee) => CanonicalType::Pointer {
+            mutable: true,
+            pointee: intern_annotation_type(semantic, pointee, substitutions)?,
+        },
+        TypeAnnotation::ConstPointer(pointee) => CanonicalType::Pointer {
+            mutable: false,
+            pointee: intern_annotation_type(semantic, pointee, substitutions)?,
+        },
+        TypeAnnotation::Borrow { mutable, pointee } => CanonicalType::Borrow {
+            mutable: *mutable,
+            pointee: intern_annotation_type(semantic, pointee, substitutions)?,
+        },
+        _ => return None,
+    };
+    if let Some(index) = semantic.types.iter().position(|ty| *ty == candidate) {
+        Some(TypeId(index as u32))
+    } else {
+        let id = TypeId(semantic.types.len() as u32);
+        semantic.types.push(candidate);
+        Some(id)
+    }
+}
+
+fn intern_drop_borrow_types(semantic: &mut HirProgram) {
+    let drop_targets = semantic
+        .functions
+        .iter()
+        .filter(|function| function.kind == FunctionKind::Drop)
+        .filter_map(|function| function.drop_target)
+        .collect::<BTreeSet<_>>();
+    let targets = semantic
+        .types
+        .iter()
+        .enumerate()
+        .filter_map(|(index, ty)| match ty {
+            CanonicalType::Struct { symbol, .. } | CanonicalType::Enum { symbol, .. }
+                if drop_targets.contains(symbol) =>
+            {
+                Some(TypeId(index as u32))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for pointee in targets {
+        let borrow = CanonicalType::Borrow {
+            mutable: true,
+            pointee,
+        };
+        if !semantic.types.contains(&borrow) {
+            semantic.types.push(borrow);
+        }
+    }
 }
 
 /// Analyze one source module and produce executable HIR.  Project-level users
@@ -714,6 +874,7 @@ pub fn monomorphize(program: &ExecutableHirProgram) -> Result<ConcreteHirProgram
         }
         let mut concrete = source.clone();
         substitute_function(&mut concrete, substitution.as_ref(), &mut types)?;
+        intern_concrete_drop_borrow_types(&mut types.types, &program.semantic);
         let mut concrete_semantic = program.semantic.clone();
         concrete_semantic.types = types.types.clone();
         materialize_concrete_drop_block(&mut concrete.body, &concrete_semantic)?;
@@ -748,9 +909,40 @@ pub fn monomorphize(program: &ExecutableHirProgram) -> Result<ConcreteHirProgram
         functions,
         globals: program.globals.clone(),
         top_level: program.top_level.clone(),
+        requires_nested_owned_graph: program.requires_nested_owned_graph,
     };
     validate_concrete(&concrete)?;
     Ok(concrete)
+}
+
+fn intern_concrete_drop_borrow_types(types: &mut Vec<CanonicalType>, semantic: &HirProgram) {
+    let drop_targets = semantic
+        .functions
+        .iter()
+        .filter(|function| function.kind == FunctionKind::Drop)
+        .filter_map(|function| function.drop_target)
+        .collect::<BTreeSet<_>>();
+    let pointees = types
+        .iter()
+        .enumerate()
+        .filter_map(|(index, ty)| match ty {
+            CanonicalType::Struct { symbol, .. } | CanonicalType::Enum { symbol, .. }
+                if drop_targets.contains(symbol) =>
+            {
+                Some(TypeId(index as u32))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for pointee in pointees {
+        let borrow = CanonicalType::Borrow {
+            mutable: true,
+            pointee,
+        };
+        if !types.contains(&borrow) {
+            types.push(borrow);
+        }
+    }
 }
 
 pub fn validate_profile(
@@ -778,7 +970,10 @@ fn mangle_instance(name: &str, arguments: &[TypeId]) -> String {
     output
 }
 
-fn collect_called_instances_block(block: &HirBlock, output: &mut BTreeSet<FunctionInstanceKey>) {
+pub fn collect_called_instances_block(
+    block: &HirBlock,
+    output: &mut BTreeSet<FunctionInstanceKey>,
+) {
     for statement in &block.statements {
         match statement {
             HirStatement::Let { value, .. } | HirStatement::Expression(value) => {
@@ -1132,7 +1327,11 @@ fn substitute_place(
     }
     for projection in &mut place.projections {
         match projection {
-            HirProjection::Field { ty, .. } | HirProjection::Payload { ty, .. } => {
+            HirProjection::Field { owner, ty, .. } => {
+                *owner = types.substitute(*owner, substitution, place.span)?;
+                *ty = types.substitute(*ty, substitution, place.span)?;
+            }
+            HirProjection::Payload { ty, .. } => {
                 *ty = types.substitute(*ty, substitution, place.span)?;
             }
             HirProjection::Index { index, element, .. } => {
@@ -1290,14 +1489,52 @@ fn materialize_concrete_drop_place(
         materialize_concrete_drop_expr(pointer, semantic)?;
     }
     for projection in &mut place.projections {
-        if let HirProjection::Index {
-            index,
-            element,
-            element_size,
-        } = projection
-        {
-            materialize_concrete_drop_expr(index, semantic)?;
-            *element_size = super::layout_of(semantic, *element)?.size;
+        match projection {
+            HirProjection::Field {
+                field,
+                owner,
+                offset,
+                ..
+            } => {
+                let CanonicalType::Struct { symbol, args } = semantic.type_of(*owner) else {
+                    return Err(Diagnostic {
+                        code: "E_HIR_FIELD_BASE",
+                        message: "concrete field owner is not a struct".into(),
+                        span: place.span,
+                    });
+                };
+                let definition = semantic
+                    .definitions
+                    .iter()
+                    .find(|definition| definition.symbol == *symbol)
+                    .ok_or_else(|| Diagnostic {
+                        code: "E_HIR_FIELD_BASE",
+                        message: "concrete field definition is missing".into(),
+                        span: place.span,
+                    })?;
+                let TypeDefKind::Struct { fields, .. } = &definition.kind else {
+                    unreachable!()
+                };
+                let index = fields
+                    .iter()
+                    .position(|candidate| candidate.id == *field)
+                    .ok_or_else(|| Diagnostic {
+                        code: "E_HIR_UNKNOWN_FIELD",
+                        message: "concrete field layout is missing".into(),
+                        span: place.span,
+                    })?;
+                let (_, offsets) = super::layout_struct(semantic, *symbol, args)?;
+                *offset = offsets[index];
+            }
+            HirProjection::Index {
+                index,
+                element,
+                element_size,
+            } => {
+                materialize_concrete_drop_expr(index, semantic)?;
+                *element_size = super::layout_of(semantic, *element)?.size;
+            }
+            HirProjection::Payload { .. } => {}
         }
     }
     Ok(())
@@ -1475,6 +1712,7 @@ fn concrete_drop_block(
                         let mut field_place = place.clone();
                         field_place.projections.push(HirProjection::Field {
                             field: field.id,
+                            owner: ty,
                             ty: field_ty,
                             offset,
                         });
@@ -1806,6 +2044,7 @@ struct ExecutableBuilder<'a> {
     current_generics: BTreeMap<String, TypeId>,
     host_modules: BTreeMap<String, String>,
     runtime_drop_enabled: bool,
+    closed_nested_owned_types: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1815,7 +2054,7 @@ struct ActiveCleanup {
 }
 
 impl<'a> ExecutableBuilder<'a> {
-    fn new(semantic: &'a HirProgram) -> Self {
+    fn new(semantic: &'a HirProgram, closed_nested_owned_types: bool) -> Self {
         let facts = semantic
             .expressions
             .iter()
@@ -1847,6 +2086,7 @@ impl<'a> ExecutableBuilder<'a> {
                 .functions
                 .iter()
                 .any(|function| function.kind == FunctionKind::Drop),
+            closed_nested_owned_types,
         }
     }
 
@@ -1970,6 +2210,7 @@ impl<'a> ExecutableBuilder<'a> {
             functions,
             globals,
             top_level,
+            requires_nested_owned_graph: self.closed_nested_owned_types,
         })
     }
 
@@ -2106,10 +2347,19 @@ impl<'a> ExecutableBuilder<'a> {
         ty: TypeId,
         span: Span,
     ) -> Result<HirBlock, Diagnostic> {
-        if matches!(
-            self.semantic.type_of(ty),
-            CanonicalType::GenericParam { .. }
-        ) {
+        // Layout-dependent structural glue for an open generic owner must be
+        // materialized after substitution.  Deferring only a bare `T` is not
+        // sufficient: wrappers such as `HashSet[T]` own another generic
+        // aggregate whose concrete field offsets do not exist yet.
+        let defer_open_drop = if self.closed_nested_owned_types {
+            concrete_type_is_open(self.semantic, ty, &mut BTreeSet::new())
+        } else {
+            matches!(
+                self.semantic.type_of(ty),
+                CanonicalType::GenericParam { .. }
+            )
+        };
+        if defer_open_drop {
             return Ok(HirBlock {
                 statements: vec![HirStatement::Expression(HirExpr {
                     ty: TypeId(0),
@@ -2136,7 +2386,7 @@ impl<'a> ExecutableBuilder<'a> {
             if let Some(function) = self.semantic.functions.iter().find(|function| {
                 function.kind == FunctionKind::Drop && function.drop_target == Some(symbol)
             }) {
-                let borrow_ty = self
+                let Some(borrow_ty) = self
                     .semantic
                     .types
                     .iter()
@@ -2148,13 +2398,22 @@ impl<'a> ExecutableBuilder<'a> {
                             }
                     })
                     .map(|index| TypeId(index as u32))
-                    .ok_or_else(|| {
-                        self.error(
-                            "E_HIR_DROP_BORROW",
-                            "drop glue is missing its canonical mutable borrow type",
+                else {
+                    return Ok(HirBlock {
+                        statements: vec![HirStatement::Expression(HirExpr {
+                            ty: TypeId(0),
+                            category: ValueCategory::RValue,
+                            ownership: OwnershipAction::Copy,
+                            allocator_origin: None,
+                            borrow_origin: None,
+                            kind: HirExprKind::Drop {
+                                place,
+                                cleanup: HirBlock::default(),
+                            },
                             span,
-                        )
-                    })?;
+                        })],
+                    });
+                };
                 statements.push(HirStatement::Expression(HirExpr {
                     ty: TypeId(0),
                     category: ValueCategory::RValue,
@@ -2217,6 +2476,7 @@ impl<'a> ExecutableBuilder<'a> {
                             let mut field_place = place.clone();
                             field_place.projections.push(HirProjection::Field {
                                 field: field.id,
+                                owner: ty,
                                 ty: field_ty,
                                 offset,
                             });
@@ -2298,20 +2558,29 @@ impl<'a> ExecutableBuilder<'a> {
                 return Ok(*ty);
             }
         }
-        self.semantic
+        let matches = self
+            .semantic
             .types
             .iter()
-            .position(|candidate| {
+            .enumerate()
+            .filter_map(|(index, candidate)| {
                 annotation_matches(self.semantic, candidate, annotation, generics)
+                    .then_some(TypeId(index as u32))
             })
-            .map(|index| TypeId(index as u32))
-            .ok_or_else(|| {
-                self.error(
-                    "E_HIR_UNRESOLVED_TYPE",
-                    format!("type `{annotation}` has no canonical TypeId"),
-                    span,
-                )
-            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [resolved] => Ok(*resolved),
+            [] => Err(self.error(
+                "E_HIR_UNRESOLVED_TYPE",
+                format!("type `{annotation}` has no canonical TypeId"),
+                span,
+            )),
+            _ => Err(self.error(
+                "E_HIR_AMBIGUOUS_TYPE",
+                format!("type `{annotation}` resolves to multiple canonical TypeIds"),
+                span,
+            )),
+        }
     }
 
     fn block(&mut self, statements: &[Stmt]) -> Result<HirBlock, Diagnostic> {
@@ -2415,16 +2684,19 @@ impl<'a> ExecutableBuilder<'a> {
                 span: *span,
             },
             Stmt::Expr(value) => HirStatement::Expression(self.expr(value)?),
-            Stmt::Return { value, span } => HirStatement::Return {
-                value: value.as_ref().map(|value| self.expr(value)).transpose()?,
-                cleanup: self
-                    .active_cleanups
-                    .iter()
-                    .rev()
-                    .map(|cleanup| cleanup.block.clone())
-                    .collect(),
-                span: *span,
-            },
+            Stmt::Return { value, span } => {
+                let value = value.as_ref().map(|value| self.expr(value)).transpose()?;
+                HirStatement::Return {
+                    value,
+                    cleanup: self
+                        .active_cleanups
+                        .iter()
+                        .rev()
+                        .map(|cleanup| cleanup.block.clone())
+                        .collect(),
+                    span: *span,
+                }
+            }
             Stmt::If {
                 cond,
                 then_body,
@@ -2768,10 +3040,14 @@ impl<'a> ExecutableBuilder<'a> {
                 span,
             } => {
                 let mut place = self.place(object)?;
-                let (field, offset, ty) = resolve_field(self.semantic, place.ty, property, *span)?;
-                place
-                    .projections
-                    .push(HirProjection::Field { field, ty, offset });
+                let owner = place.ty;
+                let (field, offset, ty) = resolve_field(self.semantic, owner, property, *span)?;
+                place.projections.push(HirProjection::Field {
+                    field,
+                    owner,
+                    ty,
+                    offset,
+                });
                 place.ty = ty;
                 place.span = *span;
                 Ok(place)
@@ -2911,6 +3187,9 @@ impl<'a> ExecutableBuilder<'a> {
                 mutable: true,
                 place: self.place(expr)?,
             },
+            Expr::Unary {
+                op: UnaryOp::Deref, ..
+            } => HirExprKind::Place(self.place(expression)?),
             Expr::Unary { op, expr, .. } => HirExprKind::Unary {
                 op: op.clone(),
                 value: Box::new(self.expr(expr)?),
@@ -3388,6 +3667,10 @@ fn call_convention(program: &HirProgram, callee: &Expr) -> Result<CallConvention
     }
 }
 
+fn definition_name_matches(definition: &str, reference: &str) -> bool {
+    definition == reference || definition.rsplit('.').next() == reference.rsplit('.').next()
+}
+
 fn annotation_matches(
     program: &HirProgram,
     candidate: &CanonicalType,
@@ -3472,10 +3755,9 @@ fn annotation_matches(
         (
             CanonicalType::Struct { symbol, .. } | CanonicalType::Enum { symbol, .. },
             A::Named(name),
-        ) => program
-            .definitions
-            .iter()
-            .any(|definition| definition.symbol == *symbol && definition.name == *name),
+        ) => program.definitions.iter().any(|definition| {
+            definition.symbol == *symbol && definition_name_matches(&definition.name, name)
+        }),
         (
             CanonicalType::Struct { symbol, args } | CanonicalType::Enum { symbol, args },
             A::Generic {
@@ -3483,11 +3765,9 @@ fn annotation_matches(
                 args: annotations,
             },
         ) => {
-            program
-                .definitions
-                .iter()
-                .any(|definition| definition.symbol == *symbol && definition.name == *base)
-                && args.len() == annotations.len()
+            program.definitions.iter().any(|definition| {
+                definition.symbol == *symbol && definition_name_matches(&definition.name, base)
+            }) && args.len() == annotations.len()
                 && args.iter().zip(annotations).all(|(ty, annotation)| {
                     annotation_matches(program, program.type_of(*ty), annotation, generics)
                 })
@@ -3576,7 +3856,11 @@ fn resolve_field(
             message: "field definition is missing".into(),
             span,
         })?;
-    let (_, offsets) = super::layout_struct(program, symbol, &args)?;
+    let offsets = match super::layout_struct(program, symbol, &args) {
+        Ok((_, offsets)) => offsets,
+        Err(error) if error.code == "E_LAYOUT_UNAVAILABLE" => vec![0; fields.len()],
+        Err(error) => return Err(error),
+    };
     let field_index = fields
         .iter()
         .position(|candidate| candidate.id == field.id)
@@ -3782,6 +4066,48 @@ mod tests {
     }
 
     #[test]
+    fn monomorphization_recomputes_nested_generic_field_offset() {
+        let source = "struct Pair[A, B]:\n    first: A\n    second: B\n\nfn read_second[A, B](data: ptr[Pair[A, B]]) -> B:\n    return data[0].second\n\npub fn kernel_main() -> int:\n    let value = Pair[u8, u32](first = 1 as u8, second = 42 as u32)\n    return read_second[u8, u32](&value as usize as ptr[Pair[u8, u32]]) as int\n";
+        let executable = analyze_executable(
+            &parse(source),
+            super::super::Profile::I686None,
+            super::super::TargetDataLayout::I686,
+        )
+        .unwrap();
+        let concrete = monomorphize(&executable).unwrap();
+        let function = concrete
+            .functions
+            .iter()
+            .find(|function| {
+                function
+                    .symbol_name
+                    .starts_with("__dbyte_mono_read_second_t")
+            })
+            .unwrap();
+        let HirStatement::Return {
+            value:
+                Some(HirExpr {
+                    kind: HirExprKind::Place(place),
+                    ..
+                }),
+            ..
+        } = &function.body.statements[0]
+        else {
+            panic!("generic field read did not remain a place");
+        };
+        assert!(matches!(
+            place.projections.as_slice(),
+            [
+                HirProjection::Index {
+                    element_size: 8,
+                    ..
+                },
+                HirProjection::Field { offset: 4, .. }
+            ]
+        ));
+    }
+
+    #[test]
     fn v121_executable_hir_registers_custom_drop_on_fallthrough() {
         let source = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    value.id = 0\n\nfn run() -> unit:\n    let resource = Resource(id = 7)\n    return unit\n";
         let executable = analyze_executable(
@@ -3812,6 +4138,32 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn nested_generic_nominal_drop_interns_its_canonical_mutable_borrow() {
+        let source = "struct Owned[T]:\n    data: ptr[T]\n    len: usize\n\ndrop fn destroy[T](value: borrow mut Owned[T]):\n    return unit\n\nstruct Wrapper[T]:\n    owned: Owned[T]\n\nfn accept[T](value: Wrapper[T]) -> unit:\n    return unit\n";
+        let executable = analyze_executable(
+            &parse(source),
+            super::super::Profile::Hosted,
+            super::super::TargetDataLayout::I686,
+        )
+        .expect("generic owned local has concrete drop-borrow metadata");
+        let owned_types = executable
+            .semantic
+            .types
+            .iter()
+            .enumerate()
+            .filter_map(|(index, ty)| {
+                matches!(ty, CanonicalType::Struct { .. }).then_some(TypeId(index as u32))
+            })
+            .collect::<Vec<_>>();
+        assert!(owned_types.iter().any(|owned| {
+            executable.semantic.types.contains(&CanonicalType::Borrow {
+                mutable: true,
+                pointee: *owned,
+            })
+        }));
     }
 
     #[test]

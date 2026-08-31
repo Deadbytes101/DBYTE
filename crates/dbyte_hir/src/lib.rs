@@ -1527,7 +1527,7 @@ impl Analyzer {
             TypeAnnotation::Named(name) | TypeAnnotation::Generic { base: name, .. } => self
                 .definitions
                 .iter()
-                .find(|definition| definition.name == *name)
+                .find(|definition| definition_name_matches(&definition.name, name))
                 .is_some_and(|definition| {
                     self.definition_contains_by_value_cycle(definition.symbol, active)
                 }),
@@ -4517,9 +4517,15 @@ impl Analyzer {
             .collect();
         let mut covered = BTreeSet::new();
         let mut wildcard = false;
+        let entry = ownership.clone();
+        let mut arm_states = Vec::new();
         for arm in arms {
+            let mut arm_state = entry.clone();
             match &arm.pattern {
-                Pattern::Wildcard(_) => wildcard = true,
+                Pattern::Wildcard(_) => {
+                    wildcard = true;
+                    self.check_block(&arm.body, generics, &mut arm_state, false);
+                }
                 Pattern::Variant {
                     path,
                     bindings,
@@ -4547,7 +4553,7 @@ impl Analyzer {
                                 *span,
                             );
                         }
-                        ownership.push_scope();
+                        arm_state.push_scope();
                         for (binding, annotation) in bindings.iter().zip(&variant.payload) {
                             if let Some(payload) =
                                 self.resolve_type(annotation, &substitutions, *span)
@@ -4565,11 +4571,11 @@ impl Analyzer {
                                         })
                                     }
                                 };
-                                ownership.define(binding.clone(), ty, *span);
+                                arm_state.define(binding.clone(), ty, *span);
                             }
                         }
-                        self.check_block(&arm.body, generics, ownership, false);
-                        ownership.pop_scope();
+                        self.check_block(&arm.body, generics, &mut arm_state, false);
+                        arm_state.pop_scope();
                     } else {
                         self.diagnostic(
                             "E_UNKNOWN_VARIANT",
@@ -4579,8 +4585,8 @@ impl Analyzer {
                     }
                 }
             }
-            if matches!(arm.pattern, Pattern::Wildcard(_)) {
-                self.check_block(&arm.body, generics, ownership, false);
+            if !block_guarantees_exit(&arm.body) {
+                arm_states.push(arm_state);
             }
         }
         if !wildcard && covered.len() != variants.len() {
@@ -4589,6 +4595,18 @@ impl Analyzer {
                 "match does not cover every variant",
                 span,
             );
+        }
+        if let Some(first) = arm_states.first().cloned() {
+            if arm_states.iter().skip(1).any(|state| *state != first) {
+                self.diagnostic(
+                    "E_OWNERSHIP_MAYBE_MOVED",
+                    "match arms leave an owned local in different move or borrow states",
+                    span,
+                );
+                *ownership = entry;
+            } else {
+                *ownership = first;
+            }
         }
     }
 
@@ -4831,7 +4849,8 @@ impl Analyzer {
                     return self.is_copy_inner(*ty, active);
                 }
                 let Some(definition) = self.definitions.iter().find(|definition| {
-                    definition.name == *name && definition.generic_params.is_empty()
+                    definition_name_matches(&definition.name, name)
+                        && definition.generic_params.is_empty()
                 }) else {
                     return false;
                 };
@@ -4852,7 +4871,7 @@ impl Analyzer {
                 let Some(definition) = self
                     .definitions
                     .iter()
-                    .find(|definition| definition.name == *base)
+                    .find(|definition| definition_name_matches(&definition.name, base))
                 else {
                     return false;
                 };
@@ -4958,6 +4977,24 @@ impl Analyzer {
             }
         }
         hash
+    }
+}
+
+fn block_guarantees_exit(statements: &[Stmt]) -> bool {
+    let Some(last) = statements.last() else {
+        return false;
+    };
+    match last {
+        Stmt::Return { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => true,
+        Stmt::If {
+            then_body,
+            else_body: Some(else_body),
+            ..
+        } => block_guarantees_exit(then_body) && block_guarantees_exit(else_body),
+        Stmt::Match { arms, .. } => {
+            !arms.is_empty() && arms.iter().all(|arm| block_guarantees_exit(&arm.body))
+        }
+        _ => false,
     }
 }
 
@@ -5545,7 +5582,7 @@ fn layout_annotation(
             let definition = program
                 .definitions
                 .iter()
-                .find(|definition| definition.name == *base)
+                .find(|definition| definition_name_matches(&definition.name, base))
                 .ok_or_else(|| Diagnostic {
                     code: "E_UNKNOWN_TYPE",
                     message: format!("unknown layout type `{base}`"),
@@ -5586,6 +5623,10 @@ fn layout_annotation(
         }),
         _ => unreachable!("scalar annotations returned above"),
     }
+}
+
+fn definition_name_matches(definition: &str, reference: &str) -> bool {
+    definition == reference || definition.rsplit('.').next() == reference.rsplit('.').next()
 }
 
 fn resolved_annotation(
@@ -5644,7 +5685,8 @@ fn annotation_matches(
                         | CanonicalType::Enum { symbol, args }
                         if args.is_empty()
                             && program.definitions.iter().any(|definition| {
-                                definition.symbol == *symbol && definition.name == *name
+                                definition.symbol == *symbol
+                                    && definition_name_matches(&definition.name, name)
                             })
                 )
         }
@@ -5713,11 +5755,9 @@ fn annotation_matches(
                 args: candidates,
             },
         ) => {
-            program
-                .definitions
-                .iter()
-                .any(|definition| definition.symbol == *symbol && definition.name == *base)
-                && args.len() == candidates.len()
+            program.definitions.iter().any(|definition| {
+                definition.symbol == *symbol && definition_name_matches(&definition.name, base)
+            }) && args.len() == candidates.len()
                 && args.iter().zip(candidates).all(|(annotation, candidate)| {
                     annotation_matches(
                         program,
@@ -6364,6 +6404,25 @@ mod tests {
     }
 
     #[test]
+    fn match_arms_fork_and_join_ownership_state() {
+        let prefix = "struct Resource:\n    id: u32\n\ndrop fn destroy(value: borrow mut Resource):\n    (*value).id = 0 as u32\n\nfn consume(value: Resource) -> unit:\n    return unit\n\n";
+        let balanced = format!(
+            "{prefix}fn balanced(choice: Option[bool], value: Resource) -> unit:\n    match choice:\n        case Option.Some(flag):\n            consume(value)\n        case Option.None:\n            consume(value)\n    return unit\n"
+        );
+        analyze(&parse(&balanced), Profile::Hosted, TargetDataLayout::I686)
+            .expect("all match arms consume the owner exactly once");
+
+        let divergent = format!(
+            "{prefix}fn divergent(choice: Option[bool], value: Resource) -> unit:\n    match choice:\n        case Option.Some(flag):\n            consume(value)\n        case Option.None:\n            print(0)\n    return unit\n"
+        );
+        let diagnostics = analyze(&parse(&divergent), Profile::Hosted, TargetDataLayout::I686)
+            .expect_err("match-dependent moves require runtime drop flags");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_OWNERSHIP_MAYBE_MOVED"));
+    }
+
+    #[test]
     fn v122_target_layout_changes_only_target_sized_representations() {
         let source = "struct RuntimeWords:\n    data: ptr[u8]\n    len: usize\n    capacity: usize\n    context: ptr[u8]\n    vtable: const_ptr[u8]\n\nstruct CallbackHolder:\n    callback: fn(u64) -> u64\n\nfn use(value: RuntimeWords) -> u64:\n    return 1 as u64\n";
         let i686 = analyze(&parse(source), Profile::Hosted, TargetDataLayout::I686).unwrap();
@@ -6404,5 +6463,26 @@ mod tests {
         assert_eq!(TargetDataLayout::X86_64.usize_max(), u64::MAX);
         assert!(!TargetDataLayout::I686.contains_usize(u64::from(u32::MAX) + 1));
         assert!(TargetDataLayout::X86_64.contains_usize(u64::from(u32::MAX) + 1));
+    }
+
+    #[test]
+    fn v123_buffer_layout_is_four_target_sized_words() {
+        let source = "struct Buffer[T]:\n    data: ptr[T]\n    len: usize\n    allocator_context: ptr[u8]\n    allocator_vtable: const_ptr[u8]\n\nfn consume(value: Buffer[u64]) -> unit:\n    return unit\n";
+        for (layout, expected) in [
+            (TargetDataLayout::I686, (16, 4)),
+            (TargetDataLayout::X86_64, (32, 8)),
+        ] {
+            let program = analyze(&parse(source), Profile::Hosted, layout).unwrap();
+            let buffer = program
+                .types
+                .iter()
+                .position(|ty| {
+                    matches!(ty, CanonicalType::Struct { symbol, args } if !args.is_empty() && program.definitions.iter().any(|definition| definition.symbol == *symbol && definition.name == "Buffer"))
+                })
+                .map(|index| TypeId(index as u32))
+                .unwrap();
+            let actual = layout_of(&program, buffer).unwrap();
+            assert_eq!((actual.size, actual.align), expected);
+        }
     }
 }

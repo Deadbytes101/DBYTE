@@ -1464,6 +1464,11 @@ fn cmd_bench(engine_override: Option<Engine>, compare_python: bool) {
     cases.sort();
 
     if compare_python {
+        // The historical Python comparison corpus is the set of top-level
+        // DByte benchmarks. Versioned VM authorities under benchmarks/vm have
+        // their own external runners and must not acquire synthetic Python
+        // twins merely because benchmark discovery is recursive.
+        cases.retain(|path| path.parent() == Some(benchmarks_dir));
         let Some(python) = python_executable() else {
             eprintln!("BenchError: python executable not found");
             process::exit(1);

@@ -1,0 +1,27 @@
+import "core.dby" as nmos
+
+pub fn install_program(memory: mut_slice[u8]) -> unit:
+    memory[512 as usize] = 0xa9 as u8
+    memory[513 as usize] = 0x01 as u8
+    memory[514 as usize] = 0x69 as u8
+    memory[515 as usize] = 0x03 as u8
+    memory[516 as usize] = 0x49 as u8
+    memory[517 as usize] = 0x5a as u8
+    memory[518 as usize] = 0x29 as u8
+    memory[519 as usize] = 0xf0 as u8
+    memory[520 as usize] = 0x09 as u8
+    memory[521 as usize] = 0x0f as u8
+    memory[522 as usize] = 0x4c as u8
+    memory[523 as usize] = 0x00 as u8
+    memory[524 as usize] = 0x02 as u8
+    return unit
+
+pub fn execute(memory: mut_slice[u8], count: usize) -> u64:
+    install_program(memory)
+    let cpu = nmos.initialize(512 as u16)
+    let index: usize = 0 as usize
+    while index < count:
+        if nmos.step(borrow mut cpu, memory) == false:
+            return 0 as u64
+        index = index + (1 as usize)
+    return nmos.state_hash(borrow cpu)

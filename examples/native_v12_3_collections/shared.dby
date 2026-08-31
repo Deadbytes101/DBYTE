@@ -1,0 +1,204 @@
+import "../../runtime/v12.1.0/alloc.dby" as alloc
+import "../../runtime/v12.1.0/array.dby" as arrays
+import "../../runtime/v12.3.0/hash.dby" as hash
+import "../../runtime/v12.3.0/hash_map.dby" as maps
+import "../../runtime/v12.3.0/hash_set.dby" as sets
+import "../../runtime/v12.3.0/deque.dby" as deques
+import "../../runtime/v12.3.0/queue.dby" as queues
+import "../../runtime/v12.3.0/buffer.dby" as buffers
+import "../../benchmarks/vm/6502/workload.dby" as workload
+
+fn constant_hash(value: borrow u32) -> u64:
+    return 7 as u64
+
+fn u32_equal(left: borrow u32, right: borrow u32) -> bool:
+    return *left == *right
+
+fn zero(index: usize) -> u8:
+    return 0 as u8
+
+fn mutate_buffer(buffer: borrow mut buffers.Buffer[u8]) -> unit:
+    let view = buffers.as_mut_slice[u8](buffer)
+    view[31 as usize] = 42 as u8
+    return unit
+
+pub fn check_hash_map(allocator: alloc.AllocatorRef) -> bool:
+    let created = maps.with_allocator[u32, u32](allocator, constant_hash, u32_equal)
+    match created:
+        case Result.Err(error):
+            return false
+        case Result.Ok(map):
+            let index: u32 = 0 as u32
+            while index < (12 as u32):
+                let inserted = maps.insert[u32, u32](borrow mut map, index, index + (100 as u32))
+                match inserted:
+                    case Result.Err(error):
+                        return false
+                    case Result.Ok(previous):
+                        let accepted: u32 = 0 as u32
+                index = index + (1 as u32)
+            let duplicate = maps.insert[u32, u32](borrow mut map, 6 as u32, 999 as u32)
+            match duplicate:
+                case Result.Err(error):
+                    return false
+                case Result.Ok(previous):
+                    match previous:
+                        case Option.None:
+                            return false
+                        case Option.Some(value):
+                            if value != (106 as u32):
+                                return false
+            let removed_key: u32 = 5 as u32
+            let removed = maps.remove[u32, u32](borrow mut map, borrow removed_key)
+            match removed:
+                case Option.None:
+                    return false
+                case Option.Some(value):
+                    if value != (105 as u32):
+                        return false
+            let cursor: u32 = 0 as u32
+            while cursor < (12 as u32):
+                if cursor != (5 as u32):
+                    let found = maps.get[u32, u32](borrow map, borrow cursor)
+                    match found:
+                        case Option.None:
+                            return false
+                        case Option.Some(value):
+                            if cursor == (6 as u32):
+                                if *value != (999 as u32):
+                                    return false
+                            else:
+                                if *value != cursor + (100 as u32):
+                                    return false
+                cursor = cursor + (1 as u32)
+            return maps.length[u32, u32](borrow map) == (11 as usize)
+
+pub fn check_hash_set(allocator: alloc.AllocatorRef) -> bool:
+    let created = sets.with_allocator[u64](allocator, hash.u64_hash, hash.u64_equal)
+    match created:
+        case Result.Err(error):
+            return false
+        case Result.Ok(set):
+            let first = sets.insert[u64](borrow mut set, 42 as u64)
+            let second = sets.insert[u64](borrow mut set, 42 as u64)
+            match first:
+                case Result.Err(error):
+                    return false
+                case Result.Ok(added):
+                    if added == false:
+                        return false
+            match second:
+                case Result.Err(error):
+                    return false
+                case Result.Ok(added):
+                    if added:
+                        return false
+            let key: u64 = 42 as u64
+            if sets.contains[u64](borrow set, borrow key) == false:
+                return false
+            return sets.remove[u64](borrow mut set, borrow key)
+
+pub fn check_deque(allocator: alloc.AllocatorRef) -> bool:
+    let values = deques.with_allocator[u32](allocator)
+    let index: u32 = 0 as u32
+    while index < (12 as u32):
+        let pushed = deques.push_back[u32](borrow mut values, index)
+        match pushed:
+            case Result.Err(error):
+                return false
+            case Result.Ok(value):
+                let accepted: u32 = 0 as u32
+        index = index + (1 as u32)
+    let removed: u32 = 0 as u32
+    while removed < (5 as u32):
+        let front = deques.pop_front[u32](borrow mut values)
+        match front:
+            case Option.None:
+                return false
+            case Option.Some(value):
+                if value != removed:
+                    return false
+        removed = removed + (1 as u32)
+    let appended: u32 = 12 as u32
+    while appended < (20 as u32):
+        let pushed = deques.push_back[u32](borrow mut values, appended)
+        match pushed:
+            case Result.Err(error):
+                return false
+            case Result.Ok(value):
+                let accepted: u32 = 0 as u32
+        appended = appended + (1 as u32)
+    if deques.length[u32](borrow values) != (15 as usize):
+        return false
+    let logical: usize = 0 as usize
+    while logical < (15 as usize):
+        let found = deques.get[u32](borrow values, logical)
+        match found:
+            case Option.None:
+                return false
+            case Option.Some(value):
+                if *value != (logical as u32) + (5 as u32):
+                    return false
+        logical = logical + (1 as usize)
+    return true
+
+pub fn check_queue(allocator: alloc.AllocatorRef) -> bool:
+    let values = queues.with_allocator[u32](allocator)
+    let index: u32 = 0 as u32
+    while index < (16 as u32):
+        let pushed = queues.enqueue[u32](borrow mut values, index)
+        match pushed:
+            case Result.Err(error):
+                return false
+            case Result.Ok(value):
+                let accepted: u32 = 0 as u32
+        index = index + (1 as u32)
+    let expected: u32 = 0 as u32
+    while expected < (16 as u32):
+        let value = queues.dequeue[u32](borrow mut values)
+        match value:
+            case Option.None:
+                return false
+            case Option.Some(actual):
+                if actual != expected:
+                    return false
+        expected = expected + (1 as u32)
+    return queues.is_empty[u32](borrow values)
+
+pub fn check_buffer(allocator: alloc.AllocatorRef) -> bool:
+    let values = buffers.from_fn[u8](32 as usize, allocator, zero)
+    match values:
+        case Result.Err(error):
+            return false
+        case Result.Ok(buffer):
+            mutate_buffer(borrow mut buffer)
+            let found = buffers.get[u8](borrow buffer, 31 as usize)
+            match found:
+                case Option.None:
+                    return false
+                case Option.Some(value):
+                    return *value == (42 as u8)
+
+pub fn check_6502_array_buffer(allocator: alloc.AllocatorRef) -> bool:
+    let array_memory = arrays.with_capacity[u8](4096 as usize, allocator)
+    match array_memory:
+        case Result.Err(error):
+            return false
+        case Result.Ok(memory):
+            let index: usize = 0 as usize
+            while index < (4096 as usize):
+                let pushed = arrays.push[u8](borrow mut memory, 0 as u8)
+                match pushed:
+                    case Result.Err(error):
+                        return false
+                    case Result.Ok(value):
+                        let accepted: u32 = 0 as u32
+                index = index + (1 as usize)
+            let array_hash: u64 = workload.execute(arrays.as_mut_slice[u8](borrow mut memory), 1000000 as usize)
+            let buffer_memory = buffers.from_fn[u8](4096 as usize, allocator, zero)
+            match buffer_memory:
+                case Result.Err(error):
+                    return false
+                case Result.Ok(buffer):
+                    let buffer_hash: u64 = workload.execute(buffers.as_mut_slice[u8](borrow mut buffer), 1000000 as usize)
+                    return array_hash == buffer_hash

@@ -572,7 +572,23 @@ impl Parser {
                     self.advance();
                     let mut args = Vec::new();
                     let mut named_args = Vec::new();
+                    let layout_type_argument =
+                        matches!(
+                            &base,
+                            Expr::Ident(name, _) if name == "size_of" || name == "align_of"
+                        ) && !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof);
+                    if layout_type_argument {
+                        let span = self.peek().span;
+                        let annotation = self.parse_type_full()?;
+                        args.push(type_annotation_expr(annotation, span)?);
+                    }
                     while !matches!(self.peek_kind(), TokenKind::RParen | TokenKind::Eof) {
+                        if layout_type_argument {
+                            return Err(ParseError {
+                                msg: "layout builtin accepts exactly one type expression".into(),
+                                span: self.peek().span,
+                            });
+                        }
                         if let (TokenKind::Ident(name), Some(next)) =
                             (self.peek_kind().clone(), self.peek_at(1))
                         {
@@ -636,7 +652,10 @@ impl Parser {
                     if matches!(&base, Expr::Ident(..) | Expr::Member { .. }) {
                         let checkpoint = self.pos;
                         if let Ok(args) = self.parse_type_arguments() {
-                            if matches!(self.peek_kind(), TokenKind::LParen | TokenKind::Dot) {
+                            let is_call = matches!(self.peek_kind(), TokenKind::LParen);
+                            let is_qualified_type = matches!(self.peek_kind(), TokenKind::Dot)
+                                && expression_can_qualify_generic_type(&base);
+                            if is_call || is_qualified_type {
                                 let span = base.span();
                                 base = Expr::GenericApply {
                                     target: Box::new(base),
@@ -1811,6 +1830,20 @@ impl Parser {
     }
 }
 
+fn expression_can_qualify_generic_type(expression: &Expr) -> bool {
+    match expression {
+        Expr::Ident(name, _) => name
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase()),
+        Expr::Member { property, .. } => property
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase()),
+        _ => false,
+    }
+}
+
 fn parse_fstr_parts(s: &str) -> Vec<FStrPart> {
     let mut parts = Vec::new();
     let mut cur = String::new();
@@ -1841,6 +1874,21 @@ fn parse_fstr_parts(s: &str) -> Vec<FStrPart> {
         parts.push(FStrPart::Literal(cur));
     }
     parts
+}
+
+fn type_annotation_expr(annotation: TypeAnnotation, span: Span) -> Result<Expr, ParseError> {
+    match annotation {
+        TypeAnnotation::Named(name) => Ok(Expr::Ident(name, span)),
+        TypeAnnotation::Generic { base, args } => Ok(Expr::GenericApply {
+            target: Box::new(Expr::Ident(base, span)),
+            args,
+            span,
+        }),
+        annotation => Err(ParseError {
+            msg: format!("layout builtin type `{annotation}` is not representable"),
+            span,
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -2086,6 +2134,23 @@ mod tests {
                 mode: MatchMode::Borrow,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn parses_layout_builtin_with_multi_parameter_generic_type() {
+        let program = parse(
+            "struct Entry[K, V]:\n    key: K\n    value: V\n\nfn bytes[K, V]() -> usize:\n    return size_of(Entry[K, V])\n",
+        );
+        let Stmt::FnDef { body, .. } = &program.stmts[1] else {
+            panic!("expected function");
+        };
+        assert!(matches!(
+            &body[0],
+            Stmt::Return {
+                value: Some(Expr::Call { args, .. }),
+                ..
+            } if matches!(args.as_slice(), [Expr::GenericApply { args, .. }] if args.len() == 2)
         ));
     }
 

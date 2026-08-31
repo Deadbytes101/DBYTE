@@ -1,0 +1,222 @@
+import "../v12.1.0/alloc.dby" as alloc
+
+struct Entry[K, V]:
+    hash: u64
+    occupied: bool
+    key: K
+    value: V
+
+pub struct HashMap[K, V]:
+    table: ptr[Entry[K, V]]
+    len: usize
+    capacity: usize
+    allocator_context: ptr[u8]
+    allocator_vtable: const_ptr[alloc.AllocatorVTable]
+    hash_function: fn(borrow K) -> u64
+    equal_function: fn(borrow K, borrow K) -> bool
+
+fn allocator_of[K, V](map: borrow HashMap[K, V]) -> alloc.AllocatorRef:
+    return alloc.AllocatorRef(context = (*map).allocator_context, vtable = (*map).allocator_vtable)
+
+fn usize_max() -> usize:
+    return (0 as usize) - (1 as usize)
+
+fn checked_bytes[K, V](capacity: usize) -> Result[usize, alloc.AllocError]:
+    let entry_size: usize = size_of(Entry[K, V])
+    if entry_size == (0 as usize):
+        return Result[usize, alloc.AllocError].Err(alloc.AllocError.ContractViolation())
+    if capacity > (usize_max() / entry_size):
+        return Result[usize, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    return Result[usize, alloc.AllocError].Ok(capacity * entry_size)
+
+fn initialize_empty[K, V](table: ptr[Entry[K, V]], capacity: usize) -> unit:
+    let index: usize = 0 as usize
+    while index < capacity:
+        table[index].hash = 0 as u64
+        table[index].occupied = false
+        index = index + (1 as usize)
+    return unit
+
+pub fn with_allocator[K, V](allocator: alloc.AllocatorRef, hash: fn(borrow K) -> u64, equal: fn(borrow K, borrow K) -> bool) -> Result[HashMap[K, V], alloc.AllocError]:
+    let empty = alloc.allocate(allocator, 0 as usize, align_of(Entry[K, V]))
+    match empty:
+        case Result.Err(error):
+            return Result[HashMap[K, V], alloc.AllocError].Err(error)
+        case Result.Ok(pointer):
+            return Result[HashMap[K, V], alloc.AllocError].Ok(HashMap[K, V](table = pointer as usize as ptr[Entry[K, V]], len = 0 as usize, capacity = 0 as usize, allocator_context = allocator.context, allocator_vtable = allocator.vtable, hash_function = hash, equal_function = equal))
+
+fn relocate[K, V](map: borrow mut HashMap[K, V], capacity: usize) -> Result[unit, alloc.AllocError]:
+    let bytes = checked_bytes[K, V](capacity)?
+    let allocator = allocator_of[K, V](borrow *map)
+    let allocation = alloc.allocate(allocator, bytes, align_of(Entry[K, V]))
+    match allocation:
+        case Result.Err(error):
+            return Result[unit, alloc.AllocError].Err(error)
+        case Result.Ok(pointer):
+            let replacement: ptr[Entry[K, V]] = pointer as usize as ptr[Entry[K, V]]
+            initialize_empty[K, V](replacement, capacity)
+            let source_index: usize = 0 as usize
+            while source_index < (*map).capacity:
+                if (*map).table[source_index].occupied:
+                    let destination: usize = ((*map).table[source_index].hash as usize) & (capacity - (1 as usize))
+                    while replacement[destination].occupied:
+                        destination = (destination + (1 as usize)) & (capacity - (1 as usize))
+                    replacement[destination].hash = (*map).table[source_index].hash
+                    replacement[destination].key = (*map).table[source_index].key
+                    replacement[destination].value = (*map).table[source_index].value
+                    replacement[destination].occupied = true
+                    (*map).table[source_index].occupied = false
+                source_index = source_index + (1 as usize)
+            let old_bytes = checked_bytes[K, V]((*map).capacity)?
+            let old_table: ptr[u8] = (*map).table as usize as ptr[u8]
+            (*map).table = replacement
+            (*map).capacity = capacity
+            alloc.release(allocator, old_table, old_bytes, align_of(Entry[K, V]))
+            return Result[unit, alloc.AllocError].Ok(unit)
+
+pub fn reserve[K, V](map: borrow mut HashMap[K, V], additional: usize) -> Result[unit, alloc.AllocError]:
+    if additional > (usize_max() - (*map).len):
+        return Result[unit, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+    let required: usize = (*map).len + additional
+    let capacity: usize = (*map).capacity
+    if capacity == (0 as usize):
+        capacity = 8 as usize
+    while required > (capacity - (capacity / (4 as usize))):
+        if capacity > (usize_max() / (2 as usize)):
+            return Result[unit, alloc.AllocError].Err(alloc.AllocError.SizeOverflow())
+        capacity = capacity * (2 as usize)
+    if capacity == (*map).capacity:
+        return Result[unit, alloc.AllocError].Ok(unit)
+    return relocate[K, V](map, capacity)
+
+fn find_index[K, V](map: borrow HashMap[K, V], key: borrow K, hash: u64) -> Option[usize]:
+    if (*map).capacity == (0 as usize):
+        return Option[usize].None()
+    let equal = (*map).equal_function
+    let index: usize = (hash as usize) & ((*map).capacity - (1 as usize))
+    let visited: usize = 0 as usize
+    while visited < (*map).capacity:
+        if (*map).table[index].occupied == false:
+            return Option[usize].None()
+        if (*map).table[index].hash == hash:
+            if equal(borrow (*map).table[index].key, key):
+                return Option[usize].Some(index)
+        index = (index + (1 as usize)) & ((*map).capacity - (1 as usize))
+        visited = visited + (1 as usize)
+    return Option[usize].None()
+
+pub fn insert[K, V](map: borrow mut HashMap[K, V], key: K, value: V) -> Result[Option[V], alloc.AllocError]:
+    let hash_function = (*map).hash_function
+    let hash: u64 = 0 as u64
+    let existing: Option[usize] = Option[usize].None()
+    if true:
+        hash = hash_function(borrow key)
+        existing = find_index[K, V](borrow *map, borrow key, hash)
+    match existing:
+        case Option.Some(index):
+            let old: V = (*map).table[index].value
+            (*map).table[index].value = value
+            drop(key)
+            return Result[Option[V], alloc.AllocError].Ok(Option[V].Some(old))
+        case Option.None:
+            reserve[K, V](map, 1 as usize)?
+            let index: usize = (hash as usize) & ((*map).capacity - (1 as usize))
+            while (*map).table[index].occupied:
+                index = (index + (1 as usize)) & ((*map).capacity - (1 as usize))
+            (*map).table[index].hash = hash
+            (*map).table[index].key = key
+            (*map).table[index].value = value
+            (*map).table[index].occupied = true
+            (*map).len = (*map).len + (1 as usize)
+            return Result[Option[V], alloc.AllocError].Ok(Option[V].None())
+
+pub fn get[K, V](map: borrow HashMap[K, V], key: borrow K) -> Option[borrow V]:
+    let hash_function = (*map).hash_function
+    let hash: u64 = hash_function(key)
+    let found = find_index[K, V](map, key, hash)
+    match found:
+        case Option.Some(index):
+            return Option[borrow V].Some(borrow (*map).table[index].value)
+        case Option.None:
+            return Option[borrow V].None()
+
+pub fn get_mut[K, V](map: borrow mut HashMap[K, V], key: borrow K) -> Option[borrow mut V]:
+    let hash_function = (*map).hash_function
+    let hash: u64 = hash_function(key)
+    let found = find_index[K, V](borrow *map, key, hash)
+    match found:
+        case Option.Some(index):
+            return Option[borrow mut V].Some(borrow mut (*map).table[index].value)
+        case Option.None:
+            return Option[borrow mut V].None()
+
+pub fn contains_key[K, V](map: borrow HashMap[K, V], key: borrow K) -> bool:
+    let found = get[K, V](map, key)
+    match found:
+        case Option.Some(value):
+            return true
+        case Option.None:
+            return false
+
+fn shift_hole[K, V](map: borrow mut HashMap[K, V], removed: usize) -> unit:
+    let mask: usize = (*map).capacity - (1 as usize)
+    let hole: usize = removed
+    let scan: usize = (hole + (1 as usize)) & mask
+    while (*map).table[scan].occupied:
+        let home: usize = ((*map).table[scan].hash as usize) & mask
+        let scan_distance: usize = (scan + (*map).capacity - home) & mask
+        let hole_distance: usize = (hole + (*map).capacity - home) & mask
+        if hole_distance < scan_distance:
+            (*map).table[hole].hash = (*map).table[scan].hash
+            (*map).table[hole].key = (*map).table[scan].key
+            (*map).table[hole].value = (*map).table[scan].value
+            (*map).table[hole].occupied = true
+            (*map).table[scan].occupied = false
+            hole = scan
+        scan = (scan + (1 as usize)) & mask
+    return unit
+
+pub fn remove[K, V](map: borrow mut HashMap[K, V], key: borrow K) -> Option[V]:
+    let hash_function = (*map).hash_function
+    let hash: u64 = hash_function(key)
+    let found = find_index[K, V](borrow *map, key, hash)
+    match found:
+        case Option.None:
+            return Option[V].None()
+        case Option.Some(index):
+            let removed_key: K = (*map).table[index].key
+            let removed_value: V = (*map).table[index].value
+            (*map).table[index].occupied = false
+            (*map).len = (*map).len - (1 as usize)
+            drop(removed_key)
+            shift_hole[K, V](map, index)
+            return Option[V].Some(removed_value)
+
+pub fn clear[K, V](map: borrow mut HashMap[K, V]) -> unit:
+    let remaining: usize = (*map).capacity
+    while remaining > (0 as usize):
+        remaining = remaining - (1 as usize)
+        if (*map).table[remaining].occupied:
+            drop((*map).table[remaining].value)
+            drop((*map).table[remaining].key)
+            (*map).table[remaining].occupied = false
+    (*map).len = 0 as usize
+    return unit
+
+pub fn length[K, V](map: borrow HashMap[K, V]) -> usize:
+    return (*map).len
+
+pub fn is_empty[K, V](map: borrow HashMap[K, V]) -> bool:
+    return (*map).len == (0 as usize)
+
+drop fn destroy[K, V](map: borrow mut HashMap[K, V]):
+    clear[K, V](map)
+    let bytes = checked_bytes[K, V]((*map).capacity)
+    match bytes:
+        case Result.Ok(size):
+            alloc.release(allocator_of[K, V](borrow *map), (*map).table as usize as ptr[u8], size, align_of(Entry[K, V]))
+        case Result.Err(error):
+            return unit
+    (*map).table = align_of(Entry[K, V]) as ptr[Entry[K, V]]
+    (*map).capacity = 0 as usize
+    return unit

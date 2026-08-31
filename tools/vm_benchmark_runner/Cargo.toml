@@ -1,0 +1,16 @@
+[package]
+name = "dbyte_vm_benchmark_runner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+candidate-profile = []
+
+[dependencies]
+dbyte_bytecode.workspace = true
+dbyte_compiler.workspace = true
+dbyte_hir.workspace = true
+dbyte_vm.workspace = true
+sha2.workspace = true

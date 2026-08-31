@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "baseline_commit": "3843f7b3cf29951f10fe732754434b41ac53fc7f",
+  "warmups": 3,
+  "measurements": 9,
+  "maximum_attempts": 3,
+  "maximum_relative_mad": 0.05,
+  "minimum_geometric_mean_speedup": 1.25,
+  "maximum_workload_regression": 0.10,
+  "cases": [
+    { "name": "binary_read_u32", "source": "benchmarks/binary_read_u32.dby", "iterations": 1 },
+    { "name": "buffer_replace", "source": "benchmarks/buffer_replace.dby", "iterations": 5 },
+    { "name": "bytes_find", "source": "benchmarks/bytes_find.dby", "iterations": 256 },
+    { "name": "bytes_find_single", "source": "benchmarks/bytes_find_single.dby", "iterations": 256 },
+    { "name": "function_call", "source": "benchmarks/function_call.dby", "iterations": 1 },
+    { "name": "function_call_chain", "source": "benchmarks/function_call_chain.dby", "iterations": 1 },
+    { "name": "function_call_int", "source": "benchmarks/function_call_int.dby", "iterations": 1 },
+    { "name": "function_call_loop_return", "source": "benchmarks/function_call_loop_return.dby", "iterations": 1 },
+    { "name": "function_call_many_args", "source": "benchmarks/function_call_many_args.dby", "iterations": 1 },
+    { "name": "function_call_nested", "source": "benchmarks/function_call_nested.dby", "iterations": 1 },
+    { "name": "int_compare_loop", "source": "benchmarks/int_compare_loop.dby", "iterations": 1 },
+    { "name": "loop_sum", "source": "benchmarks/loop_sum.dby", "iterations": 1 },
+    { "name": "loop_sum_large", "source": "benchmarks/loop_sum_large.dby", "iterations": 1 },
+    { "name": "nested_int_loop", "source": "benchmarks/nested_int_loop.dby", "iterations": 1 },
+    { "name": "patch_workflow", "source": "benchmarks/patch_workflow.dby", "iterations": 2 }
+  ]
+}

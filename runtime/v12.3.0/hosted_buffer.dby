@@ -1,0 +1,9 @@
+import "buffer.dby" as owned
+import "../v12.1.0/alloc.dby" as alloc
+import "../v12.1.0/hosted_alloc.dby" as host
+
+pub fn from_fn[T](length: usize, initialize: fn(usize) -> T) -> Result[owned.Buffer[T], alloc.AllocError]:
+    return owned.from_fn[T](length, host.system_allocator(), initialize)
+
+pub fn from_slice[T](source: slice[T]) -> Result[owned.Buffer[T], alloc.AllocError]:
+    return owned.from_slice[T](source, host.system_allocator())

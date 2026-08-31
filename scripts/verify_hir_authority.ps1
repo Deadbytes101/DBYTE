@@ -52,7 +52,8 @@ if ($LASTEXITCODE -gt 1) {
 $allowedRuntimeCapabilityFiles = @(
     (Join-Path $repoRoot "runtime\v12.1.0\array.dby"),
     (Join-Path $repoRoot "runtime\v12.1.0\string.dby"),
-    (Join-Path $repoRoot "runtime\v12.1.0\hosted_alloc.dby")
+    (Join-Path $repoRoot "runtime\v12.1.0\hosted_alloc.dby"),
+    (Join-Path $repoRoot "runtime\v12.3.0\buffer.dby")
 )
 foreach ($use in $runtimeCapabilityUses) {
     if ($use -notmatch '^(?<path>.*\.dby):\d+:') {
