@@ -271,6 +271,17 @@ fn drop_metadata_markers(
     markers
 }
 
+pub(crate) fn object_metadata_markers_for_module(
+    project: &dbyte_hir::CanonicalHirProject,
+    module: dbyte_hir::ModuleId,
+) -> Vec<String> {
+    let mut markers = generic_metadata_markers(project, module);
+    markers.extend(drop_metadata_markers(project, module));
+    markers.sort();
+    markers.dedup();
+    markers
+}
+
 fn validate_canonical_entry(
     project: &dbyte_hir::ConcreteHirProject,
     profile: dbyte_hir::Profile,

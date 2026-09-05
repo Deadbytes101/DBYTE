@@ -8,8 +8,8 @@ $qemu = "C:\Program Files\qemu\qemu-system-x86_64.exe"
 $qemuI686 = "C:\Program Files\qemu\qemu-system-i386.exe"
 $expected = "DBYTE COLLECTIONS V12.3`r`nHASHMAP ONLINE`r`nHASHSET ONLINE`r`nDEQUE ONLINE`r`nQUEUE ONLINE`r`nBUFFER ONLINE`r`n6502 ARRAY BUFFER MATCH`r`nCOLLECTIONS CHECK OK`r`n"
 $expectedCaptured = $expected.Replace("`r`n", "`n").TrimEnd("`n")
-$initialQemu = @(Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | ForEach-Object Id)
-$initialQemuI686 = @(Get-Process qemu-system-i386 -ErrorAction SilentlyContinue | ForEach-Object Id)
+$ownedQemu = [System.Collections.Generic.List[int]]::new()
+$ownedQemuI686 = [System.Collections.Generic.List[int]]::new()
 
 & (Join-Path $PSScriptRoot "verify_vm_architecture.ps1") -SkipTests
 if ($LASTEXITCODE -ne 0) { throw "VM_COLLECTIONS_ARCHITECTURE_GATE_FAILED" }
@@ -60,6 +60,7 @@ function Run-None([int]$ram, [string]$elf) {
     $arguments = @("-cdrom", $iso, "-m", "${ram}M", "-display", "none", "-monitor", "none", "-serial", "file:$serial", "-d", "int,cpu_reset,guest_errors", "-D", $trace, "-no-reboot", "-no-shutdown")
     [IO.File]::WriteAllText((Join-Path $runRoot "qemu-command.txt"), "$qemu $($arguments -join ' ')")
     $process = Start-Process -FilePath $qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $ownedQemu.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(30); $complete = $false
         do {
@@ -85,6 +86,7 @@ function Run-I686([int]$ram, [string]$elf) {
     $arguments = @("-kernel", $elf, "-m", "${ram}M", "-display", "none", "-monitor", "none", "-serial", "file:$serial", "-debugcon", "file:$debug", "-global", "isa-debugcon.iobase=0xe9", "-d", "int,cpu_reset,guest_errors", "-D", $trace, "-no-reboot", "-no-shutdown")
     [IO.File]::WriteAllText((Join-Path $runRoot "qemu-command.txt"), "$qemuI686 $($arguments -join ' ')")
     $process = Start-Process -FilePath $qemuI686 -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $ownedQemuI686.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(30); $complete = $false
         do {
@@ -187,10 +189,13 @@ try {
     $receipts
 } finally {
     Pop-Location
-    $after = @(Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | ForEach-Object Id)
-    $orphans = @($after | Where-Object { $_ -notin $initialQemu })
-    if ($orphans.Count -ne 0) { throw "collections verifier left QEMU processes: $($orphans -join ', ')" }
-    $afterI686 = @(Get-Process qemu-system-i386 -ErrorAction SilentlyContinue | ForEach-Object Id)
-    $orphansI686 = @($afterI686 | Where-Object { $_ -notin $initialQemuI686 })
-    if ($orphansI686.Count -ne 0) { throw "collections verifier left i686 QEMU processes: $($orphansI686 -join ', ')" }
+    $reapDeadline = [DateTime]::UtcNow.AddSeconds(2)
+    do {
+        $orphans = @($ownedQemu | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+        $orphansI686 = @($ownedQemuI686 | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+        if (($orphans.Count + $orphansI686.Count) -eq 0 -or [DateTime]::UtcNow -ge $reapDeadline) { break }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    if ($orphans.Count -ne 0) { throw "collections verifier left owned x86_64 QEMU processes: $($orphans -join ', ')" }
+    if ($orphansI686.Count -ne 0) { throw "collections verifier left owned i686 QEMU processes: $($orphansI686 -join ', ')" }
 }

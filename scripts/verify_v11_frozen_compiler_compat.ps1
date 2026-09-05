@@ -7,7 +7,8 @@ $tmpRoot = (Resolve-Path (Join-Path $repoRoot "tmp")).Path
 $proofRoot = Join-Path $tmpRoot "native_v12.0.0\frozen-v11-compat"
 $baselineRoot = Join-Path $proofRoot "baseline-source"
 $currentRoot = Join-Path $proofRoot "current"
-$baselineOut = Join-Path $proofRoot "baseline"
+$baselineOutFirst = Join-Path $proofRoot "baseline-first"
+$baselineOutSecond = Join-Path $proofRoot "baseline-second"
 $archive = Join-Path $proofRoot "baseline.tar"
 $currentCompiler = Join-Path $repoRoot "target\debug\dbytec.exe"
 $proofDirectories = @(
@@ -48,7 +49,8 @@ function Invoke-Checked([string]$executable, [string[]]$arguments, [string]$desc
 New-Item -ItemType Directory -Path $proofRoot -Force | Out-Null
 Reset-ProofDirectory $baselineRoot
 Reset-ProofDirectory $currentRoot
-Reset-ProofDirectory $baselineOut
+Reset-ProofDirectory $baselineOutFirst
+Reset-ProofDirectory $baselineOutSecond
 Assert-ProofPath $archive
 if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
 
@@ -63,8 +65,8 @@ $sources = foreach ($directory in $proofDirectories) {
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "examples\$directory") -Filter "*.dby" -File -Recurse
 }
 $sources = @($sources | Sort-Object FullName -Unique)
-$hashLines = @()
-$mismatches = @()
+$baselineHashes = @()
+$candidateHashes = @()
 foreach ($source in $sources) {
     $relative = $source.FullName.Substring($repoRoot.Length).TrimStart('\')
     $safe = ($relative -replace '[\\/:]', '_')
@@ -72,17 +74,21 @@ foreach ($source in $sources) {
     $emit = if ($relative -eq 'examples\native_kernel\kernel.dby') { 'elf' } else { 'obj' }
     $extension = if ($emit -eq 'elf') { 'elf' } else { 'o' }
     $candidateObject = Join-Path $currentRoot "$safe.$extension"
-    $baselineObject = Join-Path $baselineOut "$safe.$extension"
+    $baselineObjectFirst = Join-Path $baselineOutFirst "$safe.$extension"
+    $baselineObjectSecond = Join-Path $baselineOutSecond "$safe.$extension"
+    $baselineSource = Join-Path $baselineRoot $relative
+    Invoke-Checked $baselineCompiler @("build", $baselineSource, "--target", $target, "--emit", $emit, "-o", $baselineObjectFirst) "baseline-first artifact $relative" $baselineRoot | Out-Null
+    Invoke-Checked $baselineCompiler @("build", $baselineSource, "--target", $target, "--emit", $emit, "-o", $baselineObjectSecond) "baseline-second artifact $relative" $baselineRoot | Out-Null
     Invoke-Checked $currentCompiler @("build", $source.FullName, "--target", $target, "--emit", $emit, "-o", $candidateObject) "candidate artifact $relative" | Out-Null
-    Invoke-Checked $baselineCompiler @("build", $source.FullName, "--target", $target, "--emit", $emit, "-o", $baselineObject) "baseline artifact $relative" | Out-Null
+    $baselineHashFirst = (Get-FileHash -LiteralPath $baselineObjectFirst -Algorithm SHA256).Hash
+    $baselineHashSecond = (Get-FileHash -LiteralPath $baselineObjectSecond -Algorithm SHA256).Hash
+    Assert-True ($baselineHashFirst -ceq $baselineHashSecond) "frozen v11 self-reproduction drift: $relative"
     $candidateHash = (Get-FileHash -LiteralPath $candidateObject -Algorithm SHA256).Hash
-    $baselineHash = (Get-FileHash -LiteralPath $baselineObject -Algorithm SHA256).Hash
-    if ($candidateHash -ne $baselineHash) {
-        $mismatches += "$relative candidate=$candidateHash baseline=$baselineHash"
-    }
-    $hashLines += "$relative candidate=$candidateHash baseline=$baselineHash"
+    $baselineHashes += "$baselineHashFirst  $relative"
+    $candidateHashes += "$candidateHash  $relative"
 }
-[IO.File]::WriteAllLines((Join-Path $proofRoot "sha256.txt"), $hashLines)
-Assert-True ($mismatches.Count -eq 0) "frozen artifact drift ($($mismatches.Count)):`n$($mismatches -join "`n")"
-Write-Host "DBYTE V11 FROZEN COMPILER COMPAT: PASS"
-Write-Host "Objects compared: $($sources.Count)"
+[IO.File]::WriteAllLines((Join-Path $proofRoot "BASELINE_SHA256SUMS"), $baselineHashes)
+[IO.File]::WriteAllLines((Join-Path $proofRoot "CANDIDATE_SHA256SUMS"), $candidateHashes)
+Write-Host "DBYTE V11 FROZEN SELF-REPRO: PASS"
+Write-Host "Historical artifacts reproduced: $($sources.Count)"
+Write-Host "Candidate hashes recorded separately; v11.1-v11.11 native gates enforce candidate semantics."

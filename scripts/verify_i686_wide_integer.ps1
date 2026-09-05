@@ -7,7 +7,7 @@ $source = Join-Path $repoRoot "examples\native_v12_2_i686_wide\proof.dby"
 $compiler = Join-Path $repoRoot "target\debug\dbytec.exe"
 $qemu = "C:\Program Files\qemu\qemu-system-i386.exe"
 $expected = "WIDE64 OK`r`n"
-$initialQemu = @(Get-Process qemu-system-i386 -ErrorAction SilentlyContinue | ForEach-Object Id)
+$ownedQemu = [System.Collections.Generic.List[int]]::new()
 
 function Assert-True($value, [string]$message) { if (-not $value) { throw $message } }
 function Invoke-Checked([string]$file, [string[]]$arguments, [string]$description) {
@@ -32,6 +32,7 @@ function Run-Qemu([int]$ram, [string]$elf) {
     $root = Join-Path $proofRoot "${ram}m"; New-Item -ItemType Directory -Path $root -Force | Out-Null
     $serial = Join-Path $root "serial.log"; $trace = Join-Path $root "trace.log"
     $process = Start-Process $qemu -ArgumentList @("-kernel", $elf, "-m", "${ram}M", "-display", "none", "-monitor", "none", "-serial", "file:$serial", "-d", "int,cpu_reset,guest_errors", "-D", $trace, "-no-reboot", "-no-shutdown") -PassThru -WindowStyle Hidden
+    $ownedQemu.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(12); $complete = $false
         do { Start-Sleep -Milliseconds 100; if (Test-Path $serial) { $actual = Read-SharedText $serial; if ($actual -ceq $expected) { $complete = $true; break }; Assert-True ($expected.StartsWith($actual)) "i686 wide serial diverged" } } while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline)
@@ -50,9 +51,22 @@ try {
     Build-Set (Join-Path $proofRoot "first"); Build-Set (Join-Path $proofRoot "second")
     $hashes = foreach ($name in @("proof.obj", "proof.elf", "proof.bin")) { $a=(Get-FileHash (Join-Path $proofRoot "first\$name") -Algorithm SHA256).Hash; $b=(Get-FileHash (Join-Path $proofRoot "second\$name") -Algorithm SHA256).Hash; Assert-True ($a -ceq $b) "$name is not deterministic"; "$a  $name" }
     $dump = Invoke-Checked "objdump.exe" @("-f", "-h", "-t", "-r", "-d", "-Mintel", (Join-Path $proofRoot "first\proof.elf")) "inspect i686 wide ELF"
-    Assert-True ($dump.Contains("__dbyte_proof_signed_quotient")) "i686 signed wide path is absent"
-    Assert-True ($dump.Contains("__dbyte_proof_unsigned_remainder")) "i686 unsigned wide path is absent"
-    Assert-True ($dump -match '\b(idiv|div)\b') "i686 wide division instructions are absent"
+    $wideSymbols = @(
+        "proof.o::__dbyte_m_wide_mix",
+        "proof.o::__dbyte_m_signed_quotient",
+        "proof.o::__dbyte_m_signed_remainder",
+        "proof.o::__dbyte_m_unsigned_quotient",
+        "proof.o::__dbyte_m_unsigned_remainder"
+    )
+    foreach ($symbol in $wideSymbols) {
+        Assert-True ($dump.Contains($symbol)) "i686 canonical wide symbol '$symbol' is absent"
+    }
+    foreach ($symbol in $wideSymbols[1..4]) {
+        $escaped = [regex]::Escape($symbol)
+        Assert-True ($dump -match "\bcall\b.*<$escaped>") "i686 wide helper '$symbol' is not called"
+    }
+    Assert-True ($dump -match '\bidiv\b') "i686 signed wide division instruction is absent"
+    Assert-True ($dump -match '\bdiv\b') "i686 unsigned wide division instruction is absent"
     Assert-True ($dump -match '\bedx\b') "i686 wide EDX:EAX path is absent"
     [IO.File]::WriteAllText((Join-Path $proofRoot "objdump.txt"), $dump)
     Run-Qemu 32 (Join-Path $proofRoot "first\proof.elf"); Run-Qemu 64 (Join-Path $proofRoot "first\proof.elf")
@@ -60,7 +74,11 @@ try {
     "DBYTE I686 WIDE INTEGER VERIFIER: PASS"; $hashes
 } finally {
     Pop-Location
-    $after = @(Get-Process qemu-system-i386 -ErrorAction SilentlyContinue | ForEach-Object Id)
-    $orphans = @($after | Where-Object { $_ -notin $initialQemu })
-    if ($orphans.Count -ne 0) { throw "wide verifier left QEMU processes: $($orphans -join ', ')" }
+    $reapDeadline = [DateTime]::UtcNow.AddSeconds(2)
+    do {
+        $orphans = @($ownedQemu | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+        if ($orphans.Count -eq 0 -or [DateTime]::UtcNow -ge $reapDeadline) { break }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    if ($orphans.Count -ne 0) { throw "wide verifier left owned QEMU processes: $($orphans -join ', ')" }
 }

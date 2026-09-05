@@ -1,0 +1,29 @@
+import "../../runtime/v12.1.0/array.dby" as arrays
+import "../../runtime/v12.2.0/windows_system_allocator.dby" as platform
+
+pub fn main() -> i64:
+    let created = arrays.with_capacity[u64](4096 as usize, platform.system_allocator())
+    match created:
+        case Result.Err(error):
+            return 1 as i64
+        case Result.Ok(values):
+            let index: usize = 0 as usize
+            while index < (4096 as usize):
+                let pushed = arrays.push[u64](borrow mut values, (index & (255 as usize)) as u64)
+                match pushed:
+                    case Result.Err(error):
+                        return 2 as i64
+                    case Result.Ok(value):
+                        index = index + (1 as usize)
+            let view = arrays.as_slice[u64](borrow values)
+            let pass: usize = 0 as usize
+            let total: u64 = 0 as u64
+            while pass < (65536 as usize):
+                index = 0 as usize
+                while index < len(view):
+                    total = total + view[index]
+                    index = index + (1 as usize)
+                pass = pass + (1 as usize)
+            if total == (34225520640 as u64):
+                return 42 as i64
+            return 2 as i64

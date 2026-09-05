@@ -1,0 +1,12 @@
+static mut SEED: u64 = 1 as u64
+
+pub fn main() -> i64:
+    let seed: u64 = SEED
+    let index: u64 = 0 as u64
+    let total: u64 = 0 as u64
+    while index < (50000000 as u64):
+        total = total + ((index & (7 as u64)) + seed)
+        index = index + (1 as u64)
+    if total == (225000000 as u64):
+        return 42 as i64
+    return 1 as i64

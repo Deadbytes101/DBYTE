@@ -209,7 +209,7 @@ Assert-True ($objectInspection.Contains(".dbyte.generics")) "public generic meta
 Assert-True ($objectInspection.Contains("__dbyte_generic:fn:id") -and $objectInspection.Contains("__dbyte_generic:type:Pair")) "public generic definitions are missing from metadata"
 Assert-True (-not $inspection.Contains(".dbyte.generics")) "generic metadata leaked into final executable"
 Assert-True ($inspection.Contains("elf32-i386")) "v12 proof is not ELF32 i386"
-Assert-True ($inspection.Contains("__dbyte_mono_kernel_id")) "generic specialization symbol is missing"
+Assert-True ($inspection.Contains("kernel.o::__dbyte_mono_id_t")) "generic specialization symbol is missing or not module-scoped"
 Assert-True ($inspection.Contains("rep movs")) "aggregate Result copy is missing"
 Assert-True ($inspection.Contains("c_roundtrip")) "DByte to C symbol is missing"
 Assert-True ($inspection.Contains("dbyte_c_callback")) "C to DByte callback symbol is missing"
@@ -217,9 +217,11 @@ Assert-True ($inspection.Contains("archive_bias")) "DByte archive member was not
 Assert-True (-not $inspection.Contains("INTERP")) "v12 proof has a runtime interpreter dependency"
 
 $ir = Get-Content (Join-Path $firstRoot "kernel.ir.txt") -Raw
-foreach ($required in @("call.indirect", "aggregate.copy", "__dbyte_closure_", "__dbyte_enum_", "address.index")) {
+foreach ($required in @("callee: Indirect", "callee: Closure", "AggregateCopy", "__dbyte_closure_", "AddressOffset")) {
     Assert-True ($ir.Contains($required)) "canonical/native IR evidence is missing $required"
 }
+Assert-True ($ir.Contains("index: Some")) "canonical/native IR evidence is missing indexed address lowering"
+Assert-True ($ir.Contains("aggregate_result: Some")) "canonical/native IR evidence is missing aggregate Result lowering"
 
 $expectedText = "DBYTE GENERAL PURPOSE V12`r`nCANONICAL HIR ONLINE`r`nGENERICS ONLINE`r`nENUM MATCH ONLINE`r`nOWNERSHIP ONLINE`r`nCLOSURES ONLINE`r`nDEFER ONLINE`r`nC ABI ONLINE`r`nV12 CHECK OK`r`n"
 $script:userExpected = "DBYTEOS USER MODE`r`nTSS ONLINE`r`nUSER ADDRESS SPACE ONLINE`r`nELF LOADER ONLINE`r`nRING3 ONLINE`r`nSYSCALL ABI ONLINE`r`nHELLO FROM DBYTE USER`r`nCONFIG VALUE 42`r`nUSER FS ONLINE`r`nUSER ISOLATION OK`r`nUSER #GP TERMINATED`r`nUSER #PF TERMINATED`r`nPROCESS EXIT OK`r`nPROCESS RECLAIM OK`r`nKERNEL SURVIVED`r`nUSERMODE CHECK OK`r`n"

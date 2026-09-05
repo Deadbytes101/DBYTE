@@ -32,6 +32,25 @@ if ($native -notmatch 'dbyte_hir::analyze_project' -or $native -notmatch 'dbyte_
     throw "native production compiler is not routed through canonical project HIR"
 }
 
+$nativeCli = [IO.File]::ReadAllText((Join-Path $repoRoot "crates\dbyte_native\src\cli.rs"))
+foreach ($forbiddenNativeProductionToken in @(
+    'compile_canonical_legacy_single_image',
+    'compile_systems_objects',
+    'compile_systems_project',
+    'compile_user_objects',
+    'compile_user_project',
+    'modern_native::compile_source',
+    'modern_native::compile_object_source'
+)) {
+    if ($nativeCli.Contains($forbiddenNativeProductionToken)) {
+        throw "Native MIR authority violation in cli.rs: $forbiddenNativeProductionToken"
+    }
+}
+if (-not $nativeCli.Contains('compile_mir_i686_project_objects') -or
+    -not $nativeCli.Contains('compile_mir_object_source')) {
+    throw "native CLI does not route every machine family through Native MIR"
+}
+
 $interp = [IO.File]::ReadAllText((Join-Path $repoRoot "crates\dbyte_interp\src\concrete.rs"))
 $compiler = [IO.File]::ReadAllText((Join-Path $repoRoot "crates\dbyte_compiler\src\canonical.rs"))
 $vm = [IO.File]::ReadAllText((Join-Path $repoRoot "crates\dbyte_vm\src\canonical.rs"))
@@ -45,10 +64,15 @@ foreach ($entry in @(
     }
 }
 
-$runtimeCapabilityUses = & rg -n --glob '*.dby' '__dbyte_runtime\.' $repoRoot
-if ($LASTEXITCODE -gt 1) {
-    throw "failed to audit private runtime capability uses"
-}
+$runtimeCapabilityUses = @(
+    foreach ($relativeRoot in @('crates', 'runtime', 'tests', 'examples', 'benchmarks', 'kernel-lab')) {
+        $auditRoot = Join-Path $repoRoot $relativeRoot
+        if (-not (Test-Path -LiteralPath $auditRoot)) { continue }
+        Get-ChildItem -LiteralPath $auditRoot -Recurse -File -Filter '*.dby' |
+            Select-String -Pattern '__dbyte_runtime\.' |
+            ForEach-Object { "$($_.Path):$($_.LineNumber):$($_.Line)" }
+    }
+)
 $allowedRuntimeCapabilityFiles = @(
     (Join-Path $repoRoot "runtime\v12.1.0\array.dby"),
     (Join-Path $repoRoot "runtime\v12.1.0\string.dby"),

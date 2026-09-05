@@ -1,0 +1,7 @@
+import "../../runtime/v12.2.0/linux_system_allocator.dby" as platform
+import "../../examples/native_v12_3_collections/shared.dby" as proof
+
+pub fn main() -> i64:
+    if proof.check_6502_array_buffer(platform.system_allocator()):
+        return 42 as i64
+    return 1 as i64

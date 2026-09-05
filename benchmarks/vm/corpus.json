@@ -5,11 +5,12 @@
   "measurements": 9,
   "maximum_attempts": 3,
   "maximum_relative_mad": 0.05,
+  "windows_affinity_cpu": 10,
   "minimum_geometric_mean_speedup": 1.25,
   "maximum_workload_regression": 0.10,
   "cases": [
     { "name": "binary_read_u32", "source": "benchmarks/binary_read_u32.dby", "iterations": 1 },
-    { "name": "buffer_replace", "source": "benchmarks/buffer_replace.dby", "iterations": 5 },
+    { "name": "buffer_replace", "source": "benchmarks/buffer_replace.dby", "iterations": 20 },
     { "name": "bytes_find", "source": "benchmarks/bytes_find.dby", "iterations": 256 },
     { "name": "bytes_find_single", "source": "benchmarks/bytes_find_single.dby", "iterations": 256 },
     { "name": "function_call", "source": "benchmarks/function_call.dby", "iterations": 1 },

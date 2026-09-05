@@ -1,0 +1,34 @@
+import "../../runtime/v12.2.0/linux_system_allocator.dby" as platform
+import "../../runtime/v12.3.0/hash.dby" as hash
+import "../../runtime/v12.3.0/hash_map.dby" as maps
+
+pub fn main() -> i64:
+    let created = maps.with_allocator[u64, u64](platform.system_allocator(), hash.u64_hash, hash.u64_equal)
+    match created:
+        case Result.Err(error):
+            return 1 as i64
+        case Result.Ok(map):
+            let key: u64 = 0 as u64
+            while key < (1024 as u64):
+                let inserted = maps.insert[u64, u64](borrow mut map, key, key)
+                match inserted:
+                    case Result.Err(error):
+                        return 2 as i64
+                    case Result.Ok(previous):
+                        key = key + (1 as u64)
+            let pass: u64 = 0 as u64
+            let total: u64 = 0 as u64
+            while pass < (4096 as u64):
+                key = 0 as u64
+                while key < (1024 as u64):
+                    let found = maps.get[u64, u64](borrow map, borrow key)
+                    match found:
+                        case Option.None:
+                            return 3 as i64
+                        case Option.Some(value):
+                            total = total + *value
+                    key = key + (1 as u64)
+                pass = pass + (1 as u64)
+            if total == (2145386496 as u64):
+                return 42 as i64
+            return 4 as i64

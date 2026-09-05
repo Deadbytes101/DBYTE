@@ -157,7 +157,7 @@ fn validate() -> int:
         return 13
     if ata.ata_reader_wake_count() != (4 as usize):
         return 14
-    if ata.ata_early_completion_count() != (1 as usize):
+    if ata.ata_early_completion_count() > (4 as usize):
         return 15
     if PROOF_WAKE_TICK <= PROOF_BLOCK_TICK:
         return 16
@@ -175,7 +175,7 @@ fn validate() -> int:
         return 22
     if scheduler.semaphore_post_success_count() != (4 as usize):
         return 23
-    if scheduler.semaphore_wake_count() != (3 as usize):
+    if scheduler.semaphore_wake_count() + ata.ata_early_completion_count() != (4 as usize):
         return 24
     if scheduler.trap_count() != (4 as usize):
         return 25

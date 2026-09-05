@@ -142,6 +142,19 @@ impl Encoder {
         self.commit(&instruction)
     }
 
+    /// Writes a zero-extended 32-bit immediate to a 64-bit general register.
+    /// The 32-bit destination form is both architecturally exact and smaller
+    /// than MOVABS when the canonical value fits in `u32`.
+    pub fn mov_imm32(&mut self, dst: Register, value: u32) -> Result<(), EncodeError> {
+        let mut instruction = Vec::with_capacity(6);
+        if high(dst) {
+            instruction.push(rex(false, false, false, true));
+        }
+        instruction.push(0xb8 + low(dst));
+        instruction.extend_from_slice(&value.to_le_bytes());
+        self.commit(&instruction)
+    }
+
     pub fn mov_reg(
         &mut self,
         dst: Register,
@@ -149,6 +162,7 @@ impl Encoder {
         width: Width,
     ) -> Result<(), EncodeError> {
         let mut instruction = prefixes(width, high(src), false, high(dst));
+        force_rex_for_low_byte_registers(&mut instruction, width, &[dst, src]);
         instruction.push(match width {
             Width::Byte => 0x88,
             Width::Word | Width::Dword | Width::Qword => 0x89,
@@ -187,6 +201,7 @@ impl Encoder {
         width: Width,
     ) -> Result<(), EncodeError> {
         let mut instruction = prefixes(width, high(src), false, high(base));
+        force_rex_for_low_byte_registers(&mut instruction, width, &[src]);
         instruction.push(if width == Width::Byte { 0x88 } else { 0x89 });
         instruction.push(modrm(0b10, low(src), low(base)));
         if low(base) == 4 {
@@ -266,6 +281,60 @@ impl Encoder {
         self.commit(&instruction)
     }
 
+    pub fn add_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        self.alu_reg_imm(dst, value, width, 0)
+    }
+
+    pub fn or_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        self.alu_reg_imm(dst, value, width, 1)
+    }
+
+    pub fn and_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        self.alu_reg_imm(dst, value, width, 4)
+    }
+
+    pub fn sub_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        self.alu_reg_imm(dst, value, width, 5)
+    }
+
+    pub fn xor_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        self.alu_reg_imm(dst, value, width, 6)
+    }
+
+    pub fn cmp_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        self.alu_reg_imm(dst, value, width, 7)
+    }
+
     pub fn add_reg(
         &mut self,
         dst: Register,
@@ -291,6 +360,7 @@ impl Encoder {
         width: Width,
     ) -> Result<(), EncodeError> {
         let mut instruction = prefixes(width, high(right), false, high(left));
+        force_rex_for_low_byte_registers(&mut instruction, width, &[left, right]);
         instruction.push(if width == Width::Byte { 0x84 } else { 0x85 });
         instruction.push(modrm(0b11, low(right), low(left)));
         self.commit(&instruction)
@@ -347,14 +417,18 @@ impl Encoder {
     }
 
     pub fn not_reg(&mut self, register: Register, width: Width) -> Result<(), EncodeError> {
-        if width == Width::Byte {
-            return Err(EncodeError::InvalidOperand(
-                "DBYTE64 bitwise not requires 16/32/64-bit width",
-            ));
-        }
         let mut instruction = prefixes(width, false, false, high(register));
-        instruction.push(0xf7);
+        force_rex_for_low_byte_registers(&mut instruction, width, &[register]);
+        instruction.push(if width == Width::Byte { 0xf6 } else { 0xf7 });
         instruction.push(modrm(0b11, 2, low(register)));
+        self.commit(&instruction)
+    }
+
+    pub fn neg_reg(&mut self, register: Register, width: Width) -> Result<(), EncodeError> {
+        let mut instruction = prefixes(width, false, false, high(register));
+        force_rex_for_low_byte_registers(&mut instruction, width, &[register]);
+        instruction.push(if width == Width::Byte { 0xf6 } else { 0xf7 });
+        instruction.push(modrm(0b11, 3, low(register)));
         self.commit(&instruction)
     }
 
@@ -364,18 +438,14 @@ impl Encoder {
         kind: ShiftKind,
         width: Width,
     ) -> Result<(), EncodeError> {
-        if width == Width::Byte {
-            return Err(EncodeError::InvalidOperand(
-                "DBYTE64 variable shifts require 16/32/64-bit width",
-            ));
-        }
         let operation = match kind {
             ShiftKind::Left => 4,
             ShiftKind::LogicalRight => 5,
             ShiftKind::ArithmeticRight => 7,
         };
         let mut instruction = prefixes(width, false, false, high(register));
-        instruction.push(0xd3);
+        force_rex_for_low_byte_registers(&mut instruction, width, &[register]);
+        instruction.push(if width == Width::Byte { 0xd2 } else { 0xd3 });
         instruction.push(modrm(0b11, operation, low(register)));
         self.commit(&instruction)
     }
@@ -407,12 +477,35 @@ impl Encoder {
         width: Width,
     ) -> Result<(), EncodeError> {
         let mut instruction = prefixes(width, high(src), false, high(dst));
+        force_rex_for_low_byte_registers(&mut instruction, width, &[dst, src]);
         instruction.push(if width == Width::Byte {
             byte_opcode
         } else {
             wide_opcode
         });
         instruction.push(modrm(0b11, low(src), low(dst)));
+        self.commit(&instruction)
+    }
+
+    fn alu_reg_imm(
+        &mut self,
+        dst: Register,
+        value: u32,
+        width: Width,
+        group: u8,
+    ) -> Result<(), EncodeError> {
+        if group > 7 {
+            return Err(EncodeError::InvalidOperand("invalid ALU immediate group"));
+        }
+        let mut instruction = prefixes(width, false, false, high(dst));
+        force_rex_for_low_byte_registers(&mut instruction, width, &[dst]);
+        instruction.push(if width == Width::Byte { 0x80 } else { 0x81 });
+        instruction.push(modrm(0b11, group, low(dst)));
+        match width {
+            Width::Byte => instruction.push(value as u8),
+            Width::Word => instruction.extend_from_slice(&(value as u16).to_le_bytes()),
+            Width::Dword | Width::Qword => instruction.extend_from_slice(&value.to_le_bytes()),
+        }
         self.commit(&instruction)
     }
 
@@ -429,6 +522,29 @@ impl Encoder {
         }
         let mut instruction = prefixes(width, high(dst), false, high(src));
         instruction.extend_from_slice(&[0x0f, 0xaf, modrm(0b11, low(dst), low(src))]);
+        self.commit(&instruction)
+    }
+
+    pub fn imul_reg_imm32(
+        &mut self,
+        destination: Register,
+        source: Register,
+        value: u32,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        if width == Width::Byte {
+            return Err(EncodeError::InvalidOperand(
+                "three-operand imul does not accept byte width",
+            ));
+        }
+        let mut instruction = prefixes(width, high(destination), false, high(source));
+        instruction.push(0x69);
+        instruction.push(modrm(0b11, low(destination), low(source)));
+        match width {
+            Width::Word => instruction.extend_from_slice(&(value as u16).to_le_bytes()),
+            Width::Dword | Width::Qword => instruction.extend_from_slice(&value.to_le_bytes()),
+            Width::Byte => unreachable!(),
+        }
         self.commit(&instruction)
     }
 
@@ -569,6 +685,10 @@ impl Encoder {
         self.commit(&[0xc3])
     }
 
+    pub fn ud2(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x0b])
+    }
+
     pub fn cli(&mut self) -> Result<(), EncodeError> {
         self.commit(&[0xfa])
     }
@@ -610,6 +730,18 @@ fn prefixes(width: Width, r: bool, x: bool, b: bool) -> Vec<u8> {
     bytes
 }
 
+fn force_rex_for_low_byte_registers(prefixes: &mut Vec<u8>, width: Width, registers: &[Register]) {
+    if width == Width::Byte
+        && prefixes.is_empty()
+        && registers
+            .iter()
+            .copied()
+            .any(|register| !high(register) && low(register) >= 4)
+    {
+        prefixes.push(rex(false, false, false, false));
+    }
+}
+
 fn modrm(mode: u8, reg: u8, rm: u8) -> u8 {
     (mode << 6) | ((reg & 7) << 3) | (rm & 7)
 }
@@ -642,6 +774,23 @@ mod tests {
                 0x01, 0xc8, 0x48, 0x0f, 0xaf, 0xc1, 0x48, 0x99, 0x48, 0xf7, 0xf9,
             ]
         );
+    }
+
+    #[test]
+    fn compact_zero_extended_immediates_are_exact_and_transactional() {
+        let mut encoder = Encoder::new(11);
+        encoder.mov_imm32(Register::Rax, 0x7856_3412).unwrap();
+        encoder.mov_imm32(Register::R9, 0x1122_3344).unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[0xb8, 0x12, 0x34, 0x56, 0x78, 0x41, 0xb9, 0x44, 0x33, 0x22, 0x11]
+        );
+        let before = encoder.bytes().to_vec();
+        assert!(matches!(
+            encoder.mov_imm32(Register::Rdx, 1),
+            Err(EncodeError::Capacity { .. })
+        ));
+        assert_eq!(encoder.bytes(), before);
     }
 
     #[test]
@@ -712,8 +861,49 @@ mod tests {
     }
 
     #[test]
+    fn byte_not_encodes_legacy_extended_and_rex_low_registers_exactly() {
+        let mut encoder = Encoder::new(16);
+        encoder.not_reg(Register::Rax, Width::Byte).unwrap();
+        encoder.not_reg(Register::R9, Width::Byte).unwrap();
+        encoder.not_reg(Register::Rsp, Width::Byte).unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[0xf6, 0xd0, 0x41, 0xf6, 0xd1, 0x40, 0xf6, 0xd4]
+        );
+    }
+
+    #[test]
+    fn byte_register_ops_force_rex_for_sil_and_dil() {
+        let mut encoder = Encoder::new(64);
+        encoder
+            .mov_reg(Register::Rdi, Register::Rsi, Width::Byte)
+            .unwrap();
+        encoder
+            .mov_base_disp32_from_reg(Register::Rax, 0, Register::Rsi, Width::Byte)
+            .unwrap();
+        encoder
+            .test_reg(Register::Rdi, Register::Rsi, Width::Byte)
+            .unwrap();
+        encoder
+            .cmp_reg(Register::Rdi, Register::Rsi, Width::Byte)
+            .unwrap();
+        encoder.cmp_reg_imm(Register::Rdi, 0, Width::Byte).unwrap();
+        encoder.neg_reg(Register::Rsi, Width::Byte).unwrap();
+        encoder
+            .shift_reg_by_cl(Register::Rdi, ShiftKind::Left, Width::Byte)
+            .unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[
+                0x40, 0x88, 0xf7, 0x40, 0x88, 0xb0, 0, 0, 0, 0, 0x40, 0x84, 0xf7, 0x40, 0x38, 0xf7,
+                0x40, 0x80, 0xff, 0, 0x40, 0xf6, 0xde, 0x40, 0xd2, 0xe7,
+            ]
+        );
+    }
+
+    #[test]
     fn variable_shifts_are_exact_and_transactional() {
-        let mut encoder = Encoder::new(10);
+        let mut encoder = Encoder::new(32);
         encoder
             .shift_reg_by_cl(Register::Rax, ShiftKind::Left, Width::Qword)
             .unwrap();
@@ -723,22 +913,65 @@ mod tests {
         encoder
             .shift_reg_by_cl(Register::Rdx, ShiftKind::ArithmeticRight, Width::Word)
             .unwrap();
+        encoder
+            .shift_reg_by_cl(Register::Rax, ShiftKind::Left, Width::Byte)
+            .unwrap();
+        encoder
+            .shift_reg_by_cl(Register::R9, ShiftKind::LogicalRight, Width::Byte)
+            .unwrap();
+        encoder
+            .shift_reg_by_cl(Register::Rdx, ShiftKind::ArithmeticRight, Width::Byte)
+            .unwrap();
         assert_eq!(
             encoder.bytes(),
-            &[0x48, 0xd3, 0xe0, 0x41, 0xd3, 0xe9, 0x66, 0xd3, 0xfa]
+            &[
+                0x48, 0xd3, 0xe0, 0x41, 0xd3, 0xe9, 0x66, 0xd3, 0xfa, 0xd2, 0xe0, 0x41, 0xd2, 0xe9,
+                0xd2, 0xfa,
+            ]
         );
 
-        let before = encoder.bytes().to_vec();
+        let mut full = Encoder::new(2);
+        let before = full.bytes().to_vec();
         assert!(matches!(
-            encoder.shift_reg_by_cl(Register::Rax, ShiftKind::Left, Width::Byte),
-            Err(EncodeError::InvalidOperand(_))
-        ));
-        assert_eq!(encoder.bytes(), before);
-        assert!(matches!(
-            encoder.shift_reg_by_cl(Register::Rax, ShiftKind::Left, Width::Qword),
+            full.shift_reg_by_cl(Register::Rax, ShiftKind::Left, Width::Qword),
             Err(EncodeError::Capacity { .. })
         ));
-        assert_eq!(encoder.bytes(), before);
+        assert_eq!(full.bytes(), before);
+    }
+
+    #[test]
+    fn alu_immediates_are_width_correct_and_transactional() {
+        let mut encoder = Encoder::new(64);
+        encoder.add_reg_imm(Register::Rax, 1, Width::Qword).unwrap();
+        encoder.sub_reg_imm(Register::Rax, 2, Width::Dword).unwrap();
+        encoder.and_reg_imm(Register::Rax, 3, Width::Word).unwrap();
+        encoder.or_reg_imm(Register::Rax, 4, Width::Byte).unwrap();
+        encoder.xor_reg_imm(Register::R9, 5, Width::Qword).unwrap();
+        encoder.cmp_reg_imm(Register::R10, 6, Width::Dword).unwrap();
+        encoder
+            .imul_reg_imm32(Register::Rax, Register::Rax, 7, Width::Qword)
+            .unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[
+                0x48, 0x81, 0xc0, 1, 0, 0, 0, 0x81, 0xe8, 2, 0, 0, 0, 0x66, 0x81, 0xe0, 3, 0, 0x80,
+                0xc8, 4, 0x49, 0x81, 0xf1, 5, 0, 0, 0, 0x41, 0x81, 0xfa, 6, 0, 0, 0, 0x48, 0x69,
+                0xc0, 7, 0, 0, 0,
+            ]
+        );
+
+        let mut full = Encoder::new(6);
+        let before = full.bytes().to_vec();
+        assert!(matches!(
+            full.add_reg_imm(Register::Rax, 1, Width::Qword),
+            Err(EncodeError::Capacity { .. })
+        ));
+        assert_eq!(full.bytes(), before);
+        assert!(matches!(
+            full.imul_reg_imm32(Register::Rax, Register::Rax, 1, Width::Byte),
+            Err(EncodeError::InvalidOperand(_))
+        ));
+        assert_eq!(full.bytes(), before);
     }
 
     #[test]

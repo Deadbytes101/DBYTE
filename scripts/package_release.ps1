@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "12.3.0",
+    [string]$Version = "12.4.0",
     [string]$SourceRoot = "",
     [string]$OutputRoot = "",
     [string]$ExpectedCommit = "",
@@ -79,8 +79,16 @@ try {
             }
         }
         else {
-            $probe = @(& $binary 2>&1)
-            if ($LASTEXITCODE -ne 2 -or -not ($probe -join "`n").Contains("dbytec build")) {
+            $oldPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try {
+                $probe = @(& $binary 2>&1)
+                $probeExitCode = $LASTEXITCODE
+            }
+            finally {
+                $ErrorActionPreference = $oldPreference
+            }
+            if ($probeExitCode -ne 2 -or -not ($probe -join "`n").Contains("dbytec build")) {
                 throw "PACKAGE_BINARY_CAPABILITY_MISMATCH: $binaryName"
             }
         }

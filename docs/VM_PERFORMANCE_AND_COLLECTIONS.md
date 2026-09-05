@@ -33,9 +33,13 @@ borrows, allocation events, cleanup order, and Drop behavior.
 
 Benchmarks compare the exact `v12.2.1^{}` baseline with the candidate after
 analysis and bytecode lowering. Compilation and startup are reported separately
-from execution. Each full receipt uses three discarded warmups and nine measured
-runs, with median as the decision statistic. Relative MAD must be at most five
-percent after at most three complete attempts.
+from execution. Windows measurement launches each runner suspended, pins it to
+the manifested logical CPU, raises it to the High priority class, then resumes
+it. Baseline and candidate one-sample runs alternate so scheduler, thermal, and
+background-load drift cannot systematically favor one side. Each full receipt
+uses three discarded warmups and nine measured runs, with median as the decision
+statistic. Relative MAD must be at most five percent after at most three complete
+attempts.
 
 The core geometric-mean speedup must be at least 1.25x and no established case
 may fall below 0.90x without explicit review. Profiled execution collects opcode,

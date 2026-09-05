@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v12.3.0**
+- Snapshot version: **v12.4.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -233,6 +233,14 @@ an explicit instruction pointer, and a reusable non-recursive frame stack. It
 also adds the versioned DByte `HashMap`, `HashSet`, `Deque`, `Queue`, and fixed
 owned `Buffer[T]` runtimes plus a tracked 151-opcode NMOS 6502 authority corpus.
 See [VM Performance and Collections](docs/VM_PERFORMANCE_AND_COLLECTIONS.md).
+
+The `v12.4.0` native machine-code performance release moves production native
+lowering onto deterministic Native MIR for the supported i686 and x86_64
+targets, adds explicit O0/O1 optimization levels, deterministic register
+allocation and machine inspection, and keeps DByte's internal object/linker
+path as the release authority. Native wall-time, ABI, deterministic artifact,
+frozen-compiler compatibility, and cross-target correctness gates are all part
+of the release contract. See [Native Machine Code Performance](docs/NATIVE_MACHINE_CODE_PERFORMANCE.md).
 
 See [DByte Native Compiler](docs/DBYTE_NATIVE.md) for the freestanding profile,
 DBYTE32 ABI, systems types, objects, linker, intrinsic boundary, and binary contract.

@@ -8,7 +8,7 @@ $evidenceRoot = Join-Path $tmpRoot "native_v$MilestoneVersion"
 $repeatRoot = Join-Path $tmpRoot "native_v$MilestoneVersion.repeat"
 $sourceRoot = Join-Path $repoRoot "examples\native_user_process_core"
 $programRoot = Join-Path $sourceRoot "programs"
-$initialQemuIds = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+$ownedQemuIds = [System.Collections.Generic.List[int]]::new()
 $modules = @(
     "arch_x86", "ata", "block_cache", "boot", "byte_ring", "dbfs", "dbfs_bitmap",
     "dbfs_dir", "dbfs_inode", "dbfs_layout", "file_handles", "filesystem_runtime",
@@ -129,6 +129,7 @@ function Invoke-UserBoot([int]$Ram, [string]$Kernel, [string]$Bundle, [string]$D
     $arguments = @("-kernel", $Kernel, "-initrd", $Bundle, "-drive", "file=$Disk,format=raw,if=ide,index=0,media=disk,cache=directsync", "-m", "${Ram}M", "-display", "none", "-serial", "file:$serial", "-debugcon", "file:$debug", "-global", "isa-debugcon.iobase=0xe9", "-d", "int,cpu_reset,guest_errors", "-D", $trace, "-no-reboot", "-no-shutdown")
     [IO.File]::WriteAllText((Join-Path $runRoot "qemu-command.txt"), "$Qemu $($arguments -join ' ')")
     $process = Start-Process -FilePath $Qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardError $stderr
+    $ownedQemuIds.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(22)
         $matched = $false
@@ -346,8 +347,13 @@ $hashLines += "DISK $($diskHashes[0])"
     "kernel_elf_sha256=$elfHash", "kernel_bin_sha256=$binHash", "dbup_sha256=$bundleHash", "disk_sha256=$($diskHashes[0])", "hostile_patch_offset=$hostileOffset"
 ))
 
-$remaining = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | Where-Object { $initialQemuIds -notcontains $_.Id })
-Assert-True ($remaining.Count -eq 0) "user-process verifier left QEMU processes: $($remaining.Id -join ', ')"
+$reapDeadline = [DateTime]::UtcNow.AddSeconds(2)
+do {
+    $remaining = @($ownedQemuIds | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($remaining.Count -eq 0 -or [DateTime]::UtcNow -ge $reapDeadline) { break }
+    Start-Sleep -Milliseconds 100
+} while ($true)
+Assert-True ($remaining.Count -eq 0) "user-process verifier left owned QEMU processes: $($remaining -join ', ')"
 Write-Host "DBYTE NATIVE USER PROCESS: PASS"
 Write-Host "Kernel objects: $($modules.Count); user programs: $($programs.Count); R_386_PC32=$pc32; R_386_32=$abs32"
 Write-Host "Kernel ELF SHA-256: $elfHash"

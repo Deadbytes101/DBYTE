@@ -31,6 +31,14 @@ pub fn load_source_project(root: &Path) -> Result<ProjectInput, Vec<Diagnostic>>
     load_project_root(root, None)
 }
 
+pub fn load_source_project_paths(root: &Path) -> Result<Vec<PathBuf>, Vec<Diagnostic>> {
+    let root = canonical_file(root, Span::zero())?;
+    let mut pending = BTreeMap::new();
+    let mut visiting = Vec::new();
+    load_recursive(&root, None, &mut pending, &mut visiting)?;
+    Ok(pending.keys().cloned().collect())
+}
+
 pub fn load_source_project_from_program(
     root: &Path,
     program: Program,

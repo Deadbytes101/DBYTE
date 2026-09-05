@@ -1,0 +1,12 @@
+fn mix(value: u64) -> u64:
+    return ((value * (3 as u64)) + (1 as u64)) & (255 as u64)
+
+pub fn main() -> i64:
+    let index: u64 = 0 as u64
+    let value: u64 = 1 as u64
+    while index < (60000064 as u64):
+        value = mix(value)
+        index = index + (1 as u64)
+    if value == (129 as u64):
+        return 42 as i64
+    return 1 as i64

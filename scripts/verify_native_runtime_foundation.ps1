@@ -12,7 +12,7 @@ $qemu = "C:\Program Files\qemu\qemu-system-i386.exe"
 $objdump = (Get-Command objdump.exe -ErrorAction Stop).Source
 $modules = @("arch_x86", "serial", "alloc", "array", "string", "kernel")
 $expected = "DBYTE RUNTIME FOUNDATION`r`nDROP ONLINE`r`nALLOCATOR ABI ONLINE`r`nARRAY ONLINE`r`nSTRING ONLINE`r`nMOVE OWNERSHIP OK`r`nOOM TRANSACTION OK`r`nRUNTIME CHECK OK`r`n"
-$initialQemu = @(Get-Process qemu-system-i386 -ErrorAction SilentlyContinue | ForEach-Object Id)
+$ownedQemu = [System.Collections.Generic.List[int]]::new()
 
 function Assert-True($condition, [string]$message) {
     if (-not $condition) { throw $message }
@@ -85,6 +85,7 @@ function Invoke-Proof([int]$ram, [string]$elf) {
     )
     [IO.File]::WriteAllText((Join-Path $runRoot "qemu-command.txt"), "$qemu $($arguments -join ' ')")
     $process = Start-Process -FilePath $qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $ownedQemu.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(12)
         $matched = $false
@@ -127,15 +128,15 @@ try {
     Assert-True ($stringInspect.Contains(".dbyte.drop")) "String object lacks drop metadata"
     Assert-True (-not $finalInspect.Contains(".dbyte.drop")) "final ELF retained drop metadata"
     Assert-True ($finalInspect.Contains("call")) "final ELF has no calls"
-    Assert-True ($finalInspect -match 'call\s+e?ax') "final ELF lacks indirect allocator vtable call"
+    Assert-True ($finalInspect -match 'call\s+e(?:ax|bx|cx|dx|si|di)\b') "final ELF lacks indirect register call required by allocator vtable dispatch"
     Assert-True ($finalInspect.Contains("<validate_utf8>")) "final ELF lacks native UTF-8 validation"
     Assert-True ($finalInspect.Contains("<kernel_initialize>")) "final ELF lacks explicit KernelAllocator adapter"
-    Assert-True (([regex]::Matches($kernelIr, 'call\.packed\.DByte from_utf8 bytes=20')).Count -eq 2) "kernel proof must execute valid and invalid UTF-8 conversions"
-    Assert-True ($kernelIr.Contains("call.packed.DByte __dbyte_mono_array_as_mut_slice")) "kernel proof does not execute mutable slice construction"
-    Assert-True ($kernelIr.Contains("call.packed.DByte __dbyte_mono_array_clone_t")) "kernel proof does not execute Array clone"
-    Assert-True ($kernelIr.Contains("call.packed.DByte __dbyte_mono_array_clone_in_t")) "kernel proof does not execute Array clone_in"
-    Assert-True ($kernelIr.Contains("call.packed.DByte clone bytes=8")) "kernel proof does not execute String clone"
-    Assert-True ($kernelIr.Contains("call.packed.DByte clone_in bytes=16")) "kernel proof does not execute String clone_in"
+    Assert-True (([regex]::Matches($kernelIr, 'callee: Direct \{ symbol: "from_utf8" \}')).Count -eq 2) "kernel proof must execute valid and invalid UTF-8 conversions"
+    Assert-True ($kernelIr -match 'callee: Direct \{ symbol: "[^"]*as_mut_slice_t\d+" \}') "kernel proof does not execute mutable slice construction"
+    Assert-True ($kernelIr -match 'callee: Direct \{ symbol: "[^"]*clone_t\d+" \}') "kernel proof does not execute Array clone"
+    Assert-True ($kernelIr -match 'callee: Direct \{ symbol: "[^"]*clone_in_t\d+" \}') "kernel proof does not execute Array clone_in"
+    Assert-True ($kernelIr -match 'callee: Direct \{ symbol: "[^"]*_clone" \}') "kernel proof does not execute String clone"
+    Assert-True ($kernelIr -match 'callee: Direct \{ symbol: "[^"]*_clone_in" \}') "kernel proof does not execute String clone_in"
     Invoke-Proof 32 (Join-Path $firstRoot "runtime.elf")
     Invoke-Proof 64 (Join-Path $firstRoot "runtime.elf")
     $hashLines = $hashes.GetEnumerator() | ForEach-Object { "$($_.Value)  $($_.Key)" }
@@ -146,10 +147,9 @@ try {
     Pop-Location
     $reapDeadline = [DateTime]::UtcNow.AddSeconds(2)
     do {
-        $finalQemu = @(Get-Process qemu-system-i386 -ErrorAction SilentlyContinue | ForEach-Object Id)
-        $orphans = @($finalQemu | Where-Object { $_ -notin $initialQemu })
+        $orphans = @($ownedQemu | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
         if ($orphans.Count -eq 0 -or [DateTime]::UtcNow -ge $reapDeadline) { break }
         Start-Sleep -Milliseconds 100
     } while ($true)
-    if ($orphans.Count -ne 0) { throw "runtime verifier left QEMU processes: $($orphans -join ', ')" }
+    if ($orphans.Count -ne 0) { throw "runtime verifier left owned QEMU processes: $($orphans -join ', ')" }
 }

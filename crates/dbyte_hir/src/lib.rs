@@ -14,7 +14,9 @@ pub use executable::*;
 pub mod integer_semantics;
 mod project;
 mod source;
-pub use source::{load_source_project, load_source_project_from_program};
+pub use source::{
+    load_source_project, load_source_project_from_program, load_source_project_paths,
+};
 
 macro_rules! id_type {
     ($name:ident) => {

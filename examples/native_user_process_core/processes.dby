@@ -534,22 +534,16 @@ fn previous_request_index(index: usize) -> usize:
         return REQUEST_CAPACITY - (1 as usize)
     return index - (1 as usize)
 
-fn copy_path(slot: usize, address: usize) -> int:
-    let index: usize = 0 as usize
-    while index < (255 as usize):
-        if validate_user_range(slot, address + index, 1 as usize, false) == false:
-            return EFAULT
-        let physical: usize = translate(slot, address + index, false)
-        let mapped: usize = paging.scratch_map(slot, physical & PAGE_MASK)
-        if mapped == (0 as usize):
-            return EFAULT
-        let value: u8 = native.volatile_load8((mapped + (physical & (4095 as usize))) as ptr[u8])
-        paging.scratch_unmap(slot)
-        PATH_BYTES[(slot * (256 as usize)) + index] = value
-        if value == (0 as u8):
-            return index as int
-        index = index + (1 as usize)
-    return EINVAL
+fn copy_path(slot: usize, address: usize, length: usize) -> int:
+    if length == (0 as usize):
+        return EINVAL
+    if length > (255 as usize):
+        return EINVAL
+    let destination: usize = slot * (256 as usize)
+    if copy_from_process(slot, address, &PATH_BYTES[destination], length) != 0:
+        return EFAULT
+    PATH_BYTES[destination + length] = 0 as u8
+    return length as int
 
 fn enqueue_request(slot: usize, number: u32, arg0: usize, arg1: usize, arg2: usize) -> int:
     if valid_process(slot) == false:
@@ -754,8 +748,9 @@ pub interrupt(no_error_code, cpl3_transition) fn syscall(frame: ptr[arch.Privile
         scheduler.block_current_syscall(resume)
     if number == (3 as u32):
         let address: usize = read32(resume + (16 as usize)) as usize
-        let flags: usize = read32(resume + (24 as usize)) as usize
-        let path_length: int = copy_path(slot, address)
+        let flags: usize = read32(resume + (20 as usize)) as usize
+        let requested_length: usize = read32(resume + (24 as usize)) as usize
+        let path_length: int = copy_path(slot, address, requested_length)
         if path_length < 0:
             write32(resume + (28 as usize), path_length as u32)
             return

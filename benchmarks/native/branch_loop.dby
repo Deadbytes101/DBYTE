@@ -1,0 +1,12 @@
+pub fn main() -> i64:
+    let index: u32 = 0 as u32
+    let total: u32 = 0 as u32
+    while index < (160000000 as u32):
+        if (index & (1 as u32)) == (0 as u32):
+            total = total + (3 as u32)
+        else:
+            total = total + (5 as u32)
+        index = index + (1 as u32)
+    if total == (640000000 as u32):
+        return 42 as i64
+    return 1 as i64

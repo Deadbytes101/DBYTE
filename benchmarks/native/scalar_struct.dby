@@ -1,0 +1,12 @@
+struct Pair:
+    left: u32
+    right: u32
+
+pub fn main() -> i32:
+    let pair = Pair(left = 40 as u32, right = 2 as u32)
+    let index: u32 = 0 as u32
+    let total: u32 = 0 as u32
+    while index < (200000000 as u32):
+        total = pair.left + pair.right
+        index = index + (1 as u32)
+    return total as i32

@@ -736,6 +736,19 @@ impl Encoder {
         self.emit_raw(&instruction)
     }
 
+    /// Stores a 32-bit immediate to memory using the shortest valid bounded
+    /// addressing form selected by `MemoryOperand`.
+    pub fn mov_memory_imm32(
+        &mut self,
+        destination: MemoryOperand,
+        value: u32,
+    ) -> Result<(), EncoderError> {
+        let mut instruction = vec![0xc7];
+        encode_memory_operand(&mut instruction, 0, destination)?;
+        instruction.extend_from_slice(&value.to_le_bytes());
+        self.emit_raw(&instruction)
+    }
+
     pub fn lea_reg_from_memory(
         &mut self,
         destination: Register,
@@ -1441,11 +1454,14 @@ mod tests {
                 OperandWidth::Dword,
             )
             .unwrap();
+        encoder
+            .mov_memory_imm32(MemoryOperand::new(Register::Ebp, -4), 0x7856_3412)
+            .unwrap();
         assert_eq!(
             finish(encoder),
             vec![
                 0x88, 0x44, 0x4f, 0xfc, 0x66, 0x89, 0x75, 0x00, 0x89, 0x94, 0x24, 0x78, 0x56, 0x34,
-                0x12,
+                0x12, 0xc7, 0x45, 0xfc, 0x12, 0x34, 0x56, 0x78,
             ]
         );
     }

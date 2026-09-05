@@ -191,7 +191,8 @@ foreach ($token in @("global_asm", "nasm", "gcc", "clang", "rustc", "llvm", "std
 }
 $irDump = Invoke-Checked $compiler @("build", (Join-Path $sourceRoot "scheduler.dby"), "--target", "i686-dbyte-none", "--emit", "obj", "-o", (Join-Path $evidenceRoot "scheduler.ir.object"), "--dump-ir") "dump blocking IR"
 [IO.File]::WriteAllText((Join-Path $evidenceRoot "blocking.ir.txt"), $irDump)
-Assert-True ($irDump.Contains("intrinsic native.task_block_trap 2 -> i32")) "blocking IR lacks typed trap"
+$typedTrapPattern = 'Intrinsic \{ destination: Some\(VirtualRegister\(\d+\)\), intrinsic: TaskBlockTrap, arguments: \[VirtualRegister\(\d+\), VirtualRegister\(\d+\)\], result: Some\(I32\), volatile: true \}'
+Assert-True (([regex]::Matches($irDump, $typedTrapPattern)).Count -eq 2) "blocking Native MIR lacks the two typed task-block traps"
 Assert-True (-not [regex]::IsMatch($irDump, '\byield\b')) "blocking proof IR contains yield"
 
 $run32 = Invoke-Qemu 32 $elf $qemu

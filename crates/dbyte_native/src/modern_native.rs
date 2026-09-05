@@ -12,8 +12,10 @@ use dbyte_hir::{
     CanonicalType, ClosureId, ConcreteHirFunction, ConcreteHirProject, HirBlock, HirCapture,
     HirExpr, HirExprKind, HirPlaceBase, HirProjection, HirStatement, IntegerType, LocalId,
 };
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
+use crate::native_mir::NativeOptimizationLevel;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModernNativeError(pub String);
@@ -38,6 +40,375 @@ pub struct ModernObject {
     pub object: ObjectArtifact,
     pub hir_dump: String,
     pub machine_dump: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModernObject32 {
+    pub object: crate::object::ObjectArtifact,
+    pub hir_dump: String,
+    pub machine_dump: String,
+}
+
+pub fn i686_project_source_paths(root: &Path) -> Result<Vec<PathBuf>, ModernNativeError> {
+    dbyte_hir::load_source_project_paths(root).map_err(diagnostics)
+}
+
+pub fn compile_mir_i686_project_objects(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+) -> Result<Vec<(PathBuf, ModernObject32)>, ModernNativeError> {
+    if target.machine != crate::target::MachineTarget::X86I686
+        || target.layout != dbyte_hir::TargetDataLayout::I686
+    {
+        return Err(error(
+            "E_NATIVE_MIR_TARGET_MISMATCH",
+            "Native MIR DBYTE32 project compilation requires an i686 target layout",
+        ));
+    }
+    let paths = dbyte_hir::load_source_project_paths(root).map_err(diagnostics)?;
+    let input = dbyte_hir::load_source_project(root).map_err(diagnostics)?;
+    let analyzed =
+        dbyte_hir::analyze_project(&input, target.profile, target.layout).map_err(diagnostics)?;
+    let concrete = dbyte_hir::monomorphize_project(&analyzed)
+        .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+    dbyte_hir::validate_project_profile(&concrete, target.profile)
+        .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+    let entry_name = if target == crate::target::I686_USER {
+        "user_main"
+    } else {
+        "kernel_main"
+    };
+    let entry = concrete
+        .executable
+        .functions
+        .iter()
+        .find(|function| {
+            concrete.symbol_owners[&function.key.symbol] == concrete.root
+                && concrete.link_names[&function.key.symbol] == entry_name
+        })
+        .ok_or_else(|| error("E_ENTRY_MISSING", &format!("missing `{entry_name}`")))?;
+    validate_i686_entry(&concrete, entry, entry_name, target)?;
+
+    let mut executable = concrete.executable.clone();
+    for function in &mut executable.functions {
+        if concrete.symbol_owners[&function.key.symbol] == concrete.root
+            && concrete.link_names[&function.key.symbol] == entry_name
+        {
+            function.symbol_name = entry_name.into();
+        }
+    }
+    let full_mir = crate::native_mir_lower::lower_program_to_native_mir_with_link_names(
+        &executable,
+        Some(&concrete.link_names),
+    )
+    .map_err(|failure| error(failure.code, &failure.message))?;
+
+    let mut objects = Vec::with_capacity(paths.len());
+    for (index, path) in paths.into_iter().enumerate() {
+        let module = dbyte_hir::ModuleId(
+            u32::try_from(index)
+                .map_err(|_| error("E_MODULE_LIMIT", "module index exceeds u32"))?,
+        );
+        let mut mir = full_mir.clone();
+        retain_module_mir_definitions(&concrete, module, &mut mir);
+        let mut local = i686_local_object_symbols_for_module(&concrete, module, &mir);
+        if module == concrete.root {
+            local.remove(entry_name);
+        }
+        let mut metadata = i686_modern_metadata_markers_for_module(&analyzed, module);
+        if target == crate::target::I686_USER {
+            metadata.push(format!("{}user", crate::object::PROFILE_METADATA_PREFIX));
+        }
+        let selected = crate::native_select_i686::select_project_object_with_metadata_and_locals(
+            &mir, level, &metadata, &local,
+        )
+        .map_err(|failure| error(failure.code, &failure.message))?;
+        objects.push((
+            path,
+            ModernObject32 {
+                object: selected.object,
+                hir_dump: selected.mir_dump,
+                machine_dump: selected.machine_dump,
+            },
+        ));
+    }
+    Ok(objects)
+}
+
+fn retain_module_mir_definitions(
+    project: &ConcreteHirProject,
+    module: dbyte_hir::ModuleId,
+    mir: &mut crate::native_mir::NativeMirProject,
+) {
+    let mut module_instances = project
+        .executable
+        .functions
+        .iter()
+        .filter(|function| {
+            let owner = if function.key.arguments.is_empty() {
+                project.symbol_owners[&function.key.symbol]
+            } else {
+                project.root
+            };
+            owner == module
+        })
+        .map(|function| function.instance)
+        .collect::<BTreeSet<_>>();
+
+    let private_by_symbol = mir
+        .functions
+        .iter()
+        .filter_map(|function| {
+            let source = project
+                .executable
+                .functions
+                .iter()
+                .find(|source| source.instance == function.instance)?;
+            (!source.public && source.kind != dbyte_ast::FunctionKind::Drop)
+                .then_some((function.symbol.clone(), function.instance))
+        })
+        .collect::<BTreeMap<_, _>>();
+    loop {
+        let required = mir
+            .functions
+            .iter()
+            .filter(|function| module_instances.contains(&function.instance))
+            .flat_map(|function| function.blocks.iter())
+            .flat_map(|block| block.instructions.iter())
+            .filter_map(|instruction| match &instruction.instruction {
+                crate::native_mir::NativeMirInst::Call {
+                    callee: crate::native_mir::NativeCallee::Direct { symbol },
+                    ..
+                } => private_by_symbol.get(symbol).copied(),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let before = module_instances.len();
+        module_instances.extend(required);
+        if module_instances.len() == before {
+            break;
+        }
+    }
+    mir.functions
+        .retain(|function| module_instances.contains(&function.instance));
+
+    let private_globals = project
+        .executable
+        .globals
+        .iter()
+        .filter(|global| !global.public)
+        .map(|global| global.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut module_globals = project
+        .executable
+        .globals
+        .iter()
+        .filter(|global| project.symbol_owners[&global.symbol] == module)
+        .map(|global| global.name.clone())
+        .collect::<BTreeSet<_>>();
+    for function in &mir.functions {
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let crate::native_mir::NativeMirInst::GlobalAddress { symbol, .. } =
+                    &instruction.instruction
+                {
+                    if symbol.starts_with("__dbyte_string_") || private_globals.contains(symbol) {
+                        module_globals.insert(symbol.clone());
+                    }
+                }
+            }
+        }
+    }
+    mir.globals
+        .retain(|global| module_globals.contains(&global.symbol));
+}
+
+fn i686_modern_metadata_markers_for_module(
+    project: &dbyte_hir::CanonicalHirProject,
+    module: dbyte_hir::ModuleId,
+) -> Vec<String> {
+    let mut markers = crate::systems_compiler::object_metadata_markers_for_module(project, module)
+        .into_iter()
+        .filter(|marker| !marker.starts_with(crate::object::DROP_METADATA_PREFIX))
+        .collect::<Vec<_>>();
+    for definition in &project.executable.semantic.definitions {
+        if !definition.public || project.symbol_owners.get(&definition.symbol) != Some(&module) {
+            continue;
+        }
+        let Some(drop_function) = project
+            .executable
+            .semantic
+            .functions
+            .iter()
+            .find(|function| {
+                function.kind == dbyte_ast::FunctionKind::Drop
+                    && function.drop_target == Some(definition.symbol)
+            })
+        else {
+            continue;
+        };
+        markers.push(format!(
+            "{}{}:{}:{}:{}",
+            crate::object::DROP_METADATA_PREFIX,
+            definition.name,
+            drop_function.name,
+            definition.symbol.0,
+            definition.generic_params.len()
+        ));
+    }
+    markers.sort();
+    markers.dedup();
+    markers
+}
+
+fn i686_modern_metadata_markers(project: &dbyte_hir::CanonicalHirProject) -> Vec<String> {
+    let mut markers = Vec::new();
+    for module in &project.module_order {
+        markers.extend(i686_modern_metadata_markers_for_module(project, *module));
+    }
+    markers.sort();
+    markers.dedup();
+    markers
+}
+
+fn i686_local_object_symbols_for_module(
+    project: &ConcreteHirProject,
+    _module: dbyte_hir::ModuleId,
+    mir: &crate::native_mir::NativeMirProject,
+) -> BTreeSet<String> {
+    let mut local = BTreeSet::new();
+    for function in &mir.functions {
+        if function.symbol.starts_with("__dbyte_closure_") {
+            local.insert(function.symbol.clone());
+            continue;
+        }
+        if let Some(source) = project
+            .executable
+            .functions
+            .iter()
+            .find(|source| source.instance == function.instance)
+        {
+            if source.kind != dbyte_ast::FunctionKind::Drop
+                && (!source.public || !source.key.arguments.is_empty())
+            {
+                local.insert(function.symbol.clone());
+            }
+        }
+    }
+
+    let private_globals = project
+        .executable
+        .globals
+        .iter()
+        .filter(|global| !global.public)
+        .map(|global| global.name.clone())
+        .collect::<BTreeSet<_>>();
+    for global in &mir.globals {
+        if global.symbol.starts_with("__dbyte_string_") || private_globals.contains(&global.symbol)
+        {
+            local.insert(global.symbol.clone());
+        }
+    }
+    local
+}
+
+pub fn compile_mir_i686_object_source(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+) -> Result<ModernObject32, ModernNativeError> {
+    compile_mir_i686_object_source_inner(root, target, level, false)
+}
+
+pub fn compile_mir_i686_executable_object_source(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+) -> Result<ModernObject32, ModernNativeError> {
+    compile_mir_i686_object_source_inner(root, target, level, true)
+}
+
+fn compile_mir_i686_object_source_inner(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+    require_entry: bool,
+) -> Result<ModernObject32, ModernNativeError> {
+    if target.machine != crate::target::MachineTarget::X86I686
+        || target.layout != dbyte_hir::TargetDataLayout::I686
+    {
+        return Err(error(
+            "E_NATIVE_MIR_TARGET_MISMATCH",
+            "Native MIR DBYTE32 compilation requires an i686 target layout",
+        ));
+    }
+    let input = dbyte_hir::load_source_project(root).map_err(diagnostics)?;
+    let analyzed =
+        dbyte_hir::analyze_project(&input, target.profile, target.layout).map_err(diagnostics)?;
+    let concrete = dbyte_hir::monomorphize_project(&analyzed)
+        .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+    dbyte_hir::validate_project_profile(&concrete, target.profile)
+        .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+    let entry_name = if target == crate::target::I686_USER {
+        "user_main"
+    } else {
+        "kernel_main"
+    };
+    let entry = concrete.executable.functions.iter().find(|function| {
+        concrete.symbol_owners[&function.key.symbol] == concrete.root
+            && concrete.link_names[&function.key.symbol] == entry_name
+    });
+    if let Some(entry) = entry {
+        validate_i686_entry(&concrete, entry, entry_name, target)?;
+    } else if require_entry {
+        return Err(error("E_ENTRY_MISSING", &format!("missing `{entry_name}`")));
+    }
+    let mut metadata_symbols = if require_entry {
+        i686_modern_metadata_markers(&analyzed)
+    } else {
+        i686_modern_metadata_markers_for_module(&analyzed, concrete.root)
+    };
+    if target == crate::target::I686_USER {
+        metadata_symbols.push(format!("{}user", crate::object::PROFILE_METADATA_PREFIX));
+    }
+    let mut executable = concrete.executable.clone();
+    if entry.is_some() {
+        for function in &mut executable.functions {
+            if concrete.symbol_owners[&function.key.symbol] == concrete.root
+                && concrete.link_names[&function.key.symbol] == entry_name
+            {
+                function.symbol_name = entry_name.into();
+            }
+        }
+    }
+    let mut mir = crate::native_mir_lower::lower_program_to_native_mir_with_link_names(
+        &executable,
+        Some(&concrete.link_names),
+    )
+    .map_err(|failure| error(failure.code, &failure.message))?;
+    let local_symbols = if require_entry {
+        BTreeSet::new()
+    } else {
+        retain_module_mir_definitions(&concrete, concrete.root, &mut mir);
+        let mut local = i686_local_object_symbols_for_module(&concrete, concrete.root, &mir);
+        if entry.is_some() {
+            local.remove(entry_name);
+        }
+        local
+    };
+    let selected = crate::native_select_i686::select_project_object_with_metadata_and_locals(
+        &mir,
+        level,
+        &metadata_symbols,
+        &local_symbols,
+    )
+    .map_err(|failure| error(failure.code, &failure.message))?;
+    Ok(ModernObject32 {
+        object: selected.object,
+        hir_dump: selected.mir_dump,
+        machine_dump: selected.machine_dump,
+    })
 }
 
 pub fn compile_source(
@@ -66,6 +437,113 @@ pub fn compile_object_source(
     dbyte_hir::validate_project_profile(&concrete, target.profile)
         .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
     compile_concrete_object(&concrete, target)
+}
+
+/// Compile a DBYTE64 source project through the production Native MIR seam.
+///
+/// The adapter consumes only validated Concrete HIR. It never falls back to
+/// the legacy direct-HIR encoder when MIR representation is unsupported.
+pub fn compile_mir_object_source(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+) -> Result<ModernObject, ModernNativeError> {
+    compile_mir_object_source_inner(root, target, level, false)
+}
+
+pub fn compile_mir_executable_object_source(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+) -> Result<ModernObject, ModernNativeError> {
+    compile_mir_object_source_inner(root, target, level, true)
+}
+
+fn compile_mir_object_source_inner(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+    require_entry: bool,
+) -> Result<ModernObject, ModernNativeError> {
+    let input = dbyte_hir::load_source_project(root).map_err(diagnostics)?;
+    let analyzed =
+        dbyte_hir::analyze_project(&input, target.profile, target.layout).map_err(diagnostics)?;
+    let concrete = dbyte_hir::monomorphize_project(&analyzed)
+        .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+    dbyte_hir::validate_project_profile(&concrete, target.profile)
+        .map_err(|diagnostic| error(diagnostic.code, &diagnostic.message))?;
+    if target.machine != crate::target::MachineTarget::X86_64
+        || concrete.executable.semantic.layout != dbyte_hir::TargetDataLayout::X86_64
+    {
+        return Err(error(
+            "E_NATIVE_MIR_TARGET_MISMATCH",
+            "Native MIR DBYTE64 compilation requires an x86_64 target layout",
+        ));
+    }
+    let entry_name = if target == X86_64_NONE {
+        "kernel_main"
+    } else {
+        "main"
+    };
+    let entry = concrete
+        .executable
+        .functions
+        .iter()
+        .find(|function| function.symbol_name == entry_name);
+    if let Some(entry) = entry {
+        validate_main(&concrete, entry, entry_name, target)?;
+    } else if require_entry {
+        return Err(error("E_ENTRY_MISSING", &format!("missing `{entry_name}`")));
+    }
+    let mir = crate::native_mir_lower::lower_program_to_native_mir_with_link_names(
+        &concrete.executable,
+        Some(&concrete.link_names),
+    )
+    .map_err(|failure| error(failure.code, &failure.message))?;
+    let selected = crate::native_select_x86_64::select_project_object(&mir, target, level)
+        .map_err(|failure| error(failure.code, &failure.message))?;
+    Ok(ModernObject {
+        object: selected.object,
+        hir_dump: selected.mir_dump,
+        machine_dump: selected.machine_dump,
+    })
+}
+
+pub fn compile_mir_source(
+    root: &Path,
+    target: TargetSpec,
+    level: NativeOptimizationLevel,
+) -> Result<ModernExecutable, ModernNativeError> {
+    if !matches!(target, X86_64_LINUX | X86_64_NONE) {
+        return Err(error(
+            "E_NATIVE_MIR_TARGET_UNSUPPORTED",
+            "Native MIR executable emission currently supports x86_64 Linux and none",
+        ));
+    }
+    let object = compile_mir_executable_object_source(root, target, level)?;
+    let elf = link_object_bytes(
+        &[crate::linker64::LinkInput::new(
+            "m0000.o",
+            object.object.bytes,
+        )],
+        target,
+    )?;
+    Ok(ModernExecutable {
+        elf,
+        hir_dump: object.hir_dump,
+        machine_dump: object.machine_dump,
+    })
+}
+
+pub fn compile_mir_windows_source(
+    root: &Path,
+    level: NativeOptimizationLevel,
+) -> Result<crate::pe64::PeArtifact, ModernNativeError> {
+    let object = compile_mir_object_source(root, crate::target::X86_64_WINDOWS, level)?;
+    link_windows_object_bytes(&[crate::linker64::LinkInput::new(
+        "m0000.obj",
+        object.object.bytes,
+    )])
 }
 
 pub fn compile_linux_source(root: &Path) -> Result<ModernExecutable, ModernNativeError> {
@@ -3646,6 +4124,57 @@ fn validate_main(
     }
 }
 
+fn validate_i686_entry(
+    project: &ConcreteHirProject,
+    function: &ConcreteHirFunction,
+    entry_name: &str,
+    target: TargetSpec,
+) -> Result<(), ModernNativeError> {
+    if function.declaration_only || (target == crate::target::I686_USER && !function.public) {
+        return Err(error(
+            "E_ENTRY_SIGNATURE",
+            &format!("entry must be a defined function `{entry_name}` for this profile"),
+        ));
+    }
+    let parameters_valid = if target == crate::target::I686_USER {
+        function.parameters.is_empty()
+    } else if function.parameters.is_empty() {
+        true
+    } else {
+        function.parameters.len() == 2
+            && matches!(
+                project
+                    .executable
+                    .semantic
+                    .type_of(function.parameters[0].ty),
+                CanonicalType::Integer(IntegerType::U32)
+            )
+            && matches!(
+                project
+                    .executable
+                    .semantic
+                    .type_of(function.parameters[1].ty),
+                CanonicalType::Integer(IntegerType::Usize)
+            )
+    };
+    if !parameters_valid {
+        return Err(error(
+            "E_ENTRY_SIGNATURE",
+            &format!("{entry_name} must use () or the checked i686 Multiboot (u32, usize) entry"),
+        ));
+    }
+    if !matches!(
+        project.executable.semantic.type_of(function.result),
+        CanonicalType::Integer(IntegerType::LegacyInt | IntegerType::I32 | IntegerType::U32)
+    ) {
+        return Err(error(
+            "E_ENTRY_SIGNATURE",
+            "i686 native entry must return int, i32, or u32",
+        ));
+    }
+    Ok(())
+}
+
 fn is_const_pointer_to_const_u8_pointer(
     project: &dbyte_hir::HirProgram,
     ty: dbyte_hir::TypeId,
@@ -3927,5 +4456,521 @@ mod tests {
         .unwrap();
         assert!(executable.elf.bytes.starts_with(b"\x7fELF"));
         assert!(!executable.elf.bytes.is_empty());
+    }
+
+    #[test]
+    fn native_mir_x86_64_object_does_not_require_executable_entry() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("dbyte-x64-object-no-entry-{nonce}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("module.dby");
+        std::fs::write(
+            &source,
+            "pub fn arch_value() -> u64:\n    return 42 as u64\n",
+        )
+        .unwrap();
+        for target in [
+            crate::target::X86_64_NONE,
+            crate::target::X86_64_LINUX,
+            crate::target::X86_64_WINDOWS,
+        ] {
+            let result = compile_mir_object_source(&source, target, NativeOptimizationLevel::O1);
+            let object = result.unwrap();
+            assert!(!object.object.bytes.is_empty());
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn native_mir_x86_64_executable_objects_require_entry() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("dbyte-x64-executable-entry-{nonce}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("module.dby");
+        std::fs::write(
+            &source,
+            "pub fn arch_value() -> u64:\n    return 42 as u64\n",
+        )
+        .unwrap();
+        for (target, entry_name) in [
+            (crate::target::X86_64_NONE, "kernel_main"),
+            (crate::target::X86_64_LINUX, "main"),
+            (crate::target::X86_64_WINDOWS, "main"),
+        ] {
+            let error =
+                compile_mir_executable_object_source(&source, target, NativeOptimizationLevel::O1)
+                    .expect_err("executable object must require its target entry");
+            assert_eq!(error.0, format!("E_ENTRY_MISSING: missing `{entry_name}`"));
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn native_mir_i686_drop_metadata_function_is_materialized() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/v12.1.0/string.dby");
+        let input = dbyte_hir::load_source_project(&source).unwrap();
+        let analyzed = dbyte_hir::analyze_project(
+            &input,
+            crate::target::I686_NONE.profile,
+            crate::target::I686_NONE.layout,
+        )
+        .unwrap();
+        let source_drop = analyzed
+            .executable
+            .semantic
+            .functions
+            .iter()
+            .find(|function| {
+                function.kind == dbyte_ast::FunctionKind::Drop
+                    && analyzed
+                        .link_names
+                        .get(&function.symbol)
+                        .is_some_and(|name| name == "destroy")
+            })
+            .unwrap();
+        assert!(source_drop.generic.is_none());
+        let drop_target = source_drop.drop_target.unwrap();
+        assert!(analyzed
+            .executable
+            .semantic
+            .definitions
+            .iter()
+            .any(|definition| definition.symbol == drop_target && definition.public));
+        let concrete = dbyte_hir::monomorphize_project(&analyzed).unwrap();
+        assert!(concrete
+            .executable
+            .functions
+            .iter()
+            .any(|function| function.key.symbol == source_drop.symbol));
+        assert_eq!(concrete.link_names[&source_drop.symbol], "destroy");
+        let concrete_drop = concrete
+            .executable
+            .functions
+            .iter()
+            .find(|function| function.key.symbol == source_drop.symbol)
+            .unwrap();
+        assert_ne!(concrete_drop.symbol_name, "destroy");
+        let expected_symbol = concrete_drop.symbol_name.clone();
+        let mir = crate::native_mir_lower::lower_program_to_native_mir_with_link_names(
+            &concrete.executable,
+            Some(&concrete.link_names),
+        )
+        .unwrap();
+        assert!(mir
+            .functions
+            .iter()
+            .any(|function| function.symbol == expected_symbol));
+    }
+
+    #[test]
+    fn native_mir_i686_preserves_canonical_link_metadata() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/v12.1.0/array.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        assert!(object
+            .object
+            .bytes
+            .windows(b".dbyte.drop".len())
+            .any(|bytes| bytes == b".dbyte.drop"));
+        assert!(object
+            .object
+            .bytes
+            .windows(b".dbyte.generics".len())
+            .any(|bytes| bytes == b".dbyte.generics"));
+    }
+
+    #[test]
+    fn native_mir_i686_gdt_object_selects_segment_reload() {
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/native_kernel_core/gdt.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        assert!(image
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "gdt_install"));
+    }
+
+    #[test]
+    fn native_mir_i686_task_control_addresses_preserve_checked_metadata() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_scheduler_core/scheduler.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        for marker in [
+            "__dbyte_task:def:task_returned",
+            "__dbyte_task:use:task_returned",
+            "__dbyte_task:trampoline",
+        ] {
+            assert!(image.symbols.iter().any(|symbol| symbol.name == marker));
+        }
+        for target in ["task_returned", "__dbyte_task_trampoline"] {
+            assert!(image.relocations.iter().any(|relocation| {
+                image.symbols[relocation.symbol.0 as usize].name == target
+                    && relocation.kind == crate::object::RelocationKind::Abs32
+            }));
+        }
+    }
+
+    #[test]
+    fn native_mir_i686_kernel_entry_preserves_multiboot_metadata() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_memory_core/kernel.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        assert!(image
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "__dbyte_entry:multiboot_v1"));
+        let entry = image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "kernel_main")
+            .expect("kernel entry symbol");
+        assert_eq!(entry.binding, crate::object::SymbolBinding::Global);
+    }
+
+    #[test]
+    fn native_mir_i686_memory_core_linker_addresses_are_object_relocations() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_memory_core/frames.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        for name in [
+            "__dbyte_image_start",
+            "__dbyte_image_end",
+            "__dbyte_stack_bottom",
+            "__dbyte_stack_top",
+        ] {
+            let symbol = image
+                .symbols
+                .iter()
+                .find(|symbol| symbol.name == name)
+                .unwrap();
+            assert_eq!(symbol.kind, crate::object::SymbolKind::Object);
+            assert!(matches!(
+                symbol.definition,
+                crate::object::SymbolDefinition::Undefined
+            ));
+            assert!(image.relocations.iter().any(|relocation| {
+                image.symbols[relocation.symbol.0 as usize].name == name
+                    && relocation.kind == crate::object::RelocationKind::Abs32
+            }));
+        }
+    }
+
+    #[test]
+    fn native_mir_i686_user_syscalls_emit_int80() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_user_process_core/programs/hello.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_USER,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        let text = image
+            .sections
+            .get(&crate::object::ObjectSection::Text)
+            .unwrap();
+        let crate::object::SectionContents::Bytes(text) = &text.contents else {
+            panic!("i686 user text section must contain bytes");
+        };
+        let entry = image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "user_main")
+            .expect("user entry symbol");
+        assert_eq!(entry.binding, crate::object::SymbolBinding::Global);
+        assert!(image
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "__dbyte_profile:user"));
+        assert_eq!(
+            text.windows(2)
+                .filter(|window| *window == [0xcd, 0x80])
+                .count(),
+            7
+        );
+    }
+
+    #[test]
+    fn native_mir_i686_private_root_symbols_are_local_across_objects() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/native_filesystem_runtime");
+        for (source_name, public_name) in [
+            ("path.dby", "path_cursor_initialize"),
+            ("file_handles.dby", "handles_initialize"),
+        ] {
+            let object = compile_mir_i686_object_source(
+                &root.join(source_name),
+                crate::target::I686_NONE,
+                NativeOptimizationLevel::O1,
+            )
+            .unwrap();
+            let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+            let private = image
+                .symbols
+                .iter()
+                .find(|symbol| symbol.name == "__dbyte_m0_OK")
+                .unwrap();
+            assert_eq!(private.binding, crate::object::SymbolBinding::Local);
+            let public = image
+                .symbols
+                .iter()
+                .find(|symbol| symbol.name == public_name)
+                .unwrap();
+            assert_eq!(public.binding, crate::object::SymbolBinding::Global);
+        }
+    }
+
+    #[test]
+    fn native_mir_i686_task_block_trap_uses_int81_register_abi() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_blocking_core/scheduler.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        let text = image
+            .sections
+            .get(&crate::object::ObjectSection::Text)
+            .unwrap();
+        let crate::object::SectionContents::Bytes(text) = &text.contents else {
+            panic!("i686 text section must contain bytes");
+        };
+        assert!(text.windows(2).any(|window| window == [0xcd, 0x81]));
+    }
+
+    #[test]
+    fn native_mir_i686_interrupt_objects_preserve_stubs_and_metadata() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/native_kernel_core");
+        let exceptions = compile_mir_i686_object_source(
+            &root.join("exceptions.dby"),
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let exception_image = crate::object::parse_relocatable(&exceptions.object.bytes).unwrap();
+        assert!(exception_image
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "__dbyte_interrupt_breakpoint_body"));
+        assert!(exception_image
+            .symbols
+            .iter()
+            .any(|symbol| { symbol.name == "__dbyte_interrupt:def:no_error_code:breakpoint" }));
+
+        let idt = compile_mir_i686_object_source(
+            &root.join("idt.dby"),
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let idt_image = crate::object::parse_relocatable(&idt.object.bytes).unwrap();
+        assert!(idt_image
+            .symbols
+            .iter()
+            .any(|symbol| { symbol.name == "__dbyte_interrupt:use:003:no_error_code:breakpoint" }));
+        assert!(idt_image.relocations.iter().any(|relocation| {
+            idt_image.symbols[relocation.symbol.0 as usize].name == "breakpoint"
+                && relocation.kind == crate::object::RelocationKind::Abs32
+        }));
+    }
+
+    #[test]
+    fn native_mir_i686_object_emits_only_root_module_definitions() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_kernel_multimodule/serial.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        let out8 = image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "out8")
+            .unwrap();
+        assert!(matches!(
+            out8.definition,
+            crate::object::SymbolDefinition::Undefined
+        ));
+        assert!(!image.symbols.iter().any(|symbol| {
+            symbol.name == "halt"
+                && matches!(
+                    symbol.definition,
+                    crate::object::SymbolDefinition::Defined { .. }
+                )
+        }));
+        let init = image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "init")
+            .unwrap();
+        assert!(matches!(
+            init.definition,
+            crate::object::SymbolDefinition::Defined { .. }
+        ));
+    }
+
+    #[test]
+    fn native_mir_i686_object_keeps_root_string_definitions() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_kernel_multimodule/kernel.dby");
+        let object = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object::parse_relocatable(&object.object.bytes).unwrap();
+        let strings = image
+            .symbols
+            .iter()
+            .filter(|symbol| symbol.name.starts_with("__dbyte_string_"))
+            .collect::<Vec<_>>();
+        assert!(!strings.is_empty());
+        assert!(strings.iter().all(|symbol| matches!(
+            symbol.definition,
+            crate::object::SymbolDefinition::Defined { .. }
+        )));
+        assert!(strings
+            .iter()
+            .all(|symbol| symbol.binding == crate::object::SymbolBinding::Local));
+    }
+
+    #[test]
+    fn native_mir_i686_project_objects_share_public_link_names() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/v12.1.0/kernel.dby");
+        let objects = compile_mir_i686_project_objects(
+            &root,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let string = objects
+            .iter()
+            .find(|(path, _)| path.file_name().is_some_and(|name| name == "string.dby"))
+            .expect("string project object");
+        let string_image = crate::object::parse_relocatable(&string.1.object.bytes).unwrap();
+        let clone = string_image
+            .symbols
+            .iter()
+            .find(|symbol| {
+                symbol.name.starts_with("__dbyte_pub_m")
+                    && symbol.name.ends_with("_clone")
+                    && matches!(
+                        symbol.definition,
+                        crate::object::SymbolDefinition::Defined { .. }
+                    )
+            })
+            .expect("module-scoped public string clone definition");
+        assert_eq!(clone.binding, crate::object::SymbolBinding::Global);
+        let clone_name = clone.name.clone();
+
+        let kernel = objects
+            .iter()
+            .find(|(path, _)| path.file_name().is_some_and(|name| name == "kernel.dby"))
+            .expect("kernel project object");
+        let kernel_image = crate::object::parse_relocatable(&kernel.1.object.bytes).unwrap();
+        let imported = kernel_image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == clone_name)
+            .expect("kernel import of string clone");
+        assert!(matches!(
+            imported.definition,
+            crate::object::SymbolDefinition::Undefined
+        ));
+        assert!(kernel_image.relocations.iter().any(|relocation| {
+            kernel_image.symbols[relocation.symbol.0 as usize].name == clone_name
+        }));
+
+        let destroy = string_image
+            .symbols
+            .iter()
+            .find(|symbol| {
+                symbol.name.ends_with("destroy")
+                    && matches!(
+                        symbol.definition,
+                        crate::object::SymbolDefinition::Defined { .. }
+                    )
+            })
+            .expect("string destructor definition");
+        assert_eq!(destroy.binding, crate::object::SymbolBinding::Global);
+        let destroy_name = destroy.name.clone();
+        let imported_destroy = kernel_image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == destroy_name)
+            .expect("kernel import of string destructor");
+        assert!(matches!(
+            imported_destroy.definition,
+            crate::object::SymbolDefinition::Undefined
+        ));
+        assert!(kernel_image.relocations.iter().any(|relocation| {
+            kernel_image.symbols[relocation.symbol.0 as usize].name == destroy_name
+        }));
+    }
+
+    #[test]
+    fn native_mir_i686_object_does_not_require_kernel_entry() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("dbyte-i686-object-no-entry-{nonce}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("module.dby");
+        std::fs::write(
+            &source,
+            "pub fn arch_value() -> u32:\n    return 42 as u32\n",
+        )
+        .unwrap();
+        let result = compile_mir_i686_object_source(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+        let object = result.unwrap();
+        assert!(object.object.bytes.starts_with(b"\x7fELF"));
     }
 }

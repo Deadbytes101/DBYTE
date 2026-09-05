@@ -1461,6 +1461,8 @@ fn cmd_bench(engine_override: Option<Engine>, compare_python: bool) {
 
     let mut cases = Vec::new();
     collect_tests(benchmarks_dir, &mut cases);
+    let native_benchmarks_dir = benchmarks_dir.join("native");
+    cases.retain(|path| !path.starts_with(&native_benchmarks_dir));
     cases.sort();
 
     if compare_python {

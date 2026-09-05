@@ -695,6 +695,7 @@ fn build_executable_symbols(
                 } else {
                     &symbol.name
                 };
+                let leaf = canonical_local_symbol_leaf(leaf, offset);
                 format!("{}::{leaf}", input.name)
             } else {
                 symbol.name.clone()
@@ -710,6 +711,33 @@ fn build_executable_symbols(
         }
     }
     Ok(symbols)
+}
+
+fn canonical_local_symbol_leaf(name: &str, offset: u32) -> String {
+    const MARKER: &str = "__dbyte_m";
+    let mut output = String::with_capacity(name.len());
+    let mut rest = name;
+    loop {
+        let Some(index) = rest.find(MARKER) else {
+            output.push_str(rest);
+            break;
+        };
+        output.push_str(&rest[..index]);
+        output.push_str(MARKER);
+        let tail = &rest[index + MARKER.len()..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        if digits > 0 && tail.as_bytes().get(digits) == Some(&b'_') {
+            output.push('_');
+            rest = &tail[digits + 1..];
+        } else {
+            rest = tail;
+        }
+    }
+    if output.starts_with("__dbyte_string_") {
+        format!("__dbyte_string_at_{offset:08x}")
+    } else {
+        output
+    }
 }
 
 fn validate_interrupt_metadata(inputs: &[ParsedInput]) -> Result<(), Diagnostic> {
@@ -1576,6 +1604,30 @@ mod tests {
             addend: -4,
         });
         caller
+    }
+
+    #[test]
+    fn final_local_symbol_names_ignore_project_module_ids() {
+        assert_eq!(
+            canonical_local_symbol_leaf("__dbyte_m0_HELPER", 0x20),
+            "__dbyte_m_HELPER"
+        );
+        assert_eq!(
+            canonical_local_symbol_leaf("__dbyte_m13_HELPER", 0x20),
+            "__dbyte_m_HELPER"
+        );
+        assert_eq!(
+            canonical_local_symbol_leaf("__dbyte_mono___dbyte_m13_clone_t4", 0x20),
+            "__dbyte_mono___dbyte_m_clone_t4"
+        );
+        assert_eq!(
+            canonical_local_symbol_leaf("__dbyte_string_0001", 0x123),
+            "__dbyte_string_at_00000123"
+        );
+        assert_eq!(
+            canonical_local_symbol_leaf("__dbyte_string_0042", 0x123),
+            "__dbyte_string_at_00000123"
+        );
     }
 
     #[test]

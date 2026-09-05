@@ -11,6 +11,8 @@ $ArraySource = Join-Path $RepoRoot "benchmarks\vm\6502\array_driver.dby"
 $BufferSource = Join-Path $RepoRoot "benchmarks\vm\6502\buffer_driver.dby"
 $MatrixSource = Join-Path $RepoRoot "benchmarks\vm\6502\matrix.dby"
 $TraceSource = Join-Path $RepoRoot "benchmarks\vm\6502\trace.dby"
+$ManifestPath = Join-Path $RepoRoot "benchmarks\vm\corpus.json"
+$MeasureScript = Join-Path $RepoRoot "scripts\vm_perf_pair.py"
 
 & (Join-Path $PSScriptRoot "verify_vm_architecture.ps1") -SkipTests
 if ($LASTEXITCODE -ne 0) { throw "VM_6502_ARCHITECTURE_GATE_FAILED" }
@@ -71,6 +73,13 @@ function Get-CorpusHash {
 if ((git -C $RepoRoot rev-parse "v12.2.1^{}") -ne $BaselineCommit) {
     throw "VM_6502_BASELINE_TAG_MISMATCH"
 }
+$manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json
+if ([int]$manifest.windows_affinity_cpu -lt 0) { throw "VM_6502_AFFINITY_CPU_INVALID" }
+if (-not (Test-Path -LiteralPath $MeasureScript -PathType Leaf)) { throw "VM_6502_MEASURE_HELPER_MISSING" }
+$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+if ([int]$manifest.windows_affinity_cpu -ge [int]$cpu.NumberOfLogicalProcessors) {
+    throw "VM_6502_AFFINITY_CPU_UNAVAILABLE: $($manifest.windows_affinity_cpu)"
+}
 
 $rows = @(Import-Csv -LiteralPath (Join-Path $RepoRoot "benchmarks\vm\6502\opcodes.csv"))
 if ($rows.Count -ne 151) { throw "VM_6502_OPCODE_COUNT: $($rows.Count)" }
@@ -126,23 +135,27 @@ Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
 $warmups = if ($Quick) { 1 } else { 3 }
 $measurements = if ($Quick) { 3 } else { 9 }
 $attemptLimit = if ($Quick) { 1 } else { 3 }
-$pair = $null
-for ($attempt = 1; $attempt -le $attemptLimit; $attempt++) {
-    $baseline = Invoke-Receipt $baselineExe $ArraySource $warmups $measurements
-    $candidate = Invoke-Receipt $candidateExe $ArraySource $warmups $measurements
-    if ($baseline.source_sha256 -ne $candidate.source_sha256) { throw "VM_6502_SOURCE_DIVERGENCE" }
-    if ($baseline.output_sha256 -ne $candidate.output_sha256) { throw "VM_6502_OUTPUT_DIVERGENCE" }
-    if ($Quick -or ($baseline.relative_mad -le 0.05 -and $candidate.relative_mad -le 0.05)) {
-        $pair = [ordered]@{
-            attempt = $attempt
-            baseline = $baseline
-            candidate = $candidate
-            speedup = [double]$baseline.median_ns / [double]$candidate.median_ns
-        }
-        break
-    }
+$maximumMad = if ($Quick) { 1.0 } else { 0.05 }
+$arguments = @(
+    $MeasureScript, $baselineExe, $candidateExe, $ArraySource,
+    "--iterations", "1", "--warmups", "$warmups",
+    "--measurements", "$measurements", "--attempts", "$attemptLimit",
+    "--maximum-relative-mad", "$maximumMad",
+    "--cpu-affinity", "$([int]$manifest.windows_affinity_cpu)"
+)
+$pairResult = ((Invoke-Checked "python.exe" $arguments $RepoRoot) | Out-String).Trim() | ConvertFrom-Json
+if (-not $pairResult.stable) { throw "VM_6502_UNSTABLE" }
+$selected = $pairResult.attempts[[int]$pairResult.selected_attempt - 1]
+$pair = [ordered]@{
+    attempt = [int]$pairResult.selected_attempt
+    baseline = $selected.baseline
+    candidate = $selected.candidate
+    speedup = [double]$selected.ratio
+    cpu_affinity = [int]$pairResult.cpu_affinity
+    priority_class = [string]$pairResult.priority_class
+    launch_control = [string]$pairResult.launch_control
+    sample_order = [string]$pairResult.sample_order
 }
-if ($null -eq $pair) { throw "VM_6502_UNSTABLE" }
 if (-not $Quick -and $pair.speedup -lt 1.20) { throw "VM_6502_SPEEDUP_BELOW_GATE: $($pair.speedup)" }
 
 $buffer = Invoke-Receipt $candidateExe $BufferSource 0 1
@@ -150,13 +163,18 @@ if ($buffer.output_sha256 -ne $pair.candidate.output_sha256) {
     throw "VM_6502_ARRAY_BUFFER_DIVERGENCE"
 }
 
-$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
 $receipt = [ordered]@{
     schema = 1
     baseline_commit = $BaselineCommit
     candidate_commit = (git -C $RepoRoot rev-parse HEAD)
     candidate_dirty = [bool](git -C $RepoRoot status --porcelain)
     corpus_sha256 = $corpusHash
+    measure_script_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $MeasureScript).Hash.ToLowerInvariant()
+    measurement = [ordered]@{
+        windows_affinity_cpu = [int]$manifest.windows_affinity_cpu
+        launch_control = "suspended_affinity_high_then_resume"
+        sample_order = "alternating"
+    }
     opcode_matrix = [ordered]@{ expected = 151; implemented = 151; tested = 151; missing = 0; duplicates = 0 }
     instructions = 1000000
     performance_memory_bytes = 4096

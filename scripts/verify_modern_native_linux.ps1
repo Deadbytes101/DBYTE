@@ -90,3 +90,4 @@ try {
     [IO.File]::WriteAllLines((Join-Path $proofRoot "SHA256SUMS"), $hashes)
     "DBYTE MODERN NATIVE LINUX VERIFIER: PASS"; $hashes
 } finally { Pop-Location }
+$global:LASTEXITCODE = 0

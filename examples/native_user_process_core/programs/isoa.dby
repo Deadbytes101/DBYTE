@@ -3,6 +3,6 @@ static mut PRIVATE_VALUE: u32 = 0x11111111 as u32
 pub fn user_main() -> int:
     PRIVATE_VALUE = PRIVATE_VALUE + (1 as u32)
     let path: str = "/SYSTEM/A.TXT"
-    if user.syscall2(3 as u32, path, 1 as usize) != 3:
+    if user.syscall3(3 as u32, path, 13 as usize, 1 as usize) != 3:
         return 1
     return 0

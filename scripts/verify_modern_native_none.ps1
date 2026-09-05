@@ -7,7 +7,7 @@ $source = Join-Path $repoRoot "examples\native_v12_2_none\runtime.dby"
 $compiler = Join-Path $repoRoot "target\debug\dbytec.exe"
 $qemu = "C:\Program Files\qemu\qemu-system-x86_64.exe"
 $expected = "DBYTE X86_64 NONE`r`nELF64 ONLINE`r`nDBYTE64 ABI ONLINE`r`nALLOCATOR ONLINE`r`nDROP ONLINE`r`nARRAY ONLINE`r`nSTRING ONLINE`r`nNONE CHECK OK`r`n"
-$initialQemu = @(Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | ForEach-Object Id)
+$ownedQemu = [System.Collections.Generic.List[int]]::new()
 
 function Assert-True($value, [string]$message) { if (-not $value) { throw $message } }
 function Invoke-Checked([string]$file, [string[]]$arguments, [string]$description) {
@@ -55,6 +55,7 @@ function Run-Qemu([int]$ram, [string]$elf) {
     $arguments = @("-cdrom", $iso, "-m", "${ram}M", "-display", "none", "-monitor", "none", "-serial", "file:$serial", "-d", "int,cpu_reset,guest_errors", "-D", $trace, "-no-reboot", "-no-shutdown")
     [IO.File]::WriteAllText((Join-Path $runRoot "qemu-command.txt"), "$qemu $($arguments -join ' ')")
     $process = Start-Process -FilePath $qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $ownedQemu.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(15); $complete = $false
         do {
@@ -98,7 +99,11 @@ try {
     "DBYTE MODERN NATIVE NONE VERIFIER: PASS"; $hashes
 } finally {
     Pop-Location
-    $after = @(Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | ForEach-Object Id)
-    $orphans = @($after | Where-Object { $_ -notin $initialQemu })
-    if ($orphans.Count -ne 0) { throw "none verifier left QEMU processes: $($orphans -join ', ')" }
+    $reapDeadline = [DateTime]::UtcNow.AddSeconds(2)
+    do {
+        $orphans = @($ownedQemu | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+        if ($orphans.Count -eq 0 -or [DateTime]::UtcNow -ge $reapDeadline) { break }
+        Start-Sleep -Milliseconds 100
+    } while ($true)
+    if ($orphans.Count -ne 0) { throw "none verifier left owned QEMU processes: $($orphans -join ', ')" }
 }

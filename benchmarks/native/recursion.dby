@@ -1,0 +1,10 @@
+fn fib(value: u64) -> u64:
+    if value < (2 as u64):
+        return value
+    return fib(value - (1 as u64)) + fib(value - (2 as u64))
+
+pub fn main() -> i64:
+    let value: u64 = fib(34 as u64)
+    if value == (5702887 as u64):
+        return 42 as i64
+    return 1 as i64

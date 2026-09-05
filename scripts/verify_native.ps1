@@ -19,6 +19,7 @@ $directElf = Join-Path $proofRoot "direct-linked.elf"
 $finalBin = Join-Path $tmpRoot "dbyte_native_system_v$MilestoneVersion.bin"
 $repeatBin = Join-Path $tmpRoot "dbyte_native_system_v$MilestoneVersion.second.bin"
 $serialPath = Join-Path $tmpRoot "dbyte_native_system_v$MilestoneVersion.serial.log"
+$directSerialPath = Join-Path $tmpRoot "dbyte_native_system_v$MilestoneVersion.direct.serial.log"
 $legacyElf = Join-Path $tmpRoot "dbyte_native_kernel_v11.0.0.compat.elf"
 $legacyRepeatElf = Join-Path $tmpRoot "dbyte_native_kernel_v11.0.0.compat.second.elf"
 $legacySerialPath = Join-Path $tmpRoot "dbyte_native_kernel_v11.0.0.compat.serial.log"
@@ -234,7 +235,7 @@ foreach ($directory in @($proofRoot, $repeatRoot)) {
     if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
 }
 New-Item -ItemType Directory -Path $proofRoot -Force | Out-Null
-foreach ($path in @($finalElf, $repeatElf, $finalBin, $repeatBin, $serialPath, $legacyElf, $legacyRepeatElf, $legacySerialPath, $disasmPath, $relocsPath, $symbolsPath)) {
+foreach ($path in @($finalElf, $repeatElf, $finalBin, $repeatBin, $serialPath, $directSerialPath, $legacyElf, $legacyRepeatElf, $legacySerialPath, $disasmPath, $relocsPath, $symbolsPath)) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
 }
 
@@ -274,7 +275,6 @@ Invoke-Checked $dbytec @("build", $kernelSource, "--target", "i686-dbyte-none", 
 Invoke-Checked $dbytec @("build", $kernelSource, "--target", "i686-dbyte-none", "--emit", "bin", "-o", $finalBin) "integrated native BIN build" | Out-Null
 Invoke-Checked $dbytec @("build", $kernelSource, "--target", "i686-dbyte-none", "--emit", "bin", "-o", $repeatBin) "repeat integrated native BIN build" | Out-Null
 Assert-SameFile $finalElf $repeatElf "integrated ELF"
-Assert-SameFile $finalElf $directElf "integrated and direct-link ELF"
 Assert-SameFile $finalBin $repeatBin "integrated flat BIN"
 Assert-True ((Get-Item -LiteralPath $finalBin).Length -gt 0) "integrated native BIN is empty"
 $executable = Assert-ExecutableContract $finalElf
@@ -286,26 +286,23 @@ Assert-SameFile $legacyElf $legacyRepeatElf "legacy v11.0.0 native ELF"
 Assert-ExecutableContract $legacyElf | Out-Null
 
 foreach ($needle in @(
-    "native-systems-ir module arch_x86",
-    "native-systems-ir module kernel",
-    "native-systems-ir module memory",
-    "native-systems-ir module numbers",
-    "native-systems-ir module serial",
-    "ptr[u8]",
-    "array[u8, 4]",
-    "address.field +4",
-    "store.u16",
-    "or.u8",
-    "shl.u8",
-    "section=rodata",
-    "section=data",
-    "section=bss",
-    "call add 2 -> u32",
-    "relocation .text",
-    "Pc32",
-    "Abs32"
+    "native-mir pointer-bytes=4",
+    "function out8 instance=",
+    "function kernel_main instance=",
+    "function compute instance=",
+    "function add instance=",
+    "function write instance=",
+    "AggregateZero",
+    "AddressOffset",
+    "ty: I16",
+    "op: BitOr",
+    "op: ShiftLeft",
+    "GlobalAddress",
+    'callee: Direct { symbol: "add" }',
+    "function kernel_main opt=O1",
+    "function compute opt=O1"
 )) {
-    Assert-Contains $dumpText $needle "typed systems IR or machine evidence"
+    Assert-Contains $dumpText $needle "Native MIR or machine-selection evidence"
 }
 
 $allSource = ($modules | ForEach-Object { Get-Content -LiteralPath (Join-Path $sourceRoot "$_.dby") -Raw }) -join "`n"
@@ -352,7 +349,11 @@ Assert-True ([regex]::IsMatch($inspectionText, '(?im)\bin\s+al\s*,\s*dx\b')) "fi
 Assert-True (-not $inspectionText.Contains("DLL Name") -and -not $inspectionText.Contains("INTERP")) "final ELF has a hosted loader dependency"
 
 $nativeFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot "crates\dbyte_native\src") -Filter "*.rs" -File
-$nativeText = ($nativeFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+$nativeText = ($nativeFiles | ForEach-Object {
+    $text = Get-Content -LiteralPath $_.FullName -Raw
+    $testMarker = $text.IndexOf('#[cfg(test)]', [StringComparison]::Ordinal)
+    if ($testMarker -ge 0) { $text.Substring(0, $testMarker) } else { $text }
+}) -join "`n"
 $nativeManifest = Get-Content -LiteralPath (Join-Path $repoRoot "crates\dbyte_native\Cargo.toml") -Raw
 foreach ($forbidden in @("std::process::Command", "process::Command", "Command::new", "llvm", "cranelift", "gcc", "clang", "nasm", "yasm", "fasm")) {
     Assert-True (-not $nativeText.Contains($forbidden)) "native backend contains forbidden generator/process token: $forbidden"
@@ -363,6 +364,7 @@ Assert-True (-not $nativeManifest.Contains("dbyte_interp") -and -not $nativeMani
 $qemu = (Get-Command qemu-system-i386 -ErrorAction Stop).Source
 [byte[]]$expectedSerial = [System.Text.Encoding]::ASCII.GetBytes("DBYTE NATIVE SYSTEM`r`nMULTI MODULE ONLINE`r`nLINKER ONLINE`r`nSYSTEM TYPES ONLINE`r`n42`r`n")
 $qemuArguments = Invoke-QemuSerialProof $qemu $finalElf $serialPath $expectedSerial
+$directQemuArguments = Invoke-QemuSerialProof $qemu $directElf $directSerialPath $expectedSerial
 [byte[]]$expectedLegacySerial = [System.Text.Encoding]::ASCII.GetBytes("DBYTE NATIVE KERNEL`r`nMACHINE CODE ONLINE`r`n42`r`n")
 $legacyQemuArguments = Invoke-QemuSerialProof $qemu $legacyElf $legacySerialPath $expectedLegacySerial
 
@@ -371,9 +373,12 @@ foreach ($module in $modules) {
     Write-Host "$module.o SHA256: $($objectHashes[$module])"
 }
 Write-Host "ELF SHA256: $(Get-Sha256 $finalElf)"
+Write-Host "direct-link ELF SHA256: $(Get-Sha256 $directElf)"
 Write-Host "BIN SHA256: $(Get-Sha256 $finalBin)"
 Write-Host "serial SHA256: $(Get-Sha256 $serialPath)"
+Write-Host "direct-link serial SHA256: $(Get-Sha256 $directSerialPath)"
 Write-Host "QEMU command: `"$qemu`" $qemuArguments"
+Write-Host "direct-link QEMU command: `"$qemu`" $directQemuArguments"
 Write-Host "serial proof: DBYTE NATIVE SYSTEM | MULTI MODULE ONLINE | LINKER ONLINE | SYSTEM TYPES ONLINE | 42"
 Write-Host "legacy QEMU command: `"$qemu`" $legacyQemuArguments"
 Write-Host "legacy serial proof: DBYTE NATIVE KERNEL | MACHINE CODE ONLINE | 42"

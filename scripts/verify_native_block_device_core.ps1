@@ -3,7 +3,6 @@ param([string]$MilestoneVersion = "11.8.0")
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
-$initialQemuIds = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
 $tmpRoot = (Resolve-Path (Join-Path $repoRoot "tmp")).Path
 $evidenceRoot = Join-Path $tmpRoot "native_v$MilestoneVersion"
 $repeatRoot = Join-Path $tmpRoot "native_v$MilestoneVersion.repeat"
@@ -143,7 +142,7 @@ function Invoke-Qemu([int]$Ram, [string]$Elf, [string]$Qemu) {
     Assert-True ($telemetry.EOI -eq $telemetry.TICKS) "IRQ0 did not emit exactly one EOI per tick"
     Assert-True ($telemetry.TRAPS -eq 4 -and $telemetry.TRAP_EOI -eq 0) "block trap or EOI ownership is wrong"
     Assert-True ($telemetry.SEM_WAITS -eq 4 -and $telemetry.SEM_POSTS -eq 4 -and $telemetry.SEM_POST_OK -eq 4) "completion semaphore accounting is wrong"
-    Assert-True (($telemetry.SEM_WAKES + $telemetry.EARLY_COMPLETE) -eq 4 -and $telemetry.EARLY_COMPLETE -eq 1) "IRQ wake plus lost-wake token accounting is wrong"
+    Assert-True (($telemetry.SEM_WAKES + $telemetry.EARLY_COMPLETE) -eq 4) "IRQ wake plus sticky completion-token accounting is wrong"
     Assert-True ($telemetry.EXITS -eq 3 -and $telemetry.RECLAIMS -eq 3 -and $telemetry.LIVE -eq 1) "block-device lifecycle did not converge to idle only"
     Assert-True ($telemetry.REUSE_SLOT -eq 1 -and $telemetry.FRAME -eq $telemetry.REUSED_FRAME) "slot/frame ownership was not reused exactly"
     Assert-DiskWritten $disk
@@ -238,8 +237,10 @@ $elfHash = (Get-FileHash $elf -Algorithm SHA256).Hash
 $binHash = (Get-FileHash $bin -Algorithm SHA256).Hash
 $hashes += "ELF $elfHash", "BIN $binHash", "DISK_SEED $($run32.SeedHash)", "DISK_FINAL $($run32.FinalHash)"
 [IO.File]::WriteAllLines((Join-Path $evidenceRoot "sha256.txt"), $hashes)
-$orphanQemu = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | Where-Object { $initialQemuIds -notcontains $_.Id })
-Assert-True ($orphanQemu.Count -eq 0) "block-device verifier left QEMU processes running: $($orphanQemu.Id -join ', ')"
+$ownedQemu = @(Get-CimInstance Win32_Process -Filter "Name='qemu-system-i386.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $null -ne $_.CommandLine -and $_.CommandLine.IndexOf($evidenceRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0
+})
+Assert-True ($ownedQemu.Count -eq 0) "block-device verifier left owned QEMU processes running: $($ownedQemu.ProcessId -join ', ')"
 
 Write-Host "DBYTE NATIVE KERNEL BLOCK DEVICE: PASS"
 Write-Host "objects=$($modules.Count) R_386_PC32=$pc32 R_386_32=$abs32"

@@ -7,7 +7,7 @@ $tmpRoot = (Resolve-Path (Join-Path $repoRoot "tmp")).Path
 $evidenceRoot = Join-Path $tmpRoot "native_v$MilestoneVersion"
 $repeatRoot = Join-Path $tmpRoot "native_v$MilestoneVersion.repeat"
 $sourceRoot = Join-Path $repoRoot "examples\native_filesystem_runtime"
-$initialQemuIds = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+$ownedQemuIds = [System.Collections.Generic.List[int]]::new()
 $modules = @(
     "arch_x86", "serial", "gdt", "boot", "frames", "paging", "memory_ops", "heap",
     "pic", "proof", "page_fault", "byte_ring", "file_handles", "scheduler", "keyboard", "ata",
@@ -233,6 +233,7 @@ function Invoke-QemuBoot([int]$Ram, [int]$Boot, [string]$Elf, [string]$Disk, [st
             }
             Start-Sleep -Milliseconds 500
             $process = Start-Process -FilePath $Qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden -RedirectStandardError $stderr
+            $ownedQemuIds.Add($process.Id)
             $exitedEarly = $false
             $exitCode = $null
             try {
@@ -300,6 +301,7 @@ function Invoke-DivideFault([string]$Name, [string]$Elf, [string]$ExpectedSerial
     $arguments = @("-m", "32M", "-kernel", $Elf, "-display", "none", "-serial", "file:$serial", "-monitor", "none", "-no-reboot", "-no-shutdown", "-d", "int,cpu_reset,guest_errors", "-D", $trace)
     [IO.File]::WriteAllText((Join-Path $evidenceRoot "$Name.command.txt"), "$Qemu $($arguments -join ' ')")
     $process = Start-Process -FilePath $Qemu -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $ownedQemuIds.Add($process.Id)
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(15)
         $matched = $false
@@ -444,8 +446,13 @@ $hashLines += "ELF $elfHash", "BIN $binHash", "BLANK_DISK $($blankHashes[0])", "
     "final_state=$($state3[0])", "layout=DBFS1 super64 bitmap65+4 inode69+8 data77+16307", "tree=/SYSTEM,/LOG", "boot_count=3"
 ))
 
-$remaining = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $initialQemuIds })
-Assert-True ($remaining.Count -eq 0) "filesystem verifier left QEMU processes: $($remaining.Id -join ', ')"
+$reapDeadline = [DateTime]::UtcNow.AddSeconds(2)
+do {
+    $remaining = @($ownedQemuIds | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    if ($remaining.Count -eq 0 -or [DateTime]::UtcNow -ge $reapDeadline) { break }
+    Start-Sleep -Milliseconds 100
+} while ($true)
+Assert-True ($remaining.Count -eq 0) "filesystem verifier left owned QEMU processes: $($remaining -join ', ')"
 Write-Host "DBYTE NATIVE FILESYSTEM RUNTIME: PASS"
 Write-Host "Objects: $($modules.Count); R_386_PC32=$pc32; R_386_32=$abs32"
 Write-Host "ELF SHA-256: $elfHash"

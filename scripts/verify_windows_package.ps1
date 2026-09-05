@@ -24,7 +24,8 @@ $receiptEntries = @($receipt.files | ForEach-Object {
 })
 $receiptMap = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 foreach ($item in $receiptEntries) {
-    if (-not $receiptMap.TryAdd($item.Path, $item)) { throw "PACKAGE_RECEIPT_DUPLICATE: $($item.Path)" }
+    if ($receiptMap.ContainsKey($item.Path)) { throw "PACKAGE_RECEIPT_DUPLICATE: $($item.Path)" }
+    $receiptMap.Add($item.Path, $item)
 }
 foreach ($sourceEntry in $manifest.Entries) {
     if (-not $receiptMap.ContainsKey($sourceEntry.Path)) { throw "PACKAGE_RECEIPT_SOURCE_MISSING: $($sourceEntry.Path)" }
@@ -62,8 +63,16 @@ try {
                 }
             }
             else {
-                $probe = @(& $destination 2>&1)
-                if ($LASTEXITCODE -ne 2 -or -not ($probe -join "`n").Contains("dbytec build")) {
+                $oldPreference = $ErrorActionPreference
+                $ErrorActionPreference = "Continue"
+                try {
+                    $probe = @(& $destination 2>&1)
+                    $probeExitCode = $LASTEXITCODE
+                }
+                finally {
+                    $ErrorActionPreference = $oldPreference
+                }
+                if ($probeExitCode -ne 2 -or -not ($probe -join "`n").Contains("dbytec build")) {
                     throw "PACKAGE_BINARY_CAPABILITY_MISMATCH: $binary"
                 }
             }

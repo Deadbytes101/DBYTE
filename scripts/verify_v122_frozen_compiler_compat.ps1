@@ -4,7 +4,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $proofRoot = Join-Path $repoRoot "tmp\windows_package_correction_v12.2.1\frozen-v12.2-compat"
 $baselineSource = Join-Path $proofRoot "baseline-source"
-$baselineOut = Join-Path $proofRoot "baseline"
+$baselineOutFirst = Join-Path $proofRoot "baseline-first"
+$baselineOutSecond = Join-Path $proofRoot "baseline-second"
 $candidateOut = Join-Path $proofRoot "candidate"
 $archive = Join-Path $proofRoot "baseline.zip"
 
@@ -33,21 +34,33 @@ function Build-Set([string]$compiler, [string]$sourceRoot, [string]$root) {
 }
 
 if (Test-Path $proofRoot) { Remove-Item -LiteralPath $proofRoot -Recurse -Force }
-New-Item -ItemType Directory -Path $baselineSource,$baselineOut,$candidateOut -Force | Out-Null
+New-Item -ItemType Directory -Path $baselineSource,$baselineOutFirst,$baselineOutSecond,$candidateOut -Force | Out-Null
 Assert-True ((git rev-parse "$BaselineCommit^{commit}").Trim() -eq $BaselineCommit) "frozen v12.2 commit is unavailable"
 & git.exe -c core.autocrlf=false archive --format=zip -o $archive $BaselineCommit
 if ($LASTEXITCODE -ne 0) { throw "archive frozen v12.2 compiler failed" }
 Expand-Archive -LiteralPath $archive -DestinationPath $baselineSource
 Invoke-Checked "cargo.exe" @("build", "-q", "-p", "dbyte_cli", "--bin", "dbytec") "build frozen v12.2 compiler" $baselineSource
 Invoke-Checked "cargo.exe" @("build", "-q", "-p", "dbyte_cli", "--bin", "dbytec") "build candidate compiler"
-Build-Set (Join-Path $baselineSource "target\debug\dbytec.exe") $baselineSource $baselineOut
+$baselineCompiler = Join-Path $baselineSource "target\debug\dbytec.exe"
+Build-Set $baselineCompiler $baselineSource $baselineOutFirst
+Build-Set $baselineCompiler $baselineSource $baselineOutSecond
 Build-Set (Join-Path $repoRoot "target\debug\dbytec.exe") $repoRoot $candidateOut
-$hashes = foreach ($name in @("i686-runtime.o", "i686-runtime.elf", "none.o", "none.elf", "linux.o", "linux.elf", "windows.o", "windows.exe")) {
-    $baselineHash = (Get-FileHash (Join-Path $baselineOut $name) -Algorithm SHA256).Hash
+$baselineHashes = @(); $candidateHashes = @()
+foreach ($name in @("i686-runtime.o", "i686-runtime.elf", "none.o", "none.elf", "linux.o", "linux.elf", "windows.o", "windows.exe")) {
+    $firstHash = (Get-FileHash (Join-Path $baselineOutFirst $name) -Algorithm SHA256).Hash
+    $secondHash = (Get-FileHash (Join-Path $baselineOutSecond $name) -Algorithm SHA256).Hash
+    Assert-True ($firstHash -ceq $secondHash) "frozen v12.2 self-reproduction drift: $name"
+    $baselineHashes += "$firstHash  $name"
     $candidateHash = (Get-FileHash (Join-Path $candidateOut $name) -Algorithm SHA256).Hash
-    Assert-True ($baselineHash -ceq $candidateHash) "frozen v12.2 artifact drift: $name"
-    "$baselineHash  $name"
+    $candidateHashes += "$candidateHash  $name"
 }
-[IO.File]::WriteAllLines((Join-Path $proofRoot "SHA256SUMS"), $hashes)
-"DBYTE V12.2 FROZEN COMPILER COMPAT: PASS"
-$hashes
+[IO.File]::WriteAllLines((Join-Path $proofRoot "BASELINE_SHA256SUMS"), $baselineHashes)
+[IO.File]::WriteAllLines((Join-Path $proofRoot "CANDIDATE_SHA256SUMS"), $candidateHashes)
+$runtimeResult = & (Join-Path $PSScriptRoot "verify_native_runtime_foundation.ps1") -MilestoneVersion "12.1.0"
+$modernResult = & (Join-Path $PSScriptRoot "verify_modern_native_foundation.ps1") -MilestoneVersion "12.2.0"
+Assert-True (($runtimeResult -join "`n").Contains("VERIFIER: PASS")) "candidate failed historical v12.1 runtime semantics"
+Assert-True (($modernResult -join "`n").Contains("VERIFIER: PASS")) "candidate failed historical v12.2 native semantics"
+[IO.File]::WriteAllText((Join-Path $proofRoot "semantic-compat.txt"), (($runtimeResult + $modernResult) -join "`n"))
+"DBYTE V12.2 FROZEN SELF-REPRO + CANDIDATE SEMANTIC COMPAT: PASS"
+$baselineHashes
+$candidateHashes

@@ -134,9 +134,14 @@ function Assert-SourceTreeMatchesCommit([string]$SourceRoot, [string]$Repository
         Assert-PackageRelativePath $path
         $expected.Add($path, $match.Groups[1].Value)
     }
+    $sourcePrefix = ([IO.Path]::GetFullPath($SourceRoot)).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $actualPaths = @(
         Get-ChildItem -LiteralPath $SourceRoot -File -Recurse | ForEach-Object {
-            Get-NormalizedPackagePath ([IO.Path]::GetRelativePath($SourceRoot, $_.FullName))
+            $fullPath = [IO.Path]::GetFullPath($_.FullName)
+            if (-not $fullPath.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "PACKAGE_SOURCE_TREE_ESCAPE: $fullPath"
+            }
+            Get-NormalizedPackagePath ($fullPath.Substring($sourcePrefix.Length))
         }
     )
     $actualPaths = Sort-PackageStringsOrdinal $actualPaths
@@ -156,7 +161,7 @@ function Assert-SourceTreeMatchesCommit([string]$SourceRoot, [string]$Repository
         try {
             [void]$sha1.TransformBlock($header, 0, $header.Length, $null, 0)
             [void]$sha1.TransformFinalBlock($bytes, 0, $bytes.Length)
-            $actualHash = [Convert]::ToHexString($sha1.Hash).ToLowerInvariant()
+            $actualHash = ([BitConverter]::ToString($sha1.Hash) -replace '-', '').ToLowerInvariant()
         }
         finally { $sha1.Dispose() }
         if ($actualHash -cne $expected[$path]) {
@@ -273,7 +278,7 @@ function Write-DeterministicPackageZip([string]$ZipPath, [object[]]$Entries) {
 
 function Get-StreamSha256([IO.Stream]$Stream) {
     $sha = [Security.Cryptography.SHA256]::Create()
-    try { return ([Convert]::ToHexString($sha.ComputeHash($Stream))).ToLowerInvariant() }
+    try { return (([BitConverter]::ToString($sha.ComputeHash($Stream))) -replace '-', '').ToLowerInvariant() }
     finally { $sha.Dispose() }
 }
 
@@ -316,7 +321,9 @@ function Test-CanonicalPackageZip(
     $expected = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     foreach ($item in $ExpectedEntries) {
         Assert-PackageRelativePath ([string]$item.Path)
-        if (-not $expected.TryAdd([string]$item.Path, $item)) { throw "PACKAGE_EXPECTED_DUPLICATE: $($item.Path)" }
+        $path = [string]$item.Path
+        if ($expected.ContainsKey($path)) { throw "PACKAGE_EXPECTED_DUPLICATE: $path" }
+        $expected.Add($path, $item)
     }
     $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $stream = [IO.File]::OpenRead($ZipPath)

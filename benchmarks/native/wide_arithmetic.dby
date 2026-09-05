@@ -1,0 +1,9 @@
+pub fn main() -> i64:
+    let index: u64 = 0 as u64
+    let value: u64 = 0x1e3779b97f4a7c15 as u64
+    while index < (120000000 as u64):
+        value = (value ^ (value >> (13 as u64))) * (0x3f58476d1ce4e5b9 as u64)
+        index = index + (1 as u64)
+    if value == (4483462277189705724 as u64):
+        return 42 as i64
+    return 1 as i64

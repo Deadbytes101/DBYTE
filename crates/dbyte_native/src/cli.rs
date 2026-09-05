@@ -1,11 +1,8 @@
 use crate::archive::{write_archive, ArchiveMember};
 use crate::dbup::{pack_user_bundle, BundleInput};
-use crate::linker::{link_object_bytes, LinkInput};
+use crate::linker::{link_object_bytes, link_user_object_bytes, LinkInput};
+use crate::native_mir::NativeOptimizationLevel;
 use crate::object::parse_relocatable;
-use crate::systems_compiler::{
-    compile_canonical_legacy_single_image, compile_systems_objects, compile_systems_project,
-    compile_user_objects, compile_user_project,
-};
 use crate::{Diagnostic, EmitKind, TARGET, USER_TARGET};
 use std::ffi::OsString;
 use std::fmt;
@@ -14,7 +11,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--dump-ir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -116,7 +113,9 @@ struct BuildOptions {
     target: BuildTarget,
     emit: EmitKind,
     output: PathBuf,
+    optimization: NativeOptimizationLevel,
     dump_ir: bool,
+    dump_native_mir: bool,
     dump_machine_code: bool,
 }
 
@@ -146,6 +145,7 @@ struct PackUserOptions {
 struct BuildProduct {
     bytes: Vec<u8>,
     ir_dump: String,
+    native_mir_dump: String,
     machine_dump: String,
 }
 
@@ -190,7 +190,10 @@ pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
 
     reject_source_as_output(&options.source, &options.output)?;
 
-    let product = compile_build_product(&options, &source_text)?;
+    let mut product = compile_build_product(&options, &source_text)?;
+    if options.dump_native_mir {
+        product.native_mir_dump = compile_native_mir_dump(&options)?;
+    }
     validate_selected_output(
         &options.source,
         options.target,
@@ -260,38 +263,61 @@ fn compile_build_product(
         };
         return match options.emit {
             EmitKind::Elf if options.target != BuildTarget::X86_64Windows => {
-                let artifact = crate::modern_native::compile_source(&options.source, target)
-                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let artifact = crate::modern_native::compile_mir_source(
+                    &options.source,
+                    target,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
                 Ok(BuildProduct {
                     bytes: artifact.elf.bytes,
                     ir_dump: artifact.hir_dump,
+                    native_mir_dump: String::new(),
                     machine_dump: artifact.machine_dump,
                 })
             }
             EmitKind::Elf => {
-                let artifact = crate::modern_native::compile_windows_source(&options.source)
-                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let object = crate::modern_native::compile_mir_executable_object_source(
+                    &options.source,
+                    target,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let artifact = crate::modern_native::link_windows_object_bytes(&[
+                    crate::linker64::LinkInput::new("m0000.obj", object.object.bytes),
+                ])
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
                 Ok(BuildProduct {
                     bytes: artifact.bytes,
-                    ir_dump: format!("profile {}\nlayout pointer=8 usize=8\n", target.triple),
+                    ir_dump: object.hir_dump,
+                    native_mir_dump: String::new(),
                     machine_dump: format!(
-                        "PE32+ entry=0x{:016x} imports={}\n",
-                        artifact.entry, artifact.import_count
+                        "{}PE32+ entry=0x{:016x} imports={}\n",
+                        object.machine_dump, artifact.entry, artifact.import_count
                     ),
                 })
             }
             EmitKind::Obj => {
-                let artifact = crate::modern_native::compile_object_source(&options.source, target)
-                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let artifact = crate::modern_native::compile_mir_object_source(
+                    &options.source,
+                    target,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
                 Ok(BuildProduct {
                     bytes: artifact.object.bytes,
                     ir_dump: artifact.hir_dump,
+                    native_mir_dump: String::new(),
                     machine_dump: artifact.machine_dump,
                 })
             }
             EmitKind::StaticLib => {
-                let artifact = crate::modern_native::compile_object_source(&options.source, target)
-                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let artifact = crate::modern_native::compile_mir_object_source(
+                    &options.source,
+                    target,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
                 let bytes = crate::archive::write_archive(&[crate::archive::ArchiveMember {
                     name: "m0000.o".into(),
                     bytes: artifact.object.bytes,
@@ -300,23 +326,104 @@ fn compile_build_product(
                 Ok(BuildProduct {
                     bytes,
                     ir_dump: artifact.hir_dump,
+                    native_mir_dump: String::new(),
                     machine_dump: artifact.machine_dump,
                 })
             }
             EmitKind::Bin if options.target == BuildTarget::X86_64None => {
-                let artifact = crate::modern_native::compile_source(&options.source, target)
-                    .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let artifact = crate::modern_native::compile_mir_source(
+                    &options.source,
+                    target,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
                 Ok(BuildProduct {
                     // The address tag describes the same deterministic bytes
                     // as a flat load at 1 MiB, with no external objcopy step.
                     bytes: artifact.elf.bytes,
                     ir_dump: artifact.hir_dump,
+                    native_mir_dump: String::new(),
                     machine_dump: artifact.machine_dump,
                 })
             }
             EmitKind::Bin => Err(CliError::argument(
                 "DBYTE64 BIN emission is supported only for x86_64-dbyte-none",
             )),
+        };
+    }
+    if options.target == BuildTarget::Kernel {
+        return match options.emit {
+            EmitKind::Obj | EmitKind::StaticLib => {
+                let artifact = crate::modern_native::compile_mir_i686_object_source(
+                    &options.source,
+                    crate::target::I686_NONE,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
+                if options.emit == EmitKind::Obj {
+                    Ok(BuildProduct {
+                        bytes: artifact.object.bytes,
+                        ir_dump: artifact.hir_dump,
+                        native_mir_dump: String::new(),
+                        machine_dump: artifact.machine_dump,
+                    })
+                } else {
+                    let bytes = write_archive(&[ArchiveMember {
+                        name: "m0000.o".into(),
+                        bytes: artifact.object.bytes,
+                    }])
+                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+                    Ok(BuildProduct {
+                        bytes,
+                        ir_dump: artifact.hir_dump,
+                        native_mir_dump: String::new(),
+                        machine_dump: artifact.machine_dump,
+                    })
+                }
+            }
+            EmitKind::Elf | EmitKind::Bin => {
+                let objects = crate::modern_native::compile_mir_i686_project_objects(
+                    &options.source,
+                    crate::target::I686_NONE,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let mut inputs = Vec::with_capacity(objects.len());
+                let mut ir_dump = String::new();
+                let mut machine_dump = String::new();
+                for (source, artifact) in objects {
+                    let stem = source
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .ok_or_else(|| {
+                            CliError::compile(&source, "source module has no UTF-8 file stem")
+                        })?;
+                    inputs.push(LinkInput::new(format!("{stem}.o"), artifact.object.bytes));
+                    append_dump(&mut ir_dump, &artifact.hir_dump);
+                    append_dump(&mut machine_dump, &artifact.machine_dump);
+                }
+                let linked = link_object_bytes(&inputs).map_err(|diagnostic| {
+                    if diagnostic.category
+                        == crate::diagnostics::DiagnosticCategory::UndefinedSymbol
+                        && diagnostic.message == "undefined entry symbol 'kernel_main'"
+                    {
+                        CliError::compile(&options.source, "E_ENTRY_MISSING: missing `kernel_main`")
+                    } else {
+                        CliError::compile(&options.source, diagnostic.to_string())
+                    }
+                })?;
+                append_dump(&mut machine_dump, &linked.dump);
+                Ok(BuildProduct {
+                    bytes: if options.emit == EmitKind::Elf {
+                        linked.elf
+                    } else {
+                        linked.bin
+                    },
+                    ir_dump,
+                    native_mir_dump: String::new(),
+                    machine_dump,
+                })
+            }
         };
     }
     if options.target == BuildTarget::User {
@@ -328,90 +435,81 @@ fn compile_build_product(
                 "i686-dbyte-user does not support --emit staticlib",
             )),
             EmitKind::Obj => {
-                let objects = compile_user_objects(&options.source)
-                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
-                let root = objects.root_object();
-                let mut machine_dump = root.machine_dump.clone();
-                append_dump(&mut machine_dump, &root.object_dump);
+                let artifact = crate::modern_native::compile_mir_i686_object_source(
+                    &options.source,
+                    crate::target::I686_USER,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
                 Ok(BuildProduct {
-                    bytes: root.bytes.clone(),
-                    ir_dump: root.ir_dump.clone(),
-                    machine_dump,
+                    bytes: artifact.object.bytes,
+                    ir_dump: artifact.hir_dump,
+                    native_mir_dump: String::new(),
+                    machine_dump: artifact.machine_dump,
                 })
             }
             EmitKind::Elf => {
-                let artifact = compile_user_project(&options.source)
-                    .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+                let artifact = crate::modern_native::compile_mir_i686_executable_object_source(
+                    &options.source,
+                    crate::target::I686_USER,
+                    options.optimization,
+                )
+                .map_err(|error| CliError::compile(&options.source, error.0))?;
+                let linked =
+                    link_user_object_bytes(&[LinkInput::new("m0000.o", artifact.object.bytes)])
+                        .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
+                let mut machine_dump = artifact.machine_dump;
+                append_dump(&mut machine_dump, &linked.dump);
                 Ok(BuildProduct {
-                    bytes: artifact.linked.elf,
-                    ir_dump: artifact.ir_dump,
-                    machine_dump: artifact.machine_dump,
+                    bytes: linked.elf,
+                    ir_dump: artifact.hir_dump,
+                    native_mir_dump: String::new(),
+                    machine_dump,
                 })
             }
         };
     }
-    match options.emit {
-        EmitKind::Obj => {
-            let objects = compile_systems_objects(&options.source)
-                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
-            let root = objects.root_object();
-            let mut machine_dump = root.machine_dump.clone();
-            append_dump(&mut machine_dump, &root.object_dump);
-            Ok(BuildProduct {
-                bytes: root.bytes.clone(),
-                ir_dump: root.ir_dump.clone(),
-                machine_dump,
-            })
-        }
-        EmitKind::StaticLib => {
-            let objects = compile_systems_objects(&options.source)
-                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
-            let members: Vec<_> = objects
-                .modules
-                .iter()
-                .map(|module| ArchiveMember {
-                    name: format!("m{:04}.o", module.module_id),
-                    bytes: module.bytes.clone(),
-                })
-                .collect();
-            let bytes = write_archive(&members)
-                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
-            Ok(BuildProduct {
-                bytes,
-                ir_dump: objects.combined_ir_dump(),
-                machine_dump: objects.combined_machine_dump(),
-            })
-        }
-        EmitKind::Elf | EmitKind::Bin => {
-            if let Some(artifact) = compile_canonical_legacy_single_image(&options.source)
-                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?
-            {
-                let bytes = match options.emit {
-                    EmitKind::Elf => artifact.elf,
-                    EmitKind::Bin => artifact.bin,
-                    EmitKind::Obj | EmitKind::StaticLib => unreachable!(),
-                };
-                return Ok(BuildProduct {
-                    bytes,
-                    ir_dump: artifact.ir_dump,
-                    machine_dump: artifact.machine_dump,
-                });
-            }
-            let artifact = compile_systems_project(&options.source)
-                .map_err(|diagnostic| compile_diagnostic(&options.source, diagnostic))?;
-            let bytes = match options.emit {
-                EmitKind::Elf => artifact.linked.elf,
-                EmitKind::Bin => artifact.linked.bin,
-                EmitKind::Obj => unreachable!("object emission handled above"),
-                EmitKind::StaticLib => unreachable!("archive emission handled above"),
-            };
-            Ok(BuildProduct {
-                bytes,
-                ir_dump: artifact.ir_dump,
-                machine_dump: artifact.machine_dump,
-            })
-        }
-    }
+    unreachable!("every native build target is routed through Native MIR")
+}
+
+fn compile_native_mir_dump(options: &BuildOptions) -> Result<String, CliError> {
+    let target = match options.target {
+        BuildTarget::Kernel => crate::target::I686_NONE,
+        BuildTarget::User => crate::target::I686_USER,
+        BuildTarget::X86_64None => crate::target::X86_64_NONE,
+        BuildTarget::X86_64Linux => crate::target::X86_64_LINUX,
+        BuildTarget::X86_64Windows => crate::target::X86_64_WINDOWS,
+    };
+    let input = dbyte_hir::load_source_project(&options.source).map_err(|diagnostics| {
+        CliError::compile(&options.source, render_hir_diagnostics(diagnostics))
+    })?;
+    let analyzed = dbyte_hir::analyze_project(&input, target.profile, target.layout).map_err(
+        |diagnostics| CliError::compile(&options.source, render_hir_diagnostics(diagnostics)),
+    )?;
+    let concrete = dbyte_hir::monomorphize_project(&analyzed)
+        .map_err(|diagnostic| CliError::compile(&options.source, diagnostic.to_string()))?;
+    dbyte_hir::validate_project_profile(&concrete, target.profile)
+        .map_err(|diagnostic| CliError::compile(&options.source, diagnostic.to_string()))?;
+    let mut mir = crate::native_mir_lower::lower_program_to_native_mir_with_link_names(
+        &concrete.executable,
+        Some(&concrete.link_names),
+    )
+    .map_err(|error| CliError::compile(&options.source, error.to_string()))?;
+    mir.optimize(options.optimization)
+        .map_err(|error| CliError::compile(&options.source, error.to_string()))?;
+    Ok(format!(
+        "optimization={}\n{}",
+        options.optimization,
+        mir.dump()
+    ))
+}
+
+fn render_hir_diagnostics(diagnostics: Vec<dbyte_hir::Diagnostic>) -> String {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn compile_diagnostic(source: &Path, diagnostic: Diagnostic) -> CliError {
@@ -448,7 +546,9 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
     let mut target: Option<String> = None;
     let mut emit: Option<EmitKind> = None;
     let mut output: Option<PathBuf> = None;
+    let mut optimization: Option<NativeOptimizationLevel> = None;
     let mut dump_ir = false;
+    let mut dump_native_mir = false;
     let mut dump_machine_code = false;
     let mut index = 1;
 
@@ -470,9 +570,21 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
                     args, &mut index, argument,
                 )?));
             }
+            "--opt-level" => {
+                reject_duplicate(optimization.is_some(), "--opt-level")?;
+                let value = take_option_value(args, &mut index, "--opt-level")?;
+                optimization = Some(
+                    NativeOptimizationLevel::parse(value)
+                        .map_err(|error| CliError::argument(error.to_string()))?,
+                );
+            }
             "--dump-ir" => {
                 reject_duplicate(dump_ir, "--dump-ir")?;
                 dump_ir = true;
+            }
+            "--dump-native-mir" => {
+                reject_duplicate(dump_native_mir, "--dump-native-mir")?;
+                dump_native_mir = true;
             }
             "--dump-machine-code" => {
                 reject_duplicate(dump_machine_code, "--dump-machine-code")?;
@@ -485,6 +597,13 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
             _ if argument.starts_with("--emit=") => {
                 reject_duplicate(emit.is_some(), "--emit")?;
                 emit = Some(parse_emit(&argument["--emit=".len()..])?);
+            }
+            _ if argument.starts_with("--opt-level=") => {
+                reject_duplicate(optimization.is_some(), "--opt-level")?;
+                optimization = Some(
+                    NativeOptimizationLevel::parse(&argument["--opt-level=".len()..])
+                        .map_err(|error| CliError::argument(error.to_string()))?,
+                );
             }
             _ if argument.starts_with('-') => {
                 return Err(CliError::argument(format!("unknown option '{argument}'")));
@@ -520,7 +639,9 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
         target,
         emit,
         output,
+        optimization: optimization.unwrap_or_default(),
         dump_ir,
+        dump_native_mir,
         dump_machine_code,
     })
 }
@@ -878,6 +999,9 @@ fn write_requested_dumps(product: &BuildProduct, options: &BuildOptions) -> Resu
     if options.dump_ir {
         write_dump(&mut output, &product.ir_dump)?;
     }
+    if options.dump_native_mir {
+        write_dump(&mut output, &product.native_mir_dump)?;
+    }
     if options.dump_machine_code {
         write_dump(&mut output, &product.machine_dump)?;
     }
@@ -1114,7 +1238,10 @@ mod tests {
             "elf",
             "-o",
             "kernel.elf",
+            "--opt-level",
+            "0",
             "--dump-ir",
+            "--dump-native-mir",
             "--dump-machine-code",
         ]))
         .expect("options should parse");
@@ -1122,7 +1249,9 @@ mod tests {
         assert_eq!(parsed.source, PathBuf::from("kernel.dby"));
         assert!(matches!(parsed.emit, EmitKind::Elf));
         assert_eq!(parsed.output, PathBuf::from("kernel.elf"));
+        assert_eq!(parsed.optimization, NativeOptimizationLevel::O0);
         assert!(parsed.dump_ir);
+        assert!(parsed.dump_native_mir);
         assert!(parsed.dump_machine_code);
     }
 
@@ -1139,6 +1268,7 @@ mod tests {
         ]))
         .expect("object build options should parse");
         assert_eq!(object.emit, EmitKind::Obj);
+        assert_eq!(object.optimization, NativeOptimizationLevel::O1);
         assert_eq!(object.output, PathBuf::from("kernel.o"));
 
         let link = parse_link_args(&args(&["link", "kernel.o", "serial.o", "-o", "kernel.elf"]))
@@ -1148,6 +1278,156 @@ mod tests {
             vec![PathBuf::from("kernel.o"), PathBuf::from("serial.o")]
         );
         assert_eq!(link.output, PathBuf::from("kernel.elf"));
+    }
+
+    #[test]
+    fn native_mir_dump_is_real_optimized_ir_and_not_a_placeholder() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_v12_2_linux/exit42.dby");
+        let options = BuildOptions {
+            source,
+            target: BuildTarget::X86_64Linux,
+            emit: EmitKind::Elf,
+            output: PathBuf::from("unused.elf"),
+            optimization: NativeOptimizationLevel::O1,
+            dump_ir: false,
+            dump_native_mir: true,
+            dump_machine_code: false,
+        };
+        let dump = compile_native_mir_dump(&options).unwrap();
+        assert!(dump.starts_with("optimization=O1\nnative-mir pointer-bytes=8 globals=0\n"));
+        assert!(dump.contains("function main"));
+        assert!(dump.contains("Const"));
+        assert!(dump.contains("Return"));
+    }
+
+    #[test]
+    fn linux_build_product_uses_native_mir_for_o0_and_o1_machine_bytes() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_v12_2_linux/exit42.dby");
+        let options = |optimization| BuildOptions {
+            source: source.clone(),
+            target: BuildTarget::X86_64Linux,
+            emit: EmitKind::Elf,
+            output: PathBuf::from("unused.elf"),
+            optimization,
+            dump_ir: false,
+            dump_native_mir: false,
+            dump_machine_code: true,
+        };
+        let o0 = compile_build_product(&options(NativeOptimizationLevel::O0), "").unwrap();
+        let o1 = compile_build_product(&options(NativeOptimizationLevel::O1), "").unwrap();
+        assert!(o0.machine_dump.starts_with("native-codegen opt=O0 "));
+        assert!(o1.machine_dump.starts_with("native-codegen opt=O1 "));
+        assert_ne!(o0.bytes, o1.bytes);
+        for bytes in [&o0.bytes, &o1.bytes] {
+            let inspection = crate::elf64::inspect(bytes).unwrap();
+            assert_eq!(inspection.machine, 62);
+            assert!(!inspection.has_dynamic);
+        }
+    }
+
+    #[test]
+    fn windows_build_product_uses_native_mir_and_internal_pe_linking() {
+        let test_dir = TestDirectory::new("windows-mir-product");
+        let source = test_dir.path.join("main.dby");
+        fs::write(
+            &source,
+            "fn windows_get_std_handle_raw(kind: i32) -> usize:\n    return windows.get_std_handle(kind)\n\nfn windows_write_file_raw(handle: usize, text: str, length: u32) -> i32:\n    return windows.write_file(handle, text, length, 0 as usize, 0 as usize)\n\npub fn main() -> int:\n    let output = windows_get_std_handle_raw(-11 as i32)\n    windows_write_file_raw(output, \"WIN MIR OK\\r\\n\", 12 as u32)\n    return 42\n",
+        )
+        .unwrap();
+        let options = |optimization| BuildOptions {
+            source: source.clone(),
+            target: BuildTarget::X86_64Windows,
+            emit: EmitKind::Elf,
+            output: test_dir.path.join("unused.exe"),
+            optimization,
+            dump_ir: false,
+            dump_native_mir: false,
+            dump_machine_code: true,
+        };
+        let o0 = compile_build_product(&options(NativeOptimizationLevel::O0), "").unwrap();
+        let o1 = compile_build_product(&options(NativeOptimizationLevel::O1), "").unwrap();
+        assert_eq!(&o0.bytes[..2], b"MZ");
+        assert_eq!(&o1.bytes[..2], b"MZ");
+        assert!(o0.machine_dump.starts_with("native-codegen opt=O0 "));
+        assert!(o1.machine_dump.starts_with("native-codegen opt=O1 "));
+        assert!(o1.machine_dump.contains("PE32+"));
+        assert_ne!(o0.bytes, o1.bytes);
+    }
+
+    #[test]
+    fn kernel_object_forms_do_not_require_entry_but_executable_forms_do() {
+        let test_dir = TestDirectory::new("kernel-entry-routing");
+        let source = test_dir.path.join("module.dby");
+        fs::write(
+            &source,
+            "pub fn arch_value() -> u32:\n    return 42 as u32\n",
+        )
+        .unwrap();
+
+        for emit in [EmitKind::Obj, EmitKind::StaticLib] {
+            let options = BuildOptions {
+                source: source.clone(),
+                target: BuildTarget::Kernel,
+                emit,
+                output: test_dir.path.join("unused-output"),
+                optimization: NativeOptimizationLevel::O1,
+                dump_ir: false,
+                dump_native_mir: false,
+                dump_machine_code: false,
+            };
+            compile_build_product(&options, "").expect("object forms must not require kernel_main");
+        }
+
+        for emit in [EmitKind::Elf, EmitKind::Bin] {
+            let options = BuildOptions {
+                source: source.clone(),
+                target: BuildTarget::Kernel,
+                emit,
+                output: test_dir.path.join("unused-output"),
+                optimization: NativeOptimizationLevel::O1,
+                dump_ir: false,
+                dump_native_mir: false,
+                dump_machine_code: false,
+            };
+            let error = compile_build_product(&options, "")
+                .expect_err("executable forms must require kernel_main");
+            assert!(error.to_string().contains("E_ENTRY_MISSING"));
+        }
+    }
+
+    #[test]
+    fn kernel_integrated_build_matches_per_module_object_link() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/native_scheduler_core/kernel.dby");
+        let mut inputs = Vec::new();
+        for (module, artifact) in crate::modern_native::compile_mir_i686_project_objects(
+            &source,
+            crate::target::I686_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap()
+        {
+            let stem = module.file_stem().unwrap().to_str().unwrap();
+            inputs.push(LinkInput::new(format!("{stem}.o"), artifact.object.bytes));
+        }
+        let linked = link_object_bytes(&inputs).unwrap();
+        let integrated = compile_build_product(
+            &BuildOptions {
+                source,
+                target: BuildTarget::Kernel,
+                emit: EmitKind::Elf,
+                output: PathBuf::from("unused.elf"),
+                optimization: NativeOptimizationLevel::O1,
+                dump_ir: false,
+                dump_native_mir: false,
+                dump_machine_code: false,
+            },
+            "",
+        )
+        .unwrap();
+        assert_eq!(integrated.bytes, linked.elf);
     }
 
     #[test]

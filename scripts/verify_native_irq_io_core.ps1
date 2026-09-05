@@ -199,7 +199,8 @@ foreach ($token in @("global_asm", "nasm", "gcc", "clang", "rustc", "llvm", "std
 }
 $irDump = Invoke-Checked $compiler @("build", (Join-Path $sourceRoot "scheduler.dby"), "--target", "i686-dbyte-none", "--emit", "obj", "-o", (Join-Path $evidenceRoot "scheduler.ir.object"), "--dump-ir") "dump blocking IR"
 [IO.File]::WriteAllText((Join-Path $evidenceRoot "irq_io.ir.txt"), $irDump)
-Assert-True ($irDump.Contains("intrinsic native.task_block_trap 2 -> i32")) "IRQ I/O IR lacks typed two-argument block trap"
+$typedTrapPattern = 'Intrinsic \{ destination: Some\(VirtualRegister\(\d+\)\), intrinsic: TaskBlockTrap, arguments: \[VirtualRegister\(\d+\), VirtualRegister\(\d+\)\], result: Some\(I32\), volatile: true \}'
+Assert-True (([regex]::Matches($irDump, $typedTrapPattern)).Count -eq 3) "IRQ I/O Native MIR lacks the three typed two-argument block traps"
 Assert-True ($schedulerSource.Contains("native.task_block_trap(3 as u32")) "scheduler source lacks checked semaphore request kind"
 Assert-True (-not [regex]::IsMatch($irDump, '\byield\b')) "IRQ I/O proof IR contains yield"
 

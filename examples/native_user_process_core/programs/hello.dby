@@ -6,7 +6,7 @@ pub fn user_main() -> int:
     if result != 23:
         return 1
     let path: str = "/SYSTEM/CONFIG.TXT"
-    let fd: i32 = user.syscall2(3 as u32, path, 1 as usize)
+    let fd: i32 = user.syscall3(3 as u32, path, 18 as usize, 1 as usize)
     if fd < 3:
         return 2
     let count: i32 = user.syscall3(4 as u32, fd as usize, (&CONFIG[0]) as usize, 64 as usize)
