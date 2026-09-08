@@ -1,13 +1,13 @@
 # V13 Freestanding Machine Foundation
 
-Status: v13.0.0 software release candidate. G1-G5 virtual acceptance is governed by the release verifiers and bound receipts described in [V13_SOFTWARE_RELEASE.md](V13_SOFTWARE_RELEASE.md). Real BIOSTAR hardware remains PENDING; real storage remains DISARMED. A release is not complete until the post-commit, tag and package gates are sealed.
+Status: v13.0.0 is sealed as `VIRTUAL_QUALIFIED_SOFTWARE_FINAL` at commit `3b68536dc280dade3afde1620eeffbeb0309ec97` with annotated tag `v13.0.0`. G1-G5 virtual acceptance passed under the release verifiers and bound receipts described in [V13_SOFTWARE_RELEASE.md](V13_SOFTWARE_RELEASE.md). Real BIOSTAR hardware remains PENDING; real storage remains DISARMED; those physical boundaries are explicitly outside the software-final classification.
 
 ## Baseline and delivery boundary
 
 The immutable authority is v12.4.0, commit
 `a1a5c2458065f6f295d1c3e77df62a34846226e3`, annotated tag object
 `28c074777f46bd9e8885f42c49f903ba34e19254`.
-The candidate extends that frozen authority through a BIOS-first virtual machine foundation. The approved v13.0.0 release classification is VIRTUAL_QUALIFIED_SOFTWARE_FINAL, not physical hardware certification. Exact-commit verification, an annotated tag and deterministic packaging are authorized only after their gates pass. Frozen packages/tags remain immutable; physical storage writes and pushes are not authorized. The generation-specific audit and evidence below retain their historical scope and do not substitute for current release receipts.
+The sealed v13.0.0 release extends that frozen authority through a BIOS-first virtual machine foundation. Its release classification is `VIRTUAL_QUALIFIED_SOFTWARE_FINAL`, not physical hardware certification. Exact-commit verification, the annotated tag, deterministic packaging, clean-package smoke, and remote branch/tag verification completed under the release gates. Frozen packages and tags remain immutable; physical storage writes remain separately disarmed. The generation-specific audit and evidence below retain their historical scope and do not substitute for the final release receipts.
 
 ## Evidence-grounded capability audit
 
@@ -108,7 +108,7 @@ hashes, disk identities, boot/input/output capture, discovery, memory/interrupts
 storage flush, reboot/readback, userspace execution and fault containment. Fingerprint
 matching alone proves none of these. QEMU has its own receipt, not a hardware waiver.
 
-Current status: G1 QEMU = PASS; REAL BIOSTAR = PENDING; REAL STORAGE = DISARMED; FULL OS = PENDING; v13 FINAL = NOT CREATED. The certified G1 candidate is bound to evidence root `tmp/v13_g1/generation1-91cfde928e954d228cc03d24527472ba`, ELF SHA-256 `263081D0B9B5B9DB209BE2474C5CFBD4FA320787D075876BD39C8768A221BCA4`, and ISO SHA-256 `B1E62CAA6C90A3B6175AF403FF9A4B5668A556557A928F723A5DD3EFE68A4D02` (11,427,840 bytes). Historical-byte gates run from immutable exports; candidate behavioral/ABI gates do not modify frozen sources. No commit, tag, push, version bump, or storage write is part of G1.
+Current status: G1-G5 virtual acceptance = PASS; v13.0.0 FINAL = SEALED at commit `3b68536dc280dade3afde1620eeffbeb0309ec97`; annotated tag `v13.0.0` peels to that exact commit; canonical Windows package SHA-256 is `40468ef823543b23638d633fbfc5e7e82b6da23ce4659238a3c427f2916337d9`; final receipt SHA-256 is `bf177552f4c75e70d6c7dd38b7de6a48f5520d71b3fed6f43aadb08556f5412f`. REAL BIOSTAR = PENDING; REAL STORAGE = DISARMED; FULL OS = PENDING. The earlier certified G1 candidate remains bound to evidence root `tmp/v13_g1/generation1-91cfde928e954d228cc03d24527472ba`, ELF SHA-256 `263081D0B9B5B9DB209BE2474C5CFBD4FA320787D075876BD39C8768A221BCA4`, and ISO SHA-256 `B1E62CAA6C90A3B6175AF403FF9A4B5668A556557A928F723A5DD3EFE68A4D02` (11,427,840 bytes). Historical-byte gates run from immutable exports; that G1 evidence remains historical and does not replace the final v13 receipts.
 
 Normative external references for later implementation: [UEFI Boot Services](https://uefi.org/specs/UEFI/2.10_A/07_Services_Boot_Services.html),
 [UEFI x64 image/entry conventions](https://uefi.org/specs/UEFI/2.10/02_Overview.html),

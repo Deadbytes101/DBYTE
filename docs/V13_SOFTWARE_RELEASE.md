@@ -1,7 +1,8 @@
 # v13.0.0 software release boundary
 
-Classification: `VIRTUAL_QUALIFIED_SOFTWARE_FINAL` **only after all gates below pass**.
-Until the final receipt is sealed, this is a release candidate, not a completed release.
+Classification: `VIRTUAL_QUALIFIED_SOFTWARE_FINAL`.
+
+Sealed release: v13.0.0 at commit `3b68536dc280dade3afde1620eeffbeb0309ec97`; annotated tag `v13.0.0` peels to that exact commit. The canonical Windows package SHA-256 is `40468ef823543b23638d633fbfc5e7e82b6da23ce4659238a3c427f2916337d9`, and the final release receipt SHA-256 is `bf177552f4c75e70d6c7dd38b7de6a48f5520d71b3fed6f43aadb08556f5412f`. The release closure also verified `origin/main` and the remote peeled tag against the same commit. The qualification procedure below is retained as the exact gate contract that produced this sealed state.
 
 `REAL_BIOSTAR=PENDING` and `REAL_STORAGE=DISARMED` remain independent of
 software release qualification. QEMU execution does not certify a physical PC,

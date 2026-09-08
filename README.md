@@ -54,6 +54,8 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 ## Current Snapshot
 
 - Snapshot version: **v13.0.0**
+- Software release classification: **VIRTUAL_QUALIFIED_SOFTWARE_FINAL** at commit `3b68536dc280dade3afde1620eeffbeb0309ec97`.
+- Physical qualification: **REAL_BIOSTAR=PENDING**; **REAL_STORAGE=DISARMED**.
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.
@@ -61,10 +63,10 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 Tracked line counts are measured from `git ls-files`, so ignored build output, release zips, bundles, VM logs, and `target/` directories are excluded:
 
-- Kernel Rust source: **16,448 lines** across `kernel-lab/src/*.rs`.
-- Full Kernel Lab tracked files: **16,584 lines** across kernel sources, linker script, scripts, manifest, and lab README.
-- Main tracked source and docs set: **105,892 lines** across **635 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
-- Total tracked files in the repository: **956**.
+- Kernel Rust source: **16,448 lines** across **13** tracked `kernel-lab/src/*.rs` files.
+- Full Kernel Lab: **16,610 lines** across **21** tracked files under `kernel-lab/`.
+- Main tracked source and docs set: **205,661 lines** across **995 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
+- Total tracked files in the repository: **1,345**.
 
 ## Language Stack
 
