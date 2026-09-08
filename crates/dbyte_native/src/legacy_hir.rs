@@ -371,7 +371,8 @@ impl<'a, 's> FunctionAdapter<'a, 's> {
                     return Ok(false);
                 }
             }
-            HirExprKind::Float(..)
+            HirExprKind::Bitcast { .. }
+            | HirExprKind::Float(..)
             | HirExprKind::Bytes(..)
             | HirExprKind::Null
             | HirExprKind::Global(..)

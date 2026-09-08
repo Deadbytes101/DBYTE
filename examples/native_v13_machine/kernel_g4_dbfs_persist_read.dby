@@ -1,0 +1,57 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "vfs_ro.dby" as vfs
+import "dbfs_inode_ro.dby" as inode
+import "dbfs_persist_pattern.dby" as pattern
+
+static mut FILE_STAT: vfs.VfsStat
+static mut FILE_BYTES: array[u16, 256]
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 DBFS PERSIST REBOOT", 32 as usize)
+    status = vfs.initialize()
+    if status != 0:
+        return fail("G4DBFSR ERROR mount=", 20 as usize, status)
+    console.line("DBFS REMOUNT OK", 15 as usize)
+    status = vfs.stat("/HELLO.TXT", 10 as usize, &FILE_STAT)
+    if status != 0:
+        return fail("G4DBFSR ERROR stat=", 19 as usize, status)
+    if FILE_STAT.inode_number != (2 as u32):
+        return fail("G4DBFSR ERROR inode=", 20 as usize, FILE_STAT.inode_number as int)
+    if FILE_STAT.entry_type != inode.inode_regular_type():
+        return fail("G4DBFSR ERROR type=", 19 as usize, FILE_STAT.entry_type as int)
+    if FILE_STAT.size_bytes != (128 as u32):
+        return fail("G4DBFSR ERROR size=", 19 as usize, FILE_STAT.size_bytes as int)
+    if FILE_STAT.direct_blocks != (1 as u32):
+        return fail("G4DBFSR ERROR blocks=", 21 as usize, FILE_STAT.direct_blocks as int)
+    let bytes_read: usize = 0 as usize
+    status = vfs.read("/HELLO.TXT", 10 as usize, (&FILE_BYTES[0]) as usize as ptr[u8], 512 as usize, &bytes_read)
+    if status != 0:
+        return fail("G4DBFSR ERROR read=", 19 as usize, status)
+    if bytes_read != pattern.payload_bytes():
+        return fail("G4DBFSR ERROR bytes=", 20 as usize, bytes_read as int)
+    status = pattern.verify_payload((&FILE_BYTES[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4DBFSR ERROR verify=", 21 as usize, status)
+    let hash: u32 = pattern.fnv1a((&FILE_BYTES[0]) as usize as ptr[u8], bytes_read)
+    console.write("DBFS STAT OK inode=", 19 as usize)
+    console.hex32(FILE_STAT.inode_number)
+    console.write(" size=", 6 as usize)
+    console.hex32(FILE_STAT.size_bytes)
+    console.newline()
+    console.write("DBFS READ OK bytes=", 19 as usize)
+    console.hex32(bytes_read as u32)
+    console.write(" hash=", 6 as usize)
+    console.hex32(hash)
+    console.newline()
+    console.line("G4 DBFS PERSIST REBOOT COMPLETE", 31 as usize)
+    return 0

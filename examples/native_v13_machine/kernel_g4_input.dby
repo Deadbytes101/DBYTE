@@ -1,0 +1,113 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "acpi.dby" as acpi
+import "input_ps2.dby" as input
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+fn expect_scan(index: u8, expected: u8) -> int:
+    let value: u8 = 0 as u8
+    let status: int = input.wait_scancode(&value)
+    if status != 0:
+        console.write("G4INPUT ERROR wait index=", 25 as usize)
+        console.hex8(index)
+        console.write(" status=", 8 as usize)
+        console.hex32(status as u32)
+        console.newline()
+        return 100 + (index as int)
+    if value != expected:
+        console.write("G4INPUT ERROR scan expected=", 28 as usize)
+        console.hex8(expected)
+        console.write(" got=", 5 as usize)
+        console.hex8(value)
+        console.newline()
+        return 120 + (index as int)
+    console.write("INPUT ACK index=", 16 as usize)
+    console.hex8(index)
+    console.write(" scan=", 6 as usize)
+    console.hex8(value)
+    console.newline()
+    return 0
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 INPUT", 18 as usize)
+    status = input.initialize()
+    if status != 0:
+        return fail("G4INPUT ERROR init=", 19 as usize, status)
+    console.line("INPUT SELFTEST status=PASS ring=PASS", 36 as usize)
+    status = input.begin_capture()
+    if status != 0:
+        return fail("G4INPUT ERROR begin=", 20 as usize, status)
+    console.write("INPUT READY gsi=", 16 as usize)
+    console.hex32(acpi.legacy_irq_gsi(1 as u8))
+    console.write(" flags=", 7 as usize)
+    console.hex16(acpi.legacy_irq_flags(1 as u8))
+    console.newline()
+
+    status = expect_scan(0 as u8, 0x1e as u8)
+    if status != 0:
+        return status
+    status = expect_scan(1 as u8, 0x9e as u8)
+    if status != 0:
+        return status
+    status = expect_scan(2 as u8, 0x30 as u8)
+    if status != 0:
+        return status
+    status = expect_scan(3 as u8, 0xb0 as u8)
+    if status != 0:
+        return status
+    status = expect_scan(4 as u8, 0x2e as u8)
+    if status != 0:
+        return status
+    status = expect_scan(5 as u8, 0xae as u8)
+    if status != 0:
+        return status
+    status = expect_scan(6 as u8, 0x20 as u8)
+    if status != 0:
+        return status
+    status = expect_scan(7 as u8, 0xa0 as u8)
+    if status != 0:
+        return status
+
+    status = input.end_capture()
+    if status != 0:
+        return fail("G4INPUT ERROR end=", 18 as usize, status)
+    if input.irq_count() != (8 as u32):
+        return fail("G4INPUT ERROR irq=", 18 as usize, input.irq_count() as int)
+    if input.eoi_count() != (8 as u32):
+        return fail("G4INPUT ERROR eoi=", 18 as usize, input.eoi_count() as int)
+    if input.push_count() != (8 as u32):
+        return fail("G4INPUT ERROR pushes=", 21 as usize, input.push_count() as int)
+    if input.dropped_count() != (0 as u32):
+        return fail("G4INPUT ERROR drops=", 20 as usize, input.dropped_count() as int)
+    if input.malformed_count() != (0 as u32):
+        return fail("G4INPUT ERROR malformed=", 24 as usize, input.malformed_count() as int)
+    if input.fault_code() != (0 as u32):
+        return fail("G4INPUT ERROR fault=", 20 as usize, input.fault_code() as int)
+    if input.queued_count() != (0 as u32):
+        return fail("G4INPUT ERROR queued=", 21 as usize, input.queued_count() as int)
+    if input.timer_ticks() < (3 as u32):
+        return fail("G4INPUT ERROR timer=", 20 as usize, input.timer_ticks() as int)
+
+    console.write("INPUT COMPLETE irq=", 19 as usize)
+    console.hex32(input.irq_count())
+    console.write(" eoi=", 5 as usize)
+    console.hex32(input.eoi_count())
+    console.write(" pushes=", 8 as usize)
+    console.hex32(input.push_count())
+    console.write(" drops=", 7 as usize)
+    console.hex32(input.dropped_count())
+    console.write(" malformed=", 11 as usize)
+    console.hex32(input.malformed_count())
+    console.write(" timer=", 7 as usize)
+    console.hex32(input.timer_ticks())
+    console.newline()
+    console.line("G4 INPUT OBSERVED COMPLETE", 26 as usize)
+    return 0

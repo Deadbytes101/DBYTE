@@ -1,0 +1,98 @@
+import "machine_g3.dby" as machine
+import "boot_info.dby" as boot
+import "user_space64.dby" as user
+import "syscall_worker64.dby" as worker
+import "frames64.dby" as frames
+import "console.dby" as console
+import "user_file64.dby" as file
+
+static mut PHASE: u32
+
+fn fail(label: str, length: usize, status: int) -> int:
+    console.write(label, length)
+    console.hex32(status as u32)
+    console.newline()
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn print_summary() -> int:
+    console.write("PERSIST STATS req=", 18 as usize)
+    console.hex32(worker.request_count() as u32)
+    console.write(" open=", 6 as usize)
+    console.hex32(worker.open_count() as u32)
+    console.write(" read=", 6 as usize)
+    console.hex32(worker.read_count() as u32)
+    console.write(" close=", 7 as usize)
+    console.hex32(worker.close_count() as u32)
+    console.write(" write=", 7 as usize)
+    console.hex32(worker.write_count() as u32)
+    console.write(" cleanup=", 9 as usize)
+    console.hex32(worker.cleanup_count() as u32)
+    console.newline()
+    return 0
+
+pub fn after_user() -> int:
+    if PHASE != (1 as u32):
+        return fail("G5PERSIST PHASE=", 16 as usize, PHASE as int)
+    if user.exited() == false:
+        return fail("G5PERSIST EXITED=", 17 as usize, 1)
+    if user.exit_code() != 0:
+        return fail("G5PERSIST EXIT CODE=", 20 as usize, user.exit_code())
+    if worker.request_count() != (5 as usize):
+        return fail("G5PERSIST REQUESTS=", 19 as usize, worker.request_count() as int)
+    if worker.open_count() != (1 as usize):
+        return fail("G5PERSIST OPENS=", 16 as usize, worker.open_count() as int)
+    if worker.read_count() != (1 as usize):
+        return fail("G5PERSIST READS=", 16 as usize, worker.read_count() as int)
+    if worker.close_count() != (1 as usize):
+        return fail("G5PERSIST CLOSES=", 17 as usize, worker.close_count() as int)
+    if worker.write_count() != (2 as usize):
+        return fail("G5PERSIST WRITES=", 17 as usize, worker.write_count() as int)
+    if worker.release_process() != 0:
+        return fail("G5PERSIST RELEASE=", 18 as usize, 1)
+    if worker.cleanup_count() != (1 as usize):
+        return fail("G5PERSIST CLEANUP=", 18 as usize, worker.cleanup_count() as int)
+    if frames.owned_count() != (0 as usize):
+        return fail("G5PERSIST FRAMES=", 17 as usize, frames.owned_count() as int)
+    print_summary()
+    console.line("G5 REBOOT PERSISTENCE COMPLETE", 30 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 0
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = machine.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G5 REBOOT PERSISTENCE", 31 as usize)
+    if boot.module_count() != (0 as usize):
+        return fail("G5PERSIST MODULES=", 18 as usize, boot.module_count() as int)
+    status = worker.initialize()
+    if status != 0:
+        return fail("G5PERSIST INIT=", 15 as usize, status)
+    if worker.vfs_ready() == false:
+        return fail("G5PERSIST VFS=", 14 as usize, 1)
+    status = worker.begin_process()
+    if status != 0:
+        return fail("G5PERSIST BEGIN=", 16 as usize, status)
+    status = user.initialize()
+    if status != 0:
+        return fail("G5PERSIST USER INIT=", 21 as usize, status)
+    status = file.load("/PERSIST.ELF", 12 as usize)
+    if status != 0:
+        return fail("G5PERSIST ELF LOAD=", 19 as usize, status)
+    if user.set_worker_target(task_address(worker.run_once)) != 0:
+        return fail("G5PERSIST TARGET=", 17 as usize, 1)
+    if user.set_recovery_target(task_address(after_user)) != 0:
+        return fail("G5PERSIST RECOVERY=", 19 as usize, 1)
+    PHASE = 1 as u32
+    console.write("PERSIST READY owner=", 20 as usize)
+    console.hex32(worker.current_owner() as u32)
+    console.write(" entry=", 7 as usize)
+    console.hex64(user.entry() as u64)
+    console.newline()
+    status = user.enter()
+    return fail("G5PERSIST USER RETURN=", 21 as usize, status)

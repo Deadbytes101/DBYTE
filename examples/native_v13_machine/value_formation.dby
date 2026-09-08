@@ -1,0 +1,19 @@
+fn words(value: u64) -> bool:
+    if (value >> (32 as u64)) != (1 as u64):
+        return false
+    return (value as u32) == (0 as u32)
+
+pub fn check() -> int:
+    let literal_pointer: usize = 0x100000000 as usize
+    if words(literal_pointer as u64) == false:
+        return 1
+    let literal_wide: u64 = 0x100000000 as u64
+    if words(literal_wide) == false:
+        return 2
+    let cast_pointer: usize = literal_wide as usize
+    if words(cast_pointer as u64) == false:
+        return 3
+    let shifted: u64 = (1 as u64) << (32 as u64)
+    if words(shifted) == false:
+        return 4
+    return 42

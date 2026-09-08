@@ -1,0 +1,11 @@
+# G1 mapping boundary, not proof that an arbitrary mapped address contains RAM.
+# Callers must additionally validate the firmware-provided structure and size.
+pub fn contains(address: usize, length: usize) -> bool:
+    let limit: usize = (1 as usize) << (32 as usize)
+    if address == (0 as usize):
+        return false
+    if length == (0 as usize):
+        return false
+    if address >= limit:
+        return false
+    return length <= (limit - address)

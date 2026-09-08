@@ -1,0 +1,35 @@
+import "storage_ide.dby" as ide
+
+const OK: int = 0
+const NOT_READY: int = 30
+
+static mut READY: u32
+static mut LAST_ERROR: u32
+
+pub fn initialize() -> int:
+    READY = 0 as u32
+    LAST_ERROR = 0 as u32
+    let status: int = ide.identify()
+    if status != 0:
+        LAST_ERROR = status as u32
+        return status
+    READY = 1 as u32
+    return OK
+
+pub fn read_sector(lba: u32, destination: ptr[u8]) -> int:
+    if READY == (0 as u32):
+        LAST_ERROR = NOT_READY as u32
+        return NOT_READY
+    let status: int = ide.read_sector_into(lba, destination)
+    LAST_ERROR = status as u32
+    return status
+pub fn sector_count() -> u32:
+    if READY == (0 as u32):
+        return 0 as u32
+    return ide.sector_count()
+
+pub fn ready() -> bool:
+    return READY != (0 as u32)
+
+pub fn last_error() -> u32:
+    return LAST_ERROR

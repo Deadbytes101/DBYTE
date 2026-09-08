@@ -1,0 +1,127 @@
+const LINE_CAPACITY: usize = 32 as usize
+
+static mut LINE: array[u8, 32]
+static mut LENGTH: usize
+
+pub fn reset() -> int:
+    let index: usize = 0 as usize
+    while index < LINE_CAPACITY:
+        LINE[index] = 0 as u8
+        index = index + (1 as usize)
+    LENGTH = 0 as usize
+    return 0
+
+pub fn append(value: u8) -> int:
+    if value == (0 as u8):
+        return 1
+    if LENGTH >= (LINE_CAPACITY - (1 as usize)):
+        return 2
+    LINE[LENGTH] = value
+    LENGTH = LENGTH + (1 as usize)
+    LINE[LENGTH] = 0 as u8
+    return 0
+
+pub fn backspace() -> int:
+    if LENGTH == (0 as usize):
+        return 0
+    LENGTH = LENGTH - (1 as usize)
+    LINE[LENGTH] = 0 as u8
+    return 0
+
+pub fn length() -> usize:
+    return LENGTH
+
+pub fn byte(index: usize) -> u8:
+    if index >= LENGTH:
+        return 0 as u8
+    return LINE[index]
+
+pub fn matches(text: str, text_length: usize) -> bool:
+    if text_length != LENGTH:
+        return false
+    let index: usize = 0 as usize
+    while index < LENGTH:
+        let expected: u8 = native.volatile_load8(((text as usize) + index) as ptr[u8])
+        if LINE[index] != expected:
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn ascii(scan: u8) -> u8:
+    if scan >= (0x80 as u8):
+        return 0 as u8
+    if scan == (0x02 as u8):
+        return 0x31 as u8
+    if scan == (0x03 as u8):
+        return 0x32 as u8
+    if scan == (0x04 as u8):
+        return 0x33 as u8
+    if scan == (0x05 as u8):
+        return 0x34 as u8
+    if scan == (0x06 as u8):
+        return 0x35 as u8
+    if scan == (0x07 as u8):
+        return 0x36 as u8
+    if scan == (0x08 as u8):
+        return 0x37 as u8
+    if scan == (0x09 as u8):
+        return 0x38 as u8
+    if scan == (0x0a as u8):
+        return 0x39 as u8
+    if scan == (0x0b as u8):
+        return 0x30 as u8
+    if scan == (0x10 as u8):
+        return 0x71 as u8
+    if scan == (0x11 as u8):
+        return 0x77 as u8
+    if scan == (0x12 as u8):
+        return 0x65 as u8
+    if scan == (0x13 as u8):
+        return 0x72 as u8
+    if scan == (0x14 as u8):
+        return 0x74 as u8
+    if scan == (0x15 as u8):
+        return 0x79 as u8
+    if scan == (0x16 as u8):
+        return 0x75 as u8
+    if scan == (0x17 as u8):
+        return 0x69 as u8
+    if scan == (0x18 as u8):
+        return 0x6f as u8
+    if scan == (0x19 as u8):
+        return 0x70 as u8
+    if scan == (0x1e as u8):
+        return 0x61 as u8
+    if scan == (0x1f as u8):
+        return 0x73 as u8
+    if scan == (0x20 as u8):
+        return 0x64 as u8
+    if scan == (0x21 as u8):
+        return 0x66 as u8
+    if scan == (0x22 as u8):
+        return 0x67 as u8
+    if scan == (0x23 as u8):
+        return 0x68 as u8
+    if scan == (0x24 as u8):
+        return 0x6a as u8
+    if scan == (0x25 as u8):
+        return 0x6b as u8
+    if scan == (0x26 as u8):
+        return 0x6c as u8
+    if scan == (0x2c as u8):
+        return 0x7a as u8
+    if scan == (0x2d as u8):
+        return 0x78 as u8
+    if scan == (0x2e as u8):
+        return 0x63 as u8
+    if scan == (0x2f as u8):
+        return 0x76 as u8
+    if scan == (0x30 as u8):
+        return 0x62 as u8
+    if scan == (0x31 as u8):
+        return 0x6e as u8
+    if scan == (0x32 as u8):
+        return 0x6d as u8
+    if scan == (0x39 as u8):
+        return 0x20 as u8
+    return 0 as u8

@@ -1,0 +1,7 @@
+pub fn user_main() -> int:
+    let unknown: i32 = user.syscall0(99 as u32)
+    let seed: usize = (unknown + 5) as usize
+    let high: usize = seed << (30 as usize)
+    let target: ptr[u32] = (high + high + high + (seed << (24 as usize))) as ptr[u32]
+    (*target) = 7 as u32
+    return 99

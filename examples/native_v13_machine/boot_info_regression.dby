@@ -1,0 +1,152 @@
+import "boot_info.dby" as boot
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+fn region(index: usize, base: u64, length: u64, kind: u32) -> bool:
+    if boot.memory_region_base(index) != base:
+        return false
+    if boot.memory_region_length(index) != length:
+        return false
+    return boot.memory_region_kind(index) == kind
+
+fn basic_normalization() -> bool:
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(0x3000 as u64, 0x3000 as u64, 1 as u32) == false:
+        return false
+    if boot.append_memory_region(0x4000 as u64, 0x1000 as u64, 2 as u32) == false:
+        return false
+    if boot.append_memory_region(0x1000 as u64, 0x3000 as u64, 1 as u32) == false:
+        return false
+    if boot.append_memory_region(0x4800 as u64, 0x1000 as u64, 3 as u32) == false:
+        return false
+    if boot.append_memory_region(0x6000 as u64, 0x1000 as u64, 1 as u32) == false:
+        return false
+    if boot.memory_region_count() != (0 as usize):
+        return false
+    if boot.publish_memory_regions() == false:
+        return false
+    if boot.memory_region_count() != (4 as usize):
+        return false
+    if region(0 as usize, 0x1000 as u64, 0x3000 as u64, 1 as u32) == false:
+        return false
+    if region(1 as usize, 0x4000 as u64, 0x1000 as u64, 2 as u32) == false:
+        return false
+    if region(2 as usize, 0x5000 as u64, 0x0800 as u64, 3 as u32) == false:
+        return false
+    if region(3 as usize, 0x5800 as u64, 0x1800 as u64, 1 as u32) == false:
+        return false
+    return boot.valid()
+
+fn reservation_overlay() -> bool:
+    let image_start: u64 = native.kernel_image_start() as u64
+    let image_end: u64 = native.kernel_image_end() as u64
+    if image_start < (0x00010000 as u64):
+        return false
+    if image_end <= image_start:
+        return false
+    boot.initialize_multiboot2_bios()
+    let available_start: u64 = image_start - (0x00010000 as u64)
+    let available_length: u64 = (image_end - image_start) + (0x00030000 as u64)
+    if boot.append_memory_region(available_start, available_length, 1 as u32) == false:
+        return false
+    if boot.publish_memory_regions() == false:
+        return false
+    if boot.memory_region_count() != (3 as usize):
+        return false
+    if region(0 as usize, available_start, 0x00010000 as u64, 1 as u32) == false:
+        return false
+    if region(1 as usize, image_start, image_end - image_start, 2 as u32) == false:
+        return false
+    return region(2 as usize, image_end, 0x00020000 as u64, 1 as u32)
+fn module_reservation_overlay() -> bool:
+    boot.initialize_multiboot2_bios()
+    let available_start: u64 = 0x00ff0000 as u64
+    if boot.append_memory_region(available_start, 0x00030000 as u64, 1 as u32) == false:
+        return false
+    if boot.append_module(0x01000000 as u64, 0x1000 as u64) == false:
+        return false
+    if boot.append_module(0x01000800 as u64, 0x1000 as u64):
+        return false
+    if boot.publish_memory_regions() == false:
+        return false
+    if boot.module_count() != (1 as usize):
+        return false
+    if boot.has_modules() == false:
+        return false
+    if boot.module_address(0 as usize) != (0x01000000 as u64):
+        return false
+    if boot.module_length(0 as usize) != (0x1000 as u64):
+        return false
+    if boot.memory_region_count() != (3 as usize):
+        return false
+    if region(0 as usize, 0x00ff0000 as u64, 0x00010000 as u64, 1 as u32) == false:
+        return false
+    if region(1 as usize, 0x01000000 as u64, 0x00001000 as u64, 2 as u32) == false:
+        return false
+    if region(2 as usize, 0x01001000 as u64, 0x0001f000 as u64, 1 as u32) == false:
+        return false
+    boot.initialize_multiboot2_bios()
+    if boot.module_count() != (0 as usize):
+        return false
+    return boot.has_modules() == false
+
+fn capacity_is_transactional() -> bool:
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(0x1000 as u64, 0x8f000 as u64, 1 as u32) == false:
+        return false
+    let index: usize = 0 as usize
+    while index < (64 as usize):
+        let base: u64 = (0x2000 as u64) + ((index as u64) * (0x2000 as u64))
+        if boot.append_memory_region(base, 0x1000 as u64, 2 as u32) == false:
+            return false
+        index = index + (1 as usize)
+    if boot.publish_memory_regions():
+        return false
+    if boot.memory_region_count() != (0 as usize):
+        return false
+    return boot.valid() == false
+
+fn failed_republish_invalidates_previous_publication() -> bool:
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(0x1000 as u64, 0x8f000 as u64, 1 as u32) == false:
+        return false
+    if boot.publish_memory_regions() == false:
+        return false
+    if boot.valid() == false:
+        return false
+    let index: usize = 0 as usize
+    while index < (64 as usize):
+        let base: u64 = (0x2000 as u64) + ((index as u64) * (0x2000 as u64))
+        if boot.append_memory_region(base, 0x1000 as u64, 2 as u32) == false:
+            return false
+        index = index + (1 as usize)
+    if boot.publish_memory_regions():
+        return false
+    if boot.memory_region_count() != (0 as usize):
+        return false
+    return boot.valid() == false
+
+pub fn kernel_main() -> int:
+    serial.init()
+    if basic_normalization() == false:
+        serial.write("BOOTINFO BASIC FAIL", 19 as usize)
+        serial.newline()
+        return 1
+    if reservation_overlay() == false:
+        serial.write("BOOTINFO RESERVE FAIL", 21 as usize)
+        serial.newline()
+        return 2
+    if module_reservation_overlay() == false:
+        serial.write("BOOTINFO MODULE FAIL", 20 as usize)
+        serial.newline()
+        return 3
+    if capacity_is_transactional() == false:
+        serial.write("BOOTINFO CAPACITY FAIL", 22 as usize)
+        serial.newline()
+        return 4
+    if failed_republish_invalidates_previous_publication() == false:
+        serial.write("BOOTINFO REPUBLISH FAIL", 23 as usize)
+        serial.newline()
+        return 5
+    serial.write("BOOTINFO NORMALIZE OK", 21 as usize)
+    serial.newline()
+    return 0

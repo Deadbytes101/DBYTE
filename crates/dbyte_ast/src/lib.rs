@@ -33,6 +33,8 @@ pub enum TypeAnnotation {
     U64,
     Usize,
     Float,
+    F32,
+    F64,
     Bool,
     Str,
     Bytes,
@@ -83,6 +85,8 @@ impl std::fmt::Display for TypeAnnotation {
             TypeAnnotation::U64 => write!(f, "u64"),
             TypeAnnotation::Usize => write!(f, "usize"),
             TypeAnnotation::Float => write!(f, "float"),
+            TypeAnnotation::F32 => write!(f, "f32"),
+            TypeAnnotation::F64 => write!(f, "f64"),
             TypeAnnotation::Bool => write!(f, "bool"),
             TypeAnnotation::Str => write!(f, "str"),
             TypeAnnotation::Bytes => write!(f, "bytes"),
@@ -327,6 +331,11 @@ pub enum Expr {
         ty: TypeAnnotation,
         span: Span,
     },
+    Bitcast {
+        expr: Box<Expr>,
+        ty: TypeAnnotation,
+        span: Span,
+    },
 }
 
 impl Expr {
@@ -354,7 +363,8 @@ impl Expr {
             | Expr::Index { span, .. }
             | Expr::Member { span, .. }
             | Expr::MemberCall { span, .. }
-            | Expr::Cast { span, .. } => *span,
+            | Expr::Cast { span, .. }
+            | Expr::Bitcast { span, .. } => *span,
         }
     }
 }

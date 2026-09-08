@@ -1,0 +1,38 @@
+import "vfs_ro.dby" as ro
+import "dbfs1_rw_test.dby" as dbfsrw
+
+static mut READY: u32
+static mut LAST_ERROR: u32
+
+pub fn initialize() -> int:
+    READY = 0 as u32
+    LAST_ERROR = 0 as u32
+    let status: int = ro.initialize()
+    if status != 0:
+        LAST_ERROR = status as u32
+        return status
+    status = dbfsrw.initialize()
+    if status != 0:
+        LAST_ERROR = status as u32
+        return status
+    READY = 1 as u32
+    return 0
+
+pub fn replace(source_path: str, source_length: usize, source: ptr[u8], length: usize) -> int:
+    if READY == (0 as u32):
+        return 6
+    let status: int = dbfsrw.replace(source_path, source_length, source, length)
+    LAST_ERROR = status as u32
+    return status
+
+pub fn words_written() -> u32:
+    return dbfsrw.words_written()
+
+pub fn flush_count() -> u32:
+    return dbfsrw.flush_count()
+
+pub fn ready() -> bool:
+    return READY != (0 as u32)
+
+pub fn last_error() -> u32:
+    return LAST_ERROR

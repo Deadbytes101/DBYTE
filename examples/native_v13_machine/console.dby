@@ -1,0 +1,112 @@
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+const VGA_BASE: usize = 0xb8000 as usize
+const VGA_WIDTH: usize = 80 as usize
+const VGA_HEIGHT: usize = 25 as usize
+const VGA_ATTRIBUTE: u16 = 0x0700 as u16
+
+static mut VGA_ROW: usize
+static mut VGA_COLUMN: usize
+
+fn vga_cell(index: usize, value: u8) -> int:
+    native.volatile_store16((VGA_BASE + (index * (2 as usize))) as ptr[u16], VGA_ATTRIBUTE | (value as u16))
+    return 0
+
+fn vga_clear() -> int:
+    let index: usize = 0 as usize
+    while index < (VGA_WIDTH * VGA_HEIGHT):
+        vga_cell(index, 32 as u8)
+        index = index + (1 as usize)
+    VGA_ROW = 0 as usize
+    VGA_COLUMN = 0 as usize
+    return 0
+
+pub fn init() -> int:
+    serial.init()
+    vga_clear()
+    return 0
+
+pub fn putc(value: u8) -> int:
+    serial.putc(value)
+    if value == (13 as u8):
+        return value as i32
+    if value == (10 as u8):
+        VGA_ROW = VGA_ROW + (1 as usize)
+        VGA_COLUMN = 0 as usize
+    else:
+        vga_cell((VGA_ROW * VGA_WIDTH) + VGA_COLUMN, value)
+        VGA_COLUMN = VGA_COLUMN + (1 as usize)
+        if VGA_COLUMN >= VGA_WIDTH:
+            VGA_COLUMN = 0 as usize
+            VGA_ROW = VGA_ROW + (1 as usize)
+    if VGA_ROW >= VGA_HEIGHT:
+        vga_clear()
+    return value as i32
+
+pub fn write(text: str, length: usize) -> usize:
+    let index: usize = 0 as usize
+    while index < length:
+        putc(text[index] as u8)
+        index = index + (1 as usize)
+    return index
+
+pub fn newline() -> int:
+    putc(13 as u8)
+    putc(10 as u8)
+    return 0
+
+pub fn line(text: str, length: usize) -> int:
+    write(text, length)
+    newline()
+    return 0
+
+fn hex_digit(value: u8) -> u8:
+    if value < (10 as u8):
+        return (48 as u8) + value
+    return (65 as u8) + (value - (10 as u8))
+
+pub fn hex8(value: u8) -> int:
+    putc(hex_digit((value >> (4 as u8)) & (0x0f as u8)))
+    putc(hex_digit(value & (0x0f as u8)))
+    return 0
+
+pub fn hex16(value: u16) -> int:
+    let shift: u16 = 12 as u16
+    while true:
+        putc(hex_digit(((value >> shift) & (0x0f as u16)) as u8))
+        if shift == (0 as u16):
+            return 0
+        shift = shift - (4 as u16)
+    return 0
+
+pub fn hex32(value: u32) -> int:
+    let shift: u32 = 28 as u32
+    while true:
+        putc(hex_digit(((value >> shift) & (0x0f as u32)) as u8))
+        if shift == (0 as u32):
+            return 0
+        shift = shift - (4 as u32)
+    return 0
+
+pub fn hex64(value: u64) -> int:
+    let shift: u64 = 60 as u64
+    while true:
+        putc(hex_digit(((value >> shift) & (0x0f as u64)) as u8))
+        if shift == (0 as u64):
+            return 0
+        shift = shift - (4 as u64)
+    return 0
+
+pub fn label_hex32(label: str, length: usize, value: u32) -> int:
+    write(label, length)
+    write("0x", 2 as usize)
+    hex32(value)
+    newline()
+    return 0
+
+pub fn label_hex64(label: str, length: usize, value: u64) -> int:
+    write(label, length)
+    write("0x", 2 as usize)
+    hex64(value)
+    newline()
+    return 0

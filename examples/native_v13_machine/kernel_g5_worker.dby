@@ -1,0 +1,112 @@
+import "machine_g3.dby" as machine
+import "boot_info.dby" as boot
+import "user_space64.dby" as user
+import "syscall_worker64.dby" as worker
+import "frames64.dby" as frames
+import "console.dby" as console
+import "user_file64.dby" as file
+
+static mut PHASE: u32
+
+fn fail(label: str, length: usize, status: int) -> int:
+    console.write(label, length)
+    console.hex32(status as u32)
+    console.newline()
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn print_summary() -> int:
+    console.write("WORKER STATS req=", 17 as usize)
+    console.hex32(worker.request_count() as u32)
+    console.write(" open=", 6 as usize)
+    console.hex32(worker.open_count() as u32)
+    console.write(" read=", 6 as usize)
+    console.hex32(worker.read_count() as u32)
+    console.write(" close=", 7 as usize)
+    console.hex32(worker.close_count() as u32)
+    console.write(" write=", 7 as usize)
+    console.hex32(worker.write_count() as u32)
+    console.write(" cleanup=", 9 as usize)
+    console.hex32(worker.cleanup_count() as u32)
+    console.newline()
+    console.write("OWNER FD SELFTEST wrong=", 24 as usize)
+    console.hex32(worker.handle_wrong_owner_rejects() as u32)
+    console.write(" stale=", 7 as usize)
+    console.hex32(worker.handle_stale_rejects() as u32)
+    console.newline()
+    return 0
+
+pub fn after_user() -> int:
+    if PHASE != (1 as u32):
+        return fail("G5WORKER PHASE=", 15 as usize, PHASE as int)
+    if user.exited() == false:
+        return fail("G5WORKER EXITED=", 16 as usize, 1)
+    if user.exit_code() != 0:
+        return fail("G5WORKER EXIT CODE=", 19 as usize, user.exit_code())
+    if worker.request_count() != (5 as usize):
+        return fail("G5WORKER REQUESTS=", 18 as usize, worker.request_count() as int)
+    if worker.open_count() != (1 as usize):
+        return fail("G5WORKER OPENS=", 15 as usize, worker.open_count() as int)
+    if worker.read_count() != (1 as usize):
+        return fail("G5WORKER READS=", 15 as usize, worker.read_count() as int)
+    if worker.close_count() != (1 as usize):
+        return fail("G5WORKER CLOSES=", 16 as usize, worker.close_count() as int)
+    if worker.write_count() != (2 as usize):
+        return fail("G5WORKER WRITES=", 16 as usize, worker.write_count() as int)
+    if worker.owner_selftest_ok() == false:
+        return fail("G5WORKER OWNER TEST=", 20 as usize, 1)
+    if worker.handle_wrong_owner_rejects() != (1 as usize):
+        return fail("G5WORKER OWNER WRONG=", 21 as usize, worker.handle_wrong_owner_rejects() as int)
+    if worker.handle_stale_rejects() != (1 as usize):
+        return fail("G5WORKER OWNER STALE=", 21 as usize, worker.handle_stale_rejects() as int)
+    if worker.release_process() != 0:
+        return fail("G5WORKER RELEASE=", 17 as usize, 1)
+    if worker.cleanup_count() != (1 as usize):
+        return fail("G5WORKER CLEANUP=", 17 as usize, worker.cleanup_count() as int)
+    if frames.owned_count() != (0 as usize):
+        return fail("G5WORKER FRAMES=", 16 as usize, frames.owned_count() as int)
+    print_summary()
+    console.line("G5 WORKER SYSCALL COMPLETE", 26 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 0
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = machine.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G5 WORKER", 19 as usize)
+    if boot.module_count() > (1 as usize):
+        return fail("G5WORKER MODULES=", 17 as usize, boot.module_count() as int)
+    status = worker.initialize()
+    if status != 0:
+        return fail("G5WORKER INIT=", 14 as usize, status)
+    if worker.vfs_ready() == false:
+        return fail("G5WORKER VFS=", 13 as usize, 1)
+    status = worker.begin_process()
+    if status != 0:
+        return fail("G5WORKER BEGIN=", 15 as usize, status)
+    status = user.initialize()
+    if status != 0:
+        return fail("G5WORKER USER INIT=", 20 as usize, status)
+    if boot.module_count() == (0 as usize):
+        status = file.load("/WORKER.ELF", 11 as usize)
+    else:
+        status = user.load_module(0 as usize)
+    if status != 0:
+        return fail("G5WORKER ELF LOAD=", 18 as usize, status)
+    if user.set_worker_target(task_address(worker.run_once)) != 0:
+        return fail("G5WORKER TARGET=", 16 as usize, 1)
+    if user.set_recovery_target(task_address(after_user)) != 0:
+        return fail("G5WORKER RECOVERY=", 18 as usize, 1)
+    PHASE = 1 as u32
+    console.write("WORKER READY owner=", 19 as usize)
+    console.hex32(worker.current_owner() as u32)
+    console.write(" entry=", 7 as usize)
+    console.hex64(user.entry() as u64)
+    console.newline()
+    status = user.enter()
+    return fail("G5WORKER USER RETURN=", 20 as usize, status)

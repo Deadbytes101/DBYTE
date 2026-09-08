@@ -1,0 +1,62 @@
+import "multiboot2.dby" as mb2
+import "boot_info.dby" as boot
+import "console.dby" as console
+import "frames64.dby" as frames
+
+fn fail(label: str, length: usize, status: int) -> int:
+    console.write(label, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+fn module_is_reserved(address: u64, length: u64) -> bool:
+    let index: usize = 0 as usize
+    while index < boot.memory_region_count():
+        let base: u64 = boot.memory_region_base(index)
+        let end: u64 = base + boot.memory_region_length(index)
+        if base <= address:
+            if end >= (address + length):
+                return boot.memory_region_kind(index) != (1 as u32)
+        index = index + (1 as usize)
+    return false
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    console.init()
+    console.line("DBYTE V13 G5 MODULE", 19 as usize)
+    let status: int = mb2.normalize(magic as u64, info)
+    if status != 0:
+        return fail("G5MOD ERROR MB2=", 16 as usize, status)
+    if boot.module_count() != (1 as usize):
+        return fail("G5MOD ERROR COUNT=", 18 as usize, boot.module_count() as int)
+    let address: u64 = boot.module_address(0 as usize)
+    let length: u64 = boot.module_length(0 as usize)
+    if length < (64 as u64):
+        return fail("G5MOD ERROR SIZE=", 17 as usize, 2)
+    if module_is_reserved(address, length) == false:
+        return fail("G5MOD ERROR RESERVE=", 20 as usize, 3)
+    if native.volatile_load8(address as usize as ptr[u8]) != (0x7f as u8):
+        return fail("G5MOD ERROR ELF0=", 17 as usize, 4)
+    if native.volatile_load8((address as usize + (1 as usize)) as ptr[u8]) != (69 as u8):
+        return fail("G5MOD ERROR ELF1=", 17 as usize, 5)
+    if native.volatile_load8((address as usize + (2 as usize)) as ptr[u8]) != (76 as u8):
+        return fail("G5MOD ERROR ELF2=", 17 as usize, 6)
+    if native.volatile_load8((address as usize + (3 as usize)) as ptr[u8]) != (70 as u8):
+        return fail("G5MOD ERROR ELF3=", 17 as usize, 7)
+    status = frames.initialize()
+    if status != 0:
+        return fail("G5MOD ERROR FRAMES=", 19 as usize, status)
+    let frame: u64 = frames.allocate()
+    if frame == (0 as u64):
+        return fail("G5MOD ERROR ALLOC=", 18 as usize, 8)
+    if frame < (address + length):
+        if (frame + (4096 as u64)) > address:
+            return fail("G5MOD ERROR OVERLAP=", 20 as usize, 9)
+    console.write("MODULE OK addr=", 15 as usize)
+    console.hex64(address)
+    console.write(" bytes=", 7 as usize)
+    console.hex64(length)
+    console.write(" frame=", 7 as usize)
+    console.hex64(frame)
+    console.newline()
+    console.line("G5 MODULE BOOTSTRAP COMPLETE", 28 as usize)
+    return 0

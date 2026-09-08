@@ -1,0 +1,208 @@
+import "pci.dby" as pci
+import "acpi.dby" as acpi
+
+const DATA_PORT: u16 = 0x01f0 as u16
+const ERROR_PORT: u16 = 0x01f1 as u16
+const SECTOR_COUNT_PORT: u16 = 0x01f2 as u16
+const LBA0_PORT: u16 = 0x01f3 as u16
+const LBA1_PORT: u16 = 0x01f4 as u16
+const LBA2_PORT: u16 = 0x01f5 as u16
+const DRIVE_PORT: u16 = 0x01f6 as u16
+const STATUS_PORT: u16 = 0x01f7 as u16
+const COMMAND_PORT: u16 = 0x01f7 as u16
+const ALT_STATUS_PORT: u16 = 0x03f6 as u16
+
+const STATUS_ERR: u8 = 0x01 as u8
+const STATUS_DRQ: u8 = 0x08 as u8
+const STATUS_DF: u8 = 0x20 as u8
+const STATUS_BSY: u8 = 0x80 as u8
+const COMMAND_READ: u8 = 0x20 as u8
+const COMMAND_IDENTIFY: u8 = 0xec as u8
+const DEVICE_MASTER: u8 = 0xa0 as u8
+const DEVICE_MASTER_LBA: u8 = 0xe0 as u8
+const TIMEOUT_PM_TICKS: u32 = 7159090 as u32
+const SECTOR_WORDS: usize = 256 as usize
+const MAX_LBA28: u32 = 0x0fffffff as u32
+
+static mut IDENTIFY: array[u16, 256]
+static mut SECTOR: array[u16, 256]
+static mut SECTOR_COUNT: u32
+static mut LAST_STATUS: u8
+static mut LAST_ERROR: u32
+static mut READ_CHECKSUM: u32
+
+fn pm_mask() -> u32:
+    if acpi.pm_timer_width() == (32 as u32):
+        return 0xffffffff as u32
+    return 0x00ffffff as u32
+
+fn pm_read() -> u32:
+    return native.io_in32(acpi.pm_timer_port() as u16) & pm_mask()
+
+fn pm_elapsed(start: u32, current: u32) -> u32:
+    let mask: u32 = pm_mask()
+    let first: u32 = start & mask
+    let now: u32 = current & mask
+    if now >= first:
+        return now - first
+    return (mask - first) + now + (1 as u32)
+
+fn delay_400ns() -> int:
+    native.io_in8(ALT_STATUS_PORT)
+    native.io_in8(ALT_STATUS_PORT)
+    native.io_in8(ALT_STATUS_PORT)
+    native.io_in8(ALT_STATUS_PORT)
+    return 0
+
+fn status_error(status: u8) -> int:
+    if (status & STATUS_DF) != (0 as u8):
+        return 6
+    if (status & STATUS_ERR) != (0 as u8):
+        return 7
+    return 0
+
+fn wait_ready(require_drq: bool) -> int:
+    let start: u32 = pm_read()
+    while pm_elapsed(start, pm_read()) < TIMEOUT_PM_TICKS:
+        let status: u8 = native.io_in8(STATUS_PORT)
+        LAST_STATUS = status
+        if (status & STATUS_BSY) == (0 as u8):
+            let error: int = status_error(status)
+            if error != 0:
+                return error
+            if require_drq == false:
+                return 0
+            if (status & STATUS_DRQ) != (0 as u8):
+                return 0
+    return 8
+
+fn controller_ready() -> int:
+    if pci.ide_count() == (0 as u32):
+        return 10
+    if pci.ide_count() != (1 as u32):
+        return 11
+    let prog_if: u8 = pci.ide_prog_if()
+    if (prog_if & (0x01 as u8)) != (0 as u8):
+        return 12
+    if acpi.pm_timer_port() == (0 as u32):
+        return 13
+    if acpi.pm_timer_port() > (0xffff as u32):
+        return 14
+    if acpi.pm_timer_width() != (24 as u32):
+        if acpi.pm_timer_width() != (32 as u32):
+            return 15
+    return 0
+pub fn identify() -> int:
+    SECTOR_COUNT = 0 as u32
+    LAST_STATUS = 0 as u8
+    LAST_ERROR = 0 as u32
+    READ_CHECKSUM = 0 as u32
+    let ready: int = controller_ready()
+    if ready != 0:
+        LAST_ERROR = ready as u32
+        return ready
+    native.io_out8(DRIVE_PORT, DEVICE_MASTER)
+    delay_400ns()
+    native.io_out8(SECTOR_COUNT_PORT, 0 as u8)
+    native.io_out8(LBA0_PORT, 0 as u8)
+    native.io_out8(LBA1_PORT, 0 as u8)
+    native.io_out8(LBA2_PORT, 0 as u8)
+    native.io_out8(COMMAND_PORT, COMMAND_IDENTIFY)
+    let initial: u8 = native.io_in8(STATUS_PORT)
+    LAST_STATUS = initial
+    if initial == (0 as u8):
+        LAST_ERROR = 16 as u32
+        return 16
+    let wait_status: int = wait_ready(true)
+    if wait_status != 0:
+        LAST_ERROR = wait_status as u32
+        return wait_status
+    if native.io_in8(LBA1_PORT) != (0 as u8):
+        LAST_ERROR = 17 as u32
+        return 17
+    if native.io_in8(LBA2_PORT) != (0 as u8):
+        LAST_ERROR = 17 as u32
+        return 17
+    let word: usize = 0 as usize
+    while word < SECTOR_WORDS:
+        IDENTIFY[word] = native.io_in16(DATA_PORT)
+        word = word + (1 as usize)
+    if (IDENTIFY[49] & (0x0200 as u16)) == (0 as u16):
+        LAST_ERROR = 18 as u32
+        return 18
+    SECTOR_COUNT = (IDENTIFY[60] as u32) | ((IDENTIFY[61] as u32) << (16 as u32))
+    if SECTOR_COUNT == (0 as u32):
+        LAST_ERROR = 19 as u32
+        return 19
+    if SECTOR_COUNT > (0x10000000 as u32):
+        SECTOR_COUNT = 0x10000000 as u32
+    LAST_ERROR = 0 as u32
+    return 0
+
+fn checksum_sector() -> u32:
+    let hash: u32 = 0xc0dec0de as u32
+    let index: usize = 0 as usize
+    while index < SECTOR_WORDS:
+        let word: u16 = SECTOR[index]
+        let low: u32 = (word & (0x00ff as u16)) as u32
+        let high: u32 = ((word >> (8 as u16)) & (0x00ff as u16)) as u32
+        hash = ((hash << (5 as u32)) | (hash >> (27 as u32))) ^ low
+        hash = ((hash << (5 as u32)) | (hash >> (27 as u32))) ^ high
+        index = index + (1 as usize)
+    return hash
+pub fn read_sector(lba: u32) -> int:
+    if SECTOR_COUNT == (0 as u32):
+        LAST_ERROR = 20 as u32
+        return 20
+    if lba > MAX_LBA28:
+        LAST_ERROR = 21 as u32
+        return 21
+    if lba >= SECTOR_COUNT:
+        LAST_ERROR = 21 as u32
+        return 21
+    let preflight: int = wait_ready(false)
+    if preflight != 0:
+        LAST_ERROR = preflight as u32
+        return preflight
+    native.io_out8(SECTOR_COUNT_PORT, 1 as u8)
+    native.io_out8(LBA0_PORT, (lba & (0xff as u32)) as u8)
+    native.io_out8(LBA1_PORT, ((lba >> (8 as u32)) & (0xff as u32)) as u8)
+    native.io_out8(LBA2_PORT, ((lba >> (16 as u32)) & (0xff as u32)) as u8)
+    native.io_out8(DRIVE_PORT, DEVICE_MASTER_LBA | ((lba >> (24 as u32)) as u8))
+    delay_400ns()
+    native.io_out8(COMMAND_PORT, COMMAND_READ)
+    let ready: int = wait_ready(true)
+    if ready != 0:
+        LAST_ERROR = ready as u32
+        return ready
+    let word: usize = 0 as usize
+    while word < SECTOR_WORDS:
+        SECTOR[word] = native.io_in16(DATA_PORT)
+        word = word + (1 as usize)
+    READ_CHECKSUM = checksum_sector()
+    LAST_ERROR = 0 as u32
+    return 0
+
+pub fn read_sector_into(lba: u32, destination: ptr[u8]) -> int:
+    if destination as usize == (0 as usize):
+        LAST_ERROR = 22 as u32
+        return 22
+    let status: int = read_sector(lba)
+    if status != 0:
+        return status
+    let source: ptr[u8] = (&SECTOR[0]) as usize as ptr[u8]
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        let value: u8 = native.volatile_load8(((source as usize) + index) as ptr[u8])
+        native.volatile_store8(((destination as usize) + index) as ptr[u8], value)
+        index = index + (1 as usize)
+    return 0
+
+pub fn sector_count() -> u32:
+    return SECTOR_COUNT
+pub fn last_status() -> u8:
+    return LAST_STATUS
+pub fn last_error() -> u32:
+    return LAST_ERROR
+pub fn read_checksum() -> u32:
+    return READ_CHECKSUM

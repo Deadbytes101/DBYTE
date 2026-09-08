@@ -7,7 +7,7 @@
 const ELF_HEADER_SIZE: usize = 64;
 const PROGRAM_HEADER_SIZE: usize = 56;
 const PROGRAM_HEADER_COUNT: usize = 4;
-const IMAGE_BASE: u32 = 0x0010_0000;
+pub(crate) const IMAGE_BASE: u32 = 0x0010_0000;
 const MULTIBOOT_HEADER_OFFSET: usize = 0x0200;
 const BOOTSTRAP_OFFSET: usize = 0x1000;
 const GDT_OFFSET: usize = 0x2000;
@@ -15,8 +15,10 @@ const GDTR_OFFSET: usize = 0x2018;
 const PML4_OFFSET: usize = 0x3000;
 const PDPT_OFFSET: usize = 0x4000;
 const PAGE_DIRECTORY_OFFSET: usize = 0x5000;
-const SAVED_MAGIC_OFFSET: usize = 0x6000;
-const SAVED_INFO_OFFSET: usize = 0x6004;
+const PAGE_DIRECTORY_COUNT: usize = 4;
+const PAGE_DIRECTORY_STRIDE: usize = 0x1000;
+const SAVED_MAGIC_OFFSET: usize = 0x9000;
+const SAVED_INFO_OFFSET: usize = 0x9004;
 const WRAPPER_RW_END: usize = 0x30000;
 const STACK_TOP: u32 = IMAGE_BASE + WRAPPER_RW_END as u32;
 const PAYLOAD_OFFSET: usize = 0x100000;
@@ -359,17 +361,32 @@ fn write_transition_data(output: &mut [u8]) -> Result<(), Multiboot2Error> {
         PML4_OFFSET,
         u64::from(IMAGE_BASE + PDPT_OFFSET as u32) | 3,
     )?;
-    put_u64(
-        output,
-        PDPT_OFFSET,
-        u64::from(IMAGE_BASE + PAGE_DIRECTORY_OFFSET as u32) | 3,
-    )?;
-    for index in 0..512usize {
+    for directory in 0..PAGE_DIRECTORY_COUNT {
+        let directory_offset = PAGE_DIRECTORY_OFFSET
+            .checked_add(directory * PAGE_DIRECTORY_STRIDE)
+            .ok_or_else(|| error("E_MULTIBOOT2_LAYOUT", "page-directory offset overflows"))?;
+        let directory_address =
+            IMAGE_BASE
+                .checked_add(u32::try_from(directory_offset).map_err(|_| {
+                    error("E_MULTIBOOT2_LAYOUT", "page-directory address exceeds u32")
+                })?)
+                .ok_or_else(|| error("E_MULTIBOOT2_LAYOUT", "page-directory address overflows"))?;
         put_u64(
             output,
-            PAGE_DIRECTORY_OFFSET + index * 8,
-            (index as u64 * 0x20_0000) | 0x83,
+            PDPT_OFFSET + directory * 8,
+            u64::from(directory_address) | 3,
         )?;
+        for index in 0..512usize {
+            let page = directory
+                .checked_mul(512)
+                .and_then(|base| base.checked_add(index))
+                .ok_or_else(|| error("E_MULTIBOOT2_LAYOUT", "identity-map index overflows"))?;
+            put_u64(
+                output,
+                directory_offset + index * 8,
+                (page as u64 * 0x20_0000) | 0x83,
+            )?;
+        }
     }
     Ok(())
 }
@@ -439,6 +456,21 @@ mod tests {
                     .unwrap()
             ),
             0x83
+        );
+        for directory in 0..PAGE_DIRECTORY_COUNT {
+            let entry = PDPT_OFFSET + directory * 8;
+            assert_eq!(
+                u64::from_le_bytes(first.elf[entry..entry + 8].try_into().unwrap()),
+                u64::from(
+                    IMAGE_BASE + (PAGE_DIRECTORY_OFFSET + directory * PAGE_DIRECTORY_STRIDE) as u32
+                ) | 3
+            );
+        }
+        let last =
+            PAGE_DIRECTORY_OFFSET + (PAGE_DIRECTORY_COUNT - 1) * PAGE_DIRECTORY_STRIDE + 511 * 8;
+        assert_eq!(
+            u64::from_le_bytes(first.elf[last..last + 8].try_into().unwrap()),
+            0xffe0_0083
         );
         assert_eq!(first.entry, 0x0010_1000);
         assert_eq!(first.payload_entry, 0x0020_0000);

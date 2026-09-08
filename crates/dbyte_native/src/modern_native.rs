@@ -1,11 +1,14 @@
 //! Concrete-HIR-only staging seam for DBYTE64 Linux execution.
 
-use crate::elf64::{write_static_executable, Elf64Executable, ExecutableInput};
+use crate::elf64::{
+    user_executable_layout, write_static_executable, write_user_executable, Elf64Executable,
+    ExecutableInput, UserElf64Layout,
+};
 use crate::object64::{
     write_relocatable, Binding, Contents, Definition, ObjectArtifact, ObjectImage, Relocation,
     RelocationKind, Section, SectionData, Symbol, SymbolKind,
 };
-use crate::target::{TargetSpec, X86_64_LINUX, X86_64_NONE};
+use crate::target::{TargetSpec, X86_64_LINUX, X86_64_NONE, X86_64_USER};
 use crate::x86_64::{Condition, Encoder, Register, ShiftKind, Width};
 use dbyte_ast::{BinOp, CaptureMode, UnaryOp};
 use dbyte_hir::{
@@ -482,6 +485,8 @@ fn compile_mir_object_source_inner(
     }
     let entry_name = if target == X86_64_NONE {
         "kernel_main"
+    } else if target == X86_64_USER {
+        "user_main"
     } else {
         "main"
     };
@@ -514,10 +519,10 @@ pub fn compile_mir_source(
     target: TargetSpec,
     level: NativeOptimizationLevel,
 ) -> Result<ModernExecutable, ModernNativeError> {
-    if !matches!(target, X86_64_LINUX | X86_64_NONE) {
+    if !matches!(target, X86_64_LINUX | X86_64_NONE | X86_64_USER) {
         return Err(error(
             "E_NATIVE_MIR_TARGET_UNSUPPORTED",
-            "Native MIR executable emission currently supports x86_64 Linux and none",
+            "Native MIR executable emission currently supports x86_64 Linux, user, and none",
         ));
     }
     let object = compile_mir_executable_object_source(root, target, level)?;
@@ -758,6 +763,23 @@ pub fn link_object_bytes(
                 },
             })
         }
+        X86_64_USER => {
+            let mut linked_inputs = vec![user_start_object(target, "user_main")?];
+            linked_inputs.extend_from_slice(inputs);
+            let (linked, layout) = link_user_sections(&linked_inputs, target, "_start")?;
+            let entry_offset = linked
+                .entry
+                .checked_sub(layout.text_address)
+                .ok_or_else(|| error("E_LINK64_ENTRY", "user entry precedes linked text"))?;
+            write_user_executable(&ExecutableInput {
+                text: linked.text,
+                rodata: linked.rodata,
+                data: linked.data,
+                bss_size: linked.bss_size,
+                entry_offset,
+            })
+            .map_err(|error| ModernNativeError(error.0))
+        }
         X86_64_LINUX => {
             let inspected = link_sections(inputs, target, "main", 0x0040_1000)?;
             let entry_arity = match inspected.entry_abi {
@@ -782,9 +804,48 @@ pub fn link_object_bytes(
         }
         _ => Err(error(
             "E_MODERN_TARGET_UNSUPPORTED",
-            "ELF64 object linking supports none and Linux targets",
+            "ELF64 object linking supports none, user, and Linux targets",
         )),
     }
+}
+
+fn link_user_sections(
+    inputs: &[crate::linker64::LinkInput],
+    target: TargetSpec,
+    entry: &str,
+) -> Result<(crate::linker64::LinkedSections, UserElf64Layout), ModernNativeError> {
+    let sizing = crate::linker64::link_objects(
+        inputs,
+        target,
+        crate::linker64::SectionAddresses {
+            text: 0,
+            rodata: 0,
+            data: 0,
+            bss: 0,
+        },
+        entry,
+    )
+    .map_err(|error| ModernNativeError(error.0))?;
+    let layout = user_executable_layout(
+        sizing.text.len() as u64,
+        sizing.rodata.len() as u64,
+        sizing.data.len() as u64,
+        sizing.bss_size,
+    )
+    .map_err(|error| ModernNativeError(error.0))?;
+    let linked = crate::linker64::link_objects(
+        inputs,
+        target,
+        crate::linker64::SectionAddresses {
+            text: layout.text_address,
+            rodata: layout.rodata_address,
+            data: layout.data_address,
+            bss: layout.bss_address,
+        },
+        entry,
+    )
+    .map_err(|error| ModernNativeError(error.0))?;
+    Ok((linked, layout))
 }
 
 fn link_sections(
@@ -839,6 +900,70 @@ fn link_sections(
         entry,
     )
     .map_err(|error| ModernNativeError(error.0))
+}
+
+fn user_start_object(
+    target: TargetSpec,
+    entry_name: &str,
+) -> Result<crate::linker64::LinkInput, ModernNativeError> {
+    if target != X86_64_USER {
+        return Err(error(
+            "E_USER64_TARGET",
+            "user start requires x86_64-dbyte-user",
+        ));
+    }
+    let mut start = Encoder::new(64);
+    let call_offset = start.position();
+    start.call_relative(0).map_err(encode_error)?;
+    start
+        .mov_reg(Register::Rdx, Register::Rax, Width::Qword)
+        .map_err(encode_error)?;
+    start.mov_imm64(Register::Rax, 0).map_err(encode_error)?;
+    start.software_interrupt(0x80).map_err(encode_error)?;
+    start.ud2().map_err(encode_error)?;
+    let text = start.into_bytes();
+    let artifact = write_relocatable(&ObjectImage {
+        target,
+        entry_abi: None,
+        sections: std::collections::BTreeMap::from([(
+            Section::Text,
+            SectionData {
+                contents: Contents::Bytes(text.clone()),
+                alignment: 16,
+            },
+        )]),
+        symbols: vec![
+            Symbol {
+                name: "_start".into(),
+                binding: Binding::Global,
+                kind: SymbolKind::Function,
+                definition: Definition::Defined {
+                    section: Section::Text,
+                    value: 0,
+                },
+                size: text.len() as u64,
+            },
+            Symbol {
+                name: entry_name.into(),
+                binding: Binding::Global,
+                kind: SymbolKind::Function,
+                definition: Definition::Undefined,
+                size: 0,
+            },
+        ],
+        relocations: vec![Relocation {
+            section: Section::Text,
+            offset: call_offset as u64 + 1,
+            symbol: entry_name.into(),
+            kind: RelocationKind::Plt32,
+            addend: -4,
+        }],
+    })
+    .map_err(|error| ModernNativeError(error.0))?;
+    Ok(crate::linker64::LinkInput::new(
+        "__dbyte_user_start.o",
+        artifact.bytes,
+    ))
 }
 
 fn linux_start_object(
@@ -1253,6 +1378,7 @@ fn collect_closures_expr64(
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Length { value }
         | HirExprKind::Try { value, .. }
         | HirExprKind::Constant { value, .. } => collect_closures_expr64(value, parent, output),
@@ -4091,6 +4217,15 @@ fn validate_main(
     let entry_arity = function.parameters.len();
     let valid_parameters = if entry_arity == 0 {
         true
+    } else if target == X86_64_NONE && entry_arity == 2 {
+        let types = &project.executable.semantic;
+        matches!(
+            types.type_of(function.parameters[0].ty),
+            CanonicalType::Integer(IntegerType::U32)
+        ) && matches!(
+            types.type_of(function.parameters[1].ty),
+            CanonicalType::Integer(IntegerType::Usize)
+        )
     } else if target == X86_64_LINUX && entry_arity == 3 {
         let types = &project.executable.semantic;
         matches!(
@@ -4105,7 +4240,7 @@ fn validate_main(
         return Err(error(
             "E_ENTRY_SIGNATURE",
             &format!(
-                "{entry_name} must use () or Linux (usize, const_ptr[const_ptr[u8]], const_ptr[const_ptr[u8]]) entry parameters"
+                "{entry_name} must use (), the checked x86_64 Multiboot (u32, usize) entry, or Linux (usize, const_ptr[const_ptr[u8]], const_ptr[const_ptr[u8]]) entry parameters"
             ),
         ));
     }
@@ -4287,6 +4422,55 @@ mod tests {
         dbyte_hir::monomorphize_project(&analyzed).unwrap()
     }
 
+    fn project_none(source: &str) -> ConcreteHirProject {
+        let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+            .parse_program()
+            .unwrap();
+        let input = ProjectInput {
+            root: ModuleId(0),
+            modules: vec![ProjectModuleInput {
+                id: ModuleId(0),
+                name: "main".into(),
+                program,
+                imports: vec![],
+            }],
+        };
+        let analyzed = dbyte_hir::analyze_project(
+            &input,
+            dbyte_hir::Profile::X86_64None,
+            dbyte_hir::TargetDataLayout::X86_64,
+        )
+        .unwrap();
+        dbyte_hir::monomorphize_project(&analyzed).unwrap()
+    }
+
+    #[test]
+    fn x86_64_none_accepts_checked_multiboot_entry_and_rejects_wide_magic() {
+        let valid = project_none(
+            "pub fn kernel_main(magic: u32, info: usize) -> int:\n    return (magic as int) + (info as int)\n",
+        );
+        let entry = valid
+            .executable
+            .functions
+            .iter()
+            .find(|function| function.symbol_name == "kernel_main")
+            .unwrap();
+        assert_eq!(
+            validate_main(&valid, entry, "kernel_main", X86_64_NONE).unwrap(),
+            2
+        );
+
+        let invalid = project_none(
+            "pub fn kernel_main(magic: u64, info: usize) -> int:\n    return (magic as int) + (info as int)\n",
+        );
+        let entry = invalid
+            .executable
+            .functions
+            .iter()
+            .find(|function| function.symbol_name == "kernel_main")
+            .unwrap();
+        assert!(validate_main(&invalid, entry, "kernel_main", X86_64_NONE).is_err());
+    }
     #[test]
     fn concrete_hir_produces_static_linux_elf64() {
         let executable = compile_concrete_linux(&project(
@@ -4508,6 +4692,52 @@ mod tests {
                     .expect_err("executable object must require its target entry");
             assert_eq!(error.0, format!("E_ENTRY_MISSING: missing `{entry_name}`"));
         }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn native_mir_x86_64_interrupt_objects_preserve_stubs_metadata_and_addresses() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("dbyte-x64-interrupt-{nonce}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("module.dby");
+        std::fs::write(
+            &source,
+            "pub struct InterruptFrame:\n    rip: u64\n    cs: u64\n    rflags: u64\n\npub interrupt(no_error_code) fn breakpoint(frame: ptr[InterruptFrame]):\n    return\n\npub fn handler_address() -> usize:\n    return interrupt_address(3, breakpoint)\n",
+        )
+        .unwrap();
+        let object = compile_mir_object_source(
+            &source,
+            crate::target::X86_64_NONE,
+            NativeOptimizationLevel::O1,
+        )
+        .unwrap();
+        let image = crate::object64::parse_relocatable(&object.object.bytes).unwrap();
+        let public = image
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "breakpoint")
+            .unwrap();
+        assert_eq!(public.binding, crate::object64::Binding::Global);
+        assert!(image.symbols.iter().any(|symbol| {
+            symbol.name == "__dbyte_interrupt_breakpoint_body"
+                && symbol.binding == crate::object64::Binding::Local
+        }));
+        assert!(image.symbols.iter().any(|symbol| {
+            symbol.name == "__dbyte_interrupt:def:no_error_code:breakpoint"
+                && symbol.binding == crate::object64::Binding::Local
+        }));
+        assert!(image.symbols.iter().any(|symbol| {
+            symbol.name == "__dbyte_interrupt:use:003:no_error_code:breakpoint"
+                && symbol.binding == crate::object64::Binding::Local
+        }));
+        assert!(image.relocations.iter().any(|relocation| {
+            relocation.symbol == "breakpoint"
+                && relocation.kind == crate::object64::RelocationKind::Pc32
+        }));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

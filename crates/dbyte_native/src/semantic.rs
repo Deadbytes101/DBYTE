@@ -529,6 +529,10 @@ impl<'a> FunctionAnalyzer<'a> {
                 "explicit systems casts in the v11.0 single-image profile",
                 *span,
             )),
+            Expr::Bitcast { span, .. } => Err(unsupported(
+                "exact bitcasts in the v11.0 single-image profile",
+                *span,
+            )),
         }
     }
 
@@ -904,7 +908,9 @@ fn explicit_native_type(
             format!("{owner} uses unsupported native type `list[{inner}]`"),
             span,
         )),
-        TypeAnnotation::I8
+        TypeAnnotation::F32
+        | TypeAnnotation::F64
+        | TypeAnnotation::I8
         | TypeAnnotation::U8
         | TypeAnnotation::I16
         | TypeAnnotation::U16

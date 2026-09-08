@@ -124,6 +124,7 @@ enum BuildTarget {
     Kernel,
     User,
     X86_64None,
+    X86_64User,
     X86_64Linux,
     X86_64Windows,
 }
@@ -253,10 +254,14 @@ fn compile_build_product(
 ) -> Result<BuildProduct, CliError> {
     if matches!(
         options.target,
-        BuildTarget::X86_64None | BuildTarget::X86_64Linux | BuildTarget::X86_64Windows
+        BuildTarget::X86_64None
+            | BuildTarget::X86_64User
+            | BuildTarget::X86_64Linux
+            | BuildTarget::X86_64Windows
     ) {
         let target = match options.target {
             BuildTarget::X86_64None => crate::target::X86_64_NONE,
+            BuildTarget::X86_64User => crate::target::X86_64_USER,
             BuildTarget::X86_64Linux => crate::target::X86_64_LINUX,
             BuildTarget::X86_64Windows => crate::target::X86_64_WINDOWS,
             BuildTarget::Kernel | BuildTarget::User => unreachable!(),
@@ -311,6 +316,9 @@ fn compile_build_product(
                     machine_dump: artifact.machine_dump,
                 })
             }
+            EmitKind::StaticLib if options.target == BuildTarget::X86_64User => Err(
+                CliError::argument("x86_64-dbyte-user does not support --emit staticlib"),
+            ),
             EmitKind::StaticLib => {
                 let artifact = crate::modern_native::compile_mir_object_source(
                     &options.source,
@@ -477,6 +485,7 @@ fn compile_native_mir_dump(options: &BuildOptions) -> Result<String, CliError> {
         BuildTarget::Kernel => crate::target::I686_NONE,
         BuildTarget::User => crate::target::I686_USER,
         BuildTarget::X86_64None => crate::target::X86_64_NONE,
+        BuildTarget::X86_64User => crate::target::X86_64_USER,
         BuildTarget::X86_64Linux => crate::target::X86_64_LINUX,
         BuildTarget::X86_64Windows => crate::target::X86_64_WINDOWS,
     };
@@ -622,11 +631,12 @@ fn parse_build_args(args: &[String]) -> Result<BuildOptions, CliError> {
         TARGET => BuildTarget::Kernel,
         USER_TARGET => BuildTarget::User,
         "x86_64-dbyte-none" => BuildTarget::X86_64None,
+        "x86_64-dbyte-user" => BuildTarget::X86_64User,
         "x86_64-dbyte-linux" => BuildTarget::X86_64Linux,
         "x86_64-dbyte-windows" => BuildTarget::X86_64Windows,
         _ => {
             return Err(CliError::argument(format!(
-                "unsupported target '{target}'; expected '{TARGET}', '{USER_TARGET}', 'x86_64-dbyte-none', 'x86_64-dbyte-linux', or 'x86_64-dbyte-windows'"
+                "unsupported target '{target}'; expected '{TARGET}', '{USER_TARGET}', 'x86_64-dbyte-none', 'x86_64-dbyte-user', 'x86_64-dbyte-linux', or 'x86_64-dbyte-windows'"
             )))
         }
     };
@@ -793,7 +803,10 @@ fn validate_selected_output(
 ) -> Result<(), CliError> {
     if matches!(
         target,
-        BuildTarget::X86_64None | BuildTarget::X86_64Linux | BuildTarget::X86_64Windows
+        BuildTarget::X86_64None
+            | BuildTarget::X86_64User
+            | BuildTarget::X86_64Linux
+            | BuildTarget::X86_64Windows
     ) {
         return match emit {
             EmitKind::Elf if target == BuildTarget::X86_64Windows => {
@@ -821,6 +834,7 @@ fn validate_selected_output(
                     if object.target
                         == match target {
                             BuildTarget::X86_64None => crate::target::X86_64_NONE,
+                            BuildTarget::X86_64User => crate::target::X86_64_USER,
                             BuildTarget::X86_64Linux => crate::target::X86_64_LINUX,
                             BuildTarget::X86_64Windows => crate::target::X86_64_WINDOWS,
                             BuildTarget::Kernel | BuildTarget::User => unreachable!(),

@@ -1,0 +1,174 @@
+import "boot_info.dby" as boot
+
+const FRAME_BYTES: u64 = 0x1000 as u64
+const LOW_RESERVED_END: u64 = 0x00100000 as u64
+const DMA32_END: u64 = 0x0000000100000000 as u64
+const KIND_AVAILABLE: u32 = 1 as u32
+const MAX_OWNED: usize = 16384 as usize
+
+static mut OWNED: array[u64, 16384]
+static mut OWNED_COUNT: usize
+static mut RELEASED: array[u64, 16384]
+static mut RELEASED_COUNT: usize
+static mut REGION_INDEX: usize
+static mut CURSOR: u64
+static mut ALLOCATIONS: usize
+static mut RELEASES: usize
+static mut READY: bool
+
+fn align_up_page(value: u64) -> u64:
+    let mask: u64 = FRAME_BYTES - (1 as u64)
+    let maximum: u64 = (0 as u64) - (1 as u64)
+    if value > (maximum - mask):
+        return 0 as u64
+    return (value + mask) & (maximum - mask)
+
+fn find_owned(address: u64) -> usize:
+    let index: usize = 0 as usize
+    while index < OWNED_COUNT:
+        if OWNED[index] == address:
+            return index + (1 as usize)
+        index = index + (1 as usize)
+    return 0 as usize
+
+fn remove_released(address: u64) -> bool:
+    let index: usize = 0 as usize
+    while index < RELEASED_COUNT:
+        if RELEASED[index] == address:
+            let last: usize = RELEASED_COUNT - (1 as usize)
+            RELEASED[index] = RELEASED[last]
+            RELEASED_COUNT = last
+            return true
+        index = index + (1 as usize)
+    return false
+
+fn record_owned(address: u64) -> bool:
+    if address == (0 as u64):
+        return false
+    if OWNED_COUNT >= MAX_OWNED:
+        return false
+    if find_owned(address) != (0 as usize):
+        return false
+    OWNED[OWNED_COUNT] = address
+    OWNED_COUNT = OWNED_COUNT + (1 as usize)
+    ALLOCATIONS = ALLOCATIONS + (1 as usize)
+    return true
+
+pub fn initialize() -> int:
+    READY = false
+    OWNED_COUNT = 0 as usize
+    RELEASED_COUNT = 0 as usize
+    REGION_INDEX = 0 as usize
+    CURSOR = 0 as u64
+    ALLOCATIONS = 0 as usize
+    RELEASES = 0 as usize
+    if boot.valid() == false:
+        return 1
+    if boot.memory_region_count() == (0 as usize):
+        return 2
+    READY = true
+    return 0
+
+fn allocate_from_regions() -> u64:
+    let count: usize = boot.memory_region_count()
+    while REGION_INDEX < count:
+        let base: u64 = boot.memory_region_base(REGION_INDEX)
+        let length: u64 = boot.memory_region_length(REGION_INDEX)
+        let kind: u32 = boot.memory_region_kind(REGION_INDEX)
+        let maximum: u64 = (0 as u64) - (1 as u64)
+        if length <= (maximum - base):
+            let end: u64 = base + length
+            if kind == KIND_AVAILABLE:
+                let first: u64 = align_up_page(base)
+                if first < LOW_RESERVED_END:
+                    first = LOW_RESERVED_END
+                if first != (0 as u64):
+                    if CURSOR < first:
+                        CURSOR = first
+                    if end >= FRAME_BYTES:
+                        while CURSOR <= (end - FRAME_BYTES):
+                            let frame: u64 = CURSOR
+                            CURSOR = CURSOR + FRAME_BYTES
+                            if find_owned(frame) == (0 as usize):
+                                return frame
+        REGION_INDEX = REGION_INDEX + (1 as usize)
+        CURSOR = 0 as u64
+    return 0 as u64
+
+pub fn allocate() -> u64:
+    if READY == false:
+        return 0 as u64
+    if OWNED_COUNT >= MAX_OWNED:
+        return 0 as u64
+    let frame: u64 = 0 as u64
+    if RELEASED_COUNT > (0 as usize):
+        RELEASED_COUNT = RELEASED_COUNT - (1 as usize)
+        frame = RELEASED[RELEASED_COUNT]
+    else:
+        frame = allocate_from_regions()
+    if record_owned(frame) == false:
+        return 0 as u64
+    return frame
+
+pub fn allocate_dma32() -> u64:
+    if READY == false:
+        return 0 as u64
+    if OWNED_COUNT >= MAX_OWNED:
+        return 0 as u64
+    let region: usize = 0 as usize
+    let count: usize = boot.memory_region_count()
+    while region < count:
+        let base: u64 = boot.memory_region_base(region)
+        let length: u64 = boot.memory_region_length(region)
+        let kind: u32 = boot.memory_region_kind(region)
+        let maximum: u64 = (0 as u64) - (1 as u64)
+        if kind == KIND_AVAILABLE:
+            if length <= (maximum - base):
+                let end: u64 = base + length
+                let limit: u64 = end
+                if limit > DMA32_END:
+                    limit = DMA32_END
+                let frame: u64 = align_up_page(base)
+                if frame < LOW_RESERVED_END:
+                    frame = LOW_RESERVED_END
+                if frame < limit:
+                    while frame <= (limit - FRAME_BYTES):
+                        if find_owned(frame) == (0 as usize):
+                            remove_released(frame)
+                            if record_owned(frame):
+                                return frame
+                            return 0 as u64
+                        frame = frame + FRAME_BYTES
+        region = region + (1 as usize)
+    return 0 as u64
+
+pub fn release(address: u64) -> int:
+    if READY == false:
+        return 1
+    if (address & (FRAME_BYTES - (1 as u64))) != (0 as u64):
+        return 2
+    let found: usize = find_owned(address)
+    if found == (0 as usize):
+        return 3
+    if RELEASED_COUNT >= MAX_OWNED:
+        return 4
+    let index: usize = found - (1 as usize)
+    let last: usize = OWNED_COUNT - (1 as usize)
+    OWNED[index] = OWNED[last]
+    OWNED_COUNT = last
+    RELEASED[RELEASED_COUNT] = address
+    RELEASED_COUNT = RELEASED_COUNT + (1 as usize)
+    RELEASES = RELEASES + (1 as usize)
+    return 0
+
+pub fn is_owned(address: u64) -> bool:
+    return find_owned(address) != (0 as usize)
+
+pub fn allocation_count() -> usize:
+    return ALLOCATIONS
+
+pub fn release_count() -> usize:
+    return RELEASES
+
+pub fn owned_count() -> usize:
+    return OWNED_COUNT

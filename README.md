@@ -53,7 +53,7 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v12.4.0**
+- Snapshot version: **v13.0.0**
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.

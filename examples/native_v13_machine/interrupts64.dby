@@ -1,0 +1,265 @@
+import "console.dby" as console
+
+const KERNEL_CODE_SELECTOR: u16 = 0x08 as u16
+const KERNEL_DATA_SELECTOR: u16 = 0x10 as u16
+const USER_CODE_SELECTOR: u16 = 0x1b as u16
+const USER_DATA_SELECTOR: u16 = 0x23 as u16
+const TSS_SELECTOR: u16 = 0x28 as u16
+const TSS_LIMIT: u64 = 103 as u64
+const IDT_GATE_COUNT: usize = 256 as usize
+const IST1_WORDS: usize = 2048 as usize
+const IST1_BYTES: usize = 16384 as usize
+const RING0_STACK_BYTES: usize = 32768 as usize
+
+pub struct InterruptFrame64:
+    rip: u64
+    cs: u64
+    rflags: u64
+    rsp: u64
+    ss: u64
+
+pub packed struct DescriptorTablePointer64:
+    limit: u16
+    base: u64
+
+packed struct IdtGate64:
+    offset_low: u16
+    selector: u16
+    ist: u8
+    type_attr: u8
+    offset_mid: u16
+    offset_high: u32
+    zero: u32
+packed struct Tss64:
+    reserved0: u32
+    rsp0: u64
+    rsp1: u64
+    rsp2: u64
+    reserved1: u64
+    ist1: u64
+    ist2: u64
+    ist3: u64
+    ist4: u64
+    ist5: u64
+    ist6: u64
+    ist7: u64
+    reserved2: u64
+    reserved3: u16
+    io_map_base: u16
+
+static mut GDT: array[u64, 7]
+static mut GDTR: DescriptorTablePointer64
+static mut IDT: array[IdtGate64, 256]
+static mut IDTR: DescriptorTablePointer64
+static mut TSS: Tss64
+static mut IST1: array[u64, 2048]
+static mut RING0_STACK: array[u64, 4096]
+static mut BREAKPOINTS: u32
+static mut LAST_FRAME: usize
+static mut LAPIC_EOI_BASE: usize
+static mut TIMER_TICKS: u32
+static mut SPURIOUS_COUNT: u32
+
+fn ist1_start() -> usize:
+    return (&IST1) as usize
+
+pub fn ist1_top() -> usize:
+    return ist1_start() + IST1_BYTES
+
+fn ring0_stack_start() -> usize:
+    return (&RING0_STACK) as usize
+
+pub fn ring0_stack_top() -> usize:
+    return ring0_stack_start() + RING0_STACK_BYTES
+
+fn install_tss_descriptor() -> int:
+    let base: u64 = (&TSS) as usize as u64
+    GDT[0 as usize] = 0 as u64
+    GDT[1 as usize] = 0x00af9a000000ffff as u64
+    GDT[2 as usize] = 0x00cf92000000ffff as u64
+    GDT[3 as usize] = 0x00affa000000ffff as u64
+    GDT[4 as usize] = 0x00cff2000000ffff as u64
+    GDT[5 as usize] = TSS_LIMIT | ((base & (0x00ffffff as u64)) << (16 as u64)) | ((0x89 as u64) << (40 as u64)) | (((base >> (24 as u64)) & (0xff as u64)) << (56 as u64))
+    GDT[6 as usize] = (base >> (32 as u64)) & (0xffffffff as u64)
+    GDTR.limit = 55 as u16
+    GDTR.base = (&GDT) as usize as u64
+    return 0
+
+fn set_gate_attr(vector: usize, address: usize, ist_index: u8, type_attr: u8) -> int:
+    let offset: u64 = address as u64
+    IDT[vector].offset_low = (offset & (0xffff as u64)) as u16
+    IDT[vector].selector = KERNEL_CODE_SELECTOR
+    IDT[vector].ist = ist_index & (0x07 as u8)
+    IDT[vector].type_attr = type_attr
+    IDT[vector].offset_mid = ((offset >> (16 as u64)) & (0xffff as u64)) as u16
+    IDT[vector].offset_high = ((offset >> (32 as u64)) & (0xffffffff as u64)) as u32
+    IDT[vector].zero = 0 as u32
+    return 0
+
+fn set_gate(vector: usize, address: usize, ist_index: u8) -> int:
+    return set_gate_attr(vector, address, ist_index, 0x8e as u8)
+
+fn fatal_prefix(vector: u32, error_code: u64) -> int:
+    console.write("G2B FATAL vector=", 17 as usize)
+    console.hex32(vector)
+    console.write(" error=", 7 as usize)
+    console.hex64(error_code)
+    console.newline()
+    native.cpu_cli()
+    return 0
+pub interrupt(no_error_code) fn breakpoint(frame: ptr[InterruptFrame64]):
+    BREAKPOINTS = BREAKPOINTS + (1 as u32)
+    LAST_FRAME = frame as usize
+    return
+
+pub interrupt(no_error_code) fn lapic_timer(frame: ptr[InterruptFrame64]):
+    let ticks: u32 = native.volatile_load32((&TIMER_TICKS) as ptr[u32])
+    native.volatile_store32((&TIMER_TICKS) as ptr[u32], ticks + (1 as u32))
+    LAST_FRAME = frame as usize
+    if LAPIC_EOI_BASE != (0 as usize):
+        native.volatile_store32((LAPIC_EOI_BASE + (0x0b0 as usize)) as ptr[u32], 0 as u32)
+    return
+
+pub interrupt(no_error_code) fn spurious(frame: ptr[InterruptFrame64]):
+    let count: u32 = native.volatile_load32((&SPURIOUS_COUNT) as ptr[u32])
+    native.volatile_store32((&SPURIOUS_COUNT) as ptr[u32], count + (1 as u32))
+    LAST_FRAME = frame as usize
+    return
+
+pub interrupt(no_error_code) fn invalid_opcode(frame: ptr[InterruptFrame64]):
+    fatal_prefix(6 as u32, 0 as u64)
+    while true:
+        native.cpu_hlt()
+    return
+
+pub interrupt(error_code) fn double_fault(frame: ptr[InterruptFrame64], error_code: u64):
+    fatal_prefix(8 as u32, error_code)
+    while true:
+        native.cpu_hlt()
+    return
+
+pub interrupt(error_code) fn general_protection(frame: ptr[InterruptFrame64], error_code: u64):
+    fatal_prefix(13 as u32, error_code)
+    while true:
+        native.cpu_hlt()
+    return
+
+pub interrupt(error_code) fn page_fault(frame: ptr[InterruptFrame64], error_code: u64):
+    console.write("G2B PAGEFAULT cr2=", 18 as usize)
+    console.hex64(native.cpu_read_cr2() as u64)
+    console.write(" error=", 7 as usize)
+    console.hex64(error_code)
+    console.newline()
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return
+
+pub fn install() -> int:
+    native.cpu_cli()
+    TSS.rsp0 = ring0_stack_top() as u64
+    TSS.ist1 = ist1_top() as u64
+    TSS.io_map_base = 104 as u16
+    install_tss_descriptor()
+    native.cpu_lgdt((&GDTR) as usize)
+    native.cpu_ltr(0x28 as u16)
+
+    LAPIC_EOI_BASE = 0 as usize
+    TIMER_TICKS = 0 as u32
+    SPURIOUS_COUNT = 0 as u32
+    set_gate(3 as usize, interrupt_address(3, breakpoint), 1 as u8)
+    set_gate(6 as usize, interrupt_address(6, invalid_opcode), 1 as u8)
+    set_gate(8 as usize, interrupt_address(8, double_fault), 1 as u8)
+    set_gate(13 as usize, interrupt_address(13, general_protection), 1 as u8)
+    set_gate(14 as usize, interrupt_address(14, page_fault), 1 as u8)
+    set_gate(64 as usize, interrupt_address(64, lapic_timer), 1 as u8)
+    set_gate(255 as usize, interrupt_address(255, spurious), 1 as u8)
+    IDTR.limit = 4095 as u16
+    IDTR.base = (&IDT) as usize as u64
+    native.cpu_lidt((&IDTR) as usize)
+    return 0
+
+pub fn breakpoint_count() -> u32:
+    return BREAKPOINTS
+
+pub fn last_frame() -> usize:
+    return LAST_FRAME
+pub fn frame_used_ist1() -> bool:
+    if LAST_FRAME < ist1_start():
+        return false
+    if LAST_FRAME >= ist1_top():
+        return false
+    return true
+
+pub fn tss_address() -> usize:
+    return (&TSS) as usize
+
+pub fn idt_address() -> usize:
+    return (&IDT) as usize
+
+pub fn gdt_address() -> usize:
+    return (&GDT) as usize
+
+pub fn trigger_breakpoint() -> int:
+    native.cpu_int3()
+    return 0
+
+pub fn configure_lapic_eoi(base: usize) -> int:
+    if base == (0 as usize):
+        return 1
+    if (base & (0xfff as usize)) != (0 as usize):
+        return 2
+    LAPIC_EOI_BASE = base
+    native.volatile_store32((&TIMER_TICKS) as ptr[u32], 0 as u32)
+    return 0
+
+pub fn install_keyboard_gate(address: usize) -> int:
+    if address == (0 as usize):
+        return 1
+    set_gate(65 as usize, address, 1 as u8)
+    return 0
+
+pub fn install_user_syscall_gate(address: usize) -> int:
+    if address == (0 as usize):
+        return 1
+    return set_gate_attr(128 as usize, address, 0 as u8, 0xee as u8)
+
+pub fn install_user_fault_gates(invalid_opcode_address: usize, general_protection_address: usize, page_fault_address: usize) -> int:
+    if invalid_opcode_address == (0 as usize):
+        return 1
+    if general_protection_address == (0 as usize):
+        return 1
+    if page_fault_address == (0 as usize):
+        return 1
+    set_gate(6 as usize, invalid_opcode_address, 0 as u8)
+    set_gate(13 as usize, general_protection_address, 0 as u8)
+    set_gate(14 as usize, page_fault_address, 0 as u8)
+    return 0
+
+pub fn kernel_code_selector() -> u16:
+    return KERNEL_CODE_SELECTOR
+
+pub fn kernel_data_selector() -> u16:
+    return KERNEL_DATA_SELECTOR
+
+pub fn user_code_selector() -> u16:
+    return USER_CODE_SELECTOR
+
+pub fn user_data_selector() -> u16:
+    return USER_DATA_SELECTOR
+
+pub fn lapic_eoi() -> int:
+    if LAPIC_EOI_BASE == (0 as usize):
+        return 1
+    native.volatile_store32((LAPIC_EOI_BASE + (0x0b0 as usize)) as ptr[u32], 0 as u32)
+    return 0
+
+pub fn reset_timer_ticks() -> int:
+    native.volatile_store32((&TIMER_TICKS) as ptr[u32], 0 as u32)
+    return 0
+
+pub fn timer_ticks() -> u32:
+    return native.volatile_load32((&TIMER_TICKS) as ptr[u32])
+
+pub fn spurious_count() -> u32:
+    return native.volatile_load32((&SPURIOUS_COUNT) as ptr[u32])

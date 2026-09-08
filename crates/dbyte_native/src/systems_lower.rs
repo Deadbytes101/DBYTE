@@ -2232,17 +2232,20 @@ fn lower_intrinsic(
                 &ty,
             )?;
         }
-        SystemIntrinsic::IoOut8 | SystemIntrinsic::IoOut16 => {
+        SystemIntrinsic::IoOut8 | SystemIntrinsic::IoOut16 | SystemIntrinsic::IoOut32 => {
             require_intrinsic_arity(intrinsic, argument_count, 2, function)?;
             pop(encoder, function, Register::Eax)?;
             pop(encoder, function, Register::Edx)?;
             match intrinsic {
                 SystemIntrinsic::IoOut8 => emit(encoder, function, |encoder| encoder.out_dx_al())?,
                 SystemIntrinsic::IoOut16 => emit(encoder, function, |encoder| encoder.out_dx_ax())?,
+                SystemIntrinsic::IoOut32 => {
+                    emit(encoder, function, |encoder| encoder.out_dx_eax())?
+                }
                 _ => unreachable!(),
             }
         }
-        SystemIntrinsic::IoIn8 | SystemIntrinsic::IoIn16 => {
+        SystemIntrinsic::IoIn8 | SystemIntrinsic::IoIn16 | SystemIntrinsic::IoIn32 => {
             require_intrinsic_arity(intrinsic, argument_count, 1, function)?;
             pop(encoder, function, Register::Edx)?;
             match intrinsic {
@@ -2258,10 +2261,26 @@ fn lower_intrinsic(
                         encoder.movzx_reg_reg(Register::Eax, Register::Eax, OperandWidth::Word)
                     })?;
                 }
+                SystemIntrinsic::IoIn32 => emit(encoder, function, |encoder| encoder.in_eax_dx())?,
                 _ => unreachable!(),
             }
             push(encoder, function, Register::Eax)?;
             *depth += 1;
+        }
+        SystemIntrinsic::VolatileLoad64
+        | SystemIntrinsic::VolatileStore64
+        | SystemIntrinsic::CpuCpuidEax
+        | SystemIntrinsic::CpuCpuidEbx
+        | SystemIntrinsic::CpuCpuidEcx
+        | SystemIntrinsic::CpuCpuidEdx
+        | SystemIntrinsic::CpuRdmsr
+        | SystemIntrinsic::CpuWrmsr
+        | SystemIntrinsic::CpuReadCr4
+        | SystemIntrinsic::CpuWriteCr4 => {
+            return Err(function_error(
+                function,
+                format!("intrinsic {intrinsic} is reserved for DBYTE64 machine lowering"),
+            ));
         }
         SystemIntrinsic::CpuHlt => {
             require_intrinsic_arity(intrinsic, argument_count, 0, function)?;

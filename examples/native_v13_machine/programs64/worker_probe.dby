@@ -1,0 +1,28 @@
+static mut BUFFER: array[u8, 64]
+
+pub fn user_main() -> int:
+    let message: str = "WORKER USER START\r\n"
+    if user.syscall3(1 as u32, 1 as usize, message, 19 as usize) != 19:
+        return 10
+    let path: str = "/PERSIST.TXT"
+    let fd: i32 = user.syscall3(3 as u32, path, 12 as usize, 1 as usize)
+    if fd < 3:
+        return 11
+    let count: i32 = user.syscall3(4 as u32, fd as usize, (&BUFFER[0]) as usize, 64 as usize)
+    if count != 128:
+        if count != 64:
+            return 12
+    if user.syscall1(5 as u32, fd as usize) != 0:
+        return 13
+    if BUFFER[0 as usize] != (0x44 as u8):
+        return 14
+    if BUFFER[1 as usize] != (0x42 as u8):
+        return 14
+    if BUFFER[2 as usize] != (0x59 as u8):
+        return 14
+    if BUFFER[3 as usize] != (0x54 as u8):
+        return 14
+    let ok: str = "WORKER USER OK\r\n"
+    if user.syscall3(1 as u32, 1 as usize, ok, 16 as usize) != 16:
+        return 15
+    return 0

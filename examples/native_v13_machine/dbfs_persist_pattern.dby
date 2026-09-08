@@ -1,0 +1,48 @@
+const PAYLOAD_BYTES: usize = 128 as usize
+
+pub fn payload_bytes() -> usize:
+    return PAYLOAD_BYTES
+
+pub fn expected_byte(index: usize) -> u8:
+    return ((((index as u32) * (37 as u32)) + (0x41 as u32)) & (0xff as u32)) as u8
+
+pub fn fill_sector(buffer: ptr[u8]) -> int:
+    if (buffer as usize) == (0 as usize):
+        return 1
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        let value: u8 = 0 as u8
+        if index < PAYLOAD_BYTES:
+            value = expected_byte(index)
+        native.volatile_store8(((buffer as usize) + index) as ptr[u8], value)
+        index = index + (1 as usize)
+    return 0
+
+pub fn verify_payload(buffer: ptr[u8]) -> int:
+    if (buffer as usize) == (0 as usize):
+        return 1
+    let index: usize = 0 as usize
+    while index < PAYLOAD_BYTES:
+        if native.volatile_load8(((buffer as usize) + index) as ptr[u8]) != expected_byte(index):
+            return 2
+        index = index + (1 as usize)
+    return 0
+
+pub fn verify_sector(buffer: ptr[u8]) -> int:
+    let status: int = verify_payload(buffer)
+    if status != 0:
+        return status
+    let index: usize = PAYLOAD_BYTES
+    while index < (512 as usize):
+        if native.volatile_load8(((buffer as usize) + index) as ptr[u8]) != (0 as u8):
+            return 3
+        index = index + (1 as usize)
+    return 0
+
+pub fn fnv1a(buffer: ptr[u8], count: usize) -> u32:
+    let hash: u32 = 2166136261 as u32
+    let index: usize = 0 as usize
+    while index < count:
+        hash = (hash ^ (native.volatile_load8(((buffer as usize) + index) as ptr[u8]) as u32)) * (16777619 as u32)
+        index = index + (1 as usize)
+    return hash

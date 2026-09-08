@@ -1,0 +1,23 @@
+import "console.dby" as console
+import "pci.dby" as pci
+
+pub fn kernel_main() -> int:
+    console.init()
+    let status: int = pci.enumerate()
+    if status != 0:
+        console.write("PCI REGRESSION FAIL status=", 27 as usize)
+        console.hex32(status as u32)
+        console.newline()
+        return 1
+    if pci.device_count() == (0 as u32):
+        console.line("PCI REGRESSION FAIL empty", 25 as usize)
+        return 2
+    console.write("PCI REGRESSION OK count=", 24 as usize)
+    console.hex32(pci.device_count())
+    console.write(" i440fx=", 8 as usize)
+    if pci.qemu_i440fx_seen():
+        console.write("1", 1 as usize)
+    else:
+        console.write("0", 1 as usize)
+    console.newline()
+    return 0

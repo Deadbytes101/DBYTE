@@ -89,6 +89,7 @@ pub fn link_objects(
     let objects = parse_inputs_and_archives(&ordered, requested, entry_symbol)?;
     validate_link_targets(objects.iter().map(|object| object.image.target), requested)
         .map_err(|error| LinkError(error.0))?;
+    validate_interrupt_metadata(&objects)?;
     let entries: Vec<_> = objects
         .iter()
         .filter_map(|object| object.image.entry_abi)
@@ -160,7 +161,20 @@ pub fn link_objects(
             }
         }
     }
-    let mut public_symbols = BTreeMap::new();
+    let synthetic_symbols = kernel_synthetic_symbols(requested, addresses, bss_size)?;
+    for object in &objects {
+        for symbol in &object.image.symbols {
+            if synthetic_symbols.contains_key(&symbol.name)
+                && symbol.definition != Definition::Undefined
+            {
+                return Err(error(
+                    "E_LINK64_RESERVED_SYMBOL",
+                    &format!("input defines reserved linker symbol `{}`", symbol.name),
+                ));
+            }
+        }
+    }
+    let mut public_symbols = synthetic_symbols.clone();
     for (name, (object_index, section, value)) in &global_definitions {
         public_symbols.insert(
             name.clone(),
@@ -181,6 +195,7 @@ pub fn link_objects(
                 object_index,
                 &relocation.symbol,
                 &objects,
+                &synthetic_symbols,
                 &global_definitions,
                 &placements,
                 addresses,
@@ -213,6 +228,7 @@ pub fn link_objects(
         .filter(|symbol| {
             symbol.binding == Binding::Global
                 && symbol.definition == Definition::Undefined
+                && !synthetic_symbols.contains_key(&symbol.name)
                 && !global_definitions.contains_key(&symbol.name)
         })
         .map(|symbol| symbol.name.clone())
@@ -359,10 +375,111 @@ fn collect_symbol_sets(
     }
 }
 
+fn validate_interrupt_metadata(inputs: &[InputObject]) -> Result<(), LinkError> {
+    let mut definitions = BTreeSet::new();
+    let mut uses = Vec::new();
+    for input in inputs {
+        for symbol in &input.image.symbols {
+            let Some(record) = symbol.name.strip_prefix("__dbyte_interrupt:") else {
+                continue;
+            };
+            if symbol.binding != Binding::Local
+                || symbol.kind != crate::object64::SymbolKind::Function
+                || symbol.definition == Definition::Undefined
+            {
+                return Err(error(
+                    "E_LINK64_INTERRUPT_METADATA",
+                    &format!("invalid interrupt metadata symbol '{}'", symbol.name),
+                ));
+            }
+            let parts: Vec<&str> = record.split(':').collect();
+            match parts.as_slice() {
+                ["def", class, handler] if valid_interrupt_class(class) && !handler.is_empty() => {
+                    if !definitions.insert((class.to_string(), handler.to_string())) {
+                        return Err(error(
+                            "E_LINK64_INTERRUPT_DUPLICATE",
+                            &format!("duplicate interrupt definition metadata for {handler}"),
+                        ));
+                    }
+                }
+                ["use", vector, class, handler]
+                    if valid_interrupt_class(class) && !handler.is_empty() =>
+                {
+                    let vector: u8 = vector.parse().map_err(|_| {
+                        error(
+                            "E_LINK64_INTERRUPT_METADATA",
+                            &format!("invalid interrupt vector metadata '{}'", symbol.name),
+                        )
+                    })?;
+                    let requires_error = matches!(vector, 8 | 10 | 11 | 12 | 13 | 14 | 17);
+                    let class_error = class.starts_with("error_code");
+                    let class_transition = class.ends_with(",cpl3_transition");
+                    if class_error != requires_error || (vector == 128 && !class_transition) {
+                        return Err(error(
+                            "E_LINK64_INTERRUPT_CLASS",
+                            &format!("interrupt vector {vector} is incompatible with {class} handler '{handler}'"),
+                        ));
+                    }
+                    uses.push((class.to_string(), handler.to_string(), vector));
+                }
+                _ => {
+                    return Err(error(
+                        "E_LINK64_INTERRUPT_METADATA",
+                        &format!("malformed interrupt metadata symbol '{}'", symbol.name),
+                    ));
+                }
+            }
+        }
+    }
+    for (class, handler, vector) in uses {
+        if !definitions.contains(&(class.clone(), handler.clone())) {
+            return Err(error(
+                "E_LINK64_INTERRUPT_UNDEFINED",
+                &format!(
+                    "interrupt vector {vector} references {class} handler '{handler}' without matching metadata"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn valid_interrupt_class(class: &str) -> bool {
+    matches!(
+        class,
+        "no_error_code"
+            | "error_code"
+            | "no_error_code,cpl3_transition"
+            | "error_code,cpl3_transition"
+    )
+}
+
+fn kernel_synthetic_symbols(
+    requested: TargetSpec,
+    addresses: SectionAddresses,
+    bss_size: u64,
+) -> Result<BTreeMap<String, u64>, LinkError> {
+    let mut symbols = BTreeMap::new();
+    if requested.executable_format != crate::target::ExecutableFormat::Multiboot2Elf64 {
+        return Ok(symbols);
+    }
+    let image_end = addresses
+        .bss
+        .checked_add(bss_size)
+        .ok_or_else(|| error("E_LINK64_OVERFLOW", "kernel image end overflows"))?;
+    symbols.insert(
+        "__dbyte_image_start".to_owned(),
+        u64::from(crate::multiboot2::IMAGE_BASE),
+    );
+    symbols.insert("__dbyte_image_end".to_owned(), image_end);
+    Ok(symbols)
+}
+
 fn resolve_symbol(
     object_index: usize,
     name: &str,
     objects: &[InputObject],
+    synthetic: &BTreeMap<String, u64>,
     globals: &BTreeMap<String, (usize, Section, u64)>,
     placements: &BTreeMap<(usize, Section), u64>,
     addresses: SectionAddresses,
@@ -376,6 +493,9 @@ fn resolve_symbol(
         if let Definition::Defined { section, value } = symbol.definition {
             return symbol_address(object_index, section, value, placements, addresses);
         }
+    }
+    if let Some(address) = synthetic.get(name).copied() {
+        return Ok(address);
     }
     let (owner, section, value) = globals.get(name).copied().ok_or_else(|| {
         error(
@@ -574,6 +694,214 @@ mod tests {
                 .0
                 .contains("E_TARGET_MISMATCH")
         );
+    }
+
+    #[test]
+    fn interrupt_metadata_requires_matching_definition() {
+        let input = object(
+            X86_64_NONE,
+            "irq.o",
+            vec![0xc3],
+            vec![
+                Symbol {
+                    name: "kernel_main".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 1,
+                },
+                Symbol {
+                    name: "__dbyte_interrupt:use:003:no_error_code:breakpoint".into(),
+                    binding: Binding::Local,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                },
+            ],
+            vec![],
+        );
+        let addresses = SectionAddresses {
+            text: 0x200000,
+            rodata: 0x210000,
+            data: 0x220000,
+            bss: 0x230000,
+        };
+        let error = link_objects(&[input], X86_64_NONE, addresses, "kernel_main")
+            .expect_err("interrupt use without a matching definition must fail");
+        assert!(
+            error.0.contains("E_LINK64_INTERRUPT_UNDEFINED"),
+            "{}",
+            error.0
+        );
+    }
+
+    #[test]
+    fn interrupt_metadata_accepts_matching_definition() {
+        let input = object(
+            X86_64_NONE,
+            "irq-ok.o",
+            vec![0xc3],
+            vec![
+                Symbol {
+                    name: "kernel_main".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 1,
+                },
+                Symbol {
+                    name: "__dbyte_interrupt:def:no_error_code:breakpoint".into(),
+                    binding: Binding::Local,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                },
+                Symbol {
+                    name: "__dbyte_interrupt:use:003:no_error_code:breakpoint".into(),
+                    binding: Binding::Local,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                },
+            ],
+            vec![],
+        );
+        let addresses = SectionAddresses {
+            text: 0x200000,
+            rodata: 0x210000,
+            data: 0x220000,
+            bss: 0x230000,
+        };
+        link_objects(&[input], X86_64_NONE, addresses, "kernel_main").unwrap();
+    }
+
+    #[test]
+    fn interrupt_metadata_rejects_vector_class_mismatch() {
+        let input = object(
+            X86_64_NONE,
+            "irq-class.o",
+            vec![0xc3],
+            vec![
+                Symbol {
+                    name: "kernel_main".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 1,
+                },
+                Symbol {
+                    name: "__dbyte_interrupt:def:no_error_code:page_fault".into(),
+                    binding: Binding::Local,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                },
+                Symbol {
+                    name: "__dbyte_interrupt:use:014:no_error_code:page_fault".into(),
+                    binding: Binding::Local,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 0,
+                },
+            ],
+            vec![],
+        );
+        let addresses = SectionAddresses {
+            text: 0x200000,
+            rodata: 0x210000,
+            data: 0x220000,
+            bss: 0x230000,
+        };
+        let error = link_objects(&[input], X86_64_NONE, addresses, "kernel_main")
+            .expect_err("page fault must use an error-code interrupt class");
+        assert!(error.0.contains("E_LINK64_INTERRUPT_CLASS"), "{}", error.0);
+    }
+
+    #[test]
+    fn none_kernel_image_synthetic_symbols_resolve() {
+        let input = object(
+            X86_64_NONE,
+            "image-symbols.o",
+            vec![0; 16],
+            vec![
+                Symbol {
+                    name: "kernel_main".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 16,
+                },
+                Symbol {
+                    name: "__dbyte_image_start".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Object,
+                    definition: Definition::Undefined,
+                    size: 0,
+                },
+                Symbol {
+                    name: "__dbyte_image_end".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Object,
+                    definition: Definition::Undefined,
+                    size: 0,
+                },
+            ],
+            vec![
+                Relocation {
+                    section: Section::Text,
+                    offset: 0,
+                    symbol: "__dbyte_image_start".into(),
+                    kind: RelocationKind::Absolute64,
+                    addend: 0,
+                },
+                Relocation {
+                    section: Section::Text,
+                    offset: 8,
+                    symbol: "__dbyte_image_end".into(),
+                    kind: RelocationKind::Absolute64,
+                    addend: 0,
+                },
+            ],
+        );
+        let addresses = SectionAddresses {
+            text: 0x200035,
+            rodata: 0x210000,
+            data: 0x220000,
+            bss: 0x230000,
+        };
+        let linked = link_objects(&[input], X86_64_NONE, addresses, "kernel_main").unwrap();
+        let image_start = u64::from(crate::multiboot2::IMAGE_BASE);
+        assert_eq!(&linked.text[0..8], &image_start.to_le_bytes());
+        assert_eq!(&linked.text[8..16], &addresses.bss.to_le_bytes());
+        assert_eq!(linked.symbols["__dbyte_image_start"], image_start);
+        assert_eq!(linked.symbols["__dbyte_image_end"], addresses.bss);
     }
 
     #[test]

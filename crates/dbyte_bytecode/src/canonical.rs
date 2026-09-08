@@ -109,6 +109,10 @@ pub enum CanonicalOpcode {
         operand: CanonicalOperandType,
     },
     Cast(TypeId),
+    Bitcast {
+        source: TypeId,
+        target: TypeId,
+    },
     Length,
     CallDirect {
         callee: FunctionInstanceId,
@@ -345,6 +349,9 @@ fn display_opcode(project: &CanonicalBytecodeProject, opcode: &CanonicalOpcode) 
         }
         CanonicalOpcode::Unary { op, operand } => format!("UNARY_{op:?}_{operand}"),
         CanonicalOpcode::Cast(target) => format!("CAST type#{}", target.0),
+        CanonicalOpcode::Bitcast { source, target } => {
+            format!("BITCAST type#{} -> type#{}", source.0, target.0)
+        }
         CanonicalOpcode::Length => "LENGTH".into(),
         CanonicalOpcode::CallDirect {
             key,

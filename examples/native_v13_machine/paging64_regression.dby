@@ -1,0 +1,54 @@
+import "paging64.dby" as paging
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+fn fail(message: str, length: usize, code: int) -> int:
+    serial.write(message, length)
+    serial.newline()
+    return code
+
+pub fn kernel_main() -> int:
+    serial.init()
+    if paging.initialize() != 0:
+        return fail("PAGING64 INIT FAIL", 18 as usize, 1)
+    if paging.cr3() == (0 as usize):
+        return fail("PAGING64 CR3 FAIL", 17 as usize, 2)
+    if (paging.cr0() & (0x00010000 as u32)) == (0 as u32):
+        return fail("PAGING64 WP FAIL", 16 as usize, 3)
+    if (paging.efer() & (0x0000000000000800 as u64)) == (0 as u64):
+        return fail("PAGING64 NXE FAIL", 17 as usize, 4)
+
+    let virtual: usize = paging.arena_start()
+    let high_frame: u64 = 0x0000000100002000 as u64
+    if paging.map_page(virtual, high_frame, true, false) != 0:
+        return fail("PAGING64 MAP FAIL", 17 as usize, 5)
+    if paging.mapping_physical(virtual) != high_frame:
+        return fail("PAGING64 HIGH FAIL", 18 as usize, 6)
+    let flags: u64 = paging.mapping_flags(virtual)
+    if (flags & (1 as u64)) == (0 as u64):
+        return fail("PAGING64 PRESENT FAIL", 21 as usize, 7)
+    if (flags & (2 as u64)) == (0 as u64):
+        return fail("PAGING64 WRITE FAIL", 19 as usize, 8)
+    if (flags & ((1 as u64) << (63 as u64))) == (0 as u64):
+        return fail("PAGING64 NX FAIL", 16 as usize, 9)
+    if paging.map_page(virtual, high_frame, true, false) == 0:
+        return fail("PAGING64 DUP FAIL", 17 as usize, 10)
+    if paging.unmap_page(virtual) != high_frame:
+        return fail("PAGING64 UNMAP FAIL", 19 as usize, 11)
+    if paging.is_mapped(virtual):
+        return fail("PAGING64 STALE FAIL", 19 as usize, 12)
+
+    let second: usize = virtual + (0x1000 as usize)
+    if paging.map_page(second, 0x0000000100003000 as u64, false, true) != 0:
+        return fail("PAGING64 RX MAP FAIL", 20 as usize, 13)
+    let rx_flags: u64 = paging.mapping_flags(second)
+    if (rx_flags & (2 as u64)) != (0 as u64):
+        return fail("PAGING64 RX WRITE FAIL", 22 as usize, 14)
+    if (rx_flags & ((1 as u64) << (63 as u64))) != (0 as u64):
+        return fail("PAGING64 RX NX FAIL", 19 as usize, 15)
+    if paging.map_count() != (2 as usize):
+        return fail("PAGING64 COUNT FAIL", 19 as usize, 16)
+    if paging.unmap_count() != (1 as usize):
+        return fail("PAGING64 UNCOUNT FAIL", 21 as usize, 17)
+    serial.write("PAGING64 OK", 11 as usize)
+    serial.newline()
+    return 0

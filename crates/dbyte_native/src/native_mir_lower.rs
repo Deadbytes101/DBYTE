@@ -166,9 +166,9 @@ fn static_scalar_bits(expression: &HirExpr) -> Result<u64, NativeMirError> {
         HirExprKind::Integer(value) => Ok(*value as u64),
         HirExprKind::Bool(value) => Ok(u64::from(*value)),
         HirExprKind::Null | HirExprKind::Unit => Ok(0),
-        HirExprKind::Cast { value, .. } | HirExprKind::Constant { value, .. } => {
-            static_scalar_bits(value)
-        }
+        HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
+        | HirExprKind::Constant { value, .. } => static_scalar_bits(value),
         _ => Err(unsupported(
             expression.span,
             "non-scalar static initializer",
@@ -248,6 +248,7 @@ fn collect_strings_expr(expression: &HirExpr, output: &mut Vec<Vec<u8>>) {
         HirExprKind::Length { value }
         | HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Constant { value, .. }
         | HirExprKind::Try { value, .. } => collect_strings_expr(value, output),
         HirExprKind::Binary { left, right, .. } => {
@@ -413,6 +414,7 @@ fn collect_closures_expr(
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Length { value }
         | HirExprKind::Try { value, .. }
         | HirExprKind::Constant { value, .. } => collect_closures_expr(value, parent, output),
@@ -554,6 +556,7 @@ fn collect_address_taken_expr(expression: &HirExpr, output: &mut BTreeSet<LocalI
         HirExprKind::Length { value }
         | HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Constant { value, .. }
         | HirExprKind::Try { value, .. } => collect_address_taken_expr(value, output),
         HirExprKind::Binary { left, right, .. } => {
@@ -630,6 +633,20 @@ pub fn lower_program_to_native_mir_with_link_names(
     program: &ConcreteHirProgram,
     link_names: Option<&BTreeMap<dbyte_hir::SymbolId, String>>,
 ) -> Result<NativeMirProject, NativeMirError> {
+    for function in &program.functions {
+        if function.convention == dbyte_ast::CallConvention::C
+            && (function
+                .parameters
+                .iter()
+                .any(|parameter| is_explicit_float(program, parameter.ty))
+                || is_explicit_float(program, function.result))
+        {
+            return Err(NativeMirError::new(
+                "E_NATIVE_MIR_C_FLOAT_ABI",
+                "explicit f32/f64 in extern C signatures require the native float ABI slice",
+            ));
+        }
+    }
     let symbols: BTreeMap<_, _> = program
         .functions
         .iter()
@@ -1497,7 +1514,10 @@ impl<'a> FunctionLowerer<'a> {
                 // An explicit integer-literal cast is target-typed before machine
                 // lowering. Do not first normalize the literal through its default
                 // source integer width: that would truncate values above u32 on i686.
-                if ty == MachineType::I64 {
+                if ty == MachineType::I64
+                    || (ty == MachineType::Pointer
+                        && self.program.semantic.layout.pointer_size == 8)
+                {
                     if let HirExprKind::Integer(bits) = value.kind {
                         let target_is_valid_wide_integer = matches!(
                             self.program.semantic.type_of(expression.ty),
@@ -1505,14 +1525,17 @@ impl<'a> FunctionLowerer<'a> {
                         ) || matches!(
                             self.program.semantic.type_of(expression.ty),
                             CanonicalType::Integer(IntegerType::U64) if bits >= 0
+                        ) || matches!(
+                            self.program.semantic.type_of(expression.ty),
+                            CanonicalType::Integer(IntegerType::Usize) if bits >= 0
                         );
                         if target_is_valid_wide_integer {
-                            let destination = self.new_register(MachineType::I64);
+                            let destination = self.new_register(ty);
                             self.emit(
                                 NativeMirInst::Const {
                                     destination,
                                     value: bits as u64,
-                                    ty: MachineType::I64,
+                                    ty,
                                 },
                                 expression.span,
                             );
@@ -1530,6 +1553,27 @@ impl<'a> FunctionLowerer<'a> {
                         from,
                         to: ty,
                         signed: is_signed(self.program, value.ty),
+                    },
+                    expression.span,
+                );
+                Ok(destination)
+            }
+            HirExprKind::Bitcast { value, .. } => {
+                let source = self.lower_expr(value)?;
+                let source_ty = self.register_types[source.0 as usize];
+                let pointer_bytes = self.program.semantic.layout.pointer_size as u8;
+                if source_ty.bytes(pointer_bytes) != ty.bytes(pointer_bytes) {
+                    return Err(NativeMirError::new(
+                        "E_NATIVE_MIR_BITCAST_WIDTH",
+                        "canonical exact bitcast reached native MIR with unequal widths",
+                    ));
+                }
+                let destination = self.new_register(ty);
+                self.emit(
+                    NativeMirInst::Copy {
+                        destination,
+                        source,
+                        ty,
                     },
                     expression.span,
                 );
@@ -1565,6 +1609,14 @@ impl<'a> FunctionLowerer<'a> {
                 convention,
                 arguments,
             } => {
+                if *convention == dbyte_ast::CallConvention::C
+                    && is_explicit_float(self.program, expression.ty)
+                {
+                    return Err(NativeMirError::new(
+                        "E_NATIVE_MIR_C_FLOAT_ABI",
+                        "explicit f32/f64 C-call results require the native float ABI slice",
+                    ));
+                }
                 let symbol = self.symbols.get(callee).cloned().ok_or_else(|| {
                     NativeMirError::new(
                         "E_NATIVE_MIR_CALL",
@@ -1601,6 +1653,14 @@ impl<'a> FunctionLowerer<'a> {
                 convention,
                 arguments,
             } => {
+                if *convention == dbyte_ast::CallConvention::C
+                    && is_explicit_float(self.program, expression.ty)
+                {
+                    return Err(NativeMirError::new(
+                        "E_NATIVE_MIR_C_FLOAT_ABI",
+                        "explicit f32/f64 C-call results require the native float ABI slice",
+                    ));
+                }
                 let callee = self.lower_native_callee(callee)?;
                 let (arguments, argument_aggregates) =
                     self.lower_call_arguments(arguments, *convention)?;
@@ -1859,6 +1919,14 @@ impl<'a> FunctionLowerer<'a> {
         let mut values = Vec::with_capacity(arguments.len());
         let mut aggregates = Vec::with_capacity(arguments.len());
         for argument in arguments {
+            if convention == dbyte_ast::CallConvention::C
+                && is_explicit_float(self.program, argument.ty)
+            {
+                return Err(NativeMirError::new(
+                    "E_NATIVE_MIR_C_FLOAT_ABI",
+                    "explicit f32/f64 C-call arguments require the native float ABI slice",
+                ));
+            }
             let aggregate = aggregate_layout(self.program, argument.ty, argument.span)?;
             let mut value = self.lower_expr(argument)?;
             if aggregate.is_none() && convention == dbyte_ast::CallConvention::C {
@@ -3275,6 +3343,13 @@ fn is_zero_sized(program: &ConcreteHirProgram, ty: TypeId) -> Result<bool, Nativ
     Ok(layout.size == 0)
 }
 
+fn is_explicit_float(program: &ConcreteHirProgram, ty: TypeId) -> bool {
+    matches!(
+        program.semantic.type_of(ty),
+        CanonicalType::F32 | CanonicalType::F64
+    )
+}
+
 fn machine_type(
     program: &ConcreteHirProgram,
     ty: TypeId,
@@ -3288,7 +3363,10 @@ fn machine_type(
         CanonicalType::Integer(IntegerType::I32 | IntegerType::U32 | IntegerType::LegacyInt) => {
             MachineType::I32
         }
-        CanonicalType::Integer(IntegerType::I64 | IntegerType::U64) => MachineType::I64,
+        CanonicalType::Integer(IntegerType::I64 | IntegerType::U64) | CanonicalType::F64 => {
+            MachineType::I64
+        }
+        CanonicalType::F32 => MachineType::I32,
         CanonicalType::Integer(IntegerType::Usize)
         | CanonicalType::Pointer { .. }
         | CanonicalType::Borrow { .. }
@@ -3800,6 +3878,79 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn exact_bitcast_is_a_same_width_copy_not_a_numeric_cast() {
+        let source = "pub fn round32(bits: u32) -> u32:\n    return (bits as! f32) as! u32\n\npub fn round64(bits: u64) -> u64:\n    return (bits as! f64) as! u64\n";
+        for concrete in [concrete(source), concrete_i686(source)] {
+            let project = lower_program_to_native_mir(&concrete).unwrap();
+            let instructions = project
+                .functions
+                .iter()
+                .flat_map(|function| &function.blocks)
+                .flat_map(|block| &block.instructions)
+                .map(|instruction| &instruction.instruction)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                instructions
+                    .iter()
+                    .filter(|instruction| matches!(instruction, NativeMirInst::Copy { .. }))
+                    .count(),
+                4,
+                "each exact bitcast must remain an explicit raw-bit copy before optimization"
+            );
+            assert!(
+                !instructions
+                    .iter()
+                    .any(|instruction| matches!(instruction, NativeMirInst::Cast { .. })),
+                "exact bitcast must not enter numeric-cast lowering: {project:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_float_c_abi_fails_closed_until_float_register_abi_exists() {
+        // Canonical HIR already rejects explicit float C ABI at source analysis.
+        // Mutate a validated DByte-call program only to prove Native MIR also
+        // fails closed if a future caller bypasses that earlier gate.
+        let mut concrete = concrete(
+            "pub fn foreign32(value: f32) -> f32:\n    return value\n\npub fn callback64(value: f64) -> f64:\n    return value\n",
+        );
+        for function in &mut concrete.functions {
+            function.convention = dbyte_ast::CallConvention::C;
+        }
+        let failure = lower_program_to_native_mir(&concrete)
+            .expect_err("explicit f32/f64 C ABI must not be represented as integer-register ABI");
+        assert_eq!(failure.code, "E_NATIVE_MIR_C_FLOAT_ABI");
+    }
+
+    #[test]
+    fn x64_usize_literal_keeps_target_width_before_optimization() {
+        let concrete = concrete("pub fn main() -> usize:\n    return 4294967296 as usize\n");
+        for level in [
+            crate::native_mir::NativeOptimizationLevel::O0,
+            crate::native_mir::NativeOptimizationLevel::O1,
+        ] {
+            let mut project = lower_program_to_native_mir(&concrete).unwrap();
+            project.optimize(level).unwrap();
+            assert!(
+                project
+                    .functions
+                    .iter()
+                    .flat_map(|f| &f.blocks)
+                    .flat_map(|b| &b.instructions)
+                    .any(|i| matches!(
+                        i.instruction,
+                        NativeMirInst::Const {
+                            value: 0x0000_0001_0000_0000,
+                            ty: MachineType::Pointer,
+                            ..
+                        }
+                    )),
+                "usize literal narrowed before {level}: {project:#?}"
+            );
+        }
     }
 
     #[test]

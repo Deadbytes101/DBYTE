@@ -425,6 +425,7 @@ fn collect_string_literals_expr(expression: &HirExpr, output: &mut Vec<(Span, Ve
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Length { value } => collect_string_literals_expr(value, output),
         HirExprKind::Drop { place, cleanup } => {
             collect_string_literals_place(place, output);
@@ -589,6 +590,7 @@ fn collect_closures_expr(
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Length { value }
         | HirExprKind::Try { value, .. }
         | HirExprKind::Constant { value, .. } => collect_closures_expr(value, parent, output),
@@ -1375,6 +1377,12 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
                 // adapter from silently optimizing a semantic HIR node away.
                 self.instructions.push(SystemsInst::Cast { from, to: ty });
             }
+            HirExprKind::Bitcast { .. } => {
+                return Err(self.unsupported(
+                    "exact bitcast requires Native MIR lowering",
+                    expression.span,
+                ));
+            }
             HirExprKind::Drop { cleanup, .. } => self.lower_block(cleanup)?,
             HirExprKind::DirectCall {
                 callee,
@@ -1947,20 +1955,32 @@ impl<'a, 's> FunctionLowerer<'a, 's> {
             HirIntrinsic::VolatileStore16 => SystemIntrinsic::VolatileStore16,
             HirIntrinsic::VolatileLoad32 => SystemIntrinsic::VolatileLoad32,
             HirIntrinsic::VolatileStore32 => SystemIntrinsic::VolatileStore32,
+            HirIntrinsic::VolatileLoad64 => SystemIntrinsic::VolatileLoad64,
+            HirIntrinsic::VolatileStore64 => SystemIntrinsic::VolatileStore64,
             HirIntrinsic::IoOut8 => SystemIntrinsic::IoOut8,
             HirIntrinsic::IoIn8 => SystemIntrinsic::IoIn8,
             HirIntrinsic::IoOut16 => SystemIntrinsic::IoOut16,
             HirIntrinsic::IoIn16 => SystemIntrinsic::IoIn16,
+            HirIntrinsic::IoOut32 => SystemIntrinsic::IoOut32,
+            HirIntrinsic::IoIn32 => SystemIntrinsic::IoIn32,
             HirIntrinsic::CpuHlt => SystemIntrinsic::CpuHlt,
             HirIntrinsic::CpuCli => SystemIntrinsic::CpuCli,
             HirIntrinsic::CpuSti => SystemIntrinsic::CpuSti,
             HirIntrinsic::CpuInt3 => SystemIntrinsic::CpuInt3,
             HirIntrinsic::CpuReadEflags => SystemIntrinsic::CpuReadEflags,
+            HirIntrinsic::CpuCpuidEax => SystemIntrinsic::CpuCpuidEax,
+            HirIntrinsic::CpuCpuidEbx => SystemIntrinsic::CpuCpuidEbx,
+            HirIntrinsic::CpuCpuidEcx => SystemIntrinsic::CpuCpuidEcx,
+            HirIntrinsic::CpuCpuidEdx => SystemIntrinsic::CpuCpuidEdx,
+            HirIntrinsic::CpuRdmsr => SystemIntrinsic::CpuRdmsr,
+            HirIntrinsic::CpuWrmsr => SystemIntrinsic::CpuWrmsr,
             HirIntrinsic::CpuReadCr0 => SystemIntrinsic::CpuReadCr0,
             HirIntrinsic::CpuWriteCr0 => SystemIntrinsic::CpuWriteCr0,
             HirIntrinsic::CpuReadCr2 => SystemIntrinsic::CpuReadCr2,
             HirIntrinsic::CpuReadCr3 => SystemIntrinsic::CpuReadCr3,
             HirIntrinsic::CpuWriteCr3 => SystemIntrinsic::CpuWriteCr3,
+            HirIntrinsic::CpuReadCr4 => SystemIntrinsic::CpuReadCr4,
+            HirIntrinsic::CpuWriteCr4 => SystemIntrinsic::CpuWriteCr4,
             HirIntrinsic::CpuInvlpg => SystemIntrinsic::CpuInvlpg,
             HirIntrinsic::CpuLgdt => SystemIntrinsic::CpuLgdt,
             HirIntrinsic::CpuLidt => SystemIntrinsic::CpuLidt,
@@ -2963,6 +2983,8 @@ fn lower_type(program: &ConcreteHirProgram, ty: TypeId, span: Span) -> NativeRes
             ));
         }
         CanonicalType::Float
+        | CanonicalType::F32
+        | CanonicalType::F64
         | CanonicalType::LegacyBytes
         | CanonicalType::LegacyBuffer
         | CanonicalType::LegacyList(_) => {

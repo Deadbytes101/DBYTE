@@ -1225,6 +1225,12 @@ impl FunctionCompiler {
                     span: *span,
                 });
             }
+            Expr::Bitcast { span, .. } => {
+                return Err(CompileError {
+                    msg: "exact bitcasts require canonical VM compilation".into(),
+                    span: *span,
+                });
+            }
         }
         Ok(())
     }

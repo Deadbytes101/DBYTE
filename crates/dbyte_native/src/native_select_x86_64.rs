@@ -63,6 +63,130 @@ pub struct SelectedNativeObject {
     pub machine_dump: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SelectedInterruptStub {
+    bytes: Vec<u8>,
+    relocations: Vec<NativeRelocation>,
+}
+
+fn interrupt_body_symbol(symbol: &str) -> String {
+    format!("__dbyte_interrupt_{symbol}_body")
+}
+
+fn metadata_symbol(name: String) -> crate::object64::Symbol {
+    crate::object64::Symbol {
+        name,
+        binding: crate::object64::Binding::Local,
+        kind: crate::object64::SymbolKind::Function,
+        definition: crate::object64::Definition::Defined {
+            section: crate::object64::Section::Text,
+            value: 0,
+        },
+        size: 0,
+    }
+}
+
+fn function_interrupt_class(
+    function: &NativeMirFunction,
+) -> Result<Option<dbyte_ast::InterruptClass>, NativeMirError> {
+    let mut found = None;
+    for block in &function.blocks {
+        for instruction in &block.instructions {
+            if let NativeMirInst::InterruptDefinition { class } = instruction.instruction {
+                if found.replace(class).is_some() {
+                    return Err(codegen_error(format!(
+                        "function '{}' contains duplicate interrupt definition metadata",
+                        function.symbol
+                    )));
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
+fn select_interrupt_stub(
+    symbol: &str,
+    class: dbyte_ast::InterruptClass,
+) -> Result<SelectedInterruptStub, NativeMirError> {
+    const SAVED: [Register; 15] = [
+        Register::Rax,
+        Register::Rbx,
+        Register::Rcx,
+        Register::Rdx,
+        Register::Rbp,
+        Register::Rsi,
+        Register::Rdi,
+        Register::R8,
+        Register::R9,
+        Register::R10,
+        Register::R11,
+        Register::R12,
+        Register::R13,
+        Register::R14,
+        Register::R15,
+    ];
+    const SAVED_BYTES: i32 = 15 * 8;
+
+    let mut encoder = Encoder::new(1024);
+    for register in SAVED {
+        encoder.push(register).map_err(encode_error)?;
+    }
+
+    // Interrupts may arrive at any instruction boundary, so do not assume the
+    // interrupted RSP satisfies the ordinary DBYTE64 call-site alignment.
+    // Preserve the post-save stack base in private scratch storage, then align
+    // the temporary call stack without disturbing the architectural frame.
+    encoder
+        .mov_reg(Register::R11, Register::Rsp, Width::Qword)
+        .map_err(encode_error)?;
+    encoder
+        .mov_imm64(Register::R10, !0x0fu64)
+        .map_err(encode_error)?;
+    encoder
+        .and_reg(Register::Rsp, Register::R10, Width::Qword)
+        .map_err(encode_error)?;
+    encoder.sub_imm32(Register::Rsp, 16).map_err(encode_error)?;
+    encoder
+        .mov_base_disp32_from_reg(Register::Rsp, 0, Register::R11, Width::Qword)
+        .map_err(encode_error)?;
+
+    let frame_displacement = SAVED_BYTES + if class.has_error_code() { 8 } else { 0 };
+    encoder
+        .lea_base_disp32(Register::Rax, Register::R11, frame_displacement)
+        .map_err(encode_error)?;
+    if class.has_error_code() {
+        encoder
+            .mov_reg_from_base_disp32(Register::Rdx, Register::R11, SAVED_BYTES, Width::Qword)
+            .map_err(encode_error)?;
+    }
+
+    let immediate = encoder.call_relative_placeholder().map_err(encode_error)?;
+    encoder
+        .mov_reg_from_base_disp32(Register::R11, Register::Rsp, 0, Width::Qword)
+        .map_err(encode_error)?;
+    encoder
+        .mov_reg(Register::Rsp, Register::R11, Width::Qword)
+        .map_err(encode_error)?;
+    for register in SAVED.into_iter().rev() {
+        encoder.pop(register).map_err(encode_error)?;
+    }
+    if class.has_error_code() {
+        encoder.add_imm32(Register::Rsp, 8).map_err(encode_error)?;
+    }
+    encoder.iretq().map_err(encode_error)?;
+
+    Ok(SelectedInterruptStub {
+        bytes: encoder.into_bytes(),
+        relocations: vec![NativeRelocation {
+            offset: u32::try_from(immediate)
+                .map_err(|_| codegen_error("interrupt body relocation exceeds u32"))?,
+            symbol: interrupt_body_symbol(symbol),
+            kind: NativeRelocationKind::Pc32,
+        }],
+    })
+}
+
 pub fn select_project_object(
     project: &NativeMirProject,
     target: crate::target::TargetSpec,
@@ -84,11 +208,32 @@ pub fn select_project_object(
     let mut relocations = Vec::new();
     let mut defined = BTreeSet::new();
     let mut totals = NativeCodegenStatistics::default();
+    let mut interrupt_metadata = BTreeSet::new();
     for function in &optimized.functions {
         while text.len() % 16 != 0 {
             text.push(0x90);
         }
         let base = text.len() as u64;
+        let interrupt = function_interrupt_class(function)?;
+        let stub = interrupt
+            .map(|class| select_interrupt_stub(&function.symbol, class))
+            .transpose()?;
+        if let Some(stub) = &stub {
+            for relocation in &stub.relocations {
+                relocations.push(crate::object64::Relocation {
+                    section: crate::object64::Section::Text,
+                    offset: base + u64::from(relocation.offset),
+                    symbol: relocation.symbol.clone(),
+                    kind: match relocation.kind {
+                        NativeRelocationKind::Pc32 => crate::object64::RelocationKind::Pc32,
+                        NativeRelocationKind::Plt32 => crate::object64::RelocationKind::Plt32,
+                    },
+                    addend: -4,
+                });
+            }
+            text.extend_from_slice(&stub.bytes);
+        }
+        let body_base = text.len() as u64;
         let selected = select_function_for_target(function, target, level)?;
         defined.insert(function.symbol.clone());
         symbols.push(crate::object64::Symbol {
@@ -99,12 +244,44 @@ pub fn select_project_object(
                 section: crate::object64::Section::Text,
                 value: base,
             },
-            size: selected.bytes.len() as u64,
+            size: stub
+                .as_ref()
+                .map_or(selected.bytes.len() as u64, |stub| stub.bytes.len() as u64),
         });
+        if let Some(class) = interrupt {
+            let body_name = interrupt_body_symbol(&function.symbol);
+            defined.insert(body_name.clone());
+            symbols.push(crate::object64::Symbol {
+                name: body_name,
+                binding: crate::object64::Binding::Local,
+                kind: crate::object64::SymbolKind::Function,
+                definition: crate::object64::Definition::Defined {
+                    section: crate::object64::Section::Text,
+                    value: body_base,
+                },
+                size: selected.bytes.len() as u64,
+            });
+            interrupt_metadata.insert(format!("__dbyte_interrupt:def:{class}:{}", function.symbol));
+        }
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let NativeMirInst::InterruptAddress {
+                    vector,
+                    symbol,
+                    class,
+                    ..
+                } = &instruction.instruction
+                {
+                    interrupt_metadata.insert(format!(
+                        "__dbyte_interrupt:use:{vector:03}:{class}:{symbol}"
+                    ));
+                }
+            }
+        }
         for relocation in &selected.relocations {
             relocations.push(crate::object64::Relocation {
                 section: crate::object64::Section::Text,
-                offset: base + u64::from(relocation.offset),
+                offset: body_base + u64::from(relocation.offset),
                 symbol: relocation.symbol.clone(),
                 kind: match relocation.kind {
                     NativeRelocationKind::Pc32 => crate::object64::RelocationKind::Pc32,
@@ -116,6 +293,7 @@ pub fn select_project_object(
         add_statistics(&mut totals, &selected.statistics)?;
         text.extend(selected.bytes);
     }
+    symbols.extend(interrupt_metadata.into_iter().map(metadata_symbol));
     for global in &optimized.globals {
         let (section, value) = if global.bytes.is_empty() {
             bss_size = align_up_u64(bss_size, u64::from(global.alignment))?;
@@ -933,6 +1111,15 @@ impl<'a> Selector<'a> {
             NativeMirInst::GlobalAddress {
                 destination,
                 symbol,
+            }
+            | NativeMirInst::InterruptAddress {
+                destination,
+                symbol,
+                ..
+            }
+            | NativeMirInst::TaskAddress {
+                destination,
+                symbol,
             } => {
                 let target = match self.location(*destination)? {
                     RegisterLocation::Register(register) => machine_register(register),
@@ -1049,9 +1236,7 @@ impl<'a> Selector<'a> {
                 arguments,
                 ..
             } => self.select_intrinsic(*destination, *intrinsic, arguments),
-            NativeMirInst::InterruptDefinition { .. }
-            | NativeMirInst::InterruptAddress { .. }
-            | NativeMirInst::TaskAddress { .. } => Err(unsupported("i686 interrupt/task metadata")),
+            NativeMirInst::InterruptDefinition { .. } => Ok(()),
         }
     }
 
@@ -1414,11 +1599,45 @@ impl<'a> Selector<'a> {
             }
             return Ok(());
         }
+        let user_arity = match intrinsic {
+            HirIntrinsic::UserSyscall0 => Some(1),
+            HirIntrinsic::UserSyscall1 => Some(2),
+            HirIntrinsic::UserSyscall2 => Some(3),
+            HirIntrinsic::UserSyscall3 => Some(4),
+            _ => None,
+        };
+        if let Some(expected) = user_arity {
+            if self.target != crate::target::X86_64_USER {
+                return Err(codegen_error(
+                    "user syscall reached non-user DBYTE64 target",
+                ));
+            }
+            if arguments.len() != expected {
+                return Err(codegen_error("resolved user syscall has invalid arity"));
+            }
+            let abi = [Register::Rax, Register::Rdx, Register::Rcx, Register::R8];
+            self.prepare_register_arguments(arguments, &abi[..expected])?;
+            self.emit(|encoder| encoder.software_interrupt(0x80))?;
+            if let Some(destination) = destination {
+                self.store_register(destination, Register::Rax)?;
+            }
+            return Ok(());
+        }
         match intrinsic {
             HirIntrinsic::IoOut8 if arguments.len() == 2 => {
                 self.load_register(arguments[0], Register::Rdx)?;
                 self.load_register(arguments[1], Register::Rax)?;
                 self.emit(Encoder::out8)?;
+            }
+            HirIntrinsic::IoOut16 if arguments.len() == 2 => {
+                self.load_register(arguments[0], Register::Rdx)?;
+                self.load_register(arguments[1], Register::Rax)?;
+                self.emit(Encoder::out16)?;
+            }
+            HirIntrinsic::IoOut32 if arguments.len() == 2 => {
+                self.load_register(arguments[0], Register::Rdx)?;
+                self.load_register(arguments[1], Register::Rax)?;
+                self.emit(Encoder::out32)?;
             }
             HirIntrinsic::IoIn8 if arguments.len() == 1 => {
                 self.load_register(arguments[0], Register::Rdx)?;
@@ -1428,7 +1647,205 @@ impl<'a> Selector<'a> {
                     self.store_register(destination, Register::Rax)?;
                 }
             }
+            HirIntrinsic::IoIn16 if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rdx)?;
+                self.emit(Encoder::in16)?;
+                self.emit(|encoder| encoder.movzx_word_to_qword(Register::Rax, Register::Rax))?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::IoIn32 if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rdx)?;
+                self.emit(Encoder::in32)?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::VolatileLoad8
+            | HirIntrinsic::VolatileLoad16
+            | HirIntrinsic::VolatileLoad32
+            | HirIntrinsic::VolatileLoad64
+                if arguments.len() == 1 =>
+            {
+                self.load_register(arguments[0], Register::R11)?;
+                let width = match intrinsic {
+                    HirIntrinsic::VolatileLoad8 => Width::Byte,
+                    HirIntrinsic::VolatileLoad16 => Width::Word,
+                    HirIntrinsic::VolatileLoad32 => Width::Dword,
+                    HirIntrinsic::VolatileLoad64 => Width::Qword,
+                    _ => unreachable!(),
+                };
+                if matches!(width, Width::Dword | Width::Qword) {
+                    self.emit(|encoder| {
+                        encoder.mov_reg_from_base_disp32(Register::Rax, Register::R11, 0, width)
+                    })?;
+                } else {
+                    self.emit(|encoder| {
+                        encoder.movzx_reg_from_base_disp32(Register::Rax, Register::R11, 0, width)
+                    })?;
+                }
+                self.statistics.loads += 1;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::VolatileStore8
+            | HirIntrinsic::VolatileStore16
+            | HirIntrinsic::VolatileStore32
+            | HirIntrinsic::VolatileStore64
+                if arguments.len() == 2 =>
+            {
+                self.load_register(arguments[0], Register::R11)?;
+                self.load_register(arguments[1], Register::Rax)?;
+                let width = match intrinsic {
+                    HirIntrinsic::VolatileStore8 => Width::Byte,
+                    HirIntrinsic::VolatileStore16 => Width::Word,
+                    HirIntrinsic::VolatileStore32 => Width::Dword,
+                    HirIntrinsic::VolatileStore64 => Width::Qword,
+                    _ => unreachable!(),
+                };
+                self.emit(|encoder| {
+                    encoder.mov_base_disp32_from_reg(Register::R11, 0, Register::Rax, width)
+                })?;
+                self.statistics.stores += 1;
+            }
+            HirIntrinsic::CpuCpuidEax
+            | HirIntrinsic::CpuCpuidEbx
+            | HirIntrinsic::CpuCpuidEcx
+            | HirIntrinsic::CpuCpuidEdx
+                if arguments.len() == 2 =>
+            {
+                self.emit(|encoder| encoder.push(Register::Rbx))?;
+                self.load_register(arguments[0], Register::Rax)?;
+                self.load_register(arguments[1], Register::Rcx)?;
+                self.emit(Encoder::cpuid)?;
+                let result_register = match intrinsic {
+                    HirIntrinsic::CpuCpuidEax => Register::Rax,
+                    HirIntrinsic::CpuCpuidEbx => {
+                        self.emit(|encoder| {
+                            encoder.mov_reg(Register::R11, Register::Rbx, Width::Qword)
+                        })?;
+                        Register::R11
+                    }
+                    HirIntrinsic::CpuCpuidEcx => Register::Rcx,
+                    HirIntrinsic::CpuCpuidEdx => Register::Rdx,
+                    _ => unreachable!(),
+                };
+                self.emit(|encoder| encoder.pop(Register::Rbx))?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, result_register)?;
+                }
+            }
+            HirIntrinsic::CpuRdmsr if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rcx)?;
+                self.emit(Encoder::rdmsr)?;
+                self.emit(|encoder| encoder.mov_reg(Register::R11, Register::Rdx, Width::Qword))?;
+                self.emit_immediate(Register::Rcx, 32)?;
+                self.emit(|encoder| {
+                    encoder.shift_reg_by_cl(Register::R11, ShiftKind::Left, Width::Qword)
+                })?;
+                self.emit(|encoder| encoder.or_reg(Register::Rax, Register::R11, Width::Qword))?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::CpuWrmsr if arguments.len() == 2 => {
+                self.load_register(arguments[1], Register::Rax)?;
+                self.emit(|encoder| encoder.mov_reg(Register::Rdx, Register::Rax, Width::Qword))?;
+                self.emit_immediate(Register::Rcx, 32)?;
+                self.emit(|encoder| {
+                    encoder.shift_reg_by_cl(Register::Rdx, ShiftKind::LogicalRight, Width::Qword)
+                })?;
+                self.load_register(arguments[0], Register::Rcx)?;
+                self.emit(Encoder::wrmsr)?;
+            }
+            HirIntrinsic::CpuReadEflags if arguments.is_empty() => {
+                self.emit(Encoder::pushfq)?;
+                self.emit(|encoder| encoder.pop(Register::Rax))?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::CpuReadCr0 if arguments.is_empty() => {
+                self.emit(Encoder::mov_rax_cr0)?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::CpuWriteCr0 if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::mov_cr0_rax)?;
+            }
+            HirIntrinsic::CpuReadCr2 if arguments.is_empty() => {
+                self.emit(Encoder::mov_rax_cr2)?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::CpuReadCr3 if arguments.is_empty() => {
+                self.emit(Encoder::mov_rax_cr3)?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::CpuWriteCr3 if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::mov_cr3_rax)?;
+            }
+            HirIntrinsic::CpuReadCr4 if arguments.is_empty() => {
+                self.emit(Encoder::mov_rax_cr4)?;
+                if let Some(destination) = destination {
+                    self.store_register(destination, Register::Rax)?;
+                }
+            }
+            HirIntrinsic::CpuWriteCr4 if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::mov_cr4_rax)?;
+            }
+            HirIntrinsic::CpuInvlpg if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::invlpg_rax)?;
+            }
+            HirIntrinsic::CpuLgdt if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::lgdt_rax)?;
+            }
+            HirIntrinsic::CpuLidt if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::lidt_rax)?;
+            }
+            HirIntrinsic::CpuLtr if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(Encoder::ltr_ax)?;
+            }
+            HirIntrinsic::InterruptResume if arguments.len() == 1 => {
+                self.load_register(arguments[0], Register::Rax)?;
+                self.emit(|encoder| encoder.mov_reg(Register::Rsp, Register::Rax, Width::Qword))?;
+                for register in [
+                    Register::R15,
+                    Register::R14,
+                    Register::R13,
+                    Register::R12,
+                    Register::R11,
+                    Register::R10,
+                    Register::R9,
+                    Register::R8,
+                    Register::Rdi,
+                    Register::Rsi,
+                    Register::Rbp,
+                    Register::Rdx,
+                    Register::Rcx,
+                    Register::Rbx,
+                    Register::Rax,
+                ] {
+                    self.emit(|encoder| encoder.pop(register))?;
+                }
+                self.emit(Encoder::iretq)?;
+            }
             HirIntrinsic::CpuCli if arguments.is_empty() => self.emit(Encoder::cli)?,
+            HirIntrinsic::CpuSti if arguments.is_empty() => self.emit(Encoder::sti)?,
+            HirIntrinsic::CpuInt3 if arguments.is_empty() => self.emit(Encoder::int3)?,
             HirIntrinsic::CpuHlt if arguments.is_empty() => self.emit(Encoder::hlt)?,
             _ => return Err(unsupported("resolved target intrinsic")),
         }
@@ -2258,6 +2675,85 @@ mod tests {
             dbyte_hir::analyze_executable(&syntax, profile, TargetDataLayout::X86_64).unwrap();
         let concrete = dbyte_hir::monomorphize(&executable).unwrap();
         crate::native_mir_lower::lower_program_to_native_mir(&concrete).unwrap()
+    }
+
+    #[test]
+    fn interrupt_stub_preserves_all_general_purpose_registers() {
+        let stub = select_interrupt_stub("probe", dbyte_ast::InterruptClass::NoErrorCode).unwrap();
+        let saved_prefix = [
+            0x50, 0x53, 0x51, 0x52, 0x55, 0x56, 0x57, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41,
+            0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57,
+        ];
+        let restored_suffix = [
+            0x41, 0x5f, 0x41, 0x5e, 0x41, 0x5d, 0x41, 0x5c, 0x41, 0x5b, 0x41, 0x5a, 0x41, 0x59,
+            0x41, 0x58, 0x5f, 0x5e, 0x5d, 0x5a, 0x59, 0x5b, 0x58, 0x48, 0xcf,
+        ];
+        assert!(stub.bytes.starts_with(&saved_prefix));
+        assert!(stub.bytes.ends_with(&restored_suffix));
+        assert_eq!(stub.relocations.len(), 1);
+        assert_eq!(stub.relocations[0].symbol, "__dbyte_interrupt_probe_body");
+    }
+
+    #[test]
+    fn interrupt_resume_restores_gprs_and_iretq_at_o0_and_o1() {
+        let source = "pub fn kernel_main() -> int:\n    native.interrupt_resume(0x100000 as usize)\n    return 0\n";
+        let project = mir_for(source, Profile::X86_64None);
+        let oracle = [
+            0x48, 0x89, 0xc4, 0x41, 0x5f, 0x41, 0x5e, 0x41, 0x5d, 0x41, 0x5c, 0x41, 0x5b, 0x41,
+            0x5a, 0x41, 0x59, 0x41, 0x58, 0x5f, 0x5e, 0x5d, 0x5a, 0x59, 0x5b, 0x58, 0x48, 0xcf,
+        ];
+        for level in [NativeOptimizationLevel::O0, NativeOptimizationLevel::O1] {
+            let selected =
+                select_project_object(&project, crate::target::X86_64_NONE, level).unwrap();
+            assert!(selected
+                .object
+                .bytes
+                .windows(oracle.len())
+                .any(|bytes| bytes == oracle));
+        }
+    }
+
+    #[test]
+    fn volatile_machine_widths_select_at_o0_and_o1() {
+        for (bits, ty) in [(8, "u8"), (16, "u16"), (32, "u32"), (64, "u64")] {
+            let source = format!(
+                "pub fn kernel_main() -> int:\n    let p: ptr[{ty}] = (0x200000 as usize) as ptr[{ty}]\n    native.volatile_store{bits}(p, 42 as {ty})\n    return native.volatile_load{bits}(p) as int\n"
+            );
+            let project = mir_for(&source, Profile::X86_64None);
+            for level in [NativeOptimizationLevel::O0, NativeOptimizationLevel::O1] {
+                let selected = select_project_object(&project, crate::target::X86_64_NONE, level)
+                    .unwrap_or_else(|error| panic!("{bits}-bit {level}: {error}"));
+                let (load, store): (&[u8], &[u8]) = match bits {
+                    8 => (
+                        &[0x49, 0x0f, 0xb6, 0x83, 0, 0, 0, 0],
+                        &[0x41, 0x88, 0x83, 0, 0, 0, 0],
+                    ),
+                    16 => (
+                        &[0x49, 0x0f, 0xb7, 0x83, 0, 0, 0, 0],
+                        &[0x66, 0x41, 0x89, 0x83, 0, 0, 0, 0],
+                    ),
+                    32 => (
+                        &[0x41, 0x8b, 0x83, 0, 0, 0, 0],
+                        &[0x41, 0x89, 0x83, 0, 0, 0, 0],
+                    ),
+                    64 => (
+                        &[0x49, 0x8b, 0x83, 0, 0, 0, 0],
+                        &[0x49, 0x89, 0x83, 0, 0, 0, 0],
+                    ),
+                    _ => unreachable!(),
+                };
+                assert!(selected
+                    .object
+                    .bytes
+                    .windows(load.len())
+                    .any(|bytes| bytes == load));
+                assert!(selected
+                    .object
+                    .bytes
+                    .windows(store.len())
+                    .any(|bytes| bytes == store));
+            }
+        }
     }
 
     #[test]

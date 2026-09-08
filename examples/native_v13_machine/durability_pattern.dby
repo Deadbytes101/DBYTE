@@ -1,0 +1,32 @@
+pub fn expected_byte(index: usize) -> u8:
+    return ((((index as u32) * (29 as u32)) + (0x63 as u32)) & (0xff as u32)) as u8
+
+pub fn fill(buffer: ptr[u8]) -> int:
+    if (buffer as usize) == (0 as usize):
+        return 1
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        native.volatile_store8(((buffer as usize) + index) as ptr[u8], expected_byte(index))
+        index = index + (1 as usize)
+    return 0
+
+pub fn verify(buffer: ptr[u8]) -> int:
+    if (buffer as usize) == (0 as usize):
+        return 1
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        if native.volatile_load8(((buffer as usize) + index) as ptr[u8]) != expected_byte(index):
+            return 2
+        index = index + (1 as usize)
+    return 0
+
+pub fn checksum(buffer: ptr[u8]) -> u32:
+    if (buffer as usize) == (0 as usize):
+        return 0 as u32
+    let hash: u32 = 0xc0dec0de as u32
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        let value: u32 = native.volatile_load8(((buffer as usize) + index) as ptr[u8]) as u32
+        hash = ((hash << (5 as u32)) | (hash >> (27 as u32))) ^ value
+        index = index + (1 as usize)
+    return hash

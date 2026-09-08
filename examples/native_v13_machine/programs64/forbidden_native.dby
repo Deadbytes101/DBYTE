@@ -1,0 +1,3 @@
+pub fn user_main() -> int:
+    native.cpu_cli()
+    return 0

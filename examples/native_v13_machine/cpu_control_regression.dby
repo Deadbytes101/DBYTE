@@ -1,0 +1,14 @@
+pub fn probe(descriptor: usize, page: usize) -> usize:
+    let cr0: u32 = native.cpu_read_cr0()
+    let cr2: usize = native.cpu_read_cr2()
+    let cr3: usize = native.cpu_read_cr3()
+    native.cpu_write_cr0(cr0)
+    native.cpu_write_cr3(cr3)
+    native.cpu_invlpg(page as ptr[u8])
+    native.cpu_lgdt(descriptor)
+    native.cpu_lidt(descriptor)
+    native.cpu_ltr(0x28 as u16)
+    return cr2 ^ cr3
+
+pub fn kernel_main() -> int:
+    return 0

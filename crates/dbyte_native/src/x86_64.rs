@@ -398,6 +398,16 @@ impl Encoder {
         self.commit(&instruction)
     }
 
+    pub fn movzx_word_to_qword(
+        &mut self,
+        destination: Register,
+        source: Register,
+    ) -> Result<(), EncodeError> {
+        let mut instruction = prefixes(Width::Qword, high(destination), false, high(source));
+        instruction.extend_from_slice(&[0x0f, 0xb7, modrm(0b11, low(destination), low(source))]);
+        self.commit(&instruction)
+    }
+
     pub fn sub_reg(
         &mut self,
         dst: Register,
@@ -693,16 +703,108 @@ impl Encoder {
         self.commit(&[0xfa])
     }
 
+    pub fn sti(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0xfb])
+    }
+
+    pub fn int3(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0xcc])
+    }
+
+    pub fn software_interrupt(&mut self, vector: u8) -> Result<(), EncodeError> {
+        self.commit(&[0xcd, vector])
+    }
+
+    pub fn pushfq(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x9c])
+    }
+
     pub fn hlt(&mut self) -> Result<(), EncodeError> {
         self.commit(&[0xf4])
+    }
+
+    pub fn mov_rax_cr0(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x20, 0xc0])
+    }
+
+    pub fn mov_cr0_rax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x22, 0xc0])
+    }
+
+    pub fn mov_rax_cr2(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x20, 0xd0])
+    }
+
+    pub fn mov_rax_cr3(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x20, 0xd8])
+    }
+
+    pub fn mov_cr3_rax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x22, 0xd8])
+    }
+
+    pub fn invlpg_rax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x01, 0x38])
+    }
+
+    pub fn lgdt_rax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x01, 0x10])
+    }
+
+    pub fn lidt_rax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x01, 0x18])
+    }
+
+    pub fn ltr_ax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x00, 0xd8])
+    }
+
+    pub fn mov_rax_cr4(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x20, 0xe0])
+    }
+
+    pub fn mov_cr4_rax(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x22, 0xe0])
+    }
+
+    pub fn cpuid(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0xa2])
+    }
+
+    pub fn rdmsr(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x32])
+    }
+
+    pub fn wrmsr(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x0f, 0x30])
+    }
+
+    pub fn iretq(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x48, 0xcf])
     }
 
     pub fn in8(&mut self) -> Result<(), EncodeError> {
         self.commit(&[0xec])
     }
 
+    pub fn in16(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x66, 0xed])
+    }
+
+    pub fn in32(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0xed])
+    }
+
     pub fn out8(&mut self) -> Result<(), EncodeError> {
         self.commit(&[0xee])
+    }
+
+    pub fn out16(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0x66, 0xef])
+    }
+
+    pub fn out32(&mut self) -> Result<(), EncodeError> {
+        self.commit(&[0xef])
     }
 }
 
@@ -791,6 +893,71 @@ mod tests {
             Err(EncodeError::Capacity { .. })
         ));
         assert_eq!(encoder.bytes(), before);
+    }
+
+    #[test]
+    fn port_io_byte_word_and_dword_forms_are_exact_and_transactional() {
+        let mut encoder = Encoder::new(8);
+        encoder.in8().unwrap();
+        encoder.in16().unwrap();
+        encoder.in32().unwrap();
+        encoder.out8().unwrap();
+        encoder.out16().unwrap();
+        encoder.out32().unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[0xec, 0x66, 0xed, 0xed, 0xee, 0x66, 0xef, 0xef]
+        );
+        let before = encoder.bytes().to_vec();
+        assert!(matches!(encoder.out32(), Err(EncodeError::Capacity { .. })));
+        assert_eq!(encoder.bytes(), before);
+    }
+
+    #[test]
+    fn privileged_control_forms_match_long_mode_oracle_and_are_transactional() {
+        let mut encoder = Encoder::new(40);
+        encoder.cli().unwrap();
+        encoder.sti().unwrap();
+        encoder.int3().unwrap();
+        encoder.pushfq().unwrap();
+        encoder.pop(Register::Rax).unwrap();
+        encoder.mov_rax_cr0().unwrap();
+        encoder.mov_cr0_rax().unwrap();
+        encoder.mov_rax_cr2().unwrap();
+        encoder.mov_rax_cr3().unwrap();
+        encoder.mov_cr3_rax().unwrap();
+        encoder.invlpg_rax().unwrap();
+        encoder.lgdt_rax().unwrap();
+        encoder.lidt_rax().unwrap();
+        encoder.ltr_ax().unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[
+                0xfa, 0xfb, 0xcc, 0x9c, 0x58, 0x0f, 0x20, 0xc0, 0x0f, 0x22, 0xc0, 0x0f, 0x20, 0xd0,
+                0x0f, 0x20, 0xd8, 0x0f, 0x22, 0xd8, 0x0f, 0x01, 0x38, 0x0f, 0x01, 0x10, 0x0f, 0x01,
+                0x18, 0x0f, 0x00, 0xd8,
+            ]
+        );
+        let before = encoder.bytes().to_vec();
+        let mut full = Encoder::new(before.len());
+        full.commit(&before).unwrap();
+        assert!(matches!(full.ltr_ax(), Err(EncodeError::Capacity { .. })));
+        assert_eq!(full.bytes(), before);
+    }
+
+    #[test]
+    fn g2_feature_and_msr_forms_match_long_mode_oracle() {
+        let mut encoder = Encoder::new(32);
+        encoder.mov_rax_cr4().unwrap();
+        encoder.mov_cr4_rax().unwrap();
+        encoder.cpuid().unwrap();
+        encoder.rdmsr().unwrap();
+        encoder.wrmsr().unwrap();
+        encoder.iretq().unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[0x0f, 0x20, 0xe0, 0x0f, 0x22, 0xe0, 0x0f, 0xa2, 0x0f, 0x32, 0x0f, 0x30, 0x48, 0xcf,]
+        );
     }
 
     #[test]
@@ -984,6 +1151,13 @@ mod tests {
             Err(EncodeError::InvalidOperand(_))
         ));
         assert_eq!(encoder.bytes(), before);
+    }
+
+    #[test]
+    fn encodes_software_interrupt_exactly() {
+        let mut encoder = Encoder::new(8);
+        encoder.software_interrupt(0x80).unwrap();
+        assert_eq!(encoder.bytes(), &[0xcd, 0x80]);
     }
 
     #[test]

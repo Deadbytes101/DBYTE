@@ -34,6 +34,7 @@ pub enum EntryKind {
     Multiboot2LongMode,
     LinuxStart,
     WindowsEntry,
+    UserElf64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -50,6 +51,7 @@ pub enum ExecutableFormat {
     Multiboot2Elf64,
     StaticElf64,
     Pe32Plus,
+    UserElf64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +98,19 @@ pub const I686_USER: TargetSpec = TargetSpec {
     entry: EntryKind::UserElf32,
 };
 
+pub const X86_64_USER: TargetSpec = TargetSpec {
+    triple: "x86_64-dbyte-user",
+    machine: MachineTarget::X86_64,
+    os: OperatingSystem::DByteUser,
+    profile: Profile::X86_64User,
+    layout: TargetDataLayout::X86_64,
+    dbyte_abi: DByteAbi::DByte64,
+    c_abi: None,
+    object_format: ObjectFormat::Elf64,
+    executable_format: ExecutableFormat::UserElf64,
+    entry: EntryKind::UserElf64,
+};
+
 pub const X86_64_NONE: TargetSpec = TargetSpec {
     triple: "x86_64-dbyte-none",
     machine: MachineTarget::X86_64,
@@ -135,9 +150,10 @@ pub const X86_64_WINDOWS: TargetSpec = TargetSpec {
     entry: EntryKind::WindowsEntry,
 };
 
-pub const TARGETS: [TargetDescriptor; 5] = [
+pub const TARGETS: [TargetDescriptor; 6] = [
     I686_NONE,
     I686_USER,
+    X86_64_USER,
     X86_64_NONE,
     X86_64_LINUX,
     X86_64_WINDOWS,
@@ -189,6 +205,7 @@ pub fn encode_target_metadata(target: TargetDescriptor) -> [u8; TARGET_METADATA_
         Profile::X86_64None => 4,
         Profile::X86_64Linux => 5,
         Profile::X86_64Windows => 6,
+        Profile::X86_64User => 7,
     };
     bytes[23] = target.entry as u8;
     let triple = target.triple.as_bytes();
@@ -260,6 +277,10 @@ mod tests {
     #[test]
     fn target_matrix_has_explicit_layout_and_abi() {
         assert_eq!(parse_target("i686-dbyte-none"), Some(I686_NONE));
+        assert_eq!(parse_target("x86_64-dbyte-user"), Some(X86_64_USER));
+        assert_eq!(X86_64_USER.profile, Profile::X86_64User);
+        assert_eq!(X86_64_USER.executable_format, ExecutableFormat::UserElf64);
+        assert_eq!(X86_64_USER.entry, EntryKind::UserElf64);
         assert_eq!(X86_64_NONE.layout.pointer_size, 8);
         assert_eq!(X86_64_NONE.c_abi, None);
         assert_eq!(X86_64_LINUX.c_abi, Some(CAbi::SysV64));
@@ -271,7 +292,7 @@ mod tests {
 
     #[test]
     fn x86_64_target_metadata_round_trips_and_is_strict() {
-        for target in [X86_64_NONE, X86_64_LINUX, X86_64_WINDOWS] {
+        for target in [X86_64_NONE, X86_64_LINUX, X86_64_WINDOWS, X86_64_USER] {
             let bytes = encode_target_metadata(target);
             assert_eq!(decode_target_metadata(&bytes).unwrap(), target);
         }

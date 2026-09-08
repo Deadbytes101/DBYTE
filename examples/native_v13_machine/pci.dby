@@ -1,0 +1,203 @@
+import "console.dby" as console
+
+const CONFIG_ADDRESS: u16 = 0x0cf8 as u16
+const CONFIG_DATA: u16 = 0x0cfc as u16
+const INVALID_VENDOR: u16 = 0xffff as u16
+const QEMU_I440FX_VENDOR: u16 = 0x8086 as u16
+const QEMU_I440FX_DEVICE: u16 = 0x1237 as u16
+
+static mut DEVICE_COUNT: u32
+static mut BUS_COUNT: u32
+static mut BRIDGE_COUNT: u32
+static mut CONFIG_READ_COUNT: u32
+static mut IDE_COUNT: u32
+static mut IDE_BUS: u32
+static mut IDE_DEVICE: u32
+static mut IDE_FUNCTION: u32
+static mut IDE_VENDOR: u16
+static mut IDE_PRODUCT: u16
+static mut IDE_PROG_IF: u8
+static mut QEMU_I440FX_SEEN: bool
+static mut VISITED_BUSES: array[u8, 256]
+static mut BUS_QUEUE: array[u8, 256]
+static mut QUEUE_HEAD: usize
+static mut QUEUE_TAIL: usize
+
+fn address(bus: u32, device: u32, function: u32, offset: u32) -> u32:
+    return (0x80000000 as u32) | (bus << (16 as u32)) | (device << (11 as u32)) | (function << (8 as u32)) | (offset & (0xfc as u32))
+
+pub fn read32(bus: u32, device: u32, function: u32, offset: u32) -> u32:
+    CONFIG_READ_COUNT = CONFIG_READ_COUNT + (1 as u32)
+    native.io_out32(CONFIG_ADDRESS, address(bus, device, function, offset))
+    return native.io_in32(CONFIG_DATA)
+
+fn print_device(bus: u32, device: u32, function: u32, id: u32, class_register: u32) -> int:
+    let vendor: u16 = (id & (0xffff as u32)) as u16
+    let product: u16 = ((id >> (16 as u32)) & (0xffff as u32)) as u16
+    console.write("PCI ", 4 as usize)
+    console.hex8(bus as u8)
+    console.putc(58 as u8)
+    console.hex8(device as u8)
+    console.putc(46 as u8)
+    console.hex8(function as u8)
+    console.putc(32 as u8)
+    console.hex16(vendor)
+    console.putc(58 as u8)
+    console.hex16(product)
+    console.write(" class=", 7 as usize)
+    console.hex8(((class_register >> (24 as u32)) & (0xff as u32)) as u8)
+    console.putc(58 as u8)
+    console.hex8(((class_register >> (16 as u32)) & (0xff as u32)) as u8)
+    console.putc(58 as u8)
+    console.hex8(((class_register >> (8 as u32)) & (0xff as u32)) as u8)
+    console.newline()
+    return 0
+
+fn enqueue_bus(bus: u32) -> int:
+    if bus >= (256 as u32):
+        return 1
+    let index: usize = bus as usize
+    if VISITED_BUSES[index] != (0 as u8):
+        return 0
+    if QUEUE_TAIL >= (256 as usize):
+        return 2
+    VISITED_BUSES[index] = 1 as u8
+    BUS_QUEUE[QUEUE_TAIL] = bus as u8
+    QUEUE_TAIL = QUEUE_TAIL + (1 as usize)
+    return 0
+
+fn inspect_bridge(bus: u32, device: u32, function: u32, class_register: u32) -> int:
+    let class_code: u8 = ((class_register >> (24 as u32)) & (0xff as u32)) as u8
+    let subclass: u8 = ((class_register >> (16 as u32)) & (0xff as u32)) as u8
+    if class_code != (0x06 as u8):
+        return 0
+    if subclass != (0x04 as u8):
+        return 0
+    let header_register: u32 = read32(bus, device, function, 12 as u32)
+    let header_type: u8 = ((header_register >> (16 as u32)) & (0x7f as u32)) as u8
+    if header_type != (1 as u8):
+        return 10
+    let buses: u32 = read32(bus, device, function, 0x18 as u32)
+    let primary: u32 = buses & (0xff as u32)
+    let secondary: u32 = (buses >> (8 as u32)) & (0xff as u32)
+    let subordinate: u32 = (buses >> (16 as u32)) & (0xff as u32)
+    if primary != bus:
+        return 11
+    if secondary == (0 as u32):
+        return 12
+    if secondary == bus:
+        return 13
+    if subordinate < secondary:
+        return 14
+    let queue_status: int = enqueue_bus(secondary)
+    if queue_status != 0:
+        return 15 + queue_status
+    BRIDGE_COUNT = BRIDGE_COUNT + (1 as u32)
+    return 0
+
+fn record_device(bus: u32, device: u32, function: u32, id: u32) -> int:
+    let vendor: u16 = (id & (0xffff as u32)) as u16
+    let product: u16 = ((id >> (16 as u32)) & (0xffff as u32)) as u16
+    let class_register: u32 = read32(bus, device, function, 8 as u32)
+    let class_code: u8 = ((class_register >> (24 as u32)) & (0xff as u32)) as u8
+    let subclass: u8 = ((class_register >> (16 as u32)) & (0xff as u32)) as u8
+    let prog_if: u8 = ((class_register >> (8 as u32)) & (0xff as u32)) as u8
+    print_device(bus, device, function, id, class_register)
+    DEVICE_COUNT = DEVICE_COUNT + (1 as u32)
+    if class_code == (0x01 as u8):
+        if subclass == (0x01 as u8):
+            IDE_COUNT = IDE_COUNT + (1 as u32)
+            if IDE_COUNT == (1 as u32):
+                IDE_BUS = bus
+                IDE_DEVICE = device
+                IDE_FUNCTION = function
+                IDE_VENDOR = vendor
+                IDE_PRODUCT = product
+                IDE_PROG_IF = prog_if
+    if vendor == QEMU_I440FX_VENDOR:
+        if product == QEMU_I440FX_DEVICE:
+            QEMU_I440FX_SEEN = true
+    let bridge_status: int = inspect_bridge(bus, device, function, class_register)
+    if bridge_status != 0:
+        return bridge_status
+    return 0
+
+pub fn enumerate() -> int:
+    DEVICE_COUNT = 0 as u32
+    BUS_COUNT = 0 as u32
+    BRIDGE_COUNT = 0 as u32
+    CONFIG_READ_COUNT = 0 as u32
+    IDE_COUNT = 0 as u32
+    IDE_BUS = 0 as u32
+    IDE_DEVICE = 0 as u32
+    IDE_FUNCTION = 0 as u32
+    IDE_VENDOR = 0 as u16
+    IDE_PRODUCT = 0 as u16
+    IDE_PROG_IF = 0 as u8
+    QEMU_I440FX_SEEN = false
+    QUEUE_HEAD = 0 as usize
+    QUEUE_TAIL = 0 as usize
+    let clear: usize = 0 as usize
+    while clear < (256 as usize):
+        VISITED_BUSES[clear] = 0 as u8
+        BUS_QUEUE[clear] = 0 as u8
+        clear = clear + (1 as usize)
+    let root_status: int = enqueue_bus(0 as u32)
+    if root_status != 0:
+        return 20 + root_status
+    while QUEUE_HEAD < QUEUE_TAIL:
+        let bus: u32 = BUS_QUEUE[QUEUE_HEAD] as u32
+        QUEUE_HEAD = QUEUE_HEAD + (1 as usize)
+        BUS_COUNT = BUS_COUNT + (1 as u32)
+        let device: u32 = 0 as u32
+        while device < (32 as u32):
+            let id0: u32 = read32(bus, device, 0 as u32, 0 as u32)
+            let vendor0: u16 = (id0 & (0xffff as u32)) as u16
+            if vendor0 != INVALID_VENDOR:
+                let record_status: int = record_device(bus, device, 0 as u32, id0)
+                if record_status != 0:
+                    return 40 + record_status
+                let header_register: u32 = read32(bus, device, 0 as u32, 12 as u32)
+                let header_type: u8 = ((header_register >> (16 as u32)) & (0xff as u32)) as u8
+                if (header_type & (0x80 as u8)) != (0 as u8):
+                    let function: u32 = 1 as u32
+                    while function < (8 as u32):
+                        let id: u32 = read32(bus, device, function, 0 as u32)
+                        let vendor: u16 = (id & (0xffff as u32)) as u16
+                        if vendor != INVALID_VENDOR:
+                            let function_status: int = record_device(bus, device, function, id)
+                            if function_status != 0:
+                                return 80 + function_status
+                        function = function + (1 as u32)
+            device = device + (1 as u32)
+    return 0
+
+pub fn device_count() -> u32:
+    return DEVICE_COUNT
+
+pub fn bus_count() -> u32:
+    return BUS_COUNT
+
+pub fn bridge_count() -> u32:
+    return BRIDGE_COUNT
+
+pub fn config_read_count() -> u32:
+    return CONFIG_READ_COUNT
+
+pub fn ide_count() -> u32:
+    return IDE_COUNT
+pub fn ide_bus() -> u32:
+    return IDE_BUS
+pub fn ide_device() -> u32:
+    return IDE_DEVICE
+pub fn ide_function() -> u32:
+    return IDE_FUNCTION
+pub fn ide_vendor() -> u16:
+    return IDE_VENDOR
+pub fn ide_product() -> u16:
+    return IDE_PRODUCT
+pub fn ide_prog_if() -> u8:
+    return IDE_PROG_IF
+
+pub fn qemu_i440fx_seen() -> bool:
+    return QEMU_I440FX_SEEN

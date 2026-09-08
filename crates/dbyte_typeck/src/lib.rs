@@ -72,7 +72,9 @@ fn ann_to_resolved(ann: &TypeAnnotation) -> Option<ResolvedType> {
         TypeAnnotation::List(inner) => {
             ann_to_resolved(inner).map(|t| ResolvedType::List(Box::new(t)))
         }
-        TypeAnnotation::I8
+        TypeAnnotation::F32
+        | TypeAnnotation::F64
+        | TypeAnnotation::I8
         | TypeAnnotation::U8
         | TypeAnnotation::I16
         | TypeAnnotation::U16
@@ -576,6 +578,10 @@ impl TypeChecker {
                 msg: "native systems casts are unavailable in the hosted type checker".into(),
                 span: *span,
             }),
+            Expr::Bitcast { span, .. } => Err(TypeError {
+                msg: "exact bitcasts require canonical HIR checking".into(),
+                span: *span,
+            }),
         }
     }
 
@@ -858,7 +864,8 @@ fn program_uses_v12(program: &Program) -> bool {
             | Expr::Invoke { .. }
             | Expr::Borrow { .. }
             | Expr::Try { .. }
-            | Expr::Closure { .. } => true,
+            | Expr::Closure { .. }
+            | Expr::Bitcast { .. } => true,
             Expr::Binary { left, right, .. } => {
                 expression_uses_v12(left) || expression_uses_v12(right)
             }
@@ -938,7 +945,9 @@ fn program_uses_v12(program: &Program) -> bool {
     }
     fn annotation_uses_v12(annotation: &TypeAnnotation) -> bool {
         match annotation {
-            TypeAnnotation::ConstPointer(_)
+            TypeAnnotation::F32
+            | TypeAnnotation::F64
+            | TypeAnnotation::ConstPointer(_)
             | TypeAnnotation::Slice(_)
             | TypeAnnotation::MutSlice(_)
             | TypeAnnotation::StringView

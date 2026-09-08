@@ -28,6 +28,8 @@ enum VmValue {
     Unit,
     Integer(i64),
     Float(f64),
+    F32Bits(u32),
+    F64Bits(u64),
     Bool(bool),
     String(Vec<u8>),
     Bytes(Vec<u8>),
@@ -270,6 +272,7 @@ fn opcode_name(op: &CanonicalOpcode) -> &'static str {
         },
         CanonicalOpcode::Unary { .. } => "UNARY",
         CanonicalOpcode::Cast(_) => "CAST",
+        CanonicalOpcode::Bitcast { .. } => "BITCAST",
         CanonicalOpcode::Length => "LENGTH",
         CanonicalOpcode::CallDirect { .. } => "CALL_DIRECT",
         CanonicalOpcode::CallIndirect { .. } => "CALL_INDIRECT",
@@ -460,6 +463,16 @@ impl<const PROFILE: bool> CanonicalVm<'_, PROFILE> {
                 let value = pop(&mut self.value_stack, span)?;
                 self.value_stack
                     .push(cast(value, self.project.semantic.type_of(target), span)?);
+            }
+            CanonicalOpcode::Bitcast { source, target } => {
+                let value = pop(&mut self.value_stack, span)?;
+                self.value_stack.push(bitcast(
+                    value,
+                    self.project.semantic.type_of(source),
+                    self.project.semantic.type_of(target),
+                    self.project.semantic.layout,
+                    span,
+                )?);
             }
             CanonicalOpcode::Length => {
                 let value = pop(&mut self.value_stack, span)?;
@@ -1251,6 +1264,8 @@ impl<const PROFILE: bool> CanonicalVm<'_, PROFILE> {
                 };
                 Ok(VmValue::Integer(value))
             }
+            CanonicalType::F32 => Ok(VmValue::F32Bits(raw as u32)),
+            CanonicalType::F64 => Ok(VmValue::F64Bits(raw)),
             CanonicalType::Bool => Ok(VmValue::Bool(raw != 0)),
             CanonicalType::Pointer { pointee, .. } => Ok(if raw == 0 {
                 VmValue::Null
@@ -1303,6 +1318,8 @@ impl<const PROFILE: bool> CanonicalVm<'_, PROFILE> {
             .size as usize;
         let raw = match value {
             VmValue::Integer(value) => value as u64,
+            VmValue::F32Bits(value) => u64::from(value),
+            VmValue::F64Bits(value) => value,
             VmValue::Bool(value) => u64::from(value),
             VmValue::MemoryPointer { address, .. } => address,
             VmValue::Null => 0,
@@ -1703,6 +1720,8 @@ impl VmValue {
             Self::Unit => String::new(),
             Self::Integer(v) => v.to_string(),
             Self::Float(v) => v.to_string(),
+            Self::F32Bits(v) => format!("<f32 bits=0x{v:08x}>"),
+            Self::F64Bits(v) => format!("<f64 bits=0x{v:016x}>"),
             Self::Bool(v) => v.to_string(),
             Self::String(v) => String::from_utf8_lossy(v).into_owned(),
             Self::Bytes(v) => hex::encode(v),
@@ -1837,6 +1856,20 @@ fn binary(
 ) -> Result<VmValue, VmError> {
     use BinOp::*;
     match (left, right) {
+        (VmValue::MemoryPointer { address, pointee }, VmValue::Integer(offset))
+            if matches!(op, Add | Sub) =>
+        {
+            // Concrete HIR has already scaled the element count to bytes.
+            let bits = if *op == Add {
+                address.wrapping_add(offset as u64)
+            } else {
+                address.wrapping_sub(offset as u64)
+            };
+            Ok(VmValue::MemoryPointer {
+                address: IntegerValue::from_bits(bits, IntegerType::Usize, layout).bits(),
+                pointee,
+            })
+        }
         (VmValue::MemoryPointer { address, .. }, VmValue::Null)
         | (VmValue::Null, VmValue::MemoryPointer { address, .. })
             if matches!(op, EqEq | NotEq) =>
@@ -1994,6 +2027,31 @@ fn cast(value: VmValue, target: &CanonicalType, span: Span) -> Result<VmValue, V
         _ => Err(error("unsupported cast", span)),
     }
 }
+fn bitcast(
+    value: VmValue,
+    source: &CanonicalType,
+    target: &CanonicalType,
+    layout: dbyte_hir::TargetDataLayout,
+    span: Span,
+) -> Result<VmValue, VmError> {
+    let bits = match (value, source) {
+        (VmValue::Integer(value), CanonicalType::Integer(kind)) => {
+            IntegerValue::from_bits(value as u64, *kind, layout).bits()
+        }
+        (VmValue::F32Bits(value), CanonicalType::F32) => u64::from(value),
+        (VmValue::F64Bits(value), CanonicalType::F64) => value,
+        _ => return Err(error("invalid exact-bit source representation", span)),
+    };
+    match target {
+        CanonicalType::Integer(kind) => Ok(VmValue::Integer(
+            IntegerValue::from_bits(bits, *kind, layout).bits() as i64,
+        )),
+        CanonicalType::F32 => Ok(VmValue::F32Bits(bits as u32)),
+        CanonicalType::F64 => Ok(VmValue::F64Bits(bits)),
+        _ => Err(error("invalid exact-bit target representation", span)),
+    }
+}
+
 fn error(message: &str, span: Span) -> VmError {
     VmError {
         msg: message.into(),
@@ -2209,6 +2267,39 @@ mod tests {
     }
 
     #[test]
+    fn exact_bitcast_preserves_explicit_float_payload_bits_at_o0_and_o1() {
+        let source = "fn round32(bits: u32) -> u32:\n    let value: f32 = bits as! f32\n    return value as! u32\n\nfn round64(bits: u64) -> u64:\n    let value: f64 = bits as! f64\n    return value as! u64\n\nlet negzero32: u32 = 2147483648 as u32\nlet qnan32: u32 = 2143289345 as u32\nlet qnan64: u64 = ((1 as u64) << 63) | ((2047 as u64) << 52) | ((1 as u64) << 51) | 74565 as u64\nprint(round32(negzero32) == negzero32)\nprint(round32(qnan32) == qnan32)\nprint(round64(qnan64) == qnan64)\n";
+        for layout in [TargetDataLayout::I686, TargetDataLayout::X86_64] {
+            let program = Parser::new(Lexer::new(source).tokenize().unwrap())
+                .parse_program()
+                .unwrap();
+            let analyzed = analyze_project(
+                &ProjectInput {
+                    root: ModuleId(0),
+                    modules: vec![ProjectModuleInput {
+                        id: ModuleId(0),
+                        name: "bitcast".into(),
+                        program,
+                        imports: Vec::new(),
+                    }],
+                },
+                Profile::Vm,
+                layout,
+            )
+            .unwrap();
+            let concrete = monomorphize_project(&analyzed).unwrap();
+            for level in [VmOptimizationLevel::O0, VmOptimizationLevel::O1] {
+                let code = lower_concrete_project_to_bytecode_at_level(&concrete, level).unwrap();
+                let execution = execute_canonical_bytecode(&code).unwrap();
+                assert_eq!(
+                    execution.output, "true\ntrue\ntrue\n",
+                    "{layout:?} {level:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn nmos_6502_matrix_and_trace_match_tree_contract_at_o0_and_o1() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         for (relative, expected) in [
@@ -2231,6 +2322,53 @@ mod tests {
             let o1_execution = execute_canonical_bytecode(&o1).unwrap();
             assert_eq!(o0_execution.output, expected, "O0 {relative}");
             assert_eq!(o1_execution, o0_execution, "O1 parity {relative}");
+        }
+    }
+
+    #[test]
+    fn pointer_stride_and_target_width_match_hosted_o0_o1() {
+        for layout in [TargetDataLayout::I686, TargetDataLayout::X86_64] {
+            for (ty, stride) in [("u8", 1), ("u16", 2), ("u32", 4), ("u64", 8)] {
+                let source = format!("fn step[T](p: ptr[T], n: usize) -> ptr[T]:\n    return p + n\n\nlet p: ptr[{ty}] = (4096 as usize) as ptr[{ty}]\nlet q: ptr[{ty}] = step[{ty}](p, 3 as usize)\nprint(q as usize)\nprint((q - (2 as usize)) as usize)\nlet edge: ptr[u8] = (4294967295 as usize) as ptr[u8]\nprint((edge + (2 as usize)) as usize)\n");
+                let program = Parser::new(Lexer::new(&source).tokenize().unwrap())
+                    .parse_program()
+                    .unwrap();
+                let analyzed = analyze_project(
+                    &ProjectInput {
+                        root: ModuleId(0),
+                        modules: vec![ProjectModuleInput {
+                            id: ModuleId(0),
+                            name: "pointer-test".into(),
+                            program,
+                            imports: Vec::new(),
+                        }],
+                    },
+                    Profile::Hosted,
+                    layout,
+                )
+                .unwrap();
+                let concrete = monomorphize_project(&analyzed).unwrap();
+                let expected = format!(
+                    "{}\n{}\n{}\n",
+                    4096 + 3 * stride,
+                    4096 + stride,
+                    if layout.pointer_size == 4 {
+                        1u64
+                    } else {
+                        4294967297
+                    }
+                );
+                let hosted = dbyte_interp::execute_concrete_project(&concrete).unwrap();
+                assert_eq!(hosted.output, expected, "{ty} {layout:?}");
+                for level in [VmOptimizationLevel::O0, VmOptimizationLevel::O1] {
+                    let code =
+                        lower_concrete_project_to_bytecode_at_level(&concrete, level).unwrap();
+                    let vm = execute_canonical_bytecode(&code).unwrap();
+                    assert_eq!(vm.output, expected, "{ty} {layout:?} {level:?}");
+                    assert_eq!(vm.allocator_events, hosted.allocator_events);
+                    assert_eq!(vm.live_allocations, 0);
+                }
+            }
         }
     }
 

@@ -1,0 +1,49 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "vfs_ro.dby" as vfs
+
+static mut FILE_BYTES: array[u8, 128]
+static mut FILE_STAT: vfs.VfsStat
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+fn fnv1a(buffer: ptr[u8], count: usize) -> u32:
+    let hash: u32 = 2166136261 as u32
+    let index: usize = 0 as usize
+    while index < count:
+        hash = (hash ^ (native.volatile_load8(((buffer as usize) + index) as ptr[u8]) as u32)) * (16777619 as u32)
+        index = index + (1 as usize)
+    return hash
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 FILESYSTEM", 23 as usize)
+    status = vfs.initialize()
+    if status != 0:
+        return fail("G4FS ERROR MOUNT status=", 24 as usize, status)
+    console.line("DBFS1 MOUNT OK", 14 as usize)
+    status = vfs.stat("/HELLO.TXT", 10 as usize, &FILE_STAT)
+    if status != 0:
+        return fail("G4FS ERROR STAT status=", 23 as usize, status)
+    console.write("VFS LOOKUP OK inode=", 20 as usize)
+    console.hex32(FILE_STAT.inode_number)
+    console.write(" size=", 6 as usize)
+    console.hex32(FILE_STAT.size_bytes)
+    console.newline()
+    let bytes_read: usize = 0 as usize
+    status = vfs.read("/HELLO.TXT", 10 as usize, (&FILE_BYTES[0]) as usize as ptr[u8], 128 as usize, &bytes_read)
+    if status != 0:
+        return fail("G4FS ERROR READ status=", 23 as usize, status)
+    console.write("VFS READ OK bytes=", 18 as usize)
+    console.hex32(bytes_read as u32)
+    console.write(" hash=", 6 as usize)
+    console.hex32(fnv1a((&FILE_BYTES[0]) as usize as ptr[u8], bytes_read))
+    console.newline()
+    console.line("G4 FILESYSTEM READONLY COMPLETE", 31 as usize)
+    return 0

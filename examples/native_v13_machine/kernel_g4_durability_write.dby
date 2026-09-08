@@ -1,0 +1,60 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "storage_ide.dby" as ro
+import "storage_ide_write_test.dby" as writer
+import "durability_pattern.dby" as pattern
+
+static mut WRITE_BUFFER: array[u16, 256]
+static mut READ_BUFFER: array[u16, 256]
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 DURABILITY WRITE", 29 as usize)
+    status = ro.identify()
+    if status != 0:
+        return fail("G4WRITE ERROR identify=", 23 as usize, status)
+    status = writer.arm_fixture()
+    if status != 0:
+        return fail("G4WRITE ERROR arm=", 18 as usize, status)
+    if writer.armed() == false:
+        return fail("G4WRITE ERROR armed=", 20 as usize, 1)
+    status = pattern.fill((&WRITE_BUFFER[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4WRITE ERROR fill=", 19 as usize, status)
+    let expected_hash: u32 = pattern.checksum((&WRITE_BUFFER[0]) as usize as ptr[u8])
+    status = writer.write_and_flush((&WRITE_BUFFER[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4WRITE ERROR write=", 20 as usize, status)
+    if writer.words_written() != (256 as u32):
+        return fail("G4WRITE ERROR words=", 20 as usize, writer.words_written() as int)
+    if writer.flush_count() != (1 as u32):
+        return fail("G4WRITE ERROR flush=", 20 as usize, writer.flush_count() as int)
+    status = ro.read_sector_into(writer.scratch_lba(), (&READ_BUFFER[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4WRITE ERROR readback=", 23 as usize, status)
+    status = pattern.verify((&READ_BUFFER[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4WRITE ERROR verify=", 21 as usize, status)
+    let observed_hash: u32 = pattern.checksum((&READ_BUFFER[0]) as usize as ptr[u8])
+    if observed_hash != expected_hash:
+        return fail("G4WRITE ERROR hash=", 19 as usize, observed_hash as int)
+    console.write("WRITE OK lba=", 13 as usize)
+    console.hex32(writer.scratch_lba())
+    console.write(" words=", 7 as usize)
+    console.hex32(writer.words_written())
+    console.write(" flush=", 7 as usize)
+    console.hex32(writer.flush_count())
+    console.newline()
+    console.write("READBACK OK hash=", 17 as usize)
+    console.hex32(observed_hash)
+    console.newline()
+    console.line("G4 DURABILITY WRITE COMPLETE", 28 as usize)
+    return 0

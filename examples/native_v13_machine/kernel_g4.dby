@@ -1,0 +1,45 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "pci.dby" as pci
+import "storage_ide.dby" as storage
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 STORAGE", 20 as usize)
+    status = storage.identify()
+    if status != 0:
+        return fail("G4 ERROR IDENTIFY status=", 25 as usize, status)
+    console.write("IDE OK bdf=", 11 as usize)
+    console.hex8(pci.ide_bus() as u8)
+    console.putc(58 as u8)
+    console.hex8(pci.ide_device() as u8)
+    console.putc(46 as u8)
+    console.hex8(pci.ide_function() as u8)
+    console.write(" id=", 4 as usize)
+    console.hex16(pci.ide_vendor())
+    console.putc(58 as u8)
+    console.hex16(pci.ide_product())
+    console.write(" prog=", 6 as usize)
+    console.hex8(pci.ide_prog_if())
+    console.newline()
+    console.write("IDENTIFY OK sectors=", 20 as usize)
+    console.hex32(storage.sector_count())
+    console.newline()
+    status = storage.read_sector(8 as u32)
+    if status != 0:
+        return fail("G4 ERROR READ status=", 21 as usize, status)
+    console.write("READ OK lba=", 12 as usize)
+    console.hex32(8 as u32)
+    console.write(" hash=", 6 as usize)
+    console.hex32(storage.read_checksum())
+    console.newline()
+    console.line("G4 READONLY COMPLETE", 20 as usize)
+    return 0

@@ -1443,27 +1443,33 @@ impl<'a> Selector<'a> {
                 .ok_or_else(|| codegen_error("resolved intrinsic argument is missing"))
         };
         match intrinsic {
-            HirIntrinsic::IoOut8 | HirIntrinsic::IoOut16 => {
+            HirIntrinsic::IoOut8 | HirIntrinsic::IoOut16 | HirIntrinsic::IoOut32 => {
                 self.load_register(argument(0)?, Register::Edx)?;
                 self.load_register(argument(1)?, Register::Eax)?;
-                if intrinsic == HirIntrinsic::IoOut8 {
-                    self.emit(Encoder::out_dx_al)?;
-                } else {
-                    self.emit(Encoder::out_dx_ax)?;
+                match intrinsic {
+                    HirIntrinsic::IoOut8 => self.emit(Encoder::out_dx_al)?,
+                    HirIntrinsic::IoOut16 => self.emit(Encoder::out_dx_ax)?,
+                    HirIntrinsic::IoOut32 => self.emit(Encoder::out_dx_eax)?,
+                    _ => unreachable!(),
                 }
             }
-            HirIntrinsic::IoIn8 | HirIntrinsic::IoIn16 => {
+            HirIntrinsic::IoIn8 | HirIntrinsic::IoIn16 | HirIntrinsic::IoIn32 => {
                 self.load_register(argument(0)?, Register::Edx)?;
-                if intrinsic == HirIntrinsic::IoIn8 {
-                    self.emit(Encoder::in_al_dx)?;
-                    self.emit(|encoder| {
-                        encoder.movzx_reg_reg(Register::Eax, Register::Eax, OperandWidth::Byte)
-                    })?;
-                } else {
-                    self.emit(Encoder::in_ax_dx)?;
-                    self.emit(|encoder| {
-                        encoder.movzx_reg_reg(Register::Eax, Register::Eax, OperandWidth::Word)
-                    })?;
+                match intrinsic {
+                    HirIntrinsic::IoIn8 => {
+                        self.emit(Encoder::in_al_dx)?;
+                        self.emit(|encoder| {
+                            encoder.movzx_reg_reg(Register::Eax, Register::Eax, OperandWidth::Byte)
+                        })?;
+                    }
+                    HirIntrinsic::IoIn16 => {
+                        self.emit(Encoder::in_ax_dx)?;
+                        self.emit(|encoder| {
+                            encoder.movzx_reg_reg(Register::Eax, Register::Eax, OperandWidth::Word)
+                        })?;
+                    }
+                    HirIntrinsic::IoIn32 => self.emit(Encoder::in_eax_dx)?,
+                    _ => unreachable!(),
                 }
             }
             HirIntrinsic::VolatileLoad8

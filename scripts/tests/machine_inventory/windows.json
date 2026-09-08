@@ -1,0 +1,14 @@
+{
+  "cpu":[{"Manufacturer":"AuthenticAMD","Name":"fixture CPU","Architecture":9,"DataWidth":64,"Family":16,"Stepping":"3"}],
+  "board":[{"Manufacturer":"fixture","Product":"fixture board","SerialNumber":"BOARD-A"}],
+  "product":[{"UUID":"fixture-uuid"}],
+  "system":[{"TotalPhysicalMemory":4294967296}],
+  "os":[{"Caption":"fixture Windows","SystemDrive":"C:","BootDevice":"fixture partition"}],
+  "firmware":1,
+  "pnp":[{"PNPDeviceID":"PCI\\VEN_1002&DEV_4391","Name":"fixture storage","CompatibleID":["PCI\\CC_010601"],"Service":"storahci"}],
+  "disks":[{"DeviceID":"\\\\.\\PHYSICALDRIVE0","Index":0,"Model":"fixture A","SerialNumber":"DISK-A","Size":512000}],
+  "partitions":[{"DiskIndex":0,"Index":0,"BootPartition":true,"Size":512000}],
+  "storage_disks":[{"Number":0,"IsBoot":true,"IsSystem":true,"SerialNumber":"DISK-A"}],
+  "keyboard":[{"PNPDeviceID":"HID\\fixture","Name":"fixture keyboard"}],
+  "pnp_parents":[],"disk_partition":[],"logical_partition":[],"scsi_associations":[],"ide_associations":[],"video":[],"network":[]
+}

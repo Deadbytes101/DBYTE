@@ -1,0 +1,36 @@
+import "multiboot2.dby" as multiboot2
+import "physical.dby" as physical
+import "boot_info.dby" as boot
+import "value_formation.dby" as values
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+# This must return an error without touching an address outside the bootstrap map.
+pub fn kernel_main() -> int:
+    serial.init()
+    if values.check() != 42:
+        return 9
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(1 as u64, 0 as u64, 1 as u32):
+        return 6
+    if boot.append_memory_region((0 as u64) - (1 as u64), 2 as u64, 1 as u32):
+        return 7
+    if boot.memory_region_count() != (0 as usize):
+        return 8
+    let outside: usize = 0x100000000 as usize
+    if physical.contains(outside - (36 as usize), 36 as usize) == false:
+        return 1
+    if physical.contains(outside - (35 as usize), 36 as usize):
+        return 2
+    if physical.contains(0 as usize, 8 as usize):
+        return 3
+    if physical.contains(1 as usize, 0 as usize):
+        return 4
+    if physical.contains((0 as usize) - (1 as usize), 8 as usize):
+        return 5
+    let status: int = multiboot2.normalize(0x36d76289 as u64, outside)
+    if status != 18:
+        serial.write("RANGE REJECT FAILED", 19 as usize)
+    else:
+        serial.write("RANGE REJECT OK", 15 as usize)
+    serial.newline()
+    return 0

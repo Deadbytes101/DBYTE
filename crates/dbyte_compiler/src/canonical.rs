@@ -502,6 +502,16 @@ impl<'context, 'semantic> BodyBuilder<'context, 'semantic> {
                 self.lower_expr(value)?;
                 self.emit(CanonicalOpcode::Cast(*target), span);
             }
+            HirExprKind::Bitcast { value, target } => {
+                self.lower_expr(value)?;
+                self.emit(
+                    CanonicalOpcode::Bitcast {
+                        source: value.ty,
+                        target: *target,
+                    },
+                    span,
+                );
+            }
             HirExprKind::DirectCall {
                 callee,
                 convention,

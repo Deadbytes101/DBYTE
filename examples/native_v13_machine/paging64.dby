@@ -1,0 +1,287 @@
+const PAGE_BYTES: usize = 4096 as usize
+const PAGE_BYTES64: u64 = 4096 as u64
+const PRESENT: u64 = 1 as u64
+const WRITE: u64 = 2 as u64
+const PWT: u64 = 0x08 as u64
+const PCD: u64 = 0x10 as u64
+const HUGE: u64 = 0x80 as u64
+const ADDRESS_MASK: u64 = 0x000ffffffffff000 as u64
+const ARENA_START: usize = 0x0000000100000000 as usize
+const ARENA_END: usize = 0x0000000100200000 as usize
+
+static mut PML4_STORAGE: array[u8, 8191]
+static mut PDPT_STORAGE: array[u8, 8191]
+static mut PD0_STORAGE: array[u8, 8191]
+static mut PD1_STORAGE: array[u8, 8191]
+static mut PD2_STORAGE: array[u8, 8191]
+static mut PD3_STORAGE: array[u8, 8191]
+static mut ARENA_PD_STORAGE: array[u8, 8191]
+static mut ARENA_PT_STORAGE: array[u8, 8191]
+
+static mut PML4: usize
+static mut PDPT: usize
+static mut PD0: usize
+static mut PD1: usize
+static mut PD2: usize
+static mut PD3: usize
+static mut ARENA_PD: usize
+static mut ARENA_PT: usize
+static mut MAP_COUNT: usize
+static mut UNMAP_COUNT: usize
+static mut READY: bool
+
+fn align_page(address: usize) -> usize:
+    let mask: usize = PAGE_BYTES - (1 as usize)
+    let maximum: usize = (0 as usize) - (1 as usize)
+    if address > (maximum - mask):
+        return 0 as usize
+    return (address + mask) & (maximum - mask)
+fn entry_address(table: usize, index: usize) -> ptr[u64]:
+    return (table + (index << (3 as usize))) as ptr[u64]
+
+fn read_entry(table: usize, index: usize) -> u64:
+    return native.volatile_load64(entry_address(table, index))
+
+fn write_entry(table: usize, index: usize, value: u64) -> int:
+    native.volatile_store64(entry_address(table, index), value)
+    return 0
+
+fn clear_table(table: usize) -> int:
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        write_entry(table, index, 0 as u64)
+        index = index + (1 as usize)
+    return 0
+
+fn fill_identity_directory(table: usize, directory: usize) -> int:
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        let page: u64 = ((directory as u64) * (512 as u64)) + (index as u64)
+        let physical: u64 = page * (0x200000 as u64)
+        write_entry(table, index, physical | PRESENT | WRITE | HUGE)
+        index = index + (1 as usize)
+    return 0
+
+fn table_addresses() -> bool:
+    PML4 = align_page((&PML4_STORAGE) as usize)
+    PDPT = align_page((&PDPT_STORAGE) as usize)
+    PD0 = align_page((&PD0_STORAGE) as usize)
+    PD1 = align_page((&PD1_STORAGE) as usize)
+    PD2 = align_page((&PD2_STORAGE) as usize)
+    PD3 = align_page((&PD3_STORAGE) as usize)
+    ARENA_PD = align_page((&ARENA_PD_STORAGE) as usize)
+    ARENA_PT = align_page((&ARENA_PT_STORAGE) as usize)
+    if PML4 == (0 as usize):
+        return false
+    if PDPT == (0 as usize):
+        return false
+    if PD0 == (0 as usize):
+        return false
+    if PD1 == (0 as usize):
+        return false
+    if PD2 == (0 as usize):
+        return false
+    if PD3 == (0 as usize):
+        return false
+    if ARENA_PD == (0 as usize):
+        return false
+    if ARENA_PT == (0 as usize):
+        return false
+    if PML4 >= (0x0000000100000000 as usize):
+        return false
+    if PDPT >= (0x0000000100000000 as usize):
+        return false
+    if PD0 >= (0x0000000100000000 as usize):
+        return false
+    if PD1 >= (0x0000000100000000 as usize):
+        return false
+    if PD2 >= (0x0000000100000000 as usize):
+        return false
+    if PD3 >= (0x0000000100000000 as usize):
+        return false
+    if ARENA_PD >= (0x0000000100000000 as usize):
+        return false
+    if ARENA_PT >= (0x0000000100000000 as usize):
+        return false
+    return true
+
+pub fn initialize() -> int:
+    READY = false
+    MAP_COUNT = 0 as usize
+    UNMAP_COUNT = 0 as usize
+    if table_addresses() == false:
+        return 1
+    clear_table(PML4)
+    clear_table(PDPT)
+    clear_table(PD0)
+    clear_table(PD1)
+    clear_table(PD2)
+    clear_table(PD3)
+    clear_table(ARENA_PD)
+    clear_table(ARENA_PT)
+
+    write_entry(PML4, 0 as usize, (PDPT as u64) | PRESENT | WRITE)
+    write_entry(PDPT, 0 as usize, (PD0 as u64) | PRESENT | WRITE)
+    write_entry(PDPT, 1 as usize, (PD1 as u64) | PRESENT | WRITE)
+    write_entry(PDPT, 2 as usize, (PD2 as u64) | PRESENT | WRITE)
+    write_entry(PDPT, 3 as usize, (PD3 as u64) | PRESENT | WRITE)
+    fill_identity_directory(PD0, 0 as usize)
+    fill_identity_directory(PD1, 1 as usize)
+    fill_identity_directory(PD2, 2 as usize)
+    fill_identity_directory(PD3, 3 as usize)
+
+    write_entry(PDPT, 4 as usize, (ARENA_PD as u64) | PRESENT | WRITE)
+    write_entry(ARENA_PD, 0 as usize, (ARENA_PT as u64) | PRESENT | WRITE)
+
+    native.cpu_write_cr3(PML4)
+    let maximum: usize = (0 as usize) - (1 as usize)
+    if (native.cpu_read_cr3() & (maximum - (0xfff as usize))) != PML4:
+        return 2
+    let current_cr0: u32 = native.cpu_read_cr0()
+    native.cpu_write_cr0(current_cr0 | (0x00010000 as u32))
+    if (native.cpu_read_cr0() & (0x00010000 as u32)) == (0 as u32):
+        return 3
+    let current_efer: u64 = native.cpu_rdmsr(0xC0000080 as u32)
+    native.cpu_wrmsr(0xC0000080 as u32, current_efer | ((1 as u64) << (11 as u64)))
+    if (native.cpu_rdmsr(0xC0000080 as u32) & ((1 as u64) << (11 as u64))) == (0 as u64):
+        return 4
+    READY = true
+    return 0
+
+fn arena_index(virtual_address: usize) -> usize:
+    return (virtual_address - ARENA_START) >> (12 as usize)
+
+fn arena_valid(virtual_address: usize) -> bool:
+    if virtual_address < ARENA_START:
+        return false
+    if virtual_address >= ARENA_END:
+        return false
+    return (virtual_address & (0xfff as usize)) == (0 as usize)
+
+pub fn map_page(virtual_address: usize, physical_address: u64, writable: bool, executable: bool) -> int:
+    if READY == false:
+        return 1
+    if arena_valid(virtual_address) == false:
+        return 2
+    if physical_address == (0 as u64):
+        return 3
+    if (physical_address & (0xfff as u64)) != (0 as u64):
+        return 3
+    if physical_address > ADDRESS_MASK:
+        return 4
+    let index: usize = arena_index(virtual_address)
+    if (read_entry(ARENA_PT, index) & PRESENT) != (0 as u64):
+        return 5
+    let flags: u64 = PRESENT
+    if writable:
+        flags = flags | WRITE
+    if executable == false:
+        flags = flags | ((1 as u64) << (63 as u64))
+    write_entry(ARENA_PT, index, (physical_address & ADDRESS_MASK) | flags)
+    native.cpu_invlpg(virtual_address as ptr[u8])
+    MAP_COUNT = MAP_COUNT + (1 as usize)
+    return 0
+
+pub fn unmap_page(virtual_address: usize) -> u64:
+    if READY == false:
+        return 0 as u64
+    if arena_valid(virtual_address) == false:
+        return 0 as u64
+    let index: usize = arena_index(virtual_address)
+    let entry: u64 = read_entry(ARENA_PT, index)
+    if (entry & PRESENT) == (0 as u64):
+        return 0 as u64
+    write_entry(ARENA_PT, index, 0 as u64)
+    native.cpu_invlpg(virtual_address as ptr[u8])
+    UNMAP_COUNT = UNMAP_COUNT + (1 as usize)
+    return entry & ADDRESS_MASK
+
+pub fn is_mapped(virtual_address: usize) -> bool:
+    if arena_valid(virtual_address) == false:
+        return false
+    return (read_entry(ARENA_PT, arena_index(virtual_address)) & PRESENT) != (0 as u64)
+
+pub fn mapping_physical(virtual_address: usize) -> u64:
+    if is_mapped(virtual_address) == false:
+        return 0 as u64
+    return read_entry(ARENA_PT, arena_index(virtual_address)) & ADDRESS_MASK
+pub fn mapping_flags(virtual_address: usize) -> u64:
+    if is_mapped(virtual_address) == false:
+        return 0 as u64
+    let entry: u64 = read_entry(ARENA_PT, arena_index(virtual_address))
+    return entry & (((1 as u64) << (63 as u64)) | (0xfff as u64))
+
+pub fn arena_start() -> usize:
+    return ARENA_START
+
+pub fn arena_end() -> usize:
+    return ARENA_END
+
+pub fn cr3() -> usize:
+    return native.cpu_read_cr3()
+
+pub fn cr0() -> u32:
+    return native.cpu_read_cr0()
+
+pub fn efer() -> u64:
+    return native.cpu_rdmsr(0xC0000080 as u32)
+
+pub fn map_count() -> usize:
+    return MAP_COUNT
+
+pub fn unmap_count() -> usize:
+    return UNMAP_COUNT
+
+pub fn pml4_address() -> usize:
+    return PML4
+
+pub fn pdpt_address() -> usize:
+    return PDPT
+
+pub fn identity_pd_address(index: usize) -> usize:
+    return identity_directory_table(index)
+
+pub fn arena_pd_address() -> usize:
+    return ARENA_PD
+
+pub fn arena_pt_address() -> usize:
+    return ARENA_PT
+
+fn identity_directory_table(directory: usize) -> usize:
+    if directory == (0 as usize):
+        return PD0
+    if directory == (1 as usize):
+        return PD1
+    if directory == (2 as usize):
+        return PD2
+    if directory == (3 as usize):
+        return PD3
+    return 0 as usize
+
+pub fn mark_identity_mmio(address: usize) -> int:
+    if READY == false:
+        return 1
+    if address >= (0x0000000100000000 as usize):
+        return 2
+    let directory: usize = address >> (30 as usize)
+    let table: usize = identity_directory_table(directory)
+    if table == (0 as usize):
+        return 3
+    let index: usize = (address >> (21 as usize)) & (0x1ff as usize)
+    let entry: u64 = read_entry(table, index)
+    if (entry & (PRESENT | HUGE)) != (PRESENT | HUGE):
+        return 4
+    write_entry(table, index, entry | PWT | PCD)
+    native.cpu_invlpg(address as ptr[u8])
+    return 0
+
+pub fn identity_mapping_flags(address: usize) -> u64:
+    if READY == false:
+        return 0 as u64
+    if address >= (0x0000000100000000 as usize):
+        return 0 as u64
+    let table: usize = identity_directory_table(address >> (30 as usize))
+    if table == (0 as usize):
+        return 0 as u64
+    let index: usize = (address >> (21 as usize)) & (0x1ff as usize)
+    return read_entry(table, index) & (PRESENT | WRITE | PWT | PCD | HUGE)

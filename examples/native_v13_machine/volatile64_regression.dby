@@ -1,0 +1,6 @@
+pub fn roundtrip(address: usize, value: u64) -> u64:
+    native.volatile_store64(address as ptr[u64], value)
+    return native.volatile_load64(address as ptr[u64])
+
+pub fn kernel_main() -> int:
+    return 0

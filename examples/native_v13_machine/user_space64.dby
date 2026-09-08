@@ -1,0 +1,823 @@
+import "boot_info.dby" as boot
+import "frames64.dby" as frames
+import "paging64.dby" as paging
+import "interrupts64.dby" as irq
+import "console.dby" as console
+
+const PAGE: usize = 4096 as usize
+const PAGE64: u64 = 4096 as u64
+const USER_TEXT: usize = 0x00400000 as usize
+const USER_IMAGE_END: usize = 0x00600000 as usize
+const USER_STACK_BASE: usize = 0x007fc000 as usize
+const USER_STACK_TOP: usize = 0x00800000 as usize
+const PRESENT: u64 = 1 as u64
+const WRITE: u64 = 2 as u64
+const USER: u64 = 4 as u64
+const ADDRESS_MASK: u64 = 0x000ffffffffff000 as u64
+const MAX_OWNED: usize = 64 as usize
+
+static mut PML4_FRAME: u64
+static mut PDPT_FRAME: u64
+static mut PD0_FRAME: u64
+static mut IMAGE_PT_FRAME: u64
+static mut STACK_PT_FRAME: u64
+static mut OWNED: array[u64, 64]
+static mut OWNED_COUNT: usize
+static mut ENTRY: usize
+static mut KERNEL_CR3: usize
+static mut READY: bool
+static mut EXITED: bool
+static mut EXIT_CODE: i32
+static mut SYSCALL_COUNT: usize
+static mut USER_PAGE_COUNT: usize
+static mut BOUNCE: array[u8, 512]
+static mut RESUME: array[u64, 20]
+static mut REQUEST_RESUME: array[u64, 20]
+static mut WORKER_TARGET: usize
+static mut REQUEST_PENDING: u32
+static mut REQUEST_NUMBER: u32
+static mut REQUEST_ARG0: usize
+static mut REQUEST_ARG1: usize
+static mut REQUEST_ARG2: usize
+static mut REQUEST_DISPATCHES: usize
+static mut RECOVERY_TARGET: usize
+static mut FAULT_COUNT: usize
+static mut LAST_FAULT_REASON: u32
+static mut LAST_FAULT_ADDRESS: usize
+static mut LAST_FAULT_ERROR: u64
+static mut LAST_RECLAIMED_FRAMES: usize
+
+fn scratch() -> usize:
+    return paging.arena_start()
+
+fn nx_bit() -> u64:
+    return (1 as u64) << (63 as u64)
+
+fn record_frame(frame: u64) -> bool:
+    if frame == (0 as u64):
+        return false
+    if OWNED_COUNT >= MAX_OWNED:
+        frames.release(frame)
+        return false
+    OWNED[OWNED_COUNT] = frame
+    OWNED_COUNT = OWNED_COUNT + (1 as usize)
+    return true
+
+fn allocate_frame() -> u64:
+    let frame: u64 = frames.allocate()
+    if record_frame(frame) == false:
+        return 0 as u64
+    return frame
+
+fn map_scratch(frame: u64, writable: bool) -> bool:
+    return paging.map_page(scratch(), frame, writable, false) == 0
+
+fn unmap_scratch(frame: u64) -> bool:
+    return paging.unmap_page(scratch()) == frame
+
+fn clear_frame(frame: u64) -> bool:
+    if map_scratch(frame, true) == false:
+        return false
+    let index: usize = 0 as usize
+    while index < PAGE:
+        native.volatile_store64((scratch() + index) as ptr[u64], 0 as u64)
+        index = index + (8 as usize)
+    return unmap_scratch(frame)
+
+fn table_write(frame: u64, index: usize, value: u64) -> bool:
+    if index >= (512 as usize):
+        return false
+    if map_scratch(frame, true) == false:
+        return false
+    native.volatile_store64((scratch() + (index << (3 as usize))) as ptr[u64], value)
+    return unmap_scratch(frame)
+
+fn table_read(frame: u64, index: usize) -> u64:
+    if index >= (512 as usize):
+        return 0 as u64
+    if map_scratch(frame, false) == false:
+        return 0 as u64
+    let value: u64 = native.volatile_load64((scratch() + (index << (3 as usize))) as ptr[u64])
+    if unmap_scratch(frame) == false:
+        return 0 as u64
+    return value
+
+fn copy_kernel_pd0() -> bool:
+    if map_scratch(PD0_FRAME, true) == false:
+        return false
+    let source: usize = paging.identity_pd_address(0 as usize)
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        let value: u64 = native.volatile_load64((source + (index << (3 as usize))) as ptr[u64])
+        native.volatile_store64((scratch() + (index << (3 as usize))) as ptr[u64], value)
+        index = index + (1 as usize)
+    return unmap_scratch(PD0_FRAME)
+
+fn rollback() -> int:
+    if paging.is_mapped(scratch()):
+        paging.unmap_page(scratch())
+    while OWNED_COUNT > (0 as usize):
+        OWNED_COUNT = OWNED_COUNT - (1 as usize)
+        let frame: u64 = OWNED[OWNED_COUNT]
+        OWNED[OWNED_COUNT] = 0 as u64
+        if frame != (0 as u64):
+            frames.release(frame)
+    PML4_FRAME = 0 as u64
+    PDPT_FRAME = 0 as u64
+    PD0_FRAME = 0 as u64
+    IMAGE_PT_FRAME = 0 as u64
+    STACK_PT_FRAME = 0 as u64
+    ENTRY = 0 as usize
+    READY = false
+    return 0
+
+fn allocate_table() -> u64:
+    let frame: u64 = allocate_frame()
+    if frame == (0 as u64):
+        return 0 as u64
+    if clear_frame(frame) == false:
+        return 0 as u64
+    return frame
+
+pub fn initialize() -> int:
+    rollback()
+    if native.kernel_image_end() > USER_TEXT:
+        return 1
+    if paging.pml4_address() == (0 as usize):
+        return 2
+    PML4_FRAME = allocate_table()
+    PDPT_FRAME = allocate_table()
+    PD0_FRAME = allocate_table()
+    IMAGE_PT_FRAME = allocate_table()
+    STACK_PT_FRAME = allocate_table()
+    if PML4_FRAME == (0 as u64):
+        rollback()
+        return 3
+    if PDPT_FRAME == (0 as u64):
+        rollback()
+        return 3
+    if PD0_FRAME == (0 as u64):
+        rollback()
+        return 3
+    if IMAGE_PT_FRAME == (0 as u64):
+        rollback()
+        return 3
+    if STACK_PT_FRAME == (0 as u64):
+        rollback()
+        return 3
+    if copy_kernel_pd0() == false:
+        rollback()
+        return 4
+    if table_write(PML4_FRAME, 0 as usize, PDPT_FRAME | PRESENT | WRITE | USER) == false:
+        rollback()
+        return 5
+    if table_write(PDPT_FRAME, 0 as usize, PD0_FRAME | PRESENT | WRITE | USER) == false:
+        rollback()
+        return 5
+    let directory: usize = 1 as usize
+    while directory < (4 as usize):
+        let physical: usize = paging.identity_pd_address(directory)
+        if physical == (0 as usize):
+            rollback()
+            return 6
+        if table_write(PDPT_FRAME, directory, (physical as u64) | PRESENT | WRITE) == false:
+            rollback()
+            return 6
+        directory = directory + (1 as usize)
+    let arena_pd: usize = paging.arena_pd_address()
+    if arena_pd == (0 as usize):
+        rollback()
+        return 7
+    if table_write(PDPT_FRAME, 4 as usize, (arena_pd as u64) | PRESENT | WRITE) == false:
+        rollback()
+        return 7
+    if table_write(PD0_FRAME, 2 as usize, IMAGE_PT_FRAME | PRESENT | WRITE | USER) == false:
+        rollback()
+        return 8
+    if table_write(PD0_FRAME, 3 as usize, STACK_PT_FRAME | PRESENT | WRITE | USER) == false:
+        rollback()
+        return 8
+    KERNEL_CR3 = paging.pml4_address()
+    ENTRY = 0 as usize
+    EXITED = false
+    EXIT_CODE = 0
+    SYSCALL_COUNT = 0 as usize
+    USER_PAGE_COUNT = 0 as usize
+    REQUEST_PENDING = 0 as u32
+    REQUEST_NUMBER = 0 as u32
+    REQUEST_ARG0 = 0 as usize
+    REQUEST_ARG1 = 0 as usize
+    REQUEST_ARG2 = 0 as usize
+    REQUEST_DISPATCHES = 0 as usize
+    READY = false
+    return 0
+
+fn read16(address: usize) -> u16:
+    return native.volatile_load16(address as ptr[u16])
+
+fn read32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn read64(address: usize) -> u64:
+    return native.volatile_load64(address as ptr[u64])
+
+fn range_within(base: usize, length: usize, limit: usize) -> bool:
+    if length == (0 as usize):
+        return base <= limit
+    if base >= limit:
+        return false
+    return length <= (limit - base)
+
+fn image_index(address: usize) -> usize:
+    return (address - USER_TEXT) >> (12 as usize)
+
+fn stack_index(address: usize) -> usize:
+    return (address - (0x00600000 as usize)) >> (12 as usize)
+
+fn install_user_page(table: u64, index: usize, writable: bool, executable: bool) -> u64:
+    if index >= (512 as usize):
+        return 0 as u64
+    if (table_read(table, index) & PRESENT) != (0 as u64):
+        return 0 as u64
+    let frame: u64 = allocate_frame()
+    if frame == (0 as u64):
+        return 0 as u64
+    if clear_frame(frame) == false:
+        return 0 as u64
+    let flags: u64 = PRESENT | USER
+    if writable:
+        flags = flags | WRITE
+    if executable == false:
+        flags = flags | nx_bit()
+    if table_write(table, index, frame | flags) == false:
+        return 0 as u64
+    USER_PAGE_COUNT = USER_PAGE_COUNT + (1 as usize)
+    return frame
+
+fn align_down_page(value: usize) -> usize:
+    return value & ((0 as usize) - PAGE)
+
+fn align_up_page(value: usize) -> usize:
+    let mask: usize = PAGE - (1 as usize)
+    let maximum: usize = (0 as usize) - (1 as usize)
+    if value > (maximum - mask):
+        return 0 as usize
+    return (value + mask) & (maximum - mask)
+
+fn copy_page_bytes(frame: u64, page_va: usize, segment_va: usize, source: usize, file_size: usize) -> bool:
+    if map_scratch(frame, true) == false:
+        return false
+    let file_end: usize = segment_va + file_size
+    let copy_start: usize = page_va
+    if copy_start < segment_va:
+        copy_start = segment_va
+    let copy_end: usize = page_va + PAGE
+    if copy_end > file_end:
+        copy_end = file_end
+    let cursor: usize = copy_start
+    while cursor < copy_end:
+        let input: usize = source + (cursor - segment_va)
+        let value: u8 = native.volatile_load8(input as ptr[u8])
+        native.volatile_store8((scratch() + (cursor - page_va)) as ptr[u8], value)
+        cursor = cursor + (1 as usize)
+    return unmap_scratch(frame)
+
+fn load_segment(module_base: usize, module_length: usize, header: usize) -> int:
+    if read32(header) != (1 as u32):
+        return 0
+    let flags32: u32 = read32(header + (4 as usize))
+    if (flags32 & (0xfffffff8 as u32)) != (0 as u32):
+        return 20
+    if (flags32 & (3 as u32)) == (3 as u32):
+        return 21
+    let file_offset: usize = read64(header + (8 as usize)) as usize
+    let virtual_address: usize = read64(header + (16 as usize)) as usize
+    let physical_address: usize = read64(header + (24 as usize)) as usize
+    let file_size: usize = read64(header + (32 as usize)) as usize
+    let memory_size: usize = read64(header + (40 as usize)) as usize
+    let alignment: usize = read64(header + (48 as usize)) as usize
+    if file_size > memory_size:
+        return 22
+    if memory_size == (0 as usize):
+        if file_size != (0 as usize):
+            return 22
+        return 0
+    if alignment != PAGE:
+        return 23
+    if (file_offset & (PAGE - (1 as usize))) != (virtual_address & (PAGE - (1 as usize))):
+        return 23
+    if physical_address != virtual_address:
+        return 24
+    if range_within(file_offset, file_size, module_length) == false:
+        return 25
+    if virtual_address < USER_TEXT:
+        return 26
+    if range_within(virtual_address, memory_size, USER_IMAGE_END) == false:
+        return 26
+    let memory_end: usize = virtual_address + memory_size
+    let file_end: usize = virtual_address + file_size
+    if memory_end < virtual_address:
+        return 27
+    if file_end < virtual_address:
+        return 27
+    let page_va: usize = align_down_page(virtual_address)
+    let page_end: usize = align_up_page(memory_end)
+    if page_end == (0 as usize):
+        return 27
+    let writable: bool = (flags32 & (2 as u32)) != (0 as u32)
+    let executable: bool = (flags32 & (1 as u32)) != (0 as u32)
+    while page_va < page_end:
+        if page_va < USER_TEXT:
+            return 28
+        if page_va >= USER_IMAGE_END:
+            return 28
+        let frame: u64 = install_user_page(IMAGE_PT_FRAME, image_index(page_va), writable, executable)
+        if frame == (0 as u64):
+            return 29
+        if page_va < file_end:
+            if (page_va + PAGE) > virtual_address:
+                if copy_page_bytes(frame, page_va, virtual_address, module_base + file_offset, file_size) == false:
+                    return 30
+        page_va = page_va + PAGE
+    return 0
+
+pub fn load_module(index: usize) -> int:
+    if KERNEL_CR3 == (0 as usize):
+        return 40
+    if index >= boot.module_count():
+        return 41
+    let module_base: usize = boot.module_address(index) as usize
+    let module_length: usize = boot.module_length(index) as usize
+    return load_image(module_base, module_length)
+
+# The caller owns and validates the mapped kernel buffer extent. No pointer into
+# this image is retained after the bytes have been copied to private frames.
+pub fn load_image(module_base: usize, module_length: usize) -> int:
+    if KERNEL_CR3 == (0 as usize):
+        return 40
+    if module_base == (0 as usize):
+        return 42
+    let image_end: usize = module_base + module_length
+    if image_end < module_base:
+        return 42
+    if module_length < (64 as usize):
+        return 42
+    if native.volatile_load32(module_base as ptr[u32]) != (0x464c457f as u32):
+        return 43
+    if native.volatile_load8((module_base + (4 as usize)) as ptr[u8]) != (2 as u8):
+        return 43
+    if native.volatile_load8((module_base + (5 as usize)) as ptr[u8]) != (1 as u8):
+        return 43
+    if native.volatile_load8((module_base + (6 as usize)) as ptr[u8]) != (1 as u8):
+        return 43
+    if read16(module_base + (16 as usize)) != (2 as u16):
+        return 44
+    if read16(module_base + (18 as usize)) != (62 as u16):
+        return 44
+    if read32(module_base + (20 as usize)) != (1 as u32):
+        return 44
+    if read16(module_base + (52 as usize)) != (64 as u16):
+        return 45
+    if read16(module_base + (54 as usize)) != (56 as u16):
+        return 45
+    let phoff: usize = read64(module_base + (32 as usize)) as usize
+    let phnum: usize = read16(module_base + (56 as usize)) as usize
+    if phnum == (0 as usize):
+        return 46
+    if phnum > (16 as usize):
+        return 46
+    let phbytes: usize = phnum * (56 as usize)
+    if phbytes / (56 as usize) != phnum:
+        return 46
+    if range_within(phoff, phbytes, module_length) == false:
+        return 46
+    ENTRY = read64(module_base + (24 as usize)) as usize
+    if ENTRY < USER_TEXT:
+        return 47
+    if ENTRY >= USER_IMAGE_END:
+        return 47
+    let load_count: usize = 0 as usize
+    let ph: usize = 0 as usize
+    while ph < phnum:
+        let header: usize = module_base + phoff + (ph * (56 as usize))
+        if read32(header) == (1 as u32):
+            if read64(header + (40 as usize)) != (0 as u64):
+                load_count = load_count + (1 as usize)
+        let status: int = load_segment(module_base, module_length, header)
+        if status != 0:
+            rollback()
+            return status
+        ph = ph + (1 as usize)
+    if load_count == (0 as usize):
+        rollback()
+        return 48
+    let entry_pte: u64 = table_read(IMAGE_PT_FRAME, image_index(ENTRY))
+    if (entry_pte & (PRESENT | USER)) != (PRESENT | USER):
+        rollback()
+        return 49
+    if (entry_pte & nx_bit()) != (0 as u64):
+        rollback()
+        return 49
+    let stack_va: usize = USER_STACK_BASE
+    while stack_va < USER_STACK_TOP:
+        let frame: u64 = install_user_page(STACK_PT_FRAME, stack_index(stack_va), true, false)
+        if frame == (0 as u64):
+            rollback()
+            return 50
+        stack_va = stack_va + PAGE
+    if table_read(STACK_PT_FRAME, stack_index(USER_STACK_BASE) - (1 as usize)) != (0 as u64):
+        rollback()
+        return 51
+    if irq.install_user_syscall_gate(interrupt_address(128, syscall)) != 0:
+        rollback()
+        return 52
+    if irq.install_user_fault_gates(interrupt_address(6, user_invalid_opcode), interrupt_address(13, user_general_protection), interrupt_address(14, user_page_fault)) != 0:
+        rollback()
+        return 53
+    EXITED = false
+    EXIT_CODE = 0
+    SYSCALL_COUNT = 0 as usize
+    READY = true
+    return 0
+
+fn user_pte(address: usize) -> u64:
+    if address >= USER_TEXT:
+        if address < USER_IMAGE_END:
+            return table_read(IMAGE_PT_FRAME, image_index(address))
+    if address >= USER_STACK_BASE:
+        if address < USER_STACK_TOP:
+            return table_read(STACK_PT_FRAME, stack_index(address))
+    return 0 as u64
+
+fn translate_user(address: usize, writable: bool) -> u64:
+    let entry: u64 = user_pte(address)
+    if (entry & (PRESENT | USER)) != (PRESENT | USER):
+        return 0 as u64
+    if writable:
+        if (entry & WRITE) == (0 as u64):
+            return 0 as u64
+    return (entry & ADDRESS_MASK) + ((address & (PAGE - (1 as usize))) as u64)
+
+pub fn validate_user_range(address: usize, length: usize, writable: bool) -> bool:
+    if length == (0 as usize):
+        return address < USER_STACK_TOP
+    if address < USER_TEXT:
+        return false
+    if address >= USER_STACK_TOP:
+        return false
+    let maximum: usize = (0 as usize) - (1 as usize)
+    if length > (maximum - address):
+        return false
+    let end: usize = address + length
+    if end <= address:
+        return false
+    if end > USER_STACK_TOP:
+        return false
+    let cursor: usize = address
+    while cursor < end:
+        if translate_user(cursor, writable) == (0 as u64):
+            return false
+        let next: usize = align_up_page(cursor + (1 as usize))
+        if next == (0 as usize):
+            return false
+        if next <= cursor:
+            return false
+        cursor = next
+    return true
+
+pub fn copy_from_user(address: usize, output: ptr[u8], length: usize) -> int:
+    if output as usize == (0 as usize):
+        return -3
+    if validate_user_range(address, length, false) == false:
+        return -3
+    let copied: usize = 0 as usize
+    while copied < length:
+        let physical: u64 = translate_user(address + copied, false)
+        if physical == (0 as u64):
+            return -3
+        let page_frame: u64 = physical & ADDRESS_MASK
+        if map_scratch(page_frame, false) == false:
+            return -3
+        let page_offset: usize = (physical & ((PAGE64 - (1 as u64)))) as usize
+        let amount: usize = PAGE - page_offset
+        if amount > (length - copied):
+            amount = length - copied
+        let index: usize = 0 as usize
+        while index < amount:
+            let value: u8 = native.volatile_load8((scratch() + page_offset + index) as ptr[u8])
+            native.volatile_store8(((output as usize) + copied + index) as ptr[u8], value)
+            index = index + (1 as usize)
+        if unmap_scratch(page_frame) == false:
+            return -3
+        copied = copied + amount
+    return 0
+
+pub fn copy_to_user(address: usize, source: ptr[u8], length: usize) -> int:
+    if source as usize == (0 as usize):
+        return -3
+    if validate_user_range(address, length, true) == false:
+        return -3
+    let copied: usize = 0 as usize
+    while copied < length:
+        let physical: u64 = translate_user(address + copied, true)
+        if physical == (0 as u64):
+            return -3
+        let page_frame: u64 = physical & ADDRESS_MASK
+        if map_scratch(page_frame, true) == false:
+            return -3
+        let page_offset: usize = (physical & (PAGE64 - (1 as u64))) as usize
+        let amount: usize = PAGE - page_offset
+        if amount > (length - copied):
+            amount = length - copied
+        let index: usize = 0 as usize
+        while index < amount:
+            let value: u8 = native.volatile_load8(((source as usize) + copied + index) as ptr[u8])
+            native.volatile_store8((scratch() + page_offset + index) as ptr[u8], value)
+            index = index + (1 as usize)
+        if unmap_scratch(page_frame) == false:
+            return -3
+        copied = copied + amount
+    return 0
+
+fn write_user(fd: usize, address: usize, length: usize) -> i32:
+    if fd != (1 as usize):
+        if fd != (2 as usize):
+            return -2
+    if length > (4096 as usize):
+        return -1
+    if validate_user_range(address, length, false) == false:
+        return -3
+    let total: usize = 0 as usize
+    while total < length:
+        let amount: usize = length - total
+        if amount > (512 as usize):
+            amount = 512 as usize
+        if copy_from_user(address + total, &BOUNCE[0], amount) != 0:
+            return -3
+        let index: usize = 0 as usize
+        while index < amount:
+            console.putc(BOUNCE[index])
+            index = index + (1 as usize)
+        total = total + amount
+    return total as i32
+
+fn save_rax(frame: usize, value: i32) -> int:
+    native.volatile_store64((frame - (8 as usize)) as ptr[u64], (value as u32) as u64)
+    return 0
+
+fn capture_request(frame: ptr[irq.InterruptFrame64]) -> bool:
+    if REQUEST_PENDING != (0 as u32):
+        return false
+    let frame_address: usize = frame as usize
+    if frame_address < (120 as usize):
+        return false
+    let source: usize = frame_address - (120 as usize)
+    let index: usize = 0 as usize
+    while index < (20 as usize):
+        REQUEST_RESUME[index] = native.volatile_load64((source + (index << (3 as usize))) as ptr[u64])
+        index = index + (1 as usize)
+    REQUEST_NUMBER = REQUEST_RESUME[14 as usize] as u32
+    REQUEST_ARG0 = REQUEST_RESUME[11 as usize] as usize
+    REQUEST_ARG1 = REQUEST_RESUME[12 as usize] as usize
+    REQUEST_ARG2 = REQUEST_RESUME[7 as usize] as usize
+    REQUEST_PENDING = 1 as u32
+    REQUEST_DISPATCHES = REQUEST_DISPATCHES + (1 as usize)
+    return true
+
+fn redirect_to_worker(frame: ptr[irq.InterruptFrame64]) -> bool:
+    if WORKER_TARGET == (0 as usize):
+        return false
+    (*frame).rip = WORKER_TARGET as u64
+    (*frame).cs = irq.kernel_code_selector() as u64
+    (*frame).rflags = 0x2 as u64
+    (*frame).rsp = (irq.ring0_stack_top() - (8 as usize)) as u64
+    (*frame).ss = irq.kernel_data_selector() as u64
+    return true
+
+fn redirect_to_kernel(frame: ptr[irq.InterruptFrame64]) -> bool:
+    if RECOVERY_TARGET == (0 as usize):
+        return false
+    (*frame).rip = RECOVERY_TARGET as u64
+    (*frame).cs = irq.kernel_code_selector() as u64
+    (*frame).rflags = 0x2 as u64
+    (*frame).rsp = (irq.ring0_stack_top() - (8 as usize)) as u64
+    (*frame).ss = irq.kernel_data_selector() as u64
+    return true
+
+fn contain_fault(frame: ptr[irq.InterruptFrame64], reason: u32, address: usize, error_code: u64) -> int:
+    FAULT_COUNT = FAULT_COUNT + (1 as usize)
+    LAST_FAULT_REASON = reason
+    LAST_FAULT_ADDRESS = address
+    LAST_FAULT_ERROR = error_code
+    EXITED = false
+    native.cpu_write_cr3(KERNEL_CR3)
+    LAST_RECLAIMED_FRAMES = OWNED_COUNT
+    rollback()
+    console.write("USER64 FAULT reason=", 20 as usize)
+    console.hex32(reason)
+    console.write(" addr=", 6 as usize)
+    console.hex64(address as u64)
+    console.write(" error=", 7 as usize)
+    console.hex64(error_code)
+    console.write(" owned=", 7 as usize)
+    console.hex32(frames.owned_count() as u32)
+    console.newline()
+    if redirect_to_kernel(frame) == false:
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    return 0
+
+pub interrupt(no_error_code, cpl3_transition) fn user_invalid_opcode(frame: ptr[irq.InterruptFrame64]):
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        console.line("G5 KERNEL #UD FATAL", 19 as usize)
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    contain_fault(frame, 6 as u32, (*frame).rip as usize, 0 as u64)
+    return
+
+pub interrupt(error_code, cpl3_transition) fn user_general_protection(frame: ptr[irq.InterruptFrame64], error_code: u64):
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        console.line("G5 KERNEL #GP FATAL", 19 as usize)
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    contain_fault(frame, 13 as u32, 0 as usize, error_code)
+    return
+
+pub interrupt(error_code, cpl3_transition) fn user_page_fault(frame: ptr[irq.InterruptFrame64], error_code: u64):
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        console.line("G5 KERNEL #PF FATAL", 19 as usize)
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    contain_fault(frame, 14 as u32, native.cpu_read_cr2(), error_code)
+    return
+
+pub interrupt(no_error_code, cpl3_transition) fn syscall(frame: ptr[irq.InterruptFrame64]):
+    let frame_address: usize = frame as usize
+    SYSCALL_COUNT = SYSCALL_COUNT + (1 as usize)
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        console.line("G5 USER SYSCALL CPL FAIL", 24 as usize)
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    let number: u32 = native.volatile_load64((frame_address - (8 as usize)) as ptr[u64]) as u32
+    if number == (0 as u32):
+        EXITED = true
+        EXIT_CODE = native.volatile_load64((frame_address - (32 as usize)) as ptr[u64]) as i32
+        console.write("USER64 EXIT code=", 17 as usize)
+        console.hex32(EXIT_CODE as u32)
+        console.newline()
+        native.cpu_write_cr3(KERNEL_CR3)
+        let reclaimed: usize = OWNED_COUNT
+        LAST_RECLAIMED_FRAMES = reclaimed
+        rollback()
+        console.write("RECLAIM OK frames=", 18 as usize)
+        console.hex32(reclaimed as u32)
+        console.write(" owned=", 7 as usize)
+        console.hex32(frames.owned_count() as u32)
+        console.write(" syscalls=", 10 as usize)
+        console.hex32(SYSCALL_COUNT as u32)
+        console.newline()
+        if redirect_to_kernel(frame):
+            return
+        console.line("G5 RING3 COMPLETE", 17 as usize)
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    if WORKER_TARGET != (0 as usize):
+        if capture_request(frame) == false:
+            save_rax(frame_address, -5)
+            return
+        native.cpu_write_cr3(KERNEL_CR3)
+        if redirect_to_worker(frame):
+            return
+        REQUEST_PENDING = 0 as u32
+        save_rax(frame_address, -5)
+        return
+    if number == (1 as u32):
+        let fd: usize = native.volatile_load64((frame_address - (32 as usize)) as ptr[u64]) as usize
+        let address: usize = native.volatile_load64((frame_address - (24 as usize)) as ptr[u64]) as usize
+        let length: usize = native.volatile_load64((frame_address - (64 as usize)) as ptr[u64]) as usize
+        let result: i32 = write_user(fd, address, length)
+        save_rax(frame_address, result)
+        return
+    save_rax(frame_address, -4)
+    return
+
+pub fn enter() -> int:
+    if READY == false:
+        return 60
+    if ENTRY < USER_TEXT:
+        return 61
+    let index: usize = 0 as usize
+    while index < (15 as usize):
+        RESUME[index] = 0 as u64
+        index = index + (1 as usize)
+    RESUME[15 as usize] = ENTRY as u64
+    RESUME[16 as usize] = irq.user_code_selector() as u64
+    RESUME[17 as usize] = 0x202 as u64
+    RESUME[18 as usize] = USER_STACK_TOP as u64
+    RESUME[19 as usize] = irq.user_data_selector() as u64
+    native.cpu_cli()
+    native.cpu_write_cr3(PML4_FRAME as usize)
+    let mask: usize = (0 as usize) - PAGE
+    if (native.cpu_read_cr3() & mask) != (PML4_FRAME as usize):
+        native.cpu_write_cr3(KERNEL_CR3)
+        return 62
+    native.interrupt_resume((&RESUME[0]) as usize)
+
+pub fn ready() -> bool:
+    return READY
+
+pub fn entry() -> usize:
+    return ENTRY
+
+pub fn cr3() -> usize:
+    return PML4_FRAME as usize
+
+pub fn user_page_count() -> usize:
+    return USER_PAGE_COUNT
+
+pub fn syscall_count() -> usize:
+    return SYSCALL_COUNT
+
+pub fn exited() -> bool:
+    return EXITED
+
+pub fn exit_code() -> i32:
+    return EXIT_CODE
+
+pub fn set_worker_target(address: usize) -> int:
+    if address != (0 as usize):
+        if address < native.kernel_image_start():
+            return 1
+        if address >= native.kernel_image_end():
+            return 1
+    WORKER_TARGET = address
+    return 0
+
+pub fn request_pending() -> bool:
+    return REQUEST_PENDING != (0 as u32)
+
+pub fn request_number() -> u32:
+    return REQUEST_NUMBER
+
+pub fn request_arg0() -> usize:
+    return REQUEST_ARG0
+
+pub fn request_arg1() -> usize:
+    return REQUEST_ARG1
+
+pub fn request_arg2() -> usize:
+    return REQUEST_ARG2
+
+pub fn request_dispatches() -> usize:
+    return REQUEST_DISPATCHES
+
+pub fn complete_request(result: i32) -> int:
+    if REQUEST_PENDING == (0 as u32):
+        return 1
+    if READY == false:
+        return 2
+    if PML4_FRAME == (0 as u64):
+        return 3
+    REQUEST_RESUME[14 as usize] = (result as u32) as u64
+    REQUEST_PENDING = 0 as u32
+    native.cpu_write_cr3(PML4_FRAME as usize)
+    native.interrupt_resume((&REQUEST_RESUME[0]) as usize)
+
+pub fn set_recovery_target(address: usize) -> int:
+    if address != (0 as usize):
+        if address < native.kernel_image_start():
+            return 1
+        if address >= native.kernel_image_end():
+            return 1
+    RECOVERY_TARGET = address
+    return 0
+
+pub fn reset_observations() -> int:
+    FAULT_COUNT = 0 as usize
+    LAST_FAULT_REASON = 0 as u32
+    LAST_FAULT_ADDRESS = 0 as usize
+    LAST_FAULT_ERROR = 0 as u64
+    LAST_RECLAIMED_FRAMES = 0 as usize
+    EXITED = false
+    EXIT_CODE = 0
+    return 0
+
+pub fn fault_count() -> usize:
+    return FAULT_COUNT
+
+pub fn last_fault_reason() -> u32:
+    return LAST_FAULT_REASON
+
+pub fn last_fault_address() -> usize:
+    return LAST_FAULT_ADDRESS
+pub fn last_fault_error() -> u64:
+    return LAST_FAULT_ERROR
+
+pub fn last_reclaimed_frames() -> usize:
+    return LAST_RECLAIMED_FRAMES

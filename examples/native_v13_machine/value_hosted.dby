@@ -1,0 +1,3 @@
+import "value_formation.dby" as values
+
+print(values.check())

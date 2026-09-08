@@ -1,0 +1,39 @@
+import "boot_info.dby" as boot
+import "multiboot2.dby" as mb2
+import "console.dby" as console
+import "acpi.dby" as acpi
+import "pci.dby" as pci
+
+fn fail(status: int) -> int:
+    console.write("PCI TOPOLOGY FAIL status=", 25 as usize)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    console.init()
+    let status: int = mb2.normalize(magic as u64, info)
+    if status != 0:
+        return fail(1)
+    status = acpi.discover()
+    if status != 0:
+        return fail(2)
+    status = pci.enumerate()
+    if status != 0:
+        return fail(status + 100)
+    if pci.bus_count() < (2 as u32):
+        return fail(3)
+    if pci.bridge_count() < (1 as u32):
+        return fail(4)
+    if pci.config_read_count() > (512 as u32):
+        return fail(5)
+    console.write("PCI TOPOLOGY OK buses=", 22 as usize)
+    console.hex32(pci.bus_count())
+    console.write(" bridges=", 9 as usize)
+    console.hex32(pci.bridge_count())
+    console.write(" reads=", 7 as usize)
+    console.hex32(pci.config_read_count())
+    console.write(" devices=", 9 as usize)
+    console.hex32(pci.device_count())
+    console.newline()
+    return 0

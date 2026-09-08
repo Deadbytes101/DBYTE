@@ -1,0 +1,171 @@
+import "boot_info.dby" as boot
+import "physical.dby" as physical
+
+const MULTIBOOT2_BOOT_MAGIC: u32 = 0x36d76289 as u32
+const TAG_END: u32 = 0 as u32
+const TAG_MODULE: u32 = 3 as u32
+const TAG_MEMORY_MAP: u32 = 6 as u32
+const TAG_FRAMEBUFFER: u32 = 8 as u32
+const TAG_ACPI_OLD: u32 = 14 as u32
+const TAG_ACPI_NEW: u32 = 15 as u32
+const MAX_INFO_BYTES: usize = 1048576 as usize
+
+fn read8(address: usize) -> u8:
+    return native.volatile_load8(address as ptr[u8])
+
+fn read32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn read64(address: usize) -> u64:
+    let low: u64 = read32(address) as u64
+    let high: u64 = read32(address + (4 as usize)) as u64
+    return low | (high << (32 as u64))
+
+fn align8(value: usize) -> usize:
+    return ((value + (7 as usize)) / (8 as usize)) * (8 as usize)
+
+fn normalize_memory_map(tag: usize, size: usize) -> int:
+    if size < (16 as usize):
+        return 20
+    let entry_size: usize = read32(tag + (8 as usize)) as usize
+    let entry_version: u32 = read32(tag + (12 as usize))
+    if entry_size < (24 as usize):
+        return 21
+    if entry_version != (0 as u32):
+        return 22
+    let payload: usize = size - (16 as usize)
+    if (payload % entry_size) != (0 as usize):
+        return 23
+    let cursor: usize = tag + (16 as usize)
+    let end: usize = tag + size
+    while cursor < end:
+        let base: u64 = read64(cursor)
+        let length: u64 = read64(cursor + (8 as usize))
+        let kind: u32 = read32(cursor + (16 as usize))
+        if boot.append_memory_region(base, length, kind) == false:
+            return 24
+        cursor = cursor + entry_size
+    return 0
+
+fn normalize_module(tag: usize, size: usize) -> int:
+    if size < (17 as usize):
+        return 50
+    let start: u64 = read32(tag + (8 as usize)) as u64
+    let end: u64 = read32(tag + (12 as usize)) as u64
+    if end <= start:
+        return 51
+    let length: u64 = end - start
+    if physical.contains(start as usize, length as usize) == false:
+        return 52
+    let cursor: usize = tag + (16 as usize)
+    let limit: usize = tag + size
+    let saw_nul: bool = false
+    while cursor < limit:
+        if read8(cursor) == (0 as u8):
+            saw_nul = true
+            cursor = limit
+        else:
+            cursor = cursor + (1 as usize)
+    if saw_nul == false:
+        return 53
+    if boot.append_module(start, length) == false:
+        return 54
+    return 0
+
+fn normalize_framebuffer(tag: usize, size: usize) -> int:
+    if size < (32 as usize):
+        return 30
+    let address: u64 = read64(tag + (8 as usize))
+    let pitch: u32 = read32(tag + (16 as usize))
+    let width: u32 = read32(tag + (20 as usize))
+    let height: u32 = read32(tag + (24 as usize))
+    let bpp: u8 = read8(tag + (28 as usize))
+    let kind: u8 = read8(tag + (29 as usize))
+    boot.set_framebuffer(address, pitch, width, height, bpp, kind)
+    return 0
+
+fn normalize_acpi(tag: usize, size: usize) -> int:
+    if size < (28 as usize):
+        return 40
+    let rsdp_length: usize = size - (8 as usize)
+    if boot.set_acpi_rsdp(tag + (8 as usize), rsdp_length) == false:
+        return 41
+    return 0
+
+pub fn normalize(magic: u64, info: usize) -> int:
+    if (magic as u32) != MULTIBOOT2_BOOT_MAGIC:
+        return 1
+    if info == (0 as usize):
+        return 2
+    if (info & (7 as usize)) != (0 as usize):
+        return 3
+    if physical.contains(info, 8 as usize) == false:
+        return 18
+    let total_size: usize = read32(info) as usize
+    if total_size < (16 as usize):
+        return 4
+    if total_size > MAX_INFO_BYTES:
+        return 5
+    if physical.contains(info, total_size) == false:
+        return 18
+    if read32(info + (4 as usize)) != (0 as u32):
+        return 6
+    let end: usize = info + total_size
+    if end <= info:
+        return 7
+    boot.initialize_multiboot2_bios()
+    let cursor: usize = info + (8 as usize)
+    let saw_end: bool = false
+    let saw_memory: bool = false
+    let saw_acpi_new: bool = false
+    while cursor < end:
+        if (end - cursor) < (8 as usize):
+            return 8
+        let tag_type: u32 = read32(cursor)
+        let tag_size: usize = read32(cursor + (4 as usize)) as usize
+        if tag_size < (8 as usize):
+            return 9
+        if tag_size > (end - cursor):
+            return 10
+        if tag_type == TAG_END:
+            if tag_size != (8 as usize):
+                return 11
+            saw_end = true
+            cursor = end
+        else:
+            let status: int = 0
+            if tag_type == TAG_MODULE:
+                status = normalize_module(cursor, tag_size)
+            if tag_type == TAG_MEMORY_MAP:
+                status = normalize_memory_map(cursor, tag_size)
+                if status == 0:
+                    saw_memory = true
+            if tag_type == TAG_FRAMEBUFFER:
+                status = normalize_framebuffer(cursor, tag_size)
+            if tag_type == TAG_ACPI_NEW:
+                status = normalize_acpi(cursor, tag_size)
+                if status == 0:
+                    saw_acpi_new = true
+            if tag_type == TAG_ACPI_OLD:
+                if saw_acpi_new == false:
+                    status = normalize_acpi(cursor, tag_size)
+            if status != 0:
+                return status
+            let aligned: usize = align8(tag_size)
+            if aligned < tag_size:
+                return 12
+            let next: usize = cursor + aligned
+            if next <= cursor:
+                return 13
+            if next > end:
+                return 14
+            cursor = next
+    if saw_end == false:
+        return 15
+    if saw_memory == false:
+        return 16
+    if boot.publish_memory_regions() == false:
+        return 25
+    if boot.valid() == false:
+        return 17
+    return 0

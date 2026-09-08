@@ -47,20 +47,32 @@ pub enum SystemIntrinsic {
     VolatileStore16,
     VolatileLoad32,
     VolatileStore32,
+    VolatileLoad64,
+    VolatileStore64,
     IoOut8,
     IoIn8,
     IoOut16,
     IoIn16,
+    IoOut32,
+    IoIn32,
     CpuHlt,
     CpuCli,
     CpuSti,
     CpuInt3,
     CpuReadEflags,
+    CpuCpuidEax,
+    CpuCpuidEbx,
+    CpuCpuidEcx,
+    CpuCpuidEdx,
+    CpuRdmsr,
+    CpuWrmsr,
     CpuReadCr0,
     CpuWriteCr0,
     CpuReadCr2,
     CpuReadCr3,
     CpuWriteCr3,
+    CpuReadCr4,
+    CpuWriteCr4,
     CpuInvlpg,
     CpuLgdt,
     CpuLidt,
@@ -83,20 +95,32 @@ impl SystemIntrinsic {
             "volatile_store16" => Some(Self::VolatileStore16),
             "volatile_load32" => Some(Self::VolatileLoad32),
             "volatile_store32" => Some(Self::VolatileStore32),
+            "volatile_load64" => Some(Self::VolatileLoad64),
+            "volatile_store64" => Some(Self::VolatileStore64),
             "io_out8" => Some(Self::IoOut8),
             "io_in8" => Some(Self::IoIn8),
             "io_out16" => Some(Self::IoOut16),
             "io_in16" => Some(Self::IoIn16),
+            "io_out32" => Some(Self::IoOut32),
+            "io_in32" => Some(Self::IoIn32),
             "cpu_hlt" => Some(Self::CpuHlt),
             "cpu_cli" => Some(Self::CpuCli),
             "cpu_sti" => Some(Self::CpuSti),
             "cpu_int3" => Some(Self::CpuInt3),
             "cpu_read_eflags" => Some(Self::CpuReadEflags),
+            "cpu_cpuid_eax" => Some(Self::CpuCpuidEax),
+            "cpu_cpuid_ebx" => Some(Self::CpuCpuidEbx),
+            "cpu_cpuid_ecx" => Some(Self::CpuCpuidEcx),
+            "cpu_cpuid_edx" => Some(Self::CpuCpuidEdx),
+            "cpu_rdmsr" => Some(Self::CpuRdmsr),
+            "cpu_wrmsr" => Some(Self::CpuWrmsr),
             "cpu_read_cr0" => Some(Self::CpuReadCr0),
             "cpu_write_cr0" => Some(Self::CpuWriteCr0),
             "cpu_read_cr2" => Some(Self::CpuReadCr2),
             "cpu_read_cr3" => Some(Self::CpuReadCr3),
             "cpu_write_cr3" => Some(Self::CpuWriteCr3),
+            "cpu_read_cr4" => Some(Self::CpuReadCr4),
+            "cpu_write_cr4" => Some(Self::CpuWriteCr4),
             "cpu_invlpg" => Some(Self::CpuInvlpg),
             "cpu_lgdt" => Some(Self::CpuLgdt),
             "cpu_lidt" => Some(Self::CpuLidt),
@@ -119,20 +143,32 @@ impl SystemIntrinsic {
             Self::VolatileStore16 => "native.volatile_store16",
             Self::VolatileLoad32 => "native.volatile_load32",
             Self::VolatileStore32 => "native.volatile_store32",
+            Self::VolatileLoad64 => "native.volatile_load64",
+            Self::VolatileStore64 => "native.volatile_store64",
             Self::IoOut8 => "native.io_out8",
             Self::IoIn8 => "native.io_in8",
             Self::IoOut16 => "native.io_out16",
             Self::IoIn16 => "native.io_in16",
+            Self::IoOut32 => "native.io_out32",
+            Self::IoIn32 => "native.io_in32",
             Self::CpuHlt => "native.cpu_hlt",
             Self::CpuCli => "native.cpu_cli",
             Self::CpuSti => "native.cpu_sti",
             Self::CpuInt3 => "native.cpu_int3",
             Self::CpuReadEflags => "native.cpu_read_eflags",
+            Self::CpuCpuidEax => "native.cpu_cpuid_eax",
+            Self::CpuCpuidEbx => "native.cpu_cpuid_ebx",
+            Self::CpuCpuidEcx => "native.cpu_cpuid_ecx",
+            Self::CpuCpuidEdx => "native.cpu_cpuid_edx",
+            Self::CpuRdmsr => "native.cpu_rdmsr",
+            Self::CpuWrmsr => "native.cpu_wrmsr",
             Self::CpuReadCr0 => "native.cpu_read_cr0",
             Self::CpuWriteCr0 => "native.cpu_write_cr0",
             Self::CpuReadCr2 => "native.cpu_read_cr2",
             Self::CpuReadCr3 => "native.cpu_read_cr3",
             Self::CpuWriteCr3 => "native.cpu_write_cr3",
+            Self::CpuReadCr4 => "native.cpu_read_cr4",
+            Self::CpuWriteCr4 => "native.cpu_write_cr4",
             Self::CpuInvlpg => "native.cpu_invlpg",
             Self::CpuLgdt => "native.cpu_lgdt",
             Self::CpuLidt => "native.cpu_lidt",
@@ -163,10 +199,17 @@ impl SystemIntrinsic {
                 SystemType::Pointer(Box::new(SystemType::U32)),
                 SystemType::U32,
             ],
+            Self::VolatileLoad64 => vec![SystemType::Pointer(Box::new(SystemType::U64))],
+            Self::VolatileStore64 => vec![
+                SystemType::Pointer(Box::new(SystemType::U64)),
+                SystemType::U64,
+            ],
             Self::IoOut8 => vec![SystemType::U16, SystemType::U8],
             Self::IoIn8 => vec![SystemType::U16],
             Self::IoOut16 => vec![SystemType::U16, SystemType::U16],
             Self::IoIn16 => vec![SystemType::U16],
+            Self::IoOut32 => vec![SystemType::U16, SystemType::U32],
+            Self::IoIn32 => vec![SystemType::U16],
             Self::CpuHlt
             | Self::CpuCli
             | Self::CpuSti
@@ -174,8 +217,14 @@ impl SystemIntrinsic {
             | Self::CpuReadEflags
             | Self::CpuReadCr0
             | Self::CpuReadCr2
-            | Self::CpuReadCr3 => Vec::new(),
-            Self::CpuWriteCr0 => vec![SystemType::U32],
+            | Self::CpuReadCr3
+            | Self::CpuReadCr4 => Vec::new(),
+            Self::CpuCpuidEax | Self::CpuCpuidEbx | Self::CpuCpuidEcx | Self::CpuCpuidEdx => {
+                vec![SystemType::U32, SystemType::U32]
+            }
+            Self::CpuRdmsr => vec![SystemType::U32],
+            Self::CpuWrmsr => vec![SystemType::U32, SystemType::U64],
+            Self::CpuWriteCr0 | Self::CpuWriteCr4 => vec![SystemType::U32],
             Self::CpuWriteCr3 => vec![SystemType::Usize],
             Self::CpuInvlpg => vec![SystemType::Pointer(Box::new(SystemType::U8))],
             Self::CpuLgdt | Self::CpuLidt => vec![SystemType::Usize],
@@ -198,18 +247,23 @@ impl SystemIntrinsic {
         match self {
             Self::VolatileLoad8 | Self::IoIn8 => Some(SystemType::U8),
             Self::VolatileLoad16 | Self::IoIn16 => Some(SystemType::U16),
-            Self::VolatileLoad32 => Some(SystemType::U32),
+            Self::VolatileLoad32 | Self::IoIn32 => Some(SystemType::U32),
+            Self::VolatileLoad64 => Some(SystemType::U64),
             Self::VolatileStore8
             | Self::VolatileStore16
             | Self::VolatileStore32
+            | Self::VolatileStore64
             | Self::IoOut8
             | Self::IoOut16
+            | Self::IoOut32
             | Self::CpuHlt
             | Self::CpuCli
             | Self::CpuSti
             | Self::CpuInt3
+            | Self::CpuWrmsr
             | Self::CpuWriteCr0
             | Self::CpuWriteCr3
+            | Self::CpuWriteCr4
             | Self::CpuInvlpg
             | Self::CpuLgdt
             | Self::CpuLidt => None,
@@ -219,7 +273,14 @@ impl SystemIntrinsic {
             Self::UserSyscall0 | Self::UserSyscall1 | Self::UserSyscall2 | Self::UserSyscall3 => {
                 Some(SystemType::I32)
             }
-            Self::CpuReadEflags | Self::CpuReadCr0 => Some(SystemType::U32),
+            Self::CpuReadEflags
+            | Self::CpuReadCr0
+            | Self::CpuReadCr4
+            | Self::CpuCpuidEax
+            | Self::CpuCpuidEbx
+            | Self::CpuCpuidEcx
+            | Self::CpuCpuidEdx => Some(SystemType::U32),
+            Self::CpuRdmsr => Some(SystemType::U64),
             Self::CpuReadCr2 | Self::CpuReadCr3 => Some(SystemType::Usize),
         }
     }

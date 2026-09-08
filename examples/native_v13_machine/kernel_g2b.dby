@@ -1,0 +1,124 @@
+import "boot_info.dby" as boot
+import "multiboot2.dby" as mb2
+import "console.dby" as console
+import "acpi.dby" as acpi
+import "pci.dby" as pci
+import "cpu.dby" as cpu
+import "interrupts64.dby" as irq
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    console.init()
+    console.line("DBYTE V13 G1", 12 as usize)
+
+    let status: int = mb2.normalize(magic as u64, info)
+    if status != 0:
+        return fail("G1 ERROR MB2 status=", 20 as usize, status)
+
+    console.write("BOOTINFO OK regions=", 20 as usize)
+    console.hex32(boot.memory_region_count() as u32)
+    console.write(" flags=", 7 as usize)
+    console.hex32(boot.flags())
+    console.newline()
+    status = acpi.discover()
+    if status != 0:
+        return fail("G1 ERROR ACPI status=", 21 as usize, status)
+
+    console.write("ACPI OK root=", 13 as usize)
+    console.hex64(acpi.root_address())
+    console.write(" kind=", 6 as usize)
+    console.hex32(acpi.root_kind())
+    console.newline()
+
+    console.write("APIC OK lapic=", 14 as usize)
+    console.hex32(acpi.local_apic_count())
+    console.write(" ioapic=", 8 as usize)
+    console.hex32(acpi.io_apic_count())
+    console.write(" iso=", 5 as usize)
+    console.hex32(acpi.iso_count())
+    console.newline()
+
+    console.write("TIMER OK pm=", 12 as usize)
+    console.hex32(acpi.pm_timer_port())
+    console.newline()
+
+    status = pci.enumerate()
+    if status != 0:
+        return fail("G1 ERROR PCI status=", 20 as usize, status)
+    console.write("PCI OK devices=", 15 as usize)
+    console.hex32(pci.device_count())
+    console.newline()
+    console.line("G1 COMPLETE", 11 as usize)
+    console.line("DBYTE V13 G2 CPU", 16 as usize)
+
+    status = cpu.discover()
+    if status != 0:
+        return fail("G2 ERROR CPU status=", 20 as usize, status)
+
+    console.write("CPU OK max=", 11 as usize)
+    console.hex32(cpu.max_basic())
+    console.write(" ext=", 5 as usize)
+    console.hex32(cpu.max_extended())
+    console.newline()
+
+    console.write("CPU VENDOR ", 11 as usize)
+    console.hex32(cpu.vendor_ebx())
+    console.write(" ", 1 as usize)
+    console.hex32(cpu.vendor_edx())
+    console.write(" ", 1 as usize)
+    console.hex32(cpu.vendor_ecx())
+    console.newline()
+
+    console.write("CPU FEATURES ecx=", 17 as usize)
+    console.hex32(cpu.feature1_ecx())
+    console.write(" edx=", 5 as usize)
+    console.hex32(cpu.feature1_edx())
+    console.write(" ext_edx=", 9 as usize)
+    console.hex32(cpu.extended1_edx())
+    console.newline()
+    console.write("CPU CONTROL cr0=", 16 as usize)
+    console.hex32(cpu.cr0())
+    console.write(" cr3=", 5 as usize)
+    console.hex64(cpu.cr3() as u64)
+    console.write(" cr4=", 5 as usize)
+    console.hex32(cpu.cr4())
+    console.newline()
+
+    console.write("CPU EFER ", 9 as usize)
+    console.hex64(cpu.efer())
+    console.newline()
+    console.line("G2 CPU COMPLETE", 15 as usize)
+    console.line("DBYTE V13 G2B IRQ", 17 as usize)
+
+    status = irq.install()
+    if status != 0:
+        return fail("G2B ERROR IRQ status=", 21 as usize, status)
+
+    console.write("TSS OK base=", 12 as usize)
+    console.hex64(irq.tss_address() as u64)
+    console.write(" ist1=", 6 as usize)
+    console.hex64(irq.ist1_top() as u64)
+    console.newline()
+    console.write("IDT OK base=", 12 as usize)
+    console.hex64(irq.idt_address() as u64)
+    console.newline()
+
+    irq.trigger_breakpoint()
+    if irq.breakpoint_count() != (1 as u32):
+        return fail("G2B ERROR INT3 count=", 21 as usize, irq.breakpoint_count() as int)
+    if irq.frame_used_ist1() == false:
+        return fail("G2B ERROR IST1 status=", 22 as usize, 1)
+
+    console.write("INT3 OK count=", 14 as usize)
+    console.hex32(irq.breakpoint_count())
+    console.newline()
+    console.write("IST1 FRAME ", 11 as usize)
+    console.hex64(irq.last_frame() as u64)
+    console.newline()
+    console.line("G2B COMPLETE", 12 as usize)
+    return 0

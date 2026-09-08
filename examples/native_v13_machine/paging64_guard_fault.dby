@@ -1,0 +1,18 @@
+import "console.dby" as console
+import "interrupts64.dby" as irq
+import "paging64.dby" as paging
+
+pub fn kernel_main() -> int:
+    console.init()
+    if irq.install() != 0:
+        console.line("PAGING64 IRQ FAIL", 17 as usize)
+        return 1
+    if paging.initialize() != 0:
+        console.line("PAGING64 INIT FAIL", 18 as usize)
+        return 2
+    console.line("PAGING64 GUARD ARM", 18 as usize)
+    let value: u8 = native.volatile_load8(paging.arena_start() as ptr[u8])
+    console.hex32(value as u32)
+    console.newline()
+    console.line("PAGING64 GUARD MISSED", 21 as usize)
+    return 3

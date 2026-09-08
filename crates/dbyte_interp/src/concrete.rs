@@ -26,6 +26,8 @@ pub enum ConcreteValue {
     Unit,
     Integer(i64),
     Float(f64),
+    F32Bits(u32),
+    F64Bits(u64),
     Bool(bool),
     String(Vec<u8>),
     Bytes(Vec<u8>),
@@ -283,6 +285,8 @@ fn clone_value(value: &ConcreteValue, slots: &mut BTreeMap<usize, Slot>) -> Conc
         ConcreteValue::Unit => ConcreteValue::Unit,
         ConcreteValue::Integer(value) => ConcreteValue::Integer(*value),
         ConcreteValue::Float(value) => ConcreteValue::Float(*value),
+        ConcreteValue::F32Bits(value) => ConcreteValue::F32Bits(*value),
+        ConcreteValue::F64Bits(value) => ConcreteValue::F64Bits(*value),
         ConcreteValue::Bool(value) => ConcreteValue::Bool(*value),
         ConcreteValue::String(value) => ConcreteValue::String(value.clone()),
         ConcreteValue::Bytes(value) => ConcreteValue::Bytes(value.clone()),
@@ -734,6 +738,18 @@ impl Executor<'_> {
                 cast(
                     value,
                     self.project.executable.semantic.type_of(*target),
+                    expression.span,
+                )
+            }
+            HirExprKind::Bitcast { value, target } => {
+                let source_ty = self.project.executable.semantic.type_of(value.ty);
+                let target_ty = self.project.executable.semantic.type_of(*target);
+                let value = self.execute_hir_expr(value)?;
+                bitcast(
+                    value,
+                    source_ty,
+                    target_ty,
+                    self.project.executable.semantic.layout,
                     expression.span,
                 )
             }
@@ -1268,6 +1284,8 @@ impl Executor<'_> {
                 };
                 Ok(ConcreteValue::Integer(value))
             }
+            CanonicalType::F32 => Ok(ConcreteValue::F32Bits(raw as u32)),
+            CanonicalType::F64 => Ok(ConcreteValue::F64Bits(raw)),
             CanonicalType::Bool => Ok(ConcreteValue::Bool(raw != 0)),
             CanonicalType::Pointer { pointee, .. } => Ok(if raw == 0 {
                 ConcreteValue::Null
@@ -1364,6 +1382,8 @@ impl Executor<'_> {
             .size as usize;
         let raw = match value {
             ConcreteValue::Integer(value) => value as u64,
+            ConcreteValue::F32Bits(value) => u64::from(value),
+            ConcreteValue::F64Bits(value) => value,
             ConcreteValue::Bool(value) => u64::from(value),
             ConcreteValue::MemoryPointer { address, .. } => address,
             ConcreteValue::Null => 0,
@@ -1632,6 +1652,8 @@ impl ConcreteValue {
             Self::Unit => String::new(),
             Self::Integer(value) => value.to_string(),
             Self::Float(value) => value.to_string(),
+            Self::F32Bits(value) => format!("<f32 bits=0x{value:08x}>"),
+            Self::F64Bits(value) => format!("<f64 bits=0x{value:016x}>"),
             Self::Bool(value) => value.to_string(),
             Self::String(value) => String::from_utf8_lossy(value).into_owned(),
             Self::Bytes(value) => hex::encode(value),
@@ -1763,6 +1785,20 @@ fn binary(
 ) -> Result<ConcreteValue, RuntimeError> {
     use BinOp::*;
     match (left, right) {
+        (ConcreteValue::MemoryPointer { address, pointee }, ConcreteValue::Integer(offset))
+            if matches!(op, Add | Sub) =>
+        {
+            // Concrete HIR has already scaled the element count to bytes.
+            let bits = if *op == Add {
+                address.wrapping_add(offset as u64)
+            } else {
+                address.wrapping_sub(offset as u64)
+            };
+            Ok(ConcreteValue::MemoryPointer {
+                address: IntegerValue::from_bits(bits, IntegerType::Usize, layout).bits(),
+                pointee,
+            })
+        }
         (ConcreteValue::MemoryPointer { address, .. }, ConcreteValue::Null)
         | (ConcreteValue::Null, ConcreteValue::MemoryPointer { address, .. })
             if matches!(op, EqEq | NotEq) =>
@@ -1959,6 +1995,39 @@ fn cast(
     }
 }
 
+fn bitcast(
+    value: ConcreteValue,
+    source: &CanonicalType,
+    target: &CanonicalType,
+    layout: dbyte_hir::TargetDataLayout,
+    span: Span,
+) -> Result<ConcreteValue, RuntimeError> {
+    let bits = match (value, source) {
+        (ConcreteValue::Integer(value), CanonicalType::Integer(kind)) => {
+            IntegerValue::from_bits(value as u64, *kind, layout).bits()
+        }
+        (ConcreteValue::F32Bits(value), CanonicalType::F32) => u64::from(value),
+        (ConcreteValue::F64Bits(value), CanonicalType::F64) => value,
+        _ => {
+            return Err(runtime_error(
+                "invalid exact-bit source representation",
+                span,
+            ))
+        }
+    };
+    match target {
+        CanonicalType::Integer(kind) => Ok(ConcreteValue::Integer(
+            IntegerValue::from_bits(bits, *kind, layout).bits() as i64,
+        )),
+        CanonicalType::F32 => Ok(ConcreteValue::F32Bits(bits as u32)),
+        CanonicalType::F64 => Ok(ConcreteValue::F64Bits(bits)),
+        _ => Err(runtime_error(
+            "invalid exact-bit target representation",
+            span,
+        )),
+    }
+}
+
 fn runtime_error(message: &str, span: Span) -> RuntimeError {
     RuntimeError {
         msg: message.into(),
@@ -2096,6 +2165,13 @@ mod tests {
     }
 
     #[test]
+    fn hosted_exact_bitcast_preserves_explicit_float_payload_bits() {
+        let source = "let qnan32: u32 = 2143289345 as u32\nlet value32: f32 = qnan32 as! f32\nlet round32: u32 = value32 as! u32\nprint(round32 == qnan32)\nlet qnan64: u64 = ((1 as u64) << 63) | ((2047 as u64) << 52) | ((1 as u64) << 51) | 74565 as u64\nlet value64: f64 = qnan64 as! f64\nlet round64: u64 = value64 as! u64\nprint(round64 == qnan64)\n";
+        let execution = execute_concrete_project(&concrete(source)).unwrap();
+        assert_eq!(execution.output, "true\ntrue\n");
+    }
+
+    #[test]
     fn concrete_reassignment_runs_old_cleanup_after_rhs() {
         let source = "struct Resource:\n    value: int\n\ndrop fn destroy_resource(value: borrow mut Resource):\n    print((*value).value)\n\nlet resource = Resource(value = 1)\nresource = Resource(value = 2)\ndrop(resource)\n";
         let execution = execute_concrete_project(&concrete(source)).unwrap();
@@ -2129,6 +2205,13 @@ mod tests {
         let source = "struct Pair[A, B]:\n    first: A\n    second: B\n\nfn id[T](value: T) -> T:\n    return value\n\nfn attempt(input: Result[int, int]) -> Result[int, int]:\n    defer []:\n        print(\"CLEAN\")\n    let value = input?\n    return Result[int, int].Ok(value)\n\nlet pair = Pair[int, int](first = id[int](40), second = 2)\nprint(pair.first + pair.second)\nlet factor: int = 2\nlet add = fn [borrow factor](value: int) -> int:\n    return value + factor\nprint(add(40))\nlet result = attempt(Result[int, int].Err(7))\nmatch result:\n    case Result.Ok(value):\n        print(value)\n    case Result.Err(error):\n        print(error)\n";
         let execution = execute_concrete_project(&concrete(source)).unwrap();
         assert_eq!(execution.output, "42\n42\nCLEAN\n7\n");
+    }
+
+    #[test]
+    fn concrete_raw_pointer_arithmetic_scales_by_pointee_size() {
+        let source = "let base: ptr[u32] = (4096 as usize) as ptr[u32]\nlet advanced: ptr[u32] = base + (3 as usize)\nprint(advanced as usize)\nlet backed: ptr[u32] = advanced - (2 as usize)\nprint(backed as usize)\n";
+        let execution = execute_concrete_project(&concrete(source)).unwrap();
+        assert_eq!(execution.output, "4108\n4100\n");
     }
 
     #[test]

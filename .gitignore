@@ -1,5 +1,6 @@
 target/
 /tmp/
+/scripts/__pycache__/
 /personal_tools/personaltools/
 
 release-v*/

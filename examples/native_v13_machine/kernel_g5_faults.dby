@@ -1,0 +1,73 @@
+import "machine_g3.dby" as machine
+import "boot_info.dby" as boot
+import "user_space64.dby" as user
+import "console.dby" as console
+
+static mut PHASE: u32
+
+fn halt_failure(label: str, length: usize, status: int) -> int:
+    console.write(label, length)
+    console.hex32(status as u32)
+    console.newline()
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn start_user(index: usize) -> int:
+    let status: int = user.initialize()
+    if status != 0:
+        return status
+    if user.set_recovery_target(task_address(recover)) != 0:
+        return 70
+    status = user.load_module(index)
+    if status != 0:
+        return status
+    status = user.enter()
+    return 90 + status
+pub fn recover() -> int:
+    native.cpu_cli()
+    if PHASE == (1 as u32):
+        if user.fault_count() != (1 as usize):
+            return halt_failure("G5FAULT COUNT=", 14 as usize, user.fault_count() as int)
+        if user.last_fault_reason() != (14 as u32):
+            return halt_failure("G5FAULT REASON=", 15 as usize, user.last_fault_reason() as int)
+        if user.last_fault_address() != (0xc1000000 as usize):
+            return halt_failure("G5FAULT ADDR=", 13 as usize, user.last_fault_address() as int)
+        if (user.last_fault_error() & (7 as u64)) != (7 as u64):
+            return halt_failure("G5FAULT ERROR=", 14 as usize, user.last_fault_error() as int)
+        if user.last_reclaimed_frames() == (0 as usize):
+            return halt_failure("G5FAULT RECLAIM=", 16 as usize, 0)
+        console.write("USER #PF CONTAINED addr=", 24 as usize)
+        console.hex64(user.last_fault_address() as u64)
+        console.write(" error=", 7 as usize)
+        console.hex64(user.last_fault_error())
+        console.newline()
+        PHASE = 2 as u32
+        let status: int = start_user(1 as usize)
+        return halt_failure("G5FAULT SURVIVOR START=", 23 as usize, status)
+    if PHASE == (2 as u32):
+        if user.exited() == false:
+            return halt_failure("G5FAULT EXITED=", 15 as usize, 0)
+        if user.exit_code() != 0:
+            return halt_failure("G5FAULT EXIT CODE=", 18 as usize, user.exit_code())
+        if user.fault_count() != (1 as usize):
+            return halt_failure("G5FAULT SURVIVE COUNT=", 22 as usize, user.fault_count() as int)
+        console.line("SURVIVOR USER EXITED", 20 as usize)
+        console.line("G5 USER FAULT CONTAINMENT COMPLETE", 34 as usize)
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    return halt_failure("G5FAULT PHASE=", 14 as usize, PHASE as int)
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = machine.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G5 USER FAULT", 23 as usize)
+    if boot.module_count() != (2 as usize):
+        return halt_failure("G5FAULT MODULES=", 16 as usize, boot.module_count() as int)
+    user.reset_observations()
+    PHASE = 1 as u32
+    status = start_user(0 as usize)
+    return halt_failure("G5FAULT FIRST START=", 20 as usize, status)

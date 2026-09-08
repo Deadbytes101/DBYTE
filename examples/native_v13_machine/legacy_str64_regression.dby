@@ -1,0 +1,9 @@
+static mut BUFFER: array[u8, 16]
+
+pub fn roundtrip() -> usize:
+    BUFFER[0 as usize] = 0x41 as u8
+    BUFFER[1 as usize] = 0 as u8
+    let address: usize = (&BUFFER[0]) as usize
+    let text: str = address as str
+    let recovered: usize = text as usize
+    return recovered

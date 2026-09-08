@@ -1,0 +1,407 @@
+import "physical.dby" as physical
+
+pub struct MemoryRegion:
+    base: u64
+    length: u64
+    kind: u32
+    reserved: u32
+
+pub struct FramebufferInfo:
+    address: u64
+    pitch: u32
+    width: u32
+    height: u32
+    bpp: u8
+    kind: u8
+    reserved0: u16
+
+pub struct BootModule:
+    address: u64
+    length: u64
+
+pub struct BootInfo:
+    magic: u32
+    version: u32
+    frontend: u32
+    flags: u32
+    memory_region_count: usize
+    memory_regions: array[MemoryRegion, 128]
+    acpi_rsdp_length: u32
+    acpi_rsdp: array[u8, 64]
+    framebuffer: FramebufferInfo
+    module_count: usize
+    modules: array[BootModule, 8]
+
+const BOOT_INFO_MAGIC: u32 = 0x44424931 as u32
+const BOOT_INFO_VERSION: u32 = 1 as u32
+const FRONTEND_MULTIBOOT2_BIOS: u32 = 1 as u32
+const FLAG_MEMORY_MAP: u32 = 1 as u32
+const FLAG_ACPI: u32 = 2 as u32
+const FLAG_FRAMEBUFFER: u32 = 4 as u32
+const FLAG_MODULES: u32 = 8 as u32
+const KIND_AVAILABLE: u32 = 1 as u32
+const KIND_RESERVED: u32 = 2 as u32
+const MAX_MEMORY_REGIONS: usize = 128 as usize
+const MAX_MEMORY_ENDPOINTS: usize = 274 as usize
+const MAX_MODULES: usize = 8 as usize
+const MAX_MODULE_BYTES: u64 = 16777216 as u64
+const MAX_RSDP_BYTES: usize = 64 as usize
+
+fn kernel_image_start() -> u64:
+    return native.kernel_image_start() as u64
+
+fn kernel_image_end() -> u64:
+    return native.kernel_image_end() as u64
+
+static mut INFO: BootInfo
+static mut STAGED_REGIONS: array[MemoryRegion, 128]
+static mut STAGED_COUNT: usize
+static mut ENDPOINTS: array[u64, 274]
+static mut ENDPOINT_COUNT: usize
+static mut NORMALIZED_REGIONS: array[MemoryRegion, 128]
+static mut NORMALIZED_COUNT: usize
+
+pub fn initialize_multiboot2_bios() -> int:
+    INFO.magic = BOOT_INFO_MAGIC
+    INFO.version = BOOT_INFO_VERSION
+    INFO.frontend = FRONTEND_MULTIBOOT2_BIOS
+    INFO.flags = 0 as u32
+    INFO.memory_region_count = 0 as usize
+    INFO.acpi_rsdp_length = 0 as u32
+    STAGED_COUNT = 0 as usize
+    ENDPOINT_COUNT = 0 as usize
+    NORMALIZED_COUNT = 0 as usize
+    INFO.framebuffer.address = 0 as u64
+    INFO.framebuffer.pitch = 0 as u32
+    INFO.framebuffer.width = 0 as u32
+    INFO.framebuffer.height = 0 as u32
+    INFO.framebuffer.bpp = 0 as u8
+    INFO.framebuffer.kind = 0 as u8
+    INFO.framebuffer.reserved0 = 0 as u16
+    INFO.module_count = 0 as usize
+    let module_index: usize = 0 as usize
+    while module_index < MAX_MODULES:
+        INFO.modules[module_index].address = 0 as u64
+        INFO.modules[module_index].length = 0 as u64
+        module_index = module_index + (1 as usize)
+    return 0
+
+pub fn append_memory_region(base: u64, length: u64, kind: u32) -> bool:
+    if length == (0 as u64):
+        return false
+    let maximum: u64 = (0 as u64) - (1 as u64)
+    if length > (maximum - base):
+        return false
+    if STAGED_COUNT >= MAX_MEMORY_REGIONS:
+        return false
+    let index: usize = STAGED_COUNT
+    STAGED_REGIONS[index].base = base
+    STAGED_REGIONS[index].length = length
+    STAGED_REGIONS[index].kind = kind
+    STAGED_REGIONS[index].reserved = 0 as u32
+    STAGED_COUNT = index + (1 as usize)
+    return true
+
+pub fn append_module(address: u64, length: u64) -> bool:
+    if address == (0 as u64):
+        return false
+    if length == (0 as u64):
+        return false
+    if length > MAX_MODULE_BYTES:
+        return false
+    let maximum: u64 = (0 as u64) - (1 as u64)
+    if length > (maximum - address):
+        return false
+    if address >= ((1 as u64) << (32 as u64)):
+        return false
+    if (address + length) > ((1 as u64) << (32 as u64)):
+        return false
+    let image_start: u64 = kernel_image_start()
+    let image_end: u64 = kernel_image_end()
+    if image_end > image_start:
+        if address < image_end:
+            if (address + length) > image_start:
+                return false
+    if INFO.module_count >= MAX_MODULES:
+        return false
+    let index: usize = 0 as usize
+    while index < INFO.module_count:
+        let existing_start: u64 = INFO.modules[index].address
+        let existing_end: u64 = existing_start + INFO.modules[index].length
+        if address < existing_end:
+            if (address + length) > existing_start:
+                return false
+        index = index + (1 as usize)
+    let slot: usize = INFO.module_count
+    INFO.modules[slot].address = address
+    INFO.modules[slot].length = length
+    INFO.module_count = slot + (1 as usize)
+    INFO.flags = INFO.flags | FLAG_MODULES
+    return true
+
+fn module_in_staged_memory(index: usize) -> bool:
+    if index >= INFO.module_count:
+        return false
+    let module_start: u64 = INFO.modules[index].address
+    let module_end: u64 = module_start + INFO.modules[index].length
+    let region: usize = 0 as usize
+    while region < STAGED_COUNT:
+        let region_start: u64 = STAGED_REGIONS[region].base
+        let region_end: u64 = region_start + STAGED_REGIONS[region].length
+        if region_start <= module_start:
+            if region_end >= module_end:
+                return true
+        region = region + (1 as usize)
+    return false
+
+fn push_endpoint(value: u64) -> bool:
+    if ENDPOINT_COUNT >= MAX_MEMORY_ENDPOINTS:
+        return false
+    ENDPOINTS[ENDPOINT_COUNT] = value
+    ENDPOINT_COUNT = ENDPOINT_COUNT + (1 as usize)
+    return true
+
+fn sort_endpoints() -> int:
+    let index: usize = 1 as usize
+    while index < ENDPOINT_COUNT:
+        let value: u64 = ENDPOINTS[index]
+        let cursor: usize = index
+        while cursor > (0 as usize):
+            let previous: usize = cursor - (1 as usize)
+            if ENDPOINTS[previous] <= value:
+                break
+            ENDPOINTS[cursor] = ENDPOINTS[previous]
+            cursor = previous
+        ENDPOINTS[cursor] = value
+        index = index + (1 as usize)
+    return 0
+
+fn interval_kind(base: u64, end: u64) -> u32:
+    let found: bool = false
+    let has_non_available: bool = false
+    let selected_non_available: u32 = 0 as u32
+    let mixed_non_available: bool = false
+    let index: usize = 0 as usize
+    while index < STAGED_COUNT:
+        let region_base: u64 = STAGED_REGIONS[index].base
+        let region_end: u64 = region_base + STAGED_REGIONS[index].length
+        if region_base <= base:
+            if region_end >= end:
+                found = true
+                let kind: u32 = STAGED_REGIONS[index].kind
+                if kind != KIND_AVAILABLE:
+                    let safe_kind: u32 = kind
+                    if safe_kind == (0 as u32):
+                        safe_kind = KIND_RESERVED
+                    if has_non_available == false:
+                        selected_non_available = safe_kind
+                        has_non_available = true
+                    else:
+                        if selected_non_available != safe_kind:
+                            mixed_non_available = true
+        index = index + (1 as usize)
+    if found == false:
+        return 0 as u32
+    let image_start: u64 = kernel_image_start()
+    let image_end: u64 = kernel_image_end()
+    if image_end > image_start:
+        if base < image_end:
+            if end > image_start:
+                return KIND_RESERVED
+    let module_index: usize = 0 as usize
+    while module_index < INFO.module_count:
+        let module_start: u64 = INFO.modules[module_index].address
+        let module_end: u64 = module_start + INFO.modules[module_index].length
+        if base < module_end:
+            if end > module_start:
+                return KIND_RESERVED
+        module_index = module_index + (1 as usize)
+    if has_non_available:
+        if mixed_non_available:
+            return KIND_RESERVED
+        return selected_non_available
+    return KIND_AVAILABLE
+
+fn append_normalized(base: u64, end: u64, kind: u32) -> bool:
+    if end <= base:
+        return true
+    if NORMALIZED_COUNT > (0 as usize):
+        let previous: usize = NORMALIZED_COUNT - (1 as usize)
+        let previous_end: u64 = NORMALIZED_REGIONS[previous].base + NORMALIZED_REGIONS[previous].length
+        if NORMALIZED_REGIONS[previous].kind == kind:
+            if previous_end == base:
+                NORMALIZED_REGIONS[previous].length = end - NORMALIZED_REGIONS[previous].base
+                return true
+    if NORMALIZED_COUNT >= MAX_MEMORY_REGIONS:
+        return false
+    let index: usize = NORMALIZED_COUNT
+    NORMALIZED_REGIONS[index].base = base
+    NORMALIZED_REGIONS[index].length = end - base
+    NORMALIZED_REGIONS[index].kind = kind
+    NORMALIZED_REGIONS[index].reserved = 0 as u32
+    NORMALIZED_COUNT = index + (1 as usize)
+    return true
+
+pub fn publish_memory_regions() -> bool:
+    INFO.memory_region_count = 0 as usize
+    INFO.flags = INFO.flags & (FLAG_ACPI | FLAG_FRAMEBUFFER | FLAG_MODULES)
+    ENDPOINT_COUNT = 0 as usize
+    NORMALIZED_COUNT = 0 as usize
+    if STAGED_COUNT == (0 as usize):
+        return false
+    let index: usize = 0 as usize
+    while index < STAGED_COUNT:
+        let base: u64 = STAGED_REGIONS[index].base
+        let end: u64 = base + STAGED_REGIONS[index].length
+        if push_endpoint(base) == false:
+            return false
+        if push_endpoint(end) == false:
+            return false
+        index = index + (1 as usize)
+    let image_start: u64 = kernel_image_start()
+    let image_end: u64 = kernel_image_end()
+    if image_end <= image_start:
+        return false
+    if push_endpoint(image_start) == false:
+        return false
+    if push_endpoint(image_end) == false:
+        return false
+    let module_index: usize = 0 as usize
+    while module_index < INFO.module_count:
+        if module_in_staged_memory(module_index) == false:
+            return false
+        let module_start: u64 = INFO.modules[module_index].address
+        let module_end: u64 = module_start + INFO.modules[module_index].length
+        if push_endpoint(module_start) == false:
+            return false
+        if push_endpoint(module_end) == false:
+            return false
+        module_index = module_index + (1 as usize)
+    sort_endpoints()
+    let cursor: usize = 0 as usize
+    while (cursor + (1 as usize)) < ENDPOINT_COUNT:
+        let base: u64 = ENDPOINTS[cursor]
+        let end: u64 = ENDPOINTS[cursor + (1 as usize)]
+        if end > base:
+            let kind: u32 = interval_kind(base, end)
+            if kind != (0 as u32):
+                if append_normalized(base, end, kind) == false:
+                    NORMALIZED_COUNT = 0 as usize
+                    return false
+        cursor = cursor + (1 as usize)
+    if NORMALIZED_COUNT == (0 as usize):
+        return false
+    let output: usize = 0 as usize
+    while output < NORMALIZED_COUNT:
+        INFO.memory_regions[output].base = NORMALIZED_REGIONS[output].base
+        INFO.memory_regions[output].length = NORMALIZED_REGIONS[output].length
+        INFO.memory_regions[output].kind = NORMALIZED_REGIONS[output].kind
+        INFO.memory_regions[output].reserved = 0 as u32
+        output = output + (1 as usize)
+    INFO.memory_region_count = NORMALIZED_COUNT
+    INFO.flags = INFO.flags | FLAG_MEMORY_MAP
+    return true
+
+pub fn set_acpi_rsdp(source: usize, length: usize) -> bool:
+    if source == (0 as usize):
+        return false
+    if length < (20 as usize):
+        return false
+    if length > MAX_RSDP_BYTES:
+        return false
+    if physical.contains(source, length) == false:
+        return false
+    let index: usize = 0 as usize
+    while index < length:
+        INFO.acpi_rsdp[index] = native.volatile_load8((source + index) as ptr[u8])
+        index = index + (1 as usize)
+    INFO.acpi_rsdp_length = length as u32
+    INFO.flags = INFO.flags | FLAG_ACPI
+    return true
+
+pub fn set_framebuffer(address: u64, pitch: u32, width: u32, height: u32, bpp: u8, kind: u8) -> int:
+    INFO.framebuffer.address = address
+    INFO.framebuffer.pitch = pitch
+    INFO.framebuffer.width = width
+    INFO.framebuffer.height = height
+    INFO.framebuffer.bpp = bpp
+    INFO.framebuffer.kind = kind
+    INFO.flags = INFO.flags | FLAG_FRAMEBUFFER
+    return 0
+
+pub fn valid() -> bool:
+    if INFO.magic != BOOT_INFO_MAGIC:
+        return false
+    if INFO.version != BOOT_INFO_VERSION:
+        return false
+    if INFO.frontend != FRONTEND_MULTIBOOT2_BIOS:
+        return false
+    if (INFO.flags & FLAG_MEMORY_MAP) == (0 as u32):
+        return false
+    if INFO.memory_region_count == (0 as usize):
+        return false
+    if INFO.memory_region_count > MAX_MEMORY_REGIONS:
+        return false
+    if INFO.module_count > MAX_MODULES:
+        return false
+    if INFO.module_count == (0 as usize):
+        if (INFO.flags & FLAG_MODULES) != (0 as u32):
+            return false
+    else:
+        if (INFO.flags & FLAG_MODULES) == (0 as u32):
+            return false
+    return true
+
+pub fn info() -> ptr[BootInfo]:
+    return &INFO
+
+pub fn flags() -> u32:
+    return INFO.flags
+
+pub fn memory_region_count() -> usize:
+    return INFO.memory_region_count
+
+pub fn memory_region_base(index: usize) -> u64:
+    return INFO.memory_regions[index].base
+
+pub fn memory_region_length(index: usize) -> u64:
+    return INFO.memory_regions[index].length
+
+pub fn memory_region_kind(index: usize) -> u32:
+    return INFO.memory_regions[index].kind
+
+pub fn module_count() -> usize:
+    return INFO.module_count
+
+pub fn module_address(index: usize) -> u64:
+    if index >= INFO.module_count:
+        return 0 as u64
+    return INFO.modules[index].address
+
+pub fn module_length(index: usize) -> u64:
+    if index >= INFO.module_count:
+        return 0 as u64
+    return INFO.modules[index].length
+
+pub fn has_modules() -> bool:
+    return (INFO.flags & FLAG_MODULES) != (0 as u32)
+
+pub fn acpi_rsdp_length() -> usize:
+    return INFO.acpi_rsdp_length as usize
+pub fn acpi_rsdp_byte(index: usize) -> u8:
+    return INFO.acpi_rsdp[index]
+
+pub fn has_acpi() -> bool:
+    return (INFO.flags & FLAG_ACPI) != (0 as u32)
+
+pub fn has_framebuffer() -> bool:
+    return (INFO.flags & FLAG_FRAMEBUFFER) != (0 as u32)
+
+pub fn framebuffer_address() -> u64:
+    return INFO.framebuffer.address
+
+pub fn framebuffer_width() -> u32:
+    return INFO.framebuffer.width
+
+pub fn framebuffer_height() -> u32:
+    return INFO.framebuffer.height

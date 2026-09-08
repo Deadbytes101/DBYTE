@@ -1,0 +1,10 @@
+import "dbfs_layout.dby" as layout
+
+fn byte_for(block: u32) -> usize:
+    return ((block & (4095 as u32)) >> (3 as u32)) as usize
+
+fn mask_for(block: u32) -> u8:
+    return ((1 as u8) << ((block & (7 as u32)) as u8)) as u8
+
+pub fn bitmap_test(buffer: ptr[u8], block: u32) -> bool:
+    return (layout.get8(buffer, byte_for(block)) & mask_for(block)) != (0 as u8)

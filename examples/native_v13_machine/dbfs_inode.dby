@@ -1,0 +1,104 @@
+import "dbfs_layout.dby" as layout
+
+const FREE: u32 = 0 as u32
+const REGULAR_FILE: u32 = 1 as u32
+const DIRECTORY: u32 = 2 as u32
+const UNUSED_BLOCK: u32 = 0xffffffff as u32
+
+pub fn inode_regular_type() -> u32:
+    return REGULAR_FILE
+
+pub fn inode_directory_type() -> u32:
+    return DIRECTORY
+
+pub fn inode_record_offset(number: u32) -> usize:
+    return ((number & (7 as u32)) * (64 as u32)) as usize
+
+pub fn inode_record_sector(number: u32) -> u32:
+    return number >> (3 as u32)
+
+pub fn inode_is_free(buffer: ptr[u8], offset: usize) -> bool:
+    return layout.get32(buffer, offset) == FREE
+
+pub fn inode_allocated(buffer: ptr[u8], offset: usize) -> bool:
+    return layout.get32(buffer, offset) == (1 as u32)
+
+pub fn inode_kind(buffer: ptr[u8], offset: usize) -> u32:
+    return layout.get32(buffer, offset + (4 as usize))
+
+pub fn inode_size(buffer: ptr[u8], offset: usize) -> u32:
+    return layout.get32(buffer, offset + (8 as usize))
+
+pub fn inode_block_count(buffer: ptr[u8], offset: usize) -> u32:
+    return layout.get32(buffer, offset + (12 as usize))
+
+pub fn inode_block(buffer: ptr[u8], offset: usize, index: u32) -> u32:
+    return layout.get32(buffer, offset + (16 as usize) + ((index as usize) * (4 as usize)))
+
+pub fn inode_clear(buffer: ptr[u8], offset: usize) -> int:
+    layout.zero(((buffer as usize) + offset) as ptr[u8], 64 as usize)
+    return 0
+
+pub fn inode_encode(buffer: ptr[u8], offset: usize, kind_value: u32, size_value: u32, count: u32) -> int:
+    inode_clear(buffer, offset)
+    layout.put32(buffer, offset, 1 as u32)
+    layout.put32(buffer, offset + (4 as usize), kind_value)
+    layout.put32(buffer, offset + (8 as usize), size_value)
+    layout.put32(buffer, offset + (12 as usize), count)
+    let index: u32 = 0 as u32
+    while index < (8 as u32):
+        layout.put32(buffer, offset + (16 as usize) + ((index as usize) * (4 as usize)), UNUSED_BLOCK)
+        index = index + (1 as u32)
+    return 0
+
+pub fn inode_set_block(buffer: ptr[u8], offset: usize, index: u32, block_value: u32) -> bool:
+    if index >= (8 as u32):
+        return false
+    layout.put32(buffer, offset + (16 as usize) + ((index as usize) * (4 as usize)), block_value)
+    return true
+
+pub fn inode_set_size_count(buffer: ptr[u8], offset: usize, size_value: u32, count: u32) -> int:
+    layout.put32(buffer, offset + (8 as usize), size_value)
+    layout.put32(buffer, offset + (12 as usize), count)
+    return 0
+
+pub fn inode_validate(buffer: ptr[u8], offset: usize, data_blocks: u32, root: bool) -> bool:
+    if inode_allocated(buffer, offset) == false:
+        let index: usize = 0 as usize
+        while index < (64 as usize):
+            if layout.get8(buffer, offset + index) != (0 as u8):
+                return false
+            index = index + (1 as usize)
+        return true
+    let kind_value: u32 = inode_kind(buffer, offset)
+    let size_value: u32 = inode_size(buffer, offset)
+    let count: u32 = inode_block_count(buffer, offset)
+    if kind_value == DIRECTORY:
+        if size_value != (4096 as u32):
+            return false
+        if count != (8 as u32):
+            return false
+    else:
+        if kind_value != REGULAR_FILE:
+            return false
+        if size_value > (4096 as u32):
+            return false
+        let expected: u32 = (size_value + (511 as u32)) >> (9 as u32)
+        if count != expected:
+            return false
+    let index: u32 = 0 as u32
+    while index < (8 as u32):
+        let reference: u32 = inode_block(buffer, offset, index)
+        if index < count:
+            if reference >= data_blocks:
+                return false
+        else:
+            if reference != UNUSED_BLOCK:
+                return false
+        index = index + (1 as u32)
+    let reserved: usize = 48 as usize
+    while reserved < (64 as usize):
+        if layout.get8(buffer, offset + reserved) != (0 as u8):
+            return false
+        reserved = reserved + (1 as usize)
+    return true

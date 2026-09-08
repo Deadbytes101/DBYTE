@@ -1,0 +1,17 @@
+{
+  "cpu": {"vendor_id":"AuthenticAMD","model name":"fixture CPU","cpu family":"16","model":"4","stepping":"3","flags":"sse2 lm msr"},
+  "board": {"board_vendor":"fixture","board_name":"fixture board","board_serial":"BOARD-A","product_uuid":"fixture-uuid"},
+  "memory": {"MemTotal":"4194304 kB"},
+  "firmware_mode":"LEGACY",
+  "pci": [{"address":"0000:00:11.0","vendor":"0x1002","device":"0x4391","class_code":"0x010601","driver":"ahci"}],
+  "inputs": [{"path":"/sys/devices/unknown/input0","name":"fixture keyboard","transport":null}],
+  "disks": [
+    {"name":"sda","model":"fixture A","serial":"DISK-A","size_512_sectors":"1000","major_minor":"8:0","slaves":[]},
+    {"name":"sdb","model":"fixture B","serial":"DISK-B","size_512_sectors":"1000","major_minor":"8:16","slaves":[]},
+    {"name":"md0","major_minor":"9:0","slaves":["sda","sdb"]}
+  ],
+  "mountinfo":"25 0 9:0 / / rw - ext4 /dev/md0 rw",
+  "lspci":{"status":"UNAVAILABLE","value":null,"source":"lspci"},
+  "lsblk":{"status":"UNAVAILABLE","value":{"exit_code":1,"stderr":"permission denied"},"source":"lsblk"},
+  "os":"fixture-linux","privilege":"unprivileged"
+}

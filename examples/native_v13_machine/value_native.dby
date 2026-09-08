@@ -1,0 +1,4 @@
+import "value_formation.dby" as values
+
+pub fn main() -> int:
+    return values.check()

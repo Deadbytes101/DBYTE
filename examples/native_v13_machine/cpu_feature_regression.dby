@@ -1,0 +1,13 @@
+pub fn probe() -> u64:
+    let max_leaf: u32 = native.cpu_cpuid_eax(0 as u32, 0 as u32)
+    let vendor_b: u32 = native.cpu_cpuid_ebx(0 as u32, 0 as u32)
+    let features_c: u32 = native.cpu_cpuid_ecx(1 as u32, 0 as u32)
+    let features_d: u32 = native.cpu_cpuid_edx(1 as u32, 0 as u32)
+    let cr4: u32 = native.cpu_read_cr4()
+    native.cpu_write_cr4(cr4)
+    let efer: u64 = native.cpu_rdmsr(0xC0000080 as u32)
+    native.cpu_wrmsr(0xC0000080 as u32, efer)
+    return (max_leaf as u64) ^ (vendor_b as u64) ^ (features_c as u64) ^ (features_d as u64) ^ efer
+
+pub fn kernel_main() -> int:
+    return 0

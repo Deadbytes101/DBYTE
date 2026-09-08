@@ -1,0 +1,301 @@
+import "acpi.dby" as acpi
+import "interrupts64.dby" as irq
+import "paging64.dby" as paging
+
+const IA32_APIC_BASE: u32 = 0x0000001b as u32
+const APIC_ENABLE: u64 = 0x0000000000000800 as u64
+const APIC_X2: u64 = 0x0000000000000400 as u64
+const APIC_BASE_MASK: u64 = 0x00000000fffff000 as u64
+const LAPIC_ID: usize = 0x020 as usize
+const LAPIC_VERSION: usize = 0x030 as usize
+const LAPIC_TPR: usize = 0x080 as usize
+const LAPIC_SVR: usize = 0x0f0 as usize
+const LAPIC_LVT_TIMER: usize = 0x320 as usize
+const LAPIC_INITIAL_COUNT: usize = 0x380 as usize
+const LAPIC_CURRENT_COUNT: usize = 0x390 as usize
+const LAPIC_DIVIDE_CONFIG: usize = 0x3e0 as usize
+const TIMER_VECTOR: u32 = 0x40 as u32
+const LVT_MASKED: u32 = 0x00010000 as u32
+const LVT_PERIODIC: u32 = 0x00020000 as u32
+const IOAPIC_MASKED: u32 = 0x00010000 as u32
+const PM_TIMER_HZ: u32 = 3579545 as u32
+const CALIBRATION_PM_TICKS: u32 = 35795 as u32
+const TIMER_TEST_PM_TICKS: u32 = 357954 as u32
+
+static mut LAPIC_BASE: usize
+static mut LAPIC_ID_VALUE: u32
+static mut LAPIC_VERSION_VALUE: u32
+static mut IOAPIC_VERSION_VALUE: u32
+static mut IOAPIC_REDIRECT_COUNT: u32
+static mut IRQ0_GSI: u32
+static mut IRQ0_FLAGS: u16
+static mut LAPIC_TICKS_PER_MS: u32
+static mut TIMER_TEST_TICKS: u32
+
+fn lapic_read(offset: usize) -> u32:
+    return native.volatile_load32((LAPIC_BASE + offset) as ptr[u32])
+
+fn lapic_write(offset: usize, value: u32) -> int:
+    native.volatile_store32((LAPIC_BASE + offset) as ptr[u32], value)
+    return 0
+
+fn ioapic_read(base: usize, register: u32) -> u32:
+    native.volatile_store32(base as ptr[u32], register)
+    return native.volatile_load32((base + (0x10 as usize)) as ptr[u32])
+
+fn ioapic_write(base: usize, register: u32, value: u32) -> int:
+    native.volatile_store32(base as ptr[u32], register)
+    native.volatile_store32((base + (0x10 as usize)) as ptr[u32], value)
+    return 0
+
+fn pm_mask() -> u32:
+    if acpi.pm_timer_width() == (32 as u32):
+        return 0xffffffff as u32
+    return 0x00ffffff as u32
+
+fn pm_read() -> u32:
+    return native.io_in32(acpi.pm_timer_port() as u16) & pm_mask()
+
+fn pm_elapsed(start: u32, current: u32) -> u32:
+    let mask: u32 = pm_mask()
+    let first: u32 = start & mask
+    let now: u32 = current & mask
+    if now >= first:
+        return now - first
+    return (mask - first) + now + (1 as u32)
+
+fn wait_pm_ticks(target: u32) -> bool:
+    let start: u32 = pm_read()
+    let polls: u32 = 0 as u32
+    while polls < (8000000 as u32):
+        if pm_elapsed(start, pm_read()) >= target:
+            return true
+        polls = polls + (1 as u32)
+    return false
+
+fn find_ioapic_for_gsi(gsi: u32) -> int:
+    let index: usize = 0 as usize
+    while index < (acpi.io_apic_count() as usize):
+        let base: usize = acpi.io_apic_address(index) as usize
+        let gsi_base: u32 = acpi.io_apic_gsi_base(index)
+        let mark_status: int = paging.mark_identity_mmio(base)
+        if mark_status != 0:
+            return 20 + mark_status
+        let version: u32 = ioapic_read(base, 1 as u32)
+        let redirects: u32 = ((version >> (16 as u32)) & (0xff as u32)) + (1 as u32)
+        if redirects == (0 as u32):
+            return 25
+        if gsi >= gsi_base:
+            if (gsi - gsi_base) < redirects:
+                IOAPIC_VERSION_VALUE = version
+                IOAPIC_REDIRECT_COUNT = redirects
+                return index as int
+        index = index + (1 as usize)
+    return -1
+
+fn prove_ioapic_mask_restore(io_index: usize, gsi: u32) -> int:
+    let base: usize = acpi.io_apic_address(io_index) as usize
+    let gsi_base: u32 = acpi.io_apic_gsi_base(io_index)
+    if gsi < gsi_base:
+        return 30
+    let redir: u32 = gsi - gsi_base
+    if redir >= IOAPIC_REDIRECT_COUNT:
+        return 31
+    let low_register: u32 = (0x10 as u32) + (redir * (2 as u32))
+    let original: u32 = ioapic_read(base, low_register)
+    ioapic_write(base, low_register, original | IOAPIC_MASKED)
+    let masked: u32 = ioapic_read(base, low_register)
+    if (masked & IOAPIC_MASKED) == (0 as u32):
+        ioapic_write(base, low_register, original)
+        return 32
+    ioapic_write(base, low_register, original)
+    if ioapic_read(base, low_register) != original:
+        return 33
+    return 0
+
+fn enable_lapic() -> int:
+    let acpi_base: u64 = acpi.local_apic_address()
+    if acpi_base == (0 as u64):
+        return 40
+    if (acpi_base >> (32 as u64)) != (0 as u64):
+        return 41
+    let mark_status: int = paging.mark_identity_mmio(acpi_base as usize)
+    if mark_status != 0:
+        return 42 + mark_status
+    let apic_msr: u64 = native.cpu_rdmsr(0x0000001b as u32)
+    if (apic_msr & APIC_X2) != (0 as u64):
+        return 47
+    if (apic_msr & APIC_BASE_MASK) != (acpi_base & APIC_BASE_MASK):
+        return 48
+    if (apic_msr & APIC_ENABLE) == (0 as u64):
+        native.cpu_wrmsr(0x0000001b as u32, apic_msr | APIC_ENABLE)
+        let enabled: u64 = native.cpu_rdmsr(0x0000001b as u32)
+        if (enabled & APIC_ENABLE) == (0 as u64):
+            return 49
+    LAPIC_BASE = acpi_base as usize
+    LAPIC_ID_VALUE = lapic_read(LAPIC_ID)
+    LAPIC_VERSION_VALUE = lapic_read(LAPIC_VERSION)
+    if (LAPIC_VERSION_VALUE & (0xff as u32)) == (0 as u32):
+        return 50
+    lapic_write(LAPIC_TPR, 0 as u32)
+    let svr: u32 = lapic_read(LAPIC_SVR)
+    lapic_write(LAPIC_SVR, (svr & (0xffffff00 as u32)) | (0x000001ff as u32))
+    if (lapic_read(LAPIC_SVR) & (0x00000100 as u32)) == (0 as u32):
+        return 51
+    if irq.configure_lapic_eoi(LAPIC_BASE) != 0:
+        return 52
+    return 0
+
+fn calibrate_lapic() -> int:
+    lapic_write(LAPIC_LVT_TIMER, LVT_MASKED | TIMER_VECTOR)
+    lapic_write(LAPIC_DIVIDE_CONFIG, 0x00000003 as u32)
+    lapic_write(LAPIC_INITIAL_COUNT, 0xffffffff as u32)
+    if wait_pm_ticks(CALIBRATION_PM_TICKS) == false:
+        lapic_write(LAPIC_INITIAL_COUNT, 0 as u32)
+        return 60
+    let current: u32 = lapic_read(LAPIC_CURRENT_COUNT)
+    lapic_write(LAPIC_INITIAL_COUNT, 0 as u32)
+    let elapsed: u32 = (0xffffffff as u32) - current
+    if elapsed < (10 as u32):
+        return 61
+    LAPIC_TICKS_PER_MS = elapsed / (10 as u32)
+    if LAPIC_TICKS_PER_MS == (0 as u32):
+        return 62
+    return 0
+
+fn run_timer_interrupt_test() -> int:
+    if LAPIC_TICKS_PER_MS > ((0xffffffff as u32) / (10 as u32)):
+        return 70
+    let initial: u32 = LAPIC_TICKS_PER_MS * (10 as u32)
+    if initial == (0 as u32):
+        return 71
+    irq.reset_timer_ticks()
+    lapic_write(LAPIC_DIVIDE_CONFIG, 0x00000003 as u32)
+    lapic_write(LAPIC_LVT_TIMER, LVT_PERIODIC | TIMER_VECTOR)
+    lapic_write(LAPIC_INITIAL_COUNT, initial)
+    native.cpu_sti()
+    let start: u32 = pm_read()
+    let polls: u32 = 0 as u32
+    while polls < (12000000 as u32):
+        if irq.timer_ticks() >= (3 as u32):
+            break
+        if pm_elapsed(start, pm_read()) >= TIMER_TEST_PM_TICKS:
+            break
+        polls = polls + (1 as u32)
+    native.cpu_cli()
+    lapic_write(LAPIC_INITIAL_COUNT, 0 as u32)
+    lapic_write(LAPIC_LVT_TIMER, LVT_MASKED | TIMER_VECTOR)
+    TIMER_TEST_TICKS = irq.timer_ticks()
+    if TIMER_TEST_TICKS < (3 as u32):
+        return 72
+    return 0
+
+pub fn route_keyboard_irq() -> int:
+    if LAPIC_BASE == (0 as usize):
+        return 90
+    let gsi: u32 = acpi.legacy_irq_gsi(1 as u8)
+    let flags: u16 = acpi.legacy_irq_flags(1 as u8)
+    let polarity: u16 = flags & (3 as u16)
+    let trigger: u16 = (flags >> (2 as u16)) & (3 as u16)
+    if polarity == (2 as u16):
+        return 91
+    if trigger == (2 as u16):
+        return 92
+    let io_index: int = find_ioapic_for_gsi(gsi)
+    if io_index < 0:
+        return 93
+    let base: usize = acpi.io_apic_address(io_index as usize) as usize
+    let gsi_base: u32 = acpi.io_apic_gsi_base(io_index as usize)
+    let redir: u32 = gsi - gsi_base
+    if redir >= IOAPIC_REDIRECT_COUNT:
+        return 94
+    let low_register: u32 = (0x10 as u32) + (redir * (2 as u32))
+    let high_register: u32 = low_register + (1 as u32)
+    let low: u32 = 0x41 as u32
+    if polarity == (3 as u16):
+        low = low | (0x00002000 as u32)
+    if trigger == (3 as u16):
+        low = low | (0x00008000 as u32)
+    let high: u32 = LAPIC_ID_VALUE & (0xff000000 as u32)
+    ioapic_write(base, high_register, high)
+    ioapic_write(base, low_register, low)
+    if (ioapic_read(base, low_register) & (0x0001e0ff as u32)) != low:
+        return 95
+    if (ioapic_read(base, high_register) & (0xff000000 as u32)) != high:
+        return 96
+    return 0
+
+pub fn start_periodic_probe() -> int:
+    if LAPIC_TICKS_PER_MS == (0 as u32):
+        return 97
+    if LAPIC_TICKS_PER_MS > ((0xffffffff as u32) / (10 as u32)):
+        return 98
+    let initial: u32 = LAPIC_TICKS_PER_MS * (10 as u32)
+    irq.reset_timer_ticks()
+    lapic_write(LAPIC_DIVIDE_CONFIG, 0x00000003 as u32)
+    lapic_write(LAPIC_LVT_TIMER, LVT_PERIODIC | TIMER_VECTOR)
+    lapic_write(LAPIC_INITIAL_COUNT, initial)
+    return 0
+
+pub fn stop_periodic_probe() -> int:
+    lapic_write(LAPIC_INITIAL_COUNT, 0 as u32)
+    lapic_write(LAPIC_LVT_TIMER, LVT_MASKED | TIMER_VECTOR)
+    return 0
+
+pub fn initialize() -> int:
+    native.cpu_cli()
+    LAPIC_BASE = 0 as usize
+    LAPIC_ID_VALUE = 0 as u32
+    LAPIC_VERSION_VALUE = 0 as u32
+    IOAPIC_VERSION_VALUE = 0 as u32
+    IOAPIC_REDIRECT_COUNT = 0 as u32
+    LAPIC_TICKS_PER_MS = 0 as u32
+    TIMER_TEST_TICKS = 0 as u32
+    if acpi.pm_timer_port() == (0 as u32):
+        return 80
+    if acpi.pm_timer_port() > (0xffff as u32):
+        return 81
+    if acpi.pm_timer_width() != (24 as u32):
+        if acpi.pm_timer_width() != (32 as u32):
+            return 82
+    let lapic_status: int = enable_lapic()
+    if lapic_status != 0:
+        return lapic_status
+    IRQ0_GSI = acpi.legacy_irq_gsi(0 as u8)
+    IRQ0_FLAGS = acpi.legacy_irq_flags(0 as u8)
+    let io_index: int = find_ioapic_for_gsi(IRQ0_GSI)
+    if io_index < 0:
+        return 83
+    let io_status: int = prove_ioapic_mask_restore(io_index as usize, IRQ0_GSI)
+    if io_status != 0:
+        return io_status
+    native.io_out8(0x21 as u16, 0xff as u8)
+    native.io_out8(0xa1 as u16, 0xff as u8)
+    let calibration_status: int = calibrate_lapic()
+    if calibration_status != 0:
+        return calibration_status
+    let timer_status: int = run_timer_interrupt_test()
+    if timer_status != 0:
+        return timer_status
+    return 0
+
+pub fn lapic_base() -> usize:
+    return LAPIC_BASE
+pub fn lapic_id() -> u32:
+    return LAPIC_ID_VALUE
+pub fn lapic_version() -> u32:
+    return LAPIC_VERSION_VALUE
+pub fn ioapic_version() -> u32:
+    return IOAPIC_VERSION_VALUE
+pub fn ioapic_redirect_count() -> u32:
+    return IOAPIC_REDIRECT_COUNT
+pub fn irq0_gsi() -> u32:
+    return IRQ0_GSI
+pub fn irq0_flags() -> u16:
+    return IRQ0_FLAGS
+pub fn lapic_ticks_per_ms() -> u32:
+    return LAPIC_TICKS_PER_MS
+pub fn timer_test_ticks() -> u32:
+    return TIMER_TEST_TICKS
+pub fn pm_timer_hz() -> u32:
+    return PM_TIMER_HZ

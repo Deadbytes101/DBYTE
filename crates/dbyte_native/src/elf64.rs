@@ -8,6 +8,11 @@ const SECTION_COUNT: u16 = 6;
 const IMAGE_BASE: u64 = 0x0040_0000;
 const TEXT_OFFSET: u64 = 0x1000;
 const MAX_IMAGE_SIZE: usize = 64 * 1024 * 1024;
+pub const USER_IMAGE_BASE: u64 = 0x0040_0000;
+pub const USER_IMAGE_END: u64 = 0x0060_0000;
+pub const USER_TEXT_OFFSET: u64 = ELF_HEADER_SIZE + 2 * PROGRAM_HEADER_SIZE;
+pub const USER_PAGE_SIZE: u64 = 0x1000;
+pub const USER_MAX_FILE_SIZE: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutableInput {
@@ -55,6 +60,146 @@ impl std::fmt::Display for Elf64Error {
 }
 
 impl std::error::Error for Elf64Error {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UserElf64Layout {
+    pub text_offset: u64,
+    pub rodata_offset: u64,
+    pub data_offset: u64,
+    pub text_address: u64,
+    pub rodata_address: u64,
+    pub data_address: u64,
+    pub bss_address: u64,
+    pub rx_file_size: u64,
+    pub rw_memory_size: u64,
+    pub file_size: u64,
+}
+
+pub fn user_executable_layout(
+    text_size: u64,
+    rodata_size: u64,
+    data_size: u64,
+    bss_size: u64,
+) -> Result<UserElf64Layout, Elf64Error> {
+    if text_size == 0 {
+        return Err(error(
+            "E_ELF64_TEXT",
+            "user executable text cannot be empty",
+        ));
+    }
+    let text_offset = USER_TEXT_OFFSET;
+    let text_end = add(text_offset, text_size, "user text end")?;
+    let rodata_offset = align_up(text_end, 8)?;
+    let rx_file_end = add(rodata_offset, rodata_size, "user RX file end")?;
+    let data_offset = align_up(rx_file_end, 16)?;
+    let file_size = add(data_offset, data_size, "user file size")?;
+    if file_size > USER_MAX_FILE_SIZE as u64 {
+        return Err(error(
+            "E_ELF64_USER_SIZE",
+            "compact user ELF64 exceeds the DBFS1 4096-byte file limit",
+        ));
+    }
+    let text_address = add(USER_IMAGE_BASE, text_offset, "user text address")?;
+    let rodata_address = add(USER_IMAGE_BASE, rodata_offset, "user rodata address")?;
+    let rx_memory_end = add(USER_IMAGE_BASE, rx_file_end, "user RX memory end")?;
+    let data_page = align_up(rx_memory_end, USER_PAGE_SIZE)?;
+    let data_address = add(
+        data_page,
+        data_offset & (USER_PAGE_SIZE - 1),
+        "user data address",
+    )?;
+    let data_end = add(data_address, data_size, "user data end")?;
+    let bss_address = align_up(data_end, 16)?;
+    let memory_end = add(bss_address, bss_size, "user image end")?;
+    if memory_end > USER_IMAGE_END {
+        return Err(error(
+            "E_ELF64_USER_SIZE",
+            "compact user ELF64 exceeds the reserved user image range",
+        ));
+    }
+    Ok(UserElf64Layout {
+        text_offset,
+        rodata_offset,
+        data_offset,
+        text_address,
+        rodata_address,
+        data_address,
+        bss_address,
+        rx_file_size: rx_file_end - text_offset,
+        rw_memory_size: memory_end - data_address,
+        file_size,
+    })
+}
+
+pub fn write_user_executable(input: &ExecutableInput) -> Result<Elf64Executable, Elf64Error> {
+    if input.entry_offset >= input.text.len() as u64 {
+        return Err(error("E_ELF64_ENTRY", "entry offset is outside .text"));
+    }
+    let layout = user_executable_layout(
+        input.text.len() as u64,
+        input.rodata.len() as u64,
+        input.data.len() as u64,
+        input.bss_size,
+    )?;
+    let file_len = usize::try_from(layout.file_size)
+        .map_err(|_| error("E_ELF64_SIZE", "user ELF64 exceeds host addressability"))?;
+    let mut bytes = vec![0u8; file_len];
+    bytes[0..4].copy_from_slice(b"\x7fELF");
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes[6] = 1;
+    put_u16(&mut bytes, 16, 2)?;
+    put_u16(&mut bytes, 18, 62)?;
+    put_u32(&mut bytes, 20, 1)?;
+    let entry = add(layout.text_address, input.entry_offset, "user entry")?;
+    put_u64(&mut bytes, 24, entry)?;
+    put_u64(&mut bytes, 32, ELF_HEADER_SIZE)?;
+    put_u64(&mut bytes, 40, 0)?;
+    put_u16(&mut bytes, 52, ELF_HEADER_SIZE as u16)?;
+    put_u16(&mut bytes, 54, PROGRAM_HEADER_SIZE as u16)?;
+    put_u16(&mut bytes, 56, PROGRAM_HEADER_COUNT)?;
+    put_u16(&mut bytes, 58, 0)?;
+    put_u16(&mut bytes, 60, 0)?;
+    put_u16(&mut bytes, 62, 0)?;
+
+    write_program_header(
+        &mut bytes,
+        ELF_HEADER_SIZE,
+        1,
+        5,
+        layout.text_offset,
+        layout.text_address,
+        layout.rx_file_size,
+        layout.rx_file_size,
+        USER_PAGE_SIZE,
+    )?;
+    write_program_header(
+        &mut bytes,
+        ELF_HEADER_SIZE + PROGRAM_HEADER_SIZE,
+        1,
+        6,
+        layout.data_offset,
+        layout.data_address,
+        input.data.len() as u64,
+        layout.rw_memory_size,
+        USER_PAGE_SIZE,
+    )?;
+    copy_at(&mut bytes, layout.text_offset, &input.text)?;
+    copy_at(&mut bytes, layout.rodata_offset, &input.rodata)?;
+    copy_at(&mut bytes, layout.data_offset, &input.data)?;
+
+    Ok(Elf64Executable {
+        bytes,
+        layout: Elf64Layout {
+            entry,
+            text_address: layout.text_address,
+            rodata_address: layout.rodata_address,
+            data_address: layout.data_address,
+            bss_address: layout.bss_address,
+            file_size: layout.file_size,
+        },
+    })
+}
 
 pub fn write_static_executable(input: &ExecutableInput) -> Result<Elf64Executable, Elf64Error> {
     if input.text.is_empty() {
@@ -458,6 +603,34 @@ mod tests {
         assert_eq!(info.section_headers, 6);
         assert!(!info.has_interp);
         assert!(!info.has_dynamic);
+    }
+
+    #[test]
+    fn writes_compact_user_elf64_for_dbfs1() {
+        let executable = write_user_executable(&ExecutableInput {
+            text: vec![0x90, 0xc3],
+            rodata: b"USER".to_vec(),
+            data: vec![1, 2, 3],
+            bss_size: 64,
+            entry_offset: 0,
+        })
+        .unwrap();
+        let info = inspect(&executable.bytes).unwrap();
+        assert_eq!(info.entry, 0x0040_00b0);
+        assert_eq!(info.program_headers, 2);
+        assert_eq!(info.section_headers, 0);
+        assert!(executable.bytes.len() <= 4096);
+        for index in 0..2u64 {
+            let header = ELF_HEADER_SIZE + index * PROGRAM_HEADER_SIZE;
+            assert_eq!(get_u32(&executable.bytes, header).unwrap(), 1);
+            let flags = get_u32(&executable.bytes, header + 4).unwrap();
+            let file_offset = get_u64(&executable.bytes, header + 8).unwrap();
+            let virtual_address = get_u64(&executable.bytes, header + 16).unwrap();
+            let alignment = get_u64(&executable.bytes, header + 48).unwrap();
+            assert_eq!(alignment, 4096);
+            assert_eq!(file_offset % alignment, virtual_address % alignment);
+            assert_eq!(flags, if index == 0 { 5 } else { 6 });
+        }
     }
 
     #[test]

@@ -1,0 +1,279 @@
+import "user_space64.dby" as user
+import "vfs_ro.dby" as vfs
+import "owner_qualified_fds64.dby" as handles
+import "console.dby" as console
+
+const MAX_FDS: usize = 16 as usize
+const PATH_CAPACITY: usize = 256 as usize
+const READ_FLAG: u32 = 1 as u32
+const EINVAL: i32 = -1
+const EBADF: i32 = -2
+const EFAULT: i32 = -3
+const ENOSYS: i32 = -4
+const EIO: i32 = -5
+const EMFILE: i32 = -7
+
+static mut STAT: vfs.VfsStat
+static mut PATH_BUFFER: array[u8, 256]
+static mut BOUNCE: array[u8, 512]
+static mut FD_TABLE: array[u32, 16]
+static mut CURRENT_OWNER: usize
+static mut NEXT_OWNER: usize
+static mut REQUESTS: usize
+static mut WRITES: usize
+static mut OPENS: usize
+static mut READS: usize
+static mut CLOSES: usize
+static mut OWNER_CLEANUPS: usize
+static mut LAST_RESULT: i32
+static mut OWNER_SELFTEST: u32
+static mut OWNER_WRONG_REJECTS: usize
+static mut OWNER_STALE_REJECTS: usize
+fn clear_fds() -> int:
+    let index: usize = 0 as usize
+    while index < MAX_FDS:
+        FD_TABLE[index] = 0 as u32
+        index = index + (1 as usize)
+    return 0
+
+fn owner_self_test() -> int:
+    handles.initialize()
+    let raw: u32 = 0 as u32
+    if handles.reserve(0x1111 as usize, 7 as u32, READ_FLAG, &raw) != 0:
+        return 1
+    if handles.validate(raw, 0x2222 as usize, 0 as usize as ptr[u32], 0 as usize as ptr[usize], 0 as usize as ptr[u32]) != handles.wrong_owner_code():
+        return 2
+    if handles.close(raw, 0x1111 as usize) != 0:
+        return 3
+    if handles.validate(raw, 0x1111 as usize, 0 as usize as ptr[u32], 0 as usize as ptr[usize], 0 as usize as ptr[u32]) != handles.stale_code():
+        return 4
+    if handles.wrong_owner_rejects() != (1 as usize):
+        return 5
+    if handles.stale_rejects() != (1 as usize):
+        return 6
+    OWNER_WRONG_REJECTS = handles.wrong_owner_rejects()
+    OWNER_STALE_REJECTS = handles.stale_rejects()
+    handles.initialize()
+    return 0
+pub fn initialize() -> int:
+    CURRENT_OWNER = 0 as usize
+    NEXT_OWNER = 1 as usize
+    REQUESTS = 0 as usize
+    WRITES = 0 as usize
+    OPENS = 0 as usize
+    READS = 0 as usize
+    CLOSES = 0 as usize
+    OWNER_CLEANUPS = 0 as usize
+    LAST_RESULT = 0
+    OWNER_SELFTEST = 0 as u32
+    OWNER_WRONG_REJECTS = 0 as usize
+    OWNER_STALE_REJECTS = 0 as usize
+    clear_fds()
+    let status: int = owner_self_test()
+    if status != 0:
+        return 20 + status
+    OWNER_SELFTEST = 1 as u32
+    status = vfs.initialize()
+    if status != 0:
+        return 40 + status
+    return 0
+
+pub fn begin_process() -> int:
+    if CURRENT_OWNER != (0 as usize):
+        return 1
+    clear_fds()
+    if NEXT_OWNER == (0 as usize):
+        return 2
+    CURRENT_OWNER = NEXT_OWNER
+    NEXT_OWNER = NEXT_OWNER + (1 as usize)
+    return 0
+pub fn release_process() -> int:
+    if CURRENT_OWNER == (0 as usize):
+        return 1
+    let status: int = handles.release_owner(CURRENT_OWNER)
+    if status != 0:
+        return status
+    clear_fds()
+    CURRENT_OWNER = 0 as usize
+    OWNER_CLEANUPS = OWNER_CLEANUPS + (1 as usize)
+    return 0
+
+fn allocate_fd(raw_handle: u32) -> i32:
+    let index: usize = 0 as usize
+    while index < MAX_FDS:
+        if FD_TABLE[index] == (0 as u32):
+            FD_TABLE[index] = raw_handle
+            return (index + (3 as usize)) as i32
+        index = index + (1 as usize)
+    return EMFILE
+
+fn raw_for_fd(fd: usize) -> u32:
+    if fd < (3 as usize):
+        return 0 as u32
+    let index: usize = fd - (3 as usize)
+    if index >= MAX_FDS:
+        return 0 as u32
+    return FD_TABLE[index]
+fn copy_path(address: usize, length: usize) -> int:
+    if length == (0 as usize):
+        return EINVAL
+    if length >= PATH_CAPACITY:
+        return EINVAL
+    if user.copy_from_user(address, &PATH_BUFFER[0], length) != 0:
+        return EFAULT
+    PATH_BUFFER[length] = 0 as u8
+    return 0
+
+fn execute_open(address: usize, length: usize, flags: usize) -> i32:
+    if CURRENT_OWNER == (0 as usize):
+        return EIO
+    if flags != (READ_FLAG as usize):
+        return EINVAL
+    let status: int = copy_path(address, length)
+    if status != 0:
+        return status
+    let path: str = (&PATH_BUFFER[0]) as usize as str
+    status = vfs.stat(path, length, &STAT)
+    if status != 0:
+        return EIO
+    let raw: u32 = 0 as u32
+    status = handles.reserve(CURRENT_OWNER, STAT.inode_number, READ_FLAG, &raw)
+    if status != 0:
+        return EMFILE
+    let fd: i32 = allocate_fd(raw)
+    if fd < 0:
+        handles.close(raw, CURRENT_OWNER)
+        return fd
+    OPENS = OPENS + (1 as usize)
+    return fd
+fn execute_read(fd: usize, address: usize, length: usize) -> i32:
+    if CURRENT_OWNER == (0 as usize):
+        return EIO
+    if length > (4096 as usize):
+        return EINVAL
+    if length == (0 as usize):
+        return 0
+    if user.validate_user_range(address, length, true) == false:
+        return EFAULT
+    let raw: u32 = raw_for_fd(fd)
+    if raw == (0 as u32):
+        return EBADF
+    let inode_number: u32 = 0 as u32
+    let offset: usize = 0 as usize
+    let flags: u32 = 0 as u32
+    if handles.validate(raw, CURRENT_OWNER, &inode_number, &offset, &flags) != 0:
+        return EBADF
+    if flags != READ_FLAG:
+        return EBADF
+    let total: usize = 0 as usize
+    while total < length:
+        let amount: usize = length - total
+        if amount > (512 as usize):
+            amount = 512 as usize
+        let read: usize = 0 as usize
+        let status: int = vfs.read_inode_at(inode_number, offset + total, &BOUNCE[0], amount, &read)
+        if status != 0:
+            return EIO
+        if read == (0 as usize):
+            break
+        if user.copy_to_user(address + total, &BOUNCE[0], read) != 0:
+            return EFAULT
+        total = total + read
+        if read < amount:
+            break
+    if handles.update_offset(raw, CURRENT_OWNER, offset + total) != 0:
+        return EIO
+    READS = READS + (1 as usize)
+    return total as i32
+
+fn execute_close(fd: usize) -> i32:
+    if CURRENT_OWNER == (0 as usize):
+        return EIO
+    let raw: u32 = raw_for_fd(fd)
+    if raw == (0 as u32):
+        return EBADF
+    if handles.close(raw, CURRENT_OWNER) != 0:
+        return EBADF
+    FD_TABLE[fd - (3 as usize)] = 0 as u32
+    CLOSES = CLOSES + (1 as usize)
+    return 0
+
+fn execute_write(fd: usize, address: usize, length: usize) -> i32:
+    if fd != (1 as usize):
+        if fd != (2 as usize):
+            return EBADF
+    if length > (4096 as usize):
+        return EINVAL
+    if user.validate_user_range(address, length, false) == false:
+        return EFAULT
+    let total: usize = 0 as usize
+    while total < length:
+        let amount: usize = length - total
+        if amount > (512 as usize):
+            amount = 512 as usize
+        if user.copy_from_user(address + total, &BOUNCE[0], amount) != 0:
+            return EFAULT
+        let index: usize = 0 as usize
+        while index < amount:
+            console.putc(BOUNCE[index])
+            index = index + (1 as usize)
+        total = total + amount
+    WRITES = WRITES + (1 as usize)
+    return total as i32
+
+fn dispatch() -> i32:
+    let number: u32 = user.request_number()
+    if number == (1 as u32):
+        return execute_write(user.request_arg0(), user.request_arg1(), user.request_arg2())
+    if number == (3 as u32):
+        return execute_open(user.request_arg0(), user.request_arg1(), user.request_arg2())
+    if number == (4 as u32):
+        return execute_read(user.request_arg0(), user.request_arg1(), user.request_arg2())
+    if number == (5 as u32):
+        return execute_close(user.request_arg0())
+    return ENOSYS
+pub fn run_once() -> int:
+    if user.request_pending() == false:
+        return 90
+    if CURRENT_OWNER == (0 as usize):
+        LAST_RESULT = EIO
+    else:
+        LAST_RESULT = dispatch()
+    REQUESTS = REQUESTS + (1 as usize)
+    let resume_status: int = user.complete_request(LAST_RESULT)
+    return 100 + resume_status
+
+pub fn current_owner() -> usize:
+    return CURRENT_OWNER
+
+pub fn request_count() -> usize:
+    return REQUESTS
+
+pub fn write_count() -> usize:
+    return WRITES
+
+pub fn open_count() -> usize:
+    return OPENS
+
+pub fn read_count() -> usize:
+    return READS
+
+pub fn close_count() -> usize:
+    return CLOSES
+
+pub fn cleanup_count() -> usize:
+    return OWNER_CLEANUPS
+pub fn last_result() -> i32:
+    return LAST_RESULT
+
+pub fn owner_selftest_ok() -> bool:
+    return OWNER_SELFTEST != (0 as u32)
+
+pub fn handle_wrong_owner_rejects() -> usize:
+    return OWNER_WRONG_REJECTS
+
+pub fn handle_stale_rejects() -> usize:
+    return OWNER_STALE_REJECTS
+
+pub fn vfs_ready() -> bool:
+    return vfs.ready()

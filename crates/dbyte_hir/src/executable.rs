@@ -365,6 +365,10 @@ pub enum HirExprKind {
         value: Box<HirExpr>,
         target: TypeId,
     },
+    Bitcast {
+        value: Box<HirExpr>,
+        target: TypeId,
+    },
     DirectCall {
         callee: FunctionInstanceKey,
         convention: CallConvention,
@@ -1052,6 +1056,7 @@ fn collect_called_instances_expr(expression: &HirExpr, output: &mut BTreeSet<Fun
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Length { value }
         | HirExprKind::Try { value, .. }
         | HirExprKind::Constant { value, .. } => collect_called_instances_expr(value, output),
@@ -1221,6 +1226,10 @@ fn substitute_expr(
         }
         HirExprKind::Unary { value, .. } | HirExprKind::Cast { value, .. } => {
             substitute_expr(value, substitution, types)?
+        }
+        HirExprKind::Bitcast { value, target } => {
+            substitute_expr(value, substitution, types)?;
+            *target = expression.ty;
         }
         HirExprKind::Length { value } => substitute_expr(value, substitution, types)?,
         HirExprKind::Try { value, cleanup, .. } => {
@@ -1440,6 +1449,7 @@ fn materialize_concrete_drop_expr(
         }
         HirExprKind::Unary { value, .. }
         | HirExprKind::Cast { value, .. }
+        | HirExprKind::Bitcast { value, .. }
         | HirExprKind::Try { value, .. } => materialize_concrete_drop_expr(value, semantic)?,
         HirExprKind::DirectCall { arguments, .. }
         | HirExprKind::IntrinsicCall { arguments, .. }
@@ -3174,11 +3184,49 @@ impl<'a> ExecutableBuilder<'a> {
             ),
             Expr::Binary {
                 left, op, right, ..
-            } => HirExprKind::Binary {
-                left: Box::new(self.expr(left)?),
-                op: op.clone(),
-                right: Box::new(self.expr(right)?),
-            },
+            } => {
+                let left = self.expr(left)?;
+                let mut right = self.expr(right)?;
+                if matches!(op, BinOp::Add | BinOp::Sub) {
+                    if let CanonicalType::Pointer { pointee, .. } = self.semantic.type_of(left.ty) {
+                        if matches!(
+                            self.semantic.type_of(right.ty),
+                            CanonicalType::Integer(super::IntegerType::Usize)
+                        ) {
+                            let scale = HirExpr {
+                                ty: right.ty,
+                                category: ValueCategory::RValue,
+                                ownership: OwnershipAction::Copy,
+                                allocator_origin: None,
+                                borrow_origin: None,
+                                kind: HirExprKind::LayoutOf {
+                                    target: *pointee,
+                                    alignment: false,
+                                },
+                                span: right.span,
+                            };
+                            right = HirExpr {
+                                ty: right.ty,
+                                category: ValueCategory::RValue,
+                                ownership: OwnershipAction::Copy,
+                                allocator_origin: None,
+                                borrow_origin: None,
+                                span: right.span,
+                                kind: HirExprKind::Binary {
+                                    left: Box::new(right),
+                                    op: BinOp::Mul,
+                                    right: Box::new(scale),
+                                },
+                            };
+                        }
+                    }
+                }
+                HirExprKind::Binary {
+                    left: Box::new(left),
+                    op: op.clone(),
+                    right: Box::new(right),
+                }
+            }
             Expr::Unary {
                 op: UnaryOp::AddressOf,
                 expr,
@@ -3199,6 +3247,10 @@ impl<'a> ExecutableBuilder<'a> {
                 place: self.place(expr)?,
             },
             Expr::Cast { expr, .. } => HirExprKind::Cast {
+                value: Box::new(self.expr(expr)?),
+                target: fact.ty,
+            },
+            Expr::Bitcast { expr, .. } => HirExprKind::Bitcast {
                 value: Box::new(self.expr(expr)?),
                 target: fact.ty,
             },
@@ -3696,6 +3748,8 @@ fn annotation_matches(
         (CanonicalType::Integer(super::IntegerType::U64), A::U64) => true,
         (CanonicalType::Integer(super::IntegerType::Usize), A::Usize) => true,
         (CanonicalType::Float, A::Float)
+        | (CanonicalType::F32, A::F32)
+        | (CanonicalType::F64, A::F64)
         | (CanonicalType::Bool, A::Bool)
         | (CanonicalType::LegacyStr, A::Str)
         | (CanonicalType::LegacyBytes, A::Bytes)

@@ -1,0 +1,433 @@
+import "sector_service.dby" as sector
+import "dbfs_layout.dby" as layout
+import "dbfs_bitmap_ro.dby" as bitmap
+import "dbfs_inode_ro.dby" as inode
+import "dbfs_dir_ro.dby" as directory
+import "path.dby" as path
+
+pub struct DbfsStat:
+    inode_number: u32
+    entry_type: u32
+    size_bytes: u32
+    direct_blocks: u32
+
+static mut PATH_CURSOR: path.PathCursor
+static mut ACTIVE: layout.Layout
+static mut SECTOR: array[u16, 256]
+static mut AUX: array[u16, 256]
+static mut INODE_IMAGE: array[u16, 2048]
+static mut DIR_IMAGE: array[u16, 2048]
+static mut OWNERSHIP: array[u8, 2048]
+static mut REFERENCES: array[u8, 64]
+static mut PARENTS: array[u8, 64]
+static mut DIRECTORY_BLOCKS: array[u32, 8]
+
+const OK: u32 = 0 as u32
+const INVALID: u32 = 1 as u32
+const UNFORMATTED: u32 = 3 as u32
+const CORRUPT: u32 = 4 as u32
+const IO: u32 = 5 as u32
+const NOT_MOUNTED: u32 = 6 as u32
+const NOT_FOUND: u32 = 7 as u32
+const CAPACITY: u32 = 12 as u32
+const PATH_INVALID: u32 = 14 as u32
+const NOT_DIRECTORY: u32 = 17 as u32
+const IS_DIRECTORY: u32 = 18 as u32
+const MAX_DATA_BLOCKS: u32 = 16384 as u32
+
+static mut MOUNTED: u32
+static mut LAST_ERROR: u32
+static mut READ_COUNT: usize
+static mut FOUND_INODE: u32
+static mut RESOLVED_INODE: u32
+
+fn sector_address() -> ptr[u8]:
+    return (&SECTOR[0]) as usize as ptr[u8]
+
+fn aux_address() -> ptr[u8]:
+    return (&AUX[0]) as usize as ptr[u8]
+
+fn inode_image_address() -> ptr[u8]:
+    return (&INODE_IMAGE[0]) as usize as ptr[u8]
+
+fn dir_image_address() -> ptr[u8]:
+    return (&DIR_IMAGE[0]) as usize as ptr[u8]
+
+fn set_error(status: u32) -> int:
+    LAST_ERROR = status
+    return status as i32
+
+fn read_sector(lba: u32, destination: ptr[u8]) -> bool:
+    let status: int = sector.read_sector(lba, destination)
+    if status != 0:
+        LAST_ERROR = IO
+        return false
+    READ_COUNT = READ_COUNT + (1 as usize)
+    return true
+
+fn ownership_test(block: u32) -> bool:
+    let offset: usize = (block >> (3 as u32)) as usize
+    let mask: u8 = ((1 as u8) << ((block & (7 as u32)) as u8)) as u8
+    return (OWNERSHIP[offset] & mask) != (0 as u8)
+
+fn ownership_set(block: u32) -> bool:
+    if block >= MAX_DATA_BLOCKS:
+        return false
+    let offset: usize = (block >> (3 as u32)) as usize
+    let mask: u8 = ((1 as u8) << ((block & (7 as u32)) as u8)) as u8
+    if (OWNERSHIP[offset] & mask) != (0 as u8):
+        return false
+    OWNERSHIP[offset] = OWNERSHIP[offset] | mask
+    return true
+
+fn image_inode_offset(number: u32) -> usize:
+    return (number as usize) * (64 as usize)
+
+fn image_entry_offset(index: usize) -> usize:
+    return index * (64 as usize)
+
+fn entries_same_name(left: usize, right: usize) -> bool:
+    let base: ptr[u8] = dir_image_address()
+    let left_offset: usize = image_entry_offset(left)
+    let right_offset: usize = image_entry_offset(right)
+    let length: usize = directory.dir_name_length(base, left_offset)
+    if length != directory.dir_name_length(base, right_offset):
+        return false
+    let index: usize = 0 as usize
+    while index < length:
+        if layout.get8(base, left_offset + (12 as usize) + index) != layout.get8(base, right_offset + (12 as usize) + index):
+            return false
+        index = index + (1 as usize)
+    return true
+
+fn validate_loaded_metadata() -> bool:
+    layout.zero((&OWNERSHIP[0]) as usize as ptr[u8], 2048 as usize)
+    layout.zero((&REFERENCES[0]) as usize as ptr[u8], 64 as usize)
+    layout.zero((&PARENTS[0]) as usize as ptr[u8], 64 as usize)
+    let number: u32 = 0 as u32
+    while number < (64 as u32):
+        let offset: usize = image_inode_offset(number)
+        let root: bool = number == (1 as u32)
+        if inode.inode_validate(inode_image_address(), offset, ACTIVE.data_blocks, root) == false:
+            return false
+        if number == (0 as u32):
+            if inode.inode_is_free(inode_image_address(), offset) == false:
+                return false
+        else:
+            if inode.inode_allocated(inode_image_address(), offset):
+                let count: u32 = inode.inode_block_count(inode_image_address(), offset)
+                let block_index: u32 = 0 as u32
+                while block_index < count:
+                    let value: u32 = inode.inode_block(inode_image_address(), offset, block_index)
+                    if ownership_set(value) == false:
+                        return false
+                    if root:
+                        if value != block_index:
+                            return false
+                    block_index = block_index + (1 as u32)
+        number = number + (1 as u32)
+
+    let directory_inode: u32 = 1 as u32
+    while directory_inode < (64 as u32):
+        let directory_inode_offset: usize = image_inode_offset(directory_inode)
+        if inode.inode_allocated(inode_image_address(), directory_inode_offset):
+            if inode.inode_kind(inode_image_address(), directory_inode_offset) == inode.inode_directory_type():
+                let directory_sector: u32 = 0 as u32
+                while directory_sector < (8 as u32):
+                    let block: u32 = inode.inode_block(inode_image_address(), directory_inode_offset, directory_sector)
+                    let destination: ptr[u8] = ((dir_image_address() as usize) + ((directory_sector as usize) * (512 as usize))) as ptr[u8]
+                    if read_sector(ACTIVE.data_start + block, destination) == false:
+                        return false
+                    directory_sector = directory_sector + (1 as u32)
+                let entry: usize = 0 as usize
+                while entry < (64 as usize):
+                    let offset: usize = image_entry_offset(entry)
+                    if directory.dir_validate(dir_image_address(), offset) == false:
+                        return false
+                    if directory.dir_is_free(dir_image_address(), offset) == false:
+                        let referenced: u32 = directory.dir_inode_number(dir_image_address(), offset)
+                        if referenced < (2 as u32):
+                            return false
+                        if referenced >= (64 as u32):
+                            return false
+                        if referenced == directory_inode:
+                            return false
+                        let referenced_offset: usize = image_inode_offset(referenced)
+                        if inode.inode_allocated(inode_image_address(), referenced_offset) == false:
+                            return false
+                        let referenced_kind: u32 = inode.inode_kind(inode_image_address(), referenced_offset)
+                        if directory.dir_entry_type(dir_image_address(), offset) != referenced_kind:
+                            return false
+                        if REFERENCES[referenced as usize] != (0 as u8):
+                            return false
+                        REFERENCES[referenced as usize] = 1 as u8
+                        PARENTS[referenced as usize] = directory_inode as u8
+                        let prior: usize = 0 as usize
+                        while prior < entry:
+                            let prior_offset: usize = image_entry_offset(prior)
+                            if directory.dir_is_free(dir_image_address(), prior_offset) == false:
+                                if entries_same_name(prior, entry):
+                                    return false
+                            prior = prior + (1 as usize)
+                    entry = entry + (1 as usize)
+        directory_inode = directory_inode + (1 as u32)
+
+    let user_inode: u32 = 2 as u32
+    while user_inode < (64 as u32):
+        let allocated: bool = inode.inode_allocated(inode_image_address(), image_inode_offset(user_inode))
+        if allocated:
+            if REFERENCES[user_inode as usize] == (0 as u8):
+                return false
+        else:
+            if REFERENCES[user_inode as usize] != (0 as u8):
+                return false
+        user_inode = user_inode + (1 as u32)
+
+    let checked_directory: u32 = 2 as u32
+    while checked_directory < (64 as u32):
+        let checked_offset: usize = image_inode_offset(checked_directory)
+        if inode.inode_allocated(inode_image_address(), checked_offset):
+            if inode.inode_kind(inode_image_address(), checked_offset) == inode.inode_directory_type():
+                let ancestor: u32 = checked_directory
+                let depth: usize = 0 as usize
+                while ancestor != (1 as u32):
+                    if depth >= (8 as usize):
+                        return false
+                    ancestor = PARENTS[ancestor as usize] as u32
+                    if ancestor == (0 as u32):
+                        return false
+                    depth = depth + (1 as usize)
+        checked_directory = checked_directory + (1 as u32)
+
+    let bitmap_sector: u32 = 0 as u32
+    while bitmap_sector < ACTIVE.bitmap_sectors:
+        if read_sector(ACTIVE.bitmap_start + bitmap_sector, sector_address()) == false:
+            return false
+        let bit: u32 = 0 as u32
+        while bit < (4096 as u32):
+            let block: u32 = (bitmap_sector * (4096 as u32)) + bit
+            let set: bool = bitmap.bitmap_test(sector_address(), block)
+            if block < ACTIVE.data_blocks:
+                if set != ownership_test(block):
+                    return false
+            else:
+                if set:
+                    return false
+            bit = bit + (1 as u32)
+        bitmap_sector = bitmap_sector + (1 as u32)
+    return true
+
+fn load_inode(number: u32, destination: ptr[u8]) -> bool:
+    if number >= (64 as u32):
+        return false
+    return read_sector(ACTIVE.inode_start + inode.inode_record_sector(number), destination)
+
+fn mount_internal() -> int:
+    if read_sector(layout.fs_base(), sector_address()) == false:
+        return IO as i32
+    if layout.is_blank(sector_address()):
+        MOUNTED = 0 as u32
+        return set_error(UNFORMATTED)
+    if layout.validate_superblock(sector_address(), sector.sector_count(), &ACTIVE) == false:
+        MOUNTED = 0 as u32
+        return set_error(CORRUPT)
+    if ACTIVE.data_blocks > MAX_DATA_BLOCKS:
+        MOUNTED = 0 as u32
+        return set_error(CAPACITY)
+    let sector_index: u32 = 0 as u32
+    while sector_index < (8 as u32):
+        let destination: ptr[u8] = ((inode_image_address() as usize) + ((sector_index as usize) * (512 as usize))) as ptr[u8]
+        if read_sector(ACTIVE.inode_start + sector_index, destination) == false:
+            MOUNTED = 0 as u32
+            return IO as i32
+        sector_index = sector_index + (1 as u32)
+    if validate_loaded_metadata() == false:
+        MOUNTED = 0 as u32
+        if LAST_ERROR == IO:
+            return IO as i32
+        return set_error(CORRUPT)
+    MOUNTED = 1 as u32
+    return set_error(OK)
+
+pub fn initialize() -> int:
+    MOUNTED = 0 as u32
+    LAST_ERROR = OK
+    READ_COUNT = 0 as usize
+    FOUND_INODE = 0xffffffff as u32
+    RESOLVED_INODE = 0xffffffff as u32
+    let status: int = sector.initialize()
+    if status != 0:
+        return set_error(IO)
+    return set_error(OK)
+
+pub fn mount() -> int:
+    if sector.ready() == false:
+        return set_error(IO)
+    return mount_internal()
+
+fn fs_find_component(parent: u32, source_path: str, source_offset: usize, source_length: usize) -> bool:
+    FOUND_INODE = 0xffffffff as u32
+    if load_inode(parent, aux_address()) == false:
+        return false
+    let parent_offset: usize = inode.inode_record_offset(parent)
+    if inode.inode_allocated(aux_address(), parent_offset) == false:
+        return false
+    if inode.inode_kind(aux_address(), parent_offset) != inode.inode_directory_type():
+        return false
+    let block_index: u32 = 0 as u32
+    while block_index < (8 as u32):
+        DIRECTORY_BLOCKS[block_index as usize] = inode.inode_block(aux_address(), parent_offset, block_index)
+        block_index = block_index + (1 as u32)
+    let sector_index: usize = 0 as usize
+    while sector_index < (8 as usize):
+        let lba: u32 = ACTIVE.data_start + DIRECTORY_BLOCKS[sector_index]
+        if read_sector(lba, sector_address()) == false:
+            return false
+        let entry: usize = 0 as usize
+        while entry < (8 as usize):
+            let entry_offset: usize = entry * (64 as usize)
+            if directory.dir_is_free(sector_address(), entry_offset) == false:
+                if directory.dir_name_equals_at(sector_address(), entry_offset, source_path, source_offset, source_length):
+                    FOUND_INODE = directory.dir_inode_number(sector_address(), entry_offset)
+                    return true
+            entry = entry + (1 as usize)
+        sector_index = sector_index + (1 as usize)
+    return false
+
+fn fs_resolve(source_path: str, source_length: usize) -> int:
+    let status: int = path.path_cursor_initialize(&PATH_CURSOR, source_path, source_length)
+    if status != 0:
+        return status
+    if path.path_is_root(&PATH_CURSOR):
+        RESOLVED_INODE = 1 as u32
+        return 0
+    let current: u32 = 1 as u32
+    while path.path_done(&PATH_CURSOR) == false:
+        let next_status: int = path.path_next(&PATH_CURSOR)
+        if next_status != 0:
+            return next_status
+        if fs_find_component(current, source_path, path.component_offset(&PATH_CURSOR), path.component_length(&PATH_CURSOR)) == false:
+            if LAST_ERROR == IO:
+                return IO as i32
+            return NOT_FOUND as i32
+        current = FOUND_INODE
+        if path.path_done(&PATH_CURSOR) == false:
+            if load_inode(current, aux_address()) == false:
+                return IO as i32
+            if inode.inode_kind(aux_address(), inode.inode_record_offset(current)) != inode.inode_directory_type():
+                return NOT_DIRECTORY as i32                return NOT_DIRECTORY as i32
+    RESOLVED_INODE = current
+    return 0
+
+pub fn lookup(source_path: str, source_length: usize, output: ptr[u32]) -> int:
+    if output as usize == (0 as usize):
+        return set_error(INVALID)
+    if MOUNTED == (0 as u32):
+        return set_error(NOT_MOUNTED)
+    let status: int = fs_resolve(source_path, source_length)
+    if status != 0:
+        return set_error(status as u32)
+    (*output) = RESOLVED_INODE
+    return set_error(OK)
+
+pub fn stat(source_path: str, source_length: usize, output: ptr[DbfsStat]) -> int:
+    if output as usize == (0 as usize):
+        return set_error(INVALID)
+    if MOUNTED == (0 as u32):
+        return set_error(NOT_MOUNTED)
+    let status: int = fs_resolve(source_path, source_length)
+    if status != 0:
+        return set_error(status as u32)
+    if load_inode(RESOLVED_INODE, sector_address()) == false:
+        return set_error(IO)
+    let offset: usize = inode.inode_record_offset(RESOLVED_INODE)
+    (*output).inode_number = RESOLVED_INODE
+    (*output).entry_type = inode.inode_kind(sector_address(), offset)
+    (*output).size_bytes = inode.inode_size(sector_address(), offset)
+    (*output).direct_blocks = inode.inode_block_count(sector_address(), offset)
+    return set_error(OK)
+
+fn read_inode(number: u32, offset: usize, destination: ptr[u8], length: usize, bytes_read: ptr[usize]) -> int:
+    (*bytes_read) = 0 as usize
+    if number == (0 as u32):
+        return NOT_FOUND as i32
+    if number >= (64 as u32):
+        return NOT_FOUND as i32
+    if load_inode(number, aux_address()) == false:
+        return IO as i32
+    let inode_offset_value: usize = inode.inode_record_offset(number)
+    if inode.inode_allocated(aux_address(), inode_offset_value) == false:
+        return NOT_FOUND as i32
+    if inode.inode_kind(aux_address(), inode_offset_value) != inode.inode_regular_type():
+        return IS_DIRECTORY as i32
+    let size: usize = inode.inode_size(aux_address(), inode_offset_value) as usize
+    if offset >= size:
+        return 0
+    let amount_total: usize = length
+    if amount_total > (size - offset):
+        amount_total = size - offset
+    let consumed: usize = 0 as usize
+    while consumed < amount_total:
+        let file_offset: usize = offset + consumed
+        let direct_index: u32 = (file_offset / (512 as usize)) as u32
+        let within: usize = file_offset % (512 as usize)
+        let remaining_in_sector: usize = (512 as usize) - within
+        let remaining: usize = amount_total - consumed
+        let amount: usize = remaining
+        if amount > remaining_in_sector:
+            amount = remaining_in_sector
+        let data_block: u32 = inode.inode_block(aux_address(), inode_offset_value, direct_index)
+        if data_block >= ACTIVE.data_blocks:
+            return CORRUPT as i32
+        if read_sector(ACTIVE.data_start + data_block, sector_address()) == false:
+            return IO as i32
+        let index: usize = 0 as usize
+        while index < amount:
+            layout.put8(destination, consumed + index, layout.get8(sector_address(), within + index))
+            index = index + (1 as usize)
+        consumed = consumed + amount
+    (*bytes_read) = amount_total
+    return 0
+
+pub fn read_inode_at(number: u32, offset: usize, destination: ptr[u8], length: usize, bytes_read: ptr[usize]) -> int:
+    if destination as usize == (0 as usize):
+        return set_error(INVALID)
+    if bytes_read as usize == (0 as usize):
+        return set_error(INVALID)
+    if MOUNTED == (0 as u32):
+        return set_error(NOT_MOUNTED)
+    return set_error(read_inode(number, offset, destination, length, bytes_read) as u32)
+
+pub fn read_at(source_path: str, source_length: usize, offset: usize, destination: ptr[u8], length: usize, bytes_read: ptr[usize]) -> int:
+    if destination as usize == (0 as usize):
+        return set_error(INVALID)
+    if bytes_read as usize == (0 as usize):
+        return set_error(INVALID)
+    if MOUNTED == (0 as u32):
+        return set_error(NOT_MOUNTED)
+    let status: int = fs_resolve(source_path, source_length)
+    if status != 0:
+        return set_error(status as u32)
+    return set_error(read_inode(RESOLVED_INODE, offset, destination, length, bytes_read) as u32)
+
+pub fn read(source_path: str, source_length: usize, destination: ptr[u8], capacity: usize, bytes_read: ptr[usize]) -> int:
+    return read_at(source_path, source_length, 0 as usize, destination, capacity, bytes_read)
+
+pub fn mounted() -> bool:
+    return MOUNTED != (0 as u32)
+
+pub fn last_error() -> u32:
+    return LAST_ERROR
+
+pub fn read_count() -> usize:
+    return READ_COUNT
+
+pub fn data_start() -> u32:
+    if MOUNTED == (0 as u32):
+        return 0 as u32
+    return ACTIVE.data_start
+
+pub fn data_blocks() -> u32:
+    if MOUNTED == (0 as u32):
+        return 0 as u32
+    return ACTIVE.data_blocks

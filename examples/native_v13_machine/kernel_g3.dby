@@ -1,0 +1,4 @@
+import "machine_g3.dby" as machine
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    return machine.run(magic, info)

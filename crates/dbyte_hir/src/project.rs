@@ -335,7 +335,8 @@ fn shift_expression_span(expression: &mut Expr, lines: usize) {
         | Expr::Borrow { expr, .. }
         | Expr::Try { expr, .. }
         | Expr::Drop { expr, .. }
-        | Expr::Cast { expr, .. } => shift_expression_span(expr, lines),
+        | Expr::Cast { expr, .. }
+        | Expr::Bitcast { expr, .. } => shift_expression_span(expr, lines),
         Expr::Call { args, .. } | Expr::MemberCall { args, .. } => {
             for arg in args {
                 shift_expression_span(arg, lines);
@@ -418,7 +419,8 @@ fn expression_span_mut(expression: &mut Expr) -> &mut Span {
         | Expr::Try { span, .. }
         | Expr::Drop { span, .. }
         | Expr::Closure { span, .. }
-        | Expr::Cast { span, .. } => span,
+        | Expr::Cast { span, .. }
+        | Expr::Bitcast { span, .. } => span,
     }
 }
 
@@ -554,6 +556,7 @@ fn collect_referenced_names_in_expression(expression: &Expr, referenced: &mut BT
         | Expr::Try { expr, .. }
         | Expr::Drop { expr, .. }
         | Expr::Cast { expr, .. }
+        | Expr::Bitcast { expr, .. }
         | Expr::GenericApply { target: expr, .. }
         | Expr::Member { object: expr, .. } => {
             collect_referenced_names_in_expression(expr, referenced);
@@ -1283,6 +1286,11 @@ impl Rewriter<'_> {
                 }
             }
             Expr::Cast { expr, ty, span } => Expr::Cast {
+                expr: Box::new(self.expression(*expr)),
+                ty: self.annotation(ty, span),
+                span,
+            },
+            Expr::Bitcast { expr, ty, span } => Expr::Bitcast {
                 expr: Box::new(self.expression(*expr)),
                 ty: self.annotation(ty, span),
                 span,

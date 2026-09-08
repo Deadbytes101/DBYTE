@@ -1,0 +1,102 @@
+pub struct BitPair:
+    word32: f32
+    word64: f64
+
+fn carry32(value: f32) -> f32:
+    return value
+
+fn carry64(value: f64) -> f64:
+    return value
+
+fn identity[T](value: T) -> T:
+    return value
+
+fn check32(bits: u32) -> bool:
+    let value: f32 = bits as! f32
+    return (value as! u32) == bits
+
+fn check64(bits: u64) -> bool:
+    let value: f64 = bits as! f64
+    return (value as! u64) == bits
+
+pub fn check() -> int:
+    if check32(0 as u32) == false:
+        return 1
+    if check32(0x80000000 as u32) == false:
+        return 2
+    if check32(0x7f800000 as u32) == false:
+        return 3
+    if check32(0xff800000 as u32) == false:
+        return 4
+    if check32(0x7fc12345 as u32) == false:
+        return 5
+    if check32(0x7fa12345 as u32) == false:
+        return 6
+    if check32(1 as u32) == false:
+        return 7
+    if check32(0x7f7fffff as u32) == false:
+        return 8
+
+    let sign64: u64 = (1 as u64) << (63 as u64)
+    let exponent64: u64 = (2047 as u64) << (52 as u64)
+    let fraction64: u64 = ((1 as u64) << (52 as u64)) - (1 as u64)
+    let max64: u64 = ((2046 as u64) << (52 as u64)) | fraction64
+    let qnan64: u64 = exponent64 | ((1 as u64) << (51 as u64)) | (0x12345 as u64)
+    let snan64: u64 = exponent64 | ((1 as u64) << (50 as u64)) | (0x54321 as u64)
+    if check64(0 as u64) == false:
+        return 9
+    if check64(sign64) == false:
+        return 10
+    if check64(exponent64) == false:
+        return 11
+    if check64(sign64 | exponent64) == false:
+        return 12
+    if check64(qnan64) == false:
+        return 13
+    if check64(snan64) == false:
+        return 14
+    if check64(1 as u64) == false:
+        return 15
+    if check64(max64) == false:
+        return 16
+
+    let generic32: f32 = identity[f32](0x7fc54321 as u32 as! f32)
+    if (generic32 as! u32) != (0x7fc54321 as u32):
+        return 17
+    let generic64: f64 = identity[f64](qnan64 as! f64)
+    if (generic64 as! u64) != qnan64:
+        return 18
+
+    let direct32: f32 = carry32(0x80000001 as u32 as! f32)
+    if (direct32 as! u32) != (0x80000001 as u32):
+        return 19
+    let direct64: f64 = carry64((sign64 | (1 as u64)) as! f64)
+    if (direct64 as! u64) != (sign64 | (1 as u64)):
+        return 20
+
+    let indirect32: fn(f32) -> f32 = carry32
+    if (indirect32(0x7fa23456 as u32 as! f32) as! u32) != (0x7fa23456 as u32):
+        return 21
+    let indirect64: fn(f64) -> f64 = carry64
+    if (indirect64(snan64 as! f64) as! u64) != snan64:
+        return 22
+
+    let pair = BitPair(word32 = 0xff7fffff as u32 as! f32, word64 = max64 as! f64)
+    if (pair.word32 as! u32) != (0xff7fffff as u32):
+        return 23
+    if (pair.word64 as! u64) != max64:
+        return 24
+
+    let words32: array[f32, 2] = [0x80000000 as u32 as! f32, 0x7fc12345 as u32 as! f32]
+    if (words32[0 as usize] as! u32) != (0x80000000 as u32):
+        return 25
+    if (words32[1 as usize] as! u32) != (0x7fc12345 as u32):
+        return 26
+
+    let words64: array[f64, 2] = [sign64 as! f64, qnan64 as! f64]
+    if (words64[0 as usize] as! u64) != sign64:
+        return 27
+    if (words64[1 as usize] as! u64) != qnan64:
+        return 28
+
+    return 0

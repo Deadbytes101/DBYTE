@@ -1,0 +1,336 @@
+import "acpi.dby" as acpi
+import "apic.dby" as apic
+import "interrupts64.dby" as irq
+
+const DATA_PORT: u16 = 0x60 as u16
+const STATUS_PORT: u16 = 0x64 as u16
+const COMMAND_PORT: u16 = 0x64 as u16
+const STATUS_OUTPUT_FULL: u8 = 0x01 as u8
+const STATUS_INPUT_FULL: u8 = 0x02 as u8
+const STATUS_AUX_OUTPUT: u8 = 0x20 as u8
+const COMMAND_READ_CONFIG: u8 = 0x20 as u8
+const COMMAND_WRITE_CONFIG: u8 = 0x60 as u8
+const COMMAND_DISABLE_AUX: u8 = 0xa7 as u8
+const COMMAND_DISABLE_KEYBOARD: u8 = 0xad as u8
+const COMMAND_ENABLE_KEYBOARD: u8 = 0xae as u8
+const CONFIG_IRQ1: u8 = 0x01 as u8
+const CONFIG_IRQ12: u8 = 0x02 as u8
+const CONFIG_DISABLE_KEYBOARD: u8 = 0x10 as u8
+const CONFIG_DISABLE_AUX: u8 = 0x20 as u8
+const CONFIG_TRANSLATION: u8 = 0x40 as u8
+const KEYBOARD_ACK: u8 = 0xfa as u8
+const KEYBOARD_DISABLE_SCAN: u8 = 0xf5 as u8
+const KEYBOARD_SET_SCANCODE: u8 = 0xf0 as u8
+const KEYBOARD_SCANCODE_SET2: u8 = 0x02 as u8
+const KEYBOARD_ENABLE_SCAN: u8 = 0xf4 as u8
+const RING_CAPACITY: u32 = 64 as u32
+const IO_TIMEOUT_TICKS: u32 = 357954 as u32
+const EVENT_TIMEOUT_TICKS: u32 = 7159090 as u32
+const IO_POLL_LIMIT: u32 = 2000000 as u32
+const IF_BIT: u32 = 0x200 as u32
+
+static mut RING: array[u8, 64]
+static mut RING_HEAD: u32
+static mut RING_TAIL: u32
+static mut RING_COUNT: u32
+static mut RING_DROPPED: u32
+static mut IRQ_COUNT: u32
+static mut EOI_COUNT: u32
+static mut PUSH_COUNT: u32
+static mut MALFORMED_COUNT: u32
+static mut DRIVER_FAULT: u32
+static mut LAST_STATUS: u32
+static mut LAST_SCANCODE: u32
+
+fn pm_mask() -> u32:
+    if acpi.pm_timer_width() == (32 as u32):
+        return 0xffffffff as u32
+    return 0x00ffffff as u32
+
+fn pm_read() -> u32:
+    return native.io_in32(acpi.pm_timer_port() as u16) & pm_mask()
+
+fn pm_elapsed(start: u32, current: u32) -> u32:
+    let mask: u32 = pm_mask()
+    let first: u32 = start & mask
+    let now: u32 = current & mask
+    if now >= first:
+        return now - first
+    return (mask - first) + now + (1 as u32)
+fn ring_reset() -> int:
+    let index: usize = 0 as usize
+    while index < (64 as usize):
+        native.volatile_store8((&RING[index]) as ptr[u8], 0 as u8)
+        index = index + (1 as usize)
+    native.volatile_store32((&RING_HEAD) as ptr[u32], 0 as u32)
+    native.volatile_store32((&RING_TAIL) as ptr[u32], 0 as u32)
+    native.volatile_store32((&RING_COUNT) as ptr[u32], 0 as u32)
+    native.volatile_store32((&RING_DROPPED) as ptr[u32], 0 as u32)
+    return 0
+
+fn ring_push(value: u8) -> bool:
+    let count: u32 = native.volatile_load32((&RING_COUNT) as ptr[u32])
+    if count >= RING_CAPACITY:
+        let dropped: u32 = native.volatile_load32((&RING_DROPPED) as ptr[u32])
+        native.volatile_store32((&RING_DROPPED) as ptr[u32], dropped + (1 as u32))
+        return false
+    let tail: u32 = native.volatile_load32((&RING_TAIL) as ptr[u32])
+    native.volatile_store8((&RING[tail as usize]) as ptr[u8], value)
+    let next: u32 = tail + (1 as u32)
+    if next == RING_CAPACITY:
+        next = 0 as u32
+    native.volatile_store32((&RING_TAIL) as ptr[u32], next)
+    native.volatile_store32((&RING_COUNT) as ptr[u32], count + (1 as u32))
+    return true
+
+fn ring_pop(output: ptr[u8]) -> bool:
+    if (output as usize) == (0 as usize):
+        return false
+    let flags: u32 = native.cpu_read_eflags()
+    native.cpu_cli()
+    let count: u32 = native.volatile_load32((&RING_COUNT) as ptr[u32])
+    if count == (0 as u32):
+        if (flags & IF_BIT) != (0 as u32):
+            native.cpu_sti()
+        return false
+    let head: u32 = native.volatile_load32((&RING_HEAD) as ptr[u32])
+    let value: u8 = native.volatile_load8((&RING[head as usize]) as ptr[u8])
+    let next: u32 = head + (1 as u32)
+    if next == RING_CAPACITY:
+        next = 0 as u32
+    native.volatile_store32((&RING_HEAD) as ptr[u32], next)
+    native.volatile_store32((&RING_COUNT) as ptr[u32], count - (1 as u32))
+    native.volatile_store8(output, value)
+    if (flags & IF_BIT) != (0 as u32):
+        native.cpu_sti()
+    return true
+
+fn keyboard_status(status: u8) -> bool:
+    if (status & STATUS_OUTPUT_FULL) == (0 as u8):
+        return false
+    if (status & STATUS_AUX_OUTPUT) != (0 as u8):
+        return false
+    return true
+
+fn self_test() -> int:
+    if keyboard_status(0 as u8):
+        return 1
+    if keyboard_status((STATUS_OUTPUT_FULL | STATUS_AUX_OUTPUT) as u8):
+        return 2
+    if keyboard_status(STATUS_OUTPUT_FULL) == false:
+        return 3
+    ring_reset()
+    let index: u32 = 0 as u32
+    while index < (65 as u32):
+        ring_push(index as u8)
+        index = index + (1 as u32)
+    if native.volatile_load32((&RING_COUNT) as ptr[u32]) != RING_CAPACITY:
+        return 4
+    if native.volatile_load32((&RING_DROPPED) as ptr[u32]) != (1 as u32):
+        return 5
+    ring_reset()
+    return 0
+
+fn wait_input_clear() -> int:
+    let start: u32 = pm_read()
+    let polls: u32 = 0 as u32
+    while polls < IO_POLL_LIMIT:
+        if (native.io_in8(STATUS_PORT) & STATUS_INPUT_FULL) == (0 as u8):
+            return 0
+        if pm_elapsed(start, pm_read()) >= IO_TIMEOUT_TICKS:
+            return 1
+        polls = polls + (1 as u32)
+    return 1
+
+fn wait_output_full() -> int:
+    let start: u32 = pm_read()
+    let polls: u32 = 0 as u32
+    while polls < IO_POLL_LIMIT:
+        if (native.io_in8(STATUS_PORT) & STATUS_OUTPUT_FULL) != (0 as u8):
+            return 0
+        if pm_elapsed(start, pm_read()) >= IO_TIMEOUT_TICKS:
+            return 1
+        polls = polls + (1 as u32)
+    return 1
+
+fn controller_command(value: u8) -> int:
+    if wait_input_clear() != 0:
+        return 1
+    native.io_out8(COMMAND_PORT, value)
+    return 0
+
+fn write_data(value: u8) -> int:
+    if wait_input_clear() != 0:
+        return 1
+    native.io_out8(DATA_PORT, value)
+    return 0
+
+fn drain_output() -> int:
+    let drained: u32 = 0 as u32
+    while drained < (64 as u32):
+        let status: u8 = native.io_in8(STATUS_PORT)
+        if (status & STATUS_OUTPUT_FULL) == (0 as u8):
+            return 0
+        native.io_in8(DATA_PORT)
+        drained = drained + (1 as u32)
+    if (native.io_in8(STATUS_PORT) & STATUS_OUTPUT_FULL) != (0 as u8):
+        return 1
+    return 0
+
+fn read_config(output: ptr[u8]) -> int:
+    if (output as usize) == (0 as usize):
+        return 1
+    if controller_command(COMMAND_READ_CONFIG) != 0:
+        return 2
+    if wait_output_full() != 0:
+        return 3
+    native.volatile_store8(output, native.io_in8(DATA_PORT))
+    return 0
+
+fn write_config(value: u8) -> int:
+    if controller_command(COMMAND_WRITE_CONFIG) != 0:
+        return 1
+    if write_data(value) != 0:
+        return 2
+    return 0
+
+fn keyboard_command(value: u8) -> int:
+    if write_data(value) != 0:
+        return 1
+    if wait_output_full() != 0:
+        return 2
+    if native.io_in8(DATA_PORT) != KEYBOARD_ACK:
+        return 3
+    return 0
+
+pub fn initialize() -> int:
+    native.cpu_cli()
+    IRQ_COUNT = 0 as u32
+    EOI_COUNT = 0 as u32
+    PUSH_COUNT = 0 as u32
+    MALFORMED_COUNT = 0 as u32
+    DRIVER_FAULT = 0 as u32
+    LAST_STATUS = 0 as u32
+    LAST_SCANCODE = 0 as u32
+    ring_reset()
+    let self_status: int = self_test()
+    if self_status != 0:
+        return 10 + self_status
+    if controller_command(COMMAND_DISABLE_KEYBOARD) != 0:
+        return 20
+    if controller_command(COMMAND_DISABLE_AUX) != 0:
+        return 21
+    if drain_output() != 0:
+        return 22
+    let config: u8 = 0 as u8
+    if read_config(&config) != 0:
+        return 23
+    config = config & ((CONFIG_IRQ1 | CONFIG_IRQ12) ^ (0xff as u8))
+    config = config | CONFIG_DISABLE_KEYBOARD | CONFIG_DISABLE_AUX | CONFIG_TRANSLATION
+    if write_config(config) != 0:
+        return 24
+    if controller_command(COMMAND_ENABLE_KEYBOARD) != 0:
+        return 25
+    if keyboard_command(KEYBOARD_DISABLE_SCAN) != 0:
+        return 26
+    if keyboard_command(KEYBOARD_SET_SCANCODE) != 0:
+        return 27
+    if keyboard_command(KEYBOARD_SCANCODE_SET2) != 0:
+        return 28
+    if keyboard_command(KEYBOARD_ENABLE_SCAN) != 0:
+        return 29
+    if drain_output() != 0:
+        return 30
+    if irq.install_keyboard_gate(interrupt_address(65, irq1)) != 0:
+        return 31
+    let route_status: int = apic.route_keyboard_irq()
+    if route_status != 0:
+        return route_status
+    if read_config(&config) != 0:
+        return 32
+    config = config | CONFIG_IRQ1 | CONFIG_DISABLE_AUX | CONFIG_TRANSLATION
+    config = config & ((CONFIG_IRQ12 | CONFIG_DISABLE_KEYBOARD) ^ (0xff as u8))
+    if write_config(config) != 0:
+        return 33
+    return 0
+
+pub fn begin_capture() -> int:
+    let timer_status: int = apic.start_periodic_probe()
+    if timer_status != 0:
+        return timer_status
+    native.cpu_sti()
+    return 0
+
+pub fn end_capture() -> int:
+    native.cpu_cli()
+    apic.stop_periodic_probe()
+    let config: u8 = 0 as u8
+    if read_config(&config) != 0:
+        return 1
+    config = config & (CONFIG_IRQ1 ^ (0xff as u8))
+    if write_config(config) != 0:
+        return 2
+    return 0
+
+pub fn wait_scancode(output: ptr[u8]) -> int:
+    if (output as usize) == (0 as usize):
+        return 2
+    let start: u32 = pm_read()
+    let polls: u32 = 0 as u32
+    while polls < (40000000 as u32):
+        if ring_pop(output):
+            return 0
+        if pm_elapsed(start, pm_read()) >= EVENT_TIMEOUT_TICKS:
+            return 1
+        polls = polls + (1 as u32)
+    return 1
+
+pub interrupt(no_error_code) fn irq1(frame: ptr[irq.InterruptFrame64]):
+    let count: u32 = native.volatile_load32((&IRQ_COUNT) as ptr[u32])
+    native.volatile_store32((&IRQ_COUNT) as ptr[u32], count + (1 as u32))
+    let status: u8 = native.io_in8(STATUS_PORT)
+    native.volatile_store32((&LAST_STATUS) as ptr[u32], status as u32)
+    if keyboard_status(status):
+        let value: u8 = native.io_in8(DATA_PORT)
+        native.volatile_store32((&LAST_SCANCODE) as ptr[u32], value as u32)
+        if ring_push(value):
+            let pushes: u32 = native.volatile_load32((&PUSH_COUNT) as ptr[u32])
+            native.volatile_store32((&PUSH_COUNT) as ptr[u32], pushes + (1 as u32))
+    else:
+        let malformed: u32 = native.volatile_load32((&MALFORMED_COUNT) as ptr[u32])
+        native.volatile_store32((&MALFORMED_COUNT) as ptr[u32], malformed + (1 as u32))
+    if irq.lapic_eoi() != 0:
+        native.volatile_store32((&DRIVER_FAULT) as ptr[u32], 1 as u32)
+    else:
+        let eois: u32 = native.volatile_load32((&EOI_COUNT) as ptr[u32])
+        native.volatile_store32((&EOI_COUNT) as ptr[u32], eois + (1 as u32))
+    return
+pub fn irq_count() -> u32:
+    return native.volatile_load32((&IRQ_COUNT) as ptr[u32])
+
+pub fn eoi_count() -> u32:
+    return native.volatile_load32((&EOI_COUNT) as ptr[u32])
+
+pub fn push_count() -> u32:
+    return native.volatile_load32((&PUSH_COUNT) as ptr[u32])
+
+pub fn dropped_count() -> u32:
+    return native.volatile_load32((&RING_DROPPED) as ptr[u32])
+
+pub fn malformed_count() -> u32:
+    return native.volatile_load32((&MALFORMED_COUNT) as ptr[u32])
+
+pub fn fault_code() -> u32:
+    return native.volatile_load32((&DRIVER_FAULT) as ptr[u32])
+
+pub fn queued_count() -> u32:
+    return native.volatile_load32((&RING_COUNT) as ptr[u32])
+
+pub fn last_status() -> u32:
+    return native.volatile_load32((&LAST_STATUS) as ptr[u32])
+
+pub fn last_scancode() -> u32:
+    return native.volatile_load32((&LAST_SCANCODE) as ptr[u32])
+
+pub fn timer_ticks() -> u32:
+    return irq.timer_ticks()

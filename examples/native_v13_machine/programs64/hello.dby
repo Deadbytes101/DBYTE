@@ -1,0 +1,6 @@
+pub fn user_main() -> int:
+    let message: str = "HELLO FROM DBYTE64 USER\r\n"
+    let written: i32 = user.syscall3(1 as u32, 1 as usize, message, 25 as usize)
+    if written != 25:
+        return 1
+    return 0

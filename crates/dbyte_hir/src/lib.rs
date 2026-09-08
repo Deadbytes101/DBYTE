@@ -58,6 +58,7 @@ pub enum Profile {
     X86_64None,
     X86_64Linux,
     X86_64Windows,
+    X86_64User,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +128,8 @@ pub enum CanonicalType {
     Unit,
     Integer(IntegerType),
     Float,
+    F32,
+    F64,
     Bool,
     LegacyStr,
     LegacyBytes,
@@ -278,20 +281,32 @@ pub enum HirIntrinsic {
     VolatileStore16,
     VolatileLoad32,
     VolatileStore32,
+    VolatileLoad64,
+    VolatileStore64,
     IoOut8,
     IoIn8,
     IoOut16,
     IoIn16,
+    IoOut32,
+    IoIn32,
     CpuHlt,
     CpuCli,
     CpuSti,
     CpuInt3,
     CpuReadEflags,
+    CpuCpuidEax,
+    CpuCpuidEbx,
+    CpuCpuidEcx,
+    CpuCpuidEdx,
+    CpuRdmsr,
+    CpuWrmsr,
     CpuReadCr0,
     CpuWriteCr0,
     CpuReadCr2,
     CpuReadCr3,
     CpuWriteCr3,
+    CpuReadCr4,
+    CpuWriteCr4,
     CpuInvlpg,
     CpuLgdt,
     CpuLidt,
@@ -342,20 +357,32 @@ impl HirIntrinsic {
             ("native", "volatile_store16") => Self::VolatileStore16,
             ("native", "volatile_load32") => Self::VolatileLoad32,
             ("native", "volatile_store32") => Self::VolatileStore32,
+            ("native", "volatile_load64") => Self::VolatileLoad64,
+            ("native", "volatile_store64") => Self::VolatileStore64,
             ("native", "io_out8") => Self::IoOut8,
             ("native", "io_in8") => Self::IoIn8,
             ("native", "io_out16") => Self::IoOut16,
             ("native", "io_in16") => Self::IoIn16,
+            ("native", "io_out32") => Self::IoOut32,
+            ("native", "io_in32") => Self::IoIn32,
             ("native", "cpu_hlt") => Self::CpuHlt,
             ("native", "cpu_cli") => Self::CpuCli,
             ("native", "cpu_sti") => Self::CpuSti,
             ("native", "cpu_int3") => Self::CpuInt3,
             ("native", "cpu_read_eflags") => Self::CpuReadEflags,
+            ("native", "cpu_cpuid_eax") => Self::CpuCpuidEax,
+            ("native", "cpu_cpuid_ebx") => Self::CpuCpuidEbx,
+            ("native", "cpu_cpuid_ecx") => Self::CpuCpuidEcx,
+            ("native", "cpu_cpuid_edx") => Self::CpuCpuidEdx,
+            ("native", "cpu_rdmsr") => Self::CpuRdmsr,
+            ("native", "cpu_wrmsr") => Self::CpuWrmsr,
             ("native", "cpu_read_cr0") => Self::CpuReadCr0,
             ("native", "cpu_write_cr0") => Self::CpuWriteCr0,
             ("native", "cpu_read_cr2") => Self::CpuReadCr2,
             ("native", "cpu_read_cr3") => Self::CpuReadCr3,
             ("native", "cpu_write_cr3") => Self::CpuWriteCr3,
+            ("native", "cpu_read_cr4") => Self::CpuReadCr4,
+            ("native", "cpu_write_cr4") => Self::CpuWriteCr4,
             ("native", "cpu_invlpg") => Self::CpuInvlpg,
             ("native", "cpu_lgdt") => Self::CpuLgdt,
             ("native", "cpu_lidt") => Self::CpuLidt,
@@ -872,7 +899,7 @@ impl Analyzer {
                 if interrupt.is_some()
                     && matches!(
                         self.profile,
-                        Profile::Hosted | Profile::Vm | Profile::I686User
+                        Profile::Hosted | Profile::Vm | Profile::I686User | Profile::X86_64User
                     )
                 {
                     self.diagnostic(
@@ -968,7 +995,7 @@ impl Analyzer {
     }
 
     fn validate_profile_expression(&mut self, expression: &Expr) {
-        if self.profile == Profile::I686User {
+        if matches!(self.profile, Profile::I686User | Profile::X86_64User) {
             match expression {
                 Expr::Call { name, span, .. }
                     if name == "interrupt_address"
@@ -977,7 +1004,7 @@ impl Analyzer {
                 {
                     self.diagnostic(
                         "E_PROFILE_CAPABILITY",
-                        format!("i686 user profile does not admit `{name}`"),
+                        format!("user profile does not admit `{name}`"),
                         *span,
                     );
                 }
@@ -989,16 +1016,18 @@ impl Analyzer {
                 } if matches!(object.as_ref(), Expr::Ident(name, _) if name == "native") => {
                     self.diagnostic(
                         "E_PROFILE_CAPABILITY",
-                        format!("i686 user profile does not admit `native.{property}`"),
+                        format!("user profile does not admit `native.{property}`"),
                         *span,
                     );
                 }
                 Expr::Cast { expr, ty, span }
-                    if matches!(
-                        ty,
-                        TypeAnnotation::Pointer(_) | TypeAnnotation::ConstPointer(_)
-                    ) && constant_integer_expression(expr)
-                        .is_some_and(|value| value >= 0xc000_0000) =>
+                    if self.profile == Profile::I686User
+                        && matches!(
+                            ty,
+                            TypeAnnotation::Pointer(_) | TypeAnnotation::ConstPointer(_)
+                        )
+                        && constant_integer_expression(expr)
+                            .is_some_and(|value| value >= 0xc000_0000) =>
                 {
                     self.diagnostic(
                         "E_PROFILE_CAPABILITY",
@@ -1019,7 +1048,8 @@ impl Analyzer {
             | Expr::Borrow { expr, .. }
             | Expr::Try { expr, .. }
             | Expr::Drop { expr, .. }
-            | Expr::Cast { expr, .. } => self.validate_profile_expression(expr),
+            | Expr::Cast { expr, .. }
+            | Expr::Bitcast { expr, .. } => self.validate_profile_expression(expr),
             Expr::List(values, _) => {
                 for value in values {
                     self.validate_profile_expression(value);
@@ -1562,6 +1592,8 @@ impl Analyzer {
             TypeAnnotation::U64 => CanonicalType::Integer(IntegerType::U64),
             TypeAnnotation::Usize => CanonicalType::Integer(IntegerType::Usize),
             TypeAnnotation::Float => CanonicalType::Float,
+            TypeAnnotation::F32 => CanonicalType::F32,
+            TypeAnnotation::F64 => CanonicalType::F64,
             TypeAnnotation::Bool => CanonicalType::Bool,
             TypeAnnotation::Str => CanonicalType::LegacyStr,
             TypeAnnotation::Bytes => CanonicalType::LegacyBytes,
@@ -1873,10 +1905,12 @@ impl Analyzer {
             self.borrow_bindings.clear();
             self.borrowed_parameters.clear();
             ownership.pop_scope();
-            if name == "kernel_main" && self.profile == Profile::I686User {
+            if name == "kernel_main"
+                && matches!(self.profile, Profile::I686User | Profile::X86_64User)
+            {
                 self.diagnostic(
                     "E_PROFILE_CAPABILITY",
-                    "i686-dbyte-user does not admit kernel_main",
+                    "user profiles do not admit kernel_main",
                     *span,
                 );
             }
@@ -3275,7 +3309,13 @@ impl Analyzer {
                     }
                     (CanonicalType::LegacyStr, CanonicalType::Integer(IntegerType::Usize))
                     | (CanonicalType::Integer(IntegerType::Usize), CanonicalType::LegacyStr)
-                        if matches!(self.profile, Profile::I686None | Profile::I686User) =>
+                        if matches!(
+                            self.profile,
+                            Profile::I686None
+                                | Profile::I686User
+                                | Profile::X86_64None
+                                | Profile::X86_64User
+                        ) =>
                     {
                         true
                     }
@@ -3287,6 +3327,34 @@ impl Analyzer {
                         "cast is outside the canonical checked conversion set",
                         *span,
                     );
+                }
+                Some(target)
+            }
+            Expr::Bitcast { expr, ty, span } => {
+                let source = self.check_expr(expr, generics, ownership, false)?;
+                let target = self.resolve_type(ty, generics, *span)?;
+                let source_size = self.bitcast_size(source);
+                let target_size = self.bitcast_size(target);
+                match (source_size, target_size) {
+                    (Some(left), Some(right)) if left == right => {}
+                    (Some(left), Some(right)) => self.diagnostic(
+                        "E_BITCAST_SIZE_MISMATCH",
+                        format!(
+                            "exact bitcast requires equal representation widths: {} is {left} bytes, {} is {right} bytes",
+                            self.type_name(source),
+                            self.type_name(target)
+                        ),
+                        *span,
+                    ),
+                    _ => self.diagnostic(
+                        "E_BITCAST_TYPE_UNSUPPORTED",
+                        format!(
+                            "exact bitcast does not support {} as! {}",
+                            self.type_name(source),
+                            self.type_name(target)
+                        ),
+                        *span,
+                    ),
                 }
                 Some(target)
             }
@@ -3370,7 +3438,7 @@ impl Analyzer {
                 && matches!(self.profile, Profile::Hosted | Profile::Vm))
             || match self.profile {
                 Profile::I686None | Profile::X86_64None => namespace == "native",
-                Profile::I686User => namespace == "user",
+                Profile::I686User | Profile::X86_64User => namespace == "user",
                 Profile::X86_64Linux => namespace == "linux",
                 Profile::X86_64Windows => namespace == "windows",
                 Profile::Hosted | Profile::Vm => false,
@@ -3389,10 +3457,40 @@ impl Analyzer {
                 span,
             );
         }
+        if matches!(
+            intrinsic,
+            HirIntrinsic::VolatileLoad64 | HirIntrinsic::VolatileStore64
+        ) && self.profile != Profile::X86_64None
+        {
+            self.diagnostic(
+                "E_PROFILE_CAPABILITY",
+                "64-bit volatile intrinsic requires x86_64-dbyte-none",
+                span,
+            );
+        }
+        if matches!(
+            intrinsic,
+            HirIntrinsic::CpuCpuidEax
+                | HirIntrinsic::CpuCpuidEbx
+                | HirIntrinsic::CpuCpuidEcx
+                | HirIntrinsic::CpuCpuidEdx
+                | HirIntrinsic::CpuRdmsr
+                | HirIntrinsic::CpuWrmsr
+                | HirIntrinsic::CpuReadCr4
+                | HirIntrinsic::CpuWriteCr4
+        ) && self.profile != Profile::X86_64None
+        {
+            self.diagnostic(
+                "E_PROFILE_CAPABILITY",
+                "DBYTE64 machine-control intrinsic requires x86_64-dbyte-none",
+                span,
+            );
+        }
 
         let u8_ty = self.types.intern(CanonicalType::Integer(IntegerType::U8));
         let u16_ty = self.types.intern(CanonicalType::Integer(IntegerType::U16));
         let u32_ty = self.types.intern(CanonicalType::Integer(IntegerType::U32));
+        let u64_ty = self.types.intern(CanonicalType::Integer(IntegerType::U64));
         let i32_ty = self.types.intern(CanonicalType::Integer(IntegerType::I32));
         let i64_ty = self.types.intern(CanonicalType::Integer(IntegerType::I64));
         let usize_ty = self
@@ -3585,16 +3683,28 @@ impl Analyzer {
             HirIntrinsic::VolatileStore16 => (vec![None, Some(u16_ty)], unit),
             HirIntrinsic::VolatileLoad32 => (vec![None], u32_ty),
             HirIntrinsic::VolatileStore32 => (vec![None, Some(u32_ty)], unit),
+            HirIntrinsic::VolatileLoad64 => (vec![None], u64_ty),
+            HirIntrinsic::VolatileStore64 => (vec![None, Some(u64_ty)], unit),
             HirIntrinsic::IoOut8 => (vec![Some(u16_ty), Some(u8_ty)], unit),
             HirIntrinsic::IoIn8 => (vec![Some(u16_ty)], u8_ty),
             HirIntrinsic::IoOut16 => (vec![Some(u16_ty), Some(u16_ty)], unit),
             HirIntrinsic::IoIn16 => (vec![Some(u16_ty)], u16_ty),
+            HirIntrinsic::IoOut32 => (vec![Some(u16_ty), Some(u32_ty)], unit),
+            HirIntrinsic::IoIn32 => (vec![Some(u16_ty)], u32_ty),
             HirIntrinsic::CpuHlt
             | HirIntrinsic::CpuCli
             | HirIntrinsic::CpuSti
             | HirIntrinsic::CpuInt3 => (Vec::new(), unit),
-            HirIntrinsic::CpuReadEflags | HirIntrinsic::CpuReadCr0 => (Vec::new(), u32_ty),
-            HirIntrinsic::CpuWriteCr0 => (vec![Some(u32_ty)], unit),
+            HirIntrinsic::CpuReadEflags | HirIntrinsic::CpuReadCr0 | HirIntrinsic::CpuReadCr4 => {
+                (Vec::new(), u32_ty)
+            }
+            HirIntrinsic::CpuCpuidEax
+            | HirIntrinsic::CpuCpuidEbx
+            | HirIntrinsic::CpuCpuidEcx
+            | HirIntrinsic::CpuCpuidEdx => (vec![Some(u32_ty), Some(u32_ty)], u32_ty),
+            HirIntrinsic::CpuRdmsr => (vec![Some(u32_ty)], u64_ty),
+            HirIntrinsic::CpuWrmsr => (vec![Some(u32_ty), Some(u64_ty)], unit),
+            HirIntrinsic::CpuWriteCr0 | HirIntrinsic::CpuWriteCr4 => (vec![Some(u32_ty)], unit),
             HirIntrinsic::CpuReadCr2 | HirIntrinsic::CpuReadCr3 => (Vec::new(), usize_ty),
             HirIntrinsic::CpuWriteCr3 | HirIntrinsic::InterruptResume => {
                 (vec![Some(usize_ty)], unit)
@@ -3734,6 +3844,15 @@ impl Analyzer {
                 args.first().map_or(span, Expr::span),
             );
         }
+        if matches!(intrinsic, HirIntrinsic::CpuRdmsr | HirIntrinsic::CpuWrmsr)
+            && args.first().and_then(constant_integer_expression).is_none()
+        {
+            self.diagnostic(
+                "E_INTRINSIC_CONSTANT",
+                "MSR index must be a compile-time constant",
+                args.first().map_or(span, Expr::span),
+            );
+        }
         if matches!(
             intrinsic,
             HirIntrinsic::CpuLtr | HirIntrinsic::CpuReloadSegments
@@ -3766,7 +3885,7 @@ impl Analyzer {
             if self.profile == Profile::I686User {
                 self.diagnostic(
                     "E_PROFILE_CAPABILITY",
-                    format!("i686 user profile does not admit `{name}`"),
+                    format!("user profile does not admit `{name}`"),
                     span,
                 );
                 return None;
@@ -4701,6 +4820,21 @@ impl Analyzer {
         self.is_copy_inner(ty, &mut BTreeSet::new())
     }
 
+    fn bitcast_size(&self, ty: TypeId) -> Option<u32> {
+        Some(match self.types.values.get(ty.0 as usize)? {
+            CanonicalType::Integer(IntegerType::I8 | IntegerType::U8) => 1,
+            CanonicalType::Integer(IntegerType::I16 | IntegerType::U16) => 2,
+            CanonicalType::Integer(
+                IntegerType::I32 | IntegerType::U32 | IntegerType::LegacyInt,
+            ) => 4,
+            CanonicalType::Integer(IntegerType::I64 | IntegerType::U64) => 8,
+            CanonicalType::Integer(IntegerType::Usize) => self.layout.usize_size,
+            CanonicalType::F32 => 4,
+            CanonicalType::F64 => 8,
+            _ => return None,
+        })
+    }
+
     fn type_name(&self, ty: TypeId) -> String {
         match &self.types.values[ty.0 as usize] {
             CanonicalType::Unit => "unit".into(),
@@ -4708,6 +4842,8 @@ impl Analyzer {
             CanonicalType::Integer(IntegerType::I32) => "int".into(),
             CanonicalType::Integer(integer) => format!("{integer:?}").to_lowercase(),
             CanonicalType::Float => "float".into(),
+            CanonicalType::F32 => "f32".into(),
+            CanonicalType::F64 => "f64".into(),
             CanonicalType::Bool => "bool".into(),
             CanonicalType::LegacyStr => "str".into(),
             CanonicalType::LegacyBytes => "bytes".into(),
@@ -4770,6 +4906,8 @@ impl Analyzer {
             CanonicalType::Unit
             | CanonicalType::Integer(_)
             | CanonicalType::Float
+            | CanonicalType::F32
+            | CanonicalType::F64
             | CanonicalType::Bool
             | CanonicalType::Pointer { .. }
             | CanonicalType::Borrow { .. }
@@ -4834,6 +4972,8 @@ impl Analyzer {
             | TypeAnnotation::U64
             | TypeAnnotation::Usize
             | TypeAnnotation::Float
+            | TypeAnnotation::F32
+            | TypeAnnotation::F64
             | TypeAnnotation::Bool
             | TypeAnnotation::Str
             | TypeAnnotation::Pointer(_)
@@ -5208,7 +5348,17 @@ fn layout_of_inner(
             size: program.layout.usize_size,
             align: program.layout.usize_align,
         },
-        CanonicalType::Integer(_) | CanonicalType::Float => Layout { size: 4, align: 4 },
+        CanonicalType::F64 => Layout {
+            size: 8,
+            align: if program.layout.pointer_size == 4 {
+                4
+            } else {
+                8
+            },
+        },
+        CanonicalType::Integer(_) | CanonicalType::Float | CanonicalType::F32 => {
+            Layout { size: 4, align: 4 }
+        }
         CanonicalType::Pointer { .. }
         | CanonicalType::Borrow { .. }
         | CanonicalType::Function { .. }
@@ -5498,7 +5648,7 @@ fn layout_annotation(
             Some(Layout { size: 1, align: 1 })
         }
         TypeAnnotation::I16 | TypeAnnotation::U16 => Some(Layout { size: 2, align: 2 }),
-        TypeAnnotation::I64 | TypeAnnotation::U64 => Some(Layout {
+        TypeAnnotation::I64 | TypeAnnotation::U64 | TypeAnnotation::F64 => Some(Layout {
             size: 8,
             align: if program.layout.pointer_size == 4 {
                 4
@@ -5506,9 +5656,11 @@ fn layout_annotation(
                 8
             },
         }),
-        TypeAnnotation::Int | TypeAnnotation::I32 | TypeAnnotation::U32 | TypeAnnotation::Float => {
-            Some(Layout { size: 4, align: 4 })
-        }
+        TypeAnnotation::Int
+        | TypeAnnotation::I32
+        | TypeAnnotation::U32
+        | TypeAnnotation::Float
+        | TypeAnnotation::F32 => Some(Layout { size: 4, align: 4 }),
         TypeAnnotation::Usize => Some(Layout {
             size: program.layout.usize_size,
             align: program.layout.usize_align,
@@ -5672,6 +5824,8 @@ fn annotation_matches(
         | (TypeAnnotation::U64, CanonicalType::Integer(IntegerType::U64))
         | (TypeAnnotation::Usize, CanonicalType::Integer(IntegerType::Usize))
         | (TypeAnnotation::Float, CanonicalType::Float)
+        | (TypeAnnotation::F32, CanonicalType::F32)
+        | (TypeAnnotation::F64, CanonicalType::F64)
         | (TypeAnnotation::Bool, CanonicalType::Bool)
         | (TypeAnnotation::Str, CanonicalType::LegacyStr)
         | (TypeAnnotation::Bytes, CanonicalType::LegacyBytes)
@@ -5858,6 +6012,8 @@ fn annotation_matches_shallow(annotation: &TypeAnnotation, canonical: &Canonical
                 CanonicalType::Integer(IntegerType::Usize)
             )
             | (TypeAnnotation::Float, CanonicalType::Float)
+            | (TypeAnnotation::F32, CanonicalType::F32)
+            | (TypeAnnotation::F64, CanonicalType::F64)
             | (TypeAnnotation::Bool, CanonicalType::Bool)
             | (TypeAnnotation::StringView, CanonicalType::StringView)
     )
@@ -6259,6 +6415,28 @@ mod tests {
     }
 
     #[test]
+    fn legacy_str_usize_casts_follow_native_pointer_width_profiles() {
+        let source = "fn roundtrip(address: usize) -> usize:\n    let text: str = address as str\n    return text as usize\n";
+        analyze(
+            &parse(source),
+            Profile::X86_64None,
+            TargetDataLayout::X86_64,
+        )
+        .expect("x86_64-none legacy str uses the pointer-width representation");
+        analyze(
+            &parse(source),
+            Profile::X86_64User,
+            TargetDataLayout::X86_64,
+        )
+        .expect("x86_64-user legacy str uses the pointer-width representation");
+        let diagnostics = analyze(&parse(source), Profile::Hosted, TargetDataLayout::X86_64)
+            .expect_err("hosted legacy str must not gain a raw pointer cast");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_INVALID_CAST"));
+    }
+
+    #[test]
     fn repr_c_and_repr_c_packed_share_the_target_layout_engine() {
         let source = "@repr(C)\nstruct Normal:\n    byte: u8\n    word: u32\n\n@repr(C, packed)\nstruct Packed:\n    byte: u8\n    word: u32\n";
         let hir = analyze(&parse(source), Profile::I686None, TargetDataLayout::I686)
@@ -6351,6 +6529,25 @@ mod tests {
         }));
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.code == "E_PROFILE_CAPABILITY" && diagnostic.message.contains("kernel range")
+        }));
+    }
+
+    #[test]
+    fn x86_64_user_profile_accepts_user_syscalls_and_rejects_native_namespace() {
+        let valid = "pub fn user_main() -> int:\n    return user.syscall0(99 as u32) as int\n";
+        analyze(&parse(valid), Profile::X86_64User, TargetDataLayout::X86_64)
+            .expect("x86_64 user profile admits user syscalls");
+
+        let invalid = "pub fn user_main() -> int:\n    native.cpu_cli()\n    return 0\n";
+        let diagnostics = analyze(
+            &parse(invalid),
+            Profile::X86_64User,
+            TargetDataLayout::X86_64,
+        )
+        .expect_err("x86_64 user profile cannot reach native operations");
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "E_PROFILE_CAPABILITY"
+                && diagnostic.message.contains("native.cpu_cli")
         }));
     }
 
@@ -6465,6 +6662,83 @@ mod tests {
         assert_eq!(TargetDataLayout::X86_64.usize_max(), u64::MAX);
         assert!(!TargetDataLayout::I686.contains_usize(u64::from(u32::MAX) + 1));
         assert!(TargetDataLayout::X86_64.contains_usize(u64::from(u32::MAX) + 1));
+    }
+
+    #[test]
+    fn explicit_float_fields_follow_target_native_layout() {
+        let source = "struct Pair:\n    word32: f32\n    word64: f64\n\nfn carry(value: Pair) -> Pair:\n    return value\n";
+        for (data_layout, expected) in [
+            (TargetDataLayout::I686, Layout { size: 12, align: 4 }),
+            (TargetDataLayout::X86_64, Layout { size: 16, align: 8 }),
+        ] {
+            let hir = analyze(&parse(source), Profile::Hosted, data_layout)
+                .expect("explicit float fields must have a concrete object layout");
+            let pair = hir
+                .types
+                .iter()
+                .position(|ty| matches!(ty, CanonicalType::Struct { .. }))
+                .map(|index| TypeId(index as u32))
+                .expect("Pair type must be interned");
+            assert_eq!(layout_of(&hir, pair).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn exact_bitcasts_admit_only_equal_width_integer_and_explicit_float_representations() {
+        let valid = "fn round32(bits: u32) -> u32:\n    let value: f32 = bits as! f32\n    return value as! u32\n\nfn round64(bits: u64) -> u64:\n    let value: f64 = bits as! f64\n    return value as! u64\n";
+        for layout in [TargetDataLayout::I686, TargetDataLayout::X86_64] {
+            let hir = analyze(&parse(valid), Profile::Hosted, layout)
+                .expect("equal-width explicit float bitcasts must analyze");
+            let f32 = hir
+                .types
+                .iter()
+                .position(|ty| matches!(ty, CanonicalType::F32))
+                .map(|index| TypeId(index as u32))
+                .unwrap();
+            let f64 = hir
+                .types
+                .iter()
+                .position(|ty| matches!(ty, CanonicalType::F64))
+                .map(|index| TypeId(index as u32))
+                .unwrap();
+            assert_eq!(layout_of(&hir, f32).unwrap().size, 4);
+            assert_eq!(layout_of(&hir, f64).unwrap().size, 8);
+        }
+
+        let mismatch = "fn bad(bits: u32) -> f64:\n    return bits as! f64\n";
+        let diagnostics = analyze(&parse(mismatch), Profile::Hosted, TargetDataLayout::X86_64)
+            .expect_err("unequal-width exact bitcast must fail");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_BITCAST_SIZE_MISMATCH"));
+
+        for unsupported in [
+            "fn bad(value: float) -> u32:\n    return value as! u32\n",
+            "fn bad(value: ptr[u8]) -> u32:\n    return value as! u32\n",
+            "fn bad(value: bool) -> u8:\n    return value as! u8\n",
+        ] {
+            let diagnostics = analyze(
+                &parse(unsupported),
+                Profile::Hosted,
+                TargetDataLayout::X86_64,
+            )
+            .expect_err("unsupported exact bitcast type must fail");
+            assert!(diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "E_BITCAST_TYPE_UNSUPPORTED"));
+        }
+    }
+
+    #[test]
+    fn exact_bitcast_usize_width_tracks_target_layout() {
+        let source = "fn round(value: usize) -> u32:\n    return value as! u32\n";
+        analyze(&parse(source), Profile::Hosted, TargetDataLayout::I686)
+            .expect("i686 usize is a four-byte representation");
+        let diagnostics = analyze(&parse(source), Profile::Hosted, TargetDataLayout::X86_64)
+            .expect_err("x86_64 usize is not a four-byte representation");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_BITCAST_SIZE_MISMATCH"));
     }
 
     #[test]

@@ -1,0 +1,208 @@
+import "machine_g3.dby" as machine
+import "boot_info.dby" as boot
+import "user_space64.dby" as user
+import "user_file64.dby" as file
+import "syscall_worker64.dby" as worker
+import "input_ps2.dby" as input
+import "shell_input64.dby" as line
+import "frames64.dby" as frames
+import "console.dby" as console
+
+static mut ACTIVE_PROGRAM: u32
+static mut RUN_COUNT: u32
+static mut COMMAND_COUNT: u32
+static mut FAULT_RUN_COUNT: u32
+static mut INPUT_TIMEOUTS: u32
+
+fn fail(label: str, length: usize, status: int) -> int:
+    console.write(label, length)
+    console.hex32(status as u32)
+    console.newline()
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return status
+
+fn prompt() -> int:
+    console.write("dbyte> ", 7 as usize)
+    return 0
+
+fn print_status() -> int:
+    console.write("SHELL STATUS runs=", 18 as usize)
+    console.hex32(RUN_COUNT)
+    console.write(" commands=", 10 as usize)
+    console.hex32(COMMAND_COUNT)
+    console.write(" faults=", 8 as usize)
+    console.hex32(FAULT_RUN_COUNT)
+    console.write(" timeouts=", 10 as usize)
+    console.hex32(INPUT_TIMEOUTS)
+    console.write(" irq=", 5 as usize)
+    console.hex32(input.irq_count())
+    console.write(" drops=", 7 as usize)
+    console.hex32(input.dropped_count())
+    console.newline()
+    return 0
+
+fn launch(path: str, path_length: usize, program: u32) -> int:
+    native.cpu_cli()
+    if ACTIVE_PROGRAM != (0 as u32):
+        return fail("G5SHELL ACTIVE=", 15 as usize, ACTIVE_PROGRAM as int)
+    if worker.current_owner() != (0 as usize):
+        return fail("G5SHELL OWNER=", 14 as usize, worker.current_owner() as int)
+    let status: int = worker.begin_process()
+    if status != 0:
+        return fail("G5SHELL BEGIN=", 14 as usize, status)
+    status = user.initialize()
+    if status != 0:
+        return fail("G5SHELL USER INIT=", 18 as usize, status)
+    user.reset_observations()
+    status = file.load(path, path_length)
+    if status != 0:
+        return fail("G5SHELL ELF LOAD=", 17 as usize, status)
+    if user.set_worker_target(task_address(worker.run_once)) != 0:
+        return fail("G5SHELL WORKER=", 15 as usize, 1)
+    if user.set_recovery_target(task_address(after_user)) != 0:
+        return fail("G5SHELL RECOVERY=", 17 as usize, 1)
+    ACTIVE_PROGRAM = program
+    console.write("SHELL LAUNCH id=", 16 as usize)
+    console.hex32(program)
+    console.write(" entry=", 7 as usize)
+    console.hex64(user.entry() as u64)
+    console.newline()
+    status = user.enter()
+    return fail("G5SHELL USER RETURN=", 19 as usize, status)
+
+fn finish_shell() -> int:
+    let status: int = input.end_capture()
+    if status != 0:
+        return fail("G5SHELL END INPUT=", 18 as usize, status)
+    console.write("SHELL INPUT irq=", 16 as usize)
+    console.hex32(input.irq_count())
+    console.write(" eoi=", 5 as usize)
+    console.hex32(input.eoi_count())
+    console.write(" pushes=", 8 as usize)
+    console.hex32(input.push_count())
+    console.write(" drops=", 7 as usize)
+    console.hex32(input.dropped_count())
+    console.write(" malformed=", 11 as usize)
+    console.hex32(input.malformed_count())
+    console.newline()
+    console.write("SHELL COMPLETE runs=", 20 as usize)
+    console.hex32(RUN_COUNT)
+    console.write(" commands=", 10 as usize)
+    console.hex32(COMMAND_COUNT)
+    console.write(" faults=", 8 as usize)
+    console.hex32(FAULT_RUN_COUNT)
+    console.newline()
+    console.line("G5 SHELL INTERACTIVE COMPLETE", 29 as usize)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return 0
+
+fn execute_line() -> int:
+    if line.length() == (0 as usize):
+        return 0
+    if line.matches("help", 4 as usize):
+        console.line("SHELL COMMANDS hello worker fault status help quit", 50 as usize)
+        return 0
+    if line.matches("status", 6 as usize):
+        return print_status()
+    if line.matches("quit", 4 as usize):
+        return finish_shell()
+    if line.matches("hello", 5 as usize):
+        return launch("/HELLO.ELF", 10 as usize, 1 as u32)
+    if line.matches("worker", 6 as usize):
+        return launch("/WORKER.ELF", 11 as usize, 2 as u32)
+    if line.matches("fault", 5 as usize):
+        return launch("/FAULT.ELF", 10 as usize, 3 as u32)
+    console.write("SHELL UNKNOWN len=", 18 as usize)
+    console.hex32(line.length() as u32)
+    console.newline()
+    return 0
+
+fn command_loop() -> int:
+    line.reset()
+    prompt()
+    native.cpu_sti()
+    while true:
+        let scan: u8 = 0 as u8
+        let status: int = input.wait_scancode(&scan)
+        if status == 1:
+            INPUT_TIMEOUTS = INPUT_TIMEOUTS + (1 as u32)
+        else:
+            if status != 0:
+                return fail("G5SHELL INPUT=", 14 as usize, status)
+            if scan < (0x80 as u8):
+                if scan == (0x0e as u8):
+                    line.backspace()
+                else:
+                    if scan == (0x1c as u8):
+                        console.newline()
+                        COMMAND_COUNT = COMMAND_COUNT + (1 as u32)
+                        let command_status: int = execute_line()
+                        if command_status != 0:
+                            return command_status
+                        line.reset()
+                        prompt()
+                    else:
+                        let value: u8 = line.ascii(scan)
+                        if value != (0 as u8):
+                            if line.append(value) == 0:
+                                console.putc(value)
+    return 0
+
+pub fn after_user() -> int:
+    native.cpu_cli()
+    let program: u32 = ACTIVE_PROGRAM
+    if program == (0 as u32):
+        return fail("G5SHELL RECOVER ID=", 19 as usize, 0)
+    if user.exited():
+        console.write("SHELL RETURN id=", 16 as usize)
+        console.hex32(program)
+        console.write(" exit=", 6 as usize)
+        console.hex32(user.exit_code() as u32)
+        console.newline()
+    else:
+        if user.fault_count() == (0 as usize):
+            return fail("G5SHELL RECOVER STATE=", 22 as usize, 1)
+        FAULT_RUN_COUNT = FAULT_RUN_COUNT + (1 as u32)
+        console.write("SHELL FAULT id=", 15 as usize)
+        console.hex32(program)
+        console.write(" reason=", 8 as usize)
+        console.hex32(user.last_fault_reason())
+        console.newline()
+    let release_status: int = worker.release_process()
+    if release_status != 0:
+        return fail("G5SHELL RELEASE=", 16 as usize, release_status)
+    user.set_worker_target(0 as usize)
+    user.set_recovery_target(0 as usize)
+    ACTIVE_PROGRAM = 0 as u32
+    RUN_COUNT = RUN_COUNT + (1 as u32)
+    if frames.owned_count() != (0 as usize):
+        return fail("G5SHELL FRAMES=", 15 as usize, frames.owned_count() as int)
+    return command_loop()
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = machine.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G5 SHELL", 18 as usize)
+    if boot.module_count() != (0 as usize):
+        return fail("G5SHELL MODULES=", 16 as usize, boot.module_count() as int)
+    ACTIVE_PROGRAM = 0 as u32
+    RUN_COUNT = 0 as u32
+    COMMAND_COUNT = 0 as u32
+    FAULT_RUN_COUNT = 0 as u32
+    INPUT_TIMEOUTS = 0 as u32
+    status = worker.initialize()
+    if status != 0:
+        return fail("G5SHELL WORKER INIT=", 20 as usize, status)
+    status = input.initialize()
+    if status != 0:
+        return fail("G5SHELL INPUT INIT=", 19 as usize, status)
+    status = input.begin_capture()
+    if status != 0:
+        return fail("G5SHELL CAPTURE=", 16 as usize, status)
+    console.line("SHELL READY disk=DBFS1 input=PS2", 32 as usize)
+    return command_loop()

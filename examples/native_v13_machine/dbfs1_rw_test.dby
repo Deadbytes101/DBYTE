@@ -1,0 +1,120 @@
+import "dbfs1_ro.dby" as dbfs
+import "dbfs_layout.dby" as layout
+import "dbfs_inode_ro.dby" as inode
+import "storage_ide.dby" as ro
+import "storage_ide_write_test.dby" as writer
+
+static mut ACTIVE: layout.Layout
+static mut STAT: dbfs.DbfsStat
+static mut DATA_SECTOR: array[u16, 256]
+static mut INODE_SECTOR: array[u16, 256]
+static mut READY: u32
+static mut LAST_ERROR: u32
+
+const OK: u32 = 0 as u32
+const INVALID: u32 = 1 as u32
+const IO: u32 = 5 as u32
+const NOT_MOUNTED: u32 = 6 as u32
+const TOO_LARGE: u32 = 10 as u32
+const WRONG_TYPE: u32 = 11 as u32
+const UNSUPPORTED_FIXTURE: u32 = 20 as u32
+
+fn set_error(status: u32) -> int:
+    LAST_ERROR = status
+    return status as int
+
+fn data_address() -> ptr[u8]:
+    return (&DATA_SECTOR[0]) as usize as ptr[u8]
+
+fn inode_address() -> ptr[u8]:
+    return (&INODE_SECTOR[0]) as usize as ptr[u8]
+
+pub fn initialize() -> int:
+    READY = 0 as u32
+    LAST_ERROR = OK
+    if dbfs.mounted() == false:
+        return set_error(NOT_MOUNTED)
+    if layout.calculate(ro.sector_count(), &ACTIVE) == false:
+        return set_error(IO)
+    if dbfs.data_start() != ACTIVE.data_start:
+        return set_error(IO)
+    READY = 1 as u32
+    return set_error(OK)
+
+fn load_inode(number: u32) -> int:
+    let lba: u32 = ACTIVE.inode_start + inode.inode_record_sector(number)
+    let status: int = ro.read_sector_into(lba, inode_address())
+    if status != 0:
+        return IO as int
+    return 0
+
+fn prepare_data(source: ptr[u8], length: usize) -> int:
+    layout.zero(data_address(), 512 as usize)
+    let index: usize = 0 as usize
+    while index < length:
+        layout.put8(data_address(), index, native.volatile_load8(((source as usize) + index) as ptr[u8]))
+        index = index + (1 as usize)
+    return 0
+
+pub fn replace(source_path: str, source_length: usize, source: ptr[u8], length: usize) -> int:
+    if READY == (0 as u32):
+        return set_error(NOT_MOUNTED)
+    if (source as usize) == (0 as usize):
+        return set_error(INVALID)
+    if length == (0 as usize):
+        return set_error(INVALID)
+    if length > (512 as usize):
+        return set_error(TOO_LARGE)
+    let status: int = dbfs.stat(source_path, source_length, &STAT)
+    if status != 0:
+        return set_error(status as u32)
+    if STAT.entry_type != inode.inode_regular_type():
+        return set_error(WRONG_TYPE)
+    if STAT.direct_blocks != (1 as u32):
+        return set_error(UNSUPPORTED_FIXTURE)
+    status = load_inode(STAT.inode_number)
+    if status != 0:
+        return set_error(status as u32)
+    let inode_offset: usize = inode.inode_record_offset(STAT.inode_number)
+    if inode.inode_allocated(inode_address(), inode_offset) == false:
+        return set_error(IO)
+    if inode.inode_kind(inode_address(), inode_offset) != inode.inode_regular_type():
+        return set_error(WRONG_TYPE)
+    if inode.inode_block_count(inode_address(), inode_offset) != (1 as u32):
+        return set_error(UNSUPPORTED_FIXTURE)
+    let data_block: u32 = inode.inode_block(inode_address(), inode_offset, 0 as u32)
+    if data_block >= ACTIVE.data_blocks:
+        return set_error(IO)
+    let data_lba: u32 = ACTIVE.data_start + data_block
+    let inode_lba: u32 = ACTIVE.inode_start + inode.inode_record_sector(STAT.inode_number)
+    if data_lba != (85 as u32):
+        return set_error(UNSUPPORTED_FIXTURE)
+    if inode_lba != (69 as u32):
+        return set_error(UNSUPPORTED_FIXTURE)
+    prepare_data(source, length)
+    layout.put32(inode_address(), inode_offset + (8 as usize), length as u32)
+    status = writer.arm_filesystem_fixture()
+    if status != 0:
+        return set_error(status as u32)
+    status = writer.write_filesystem_sector(data_lba, data_address())
+    if status != 0:
+        return set_error(status as u32)
+    status = writer.write_filesystem_sector(inode_lba, inode_address())
+    if status != 0:
+        return set_error(status as u32)
+    status = writer.flush_filesystem()
+    if status != 0:
+        return set_error(status as u32)
+    return set_error(OK)
+
+pub fn last_error() -> u32:
+    return LAST_ERROR
+
+pub fn words_written() -> u32:
+    return writer.words_written()
+
+pub fn flush_count() -> u32:
+    return writer.flush_count()
+
+pub fn ready() -> bool:
+    return READY != (0 as u32)

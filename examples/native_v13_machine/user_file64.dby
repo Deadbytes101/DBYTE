@@ -1,0 +1,28 @@
+import "vfs_ro.dby" as vfs
+import "user_space64.dby" as user
+
+static mut IMAGE: array[u64, 512]
+static mut STAT: vfs.VfsStat
+
+# VFS must be mounted by the executor before loading. This buffer is kernel-owned;
+# the shared ELF loader copies bytes into private frames before returning.
+pub fn load(path: str, length: usize) -> int:
+    if vfs.ready() == false:
+        return 100
+    let status: int = vfs.stat(path, length, &STAT)
+    if status != 0:
+        return 101
+    if STAT.entry_type != (1 as u32):
+        return 102
+    if STAT.size_bytes < (64 as u32):
+        return 103
+    if STAT.size_bytes > (4096 as u32):
+        return 103
+    let count: usize = 0 as usize
+    let buffer: ptr[u8] = (&IMAGE[0]) as usize as ptr[u8]
+    status = vfs.read(path, length, buffer, 4096 as usize, &count)
+    if status != 0:
+        return 104
+    if count != (STAT.size_bytes as usize):
+        return 105
+    return user.load_image(buffer as usize, count)

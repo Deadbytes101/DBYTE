@@ -1,0 +1,3 @@
+pub fn io16_roundtrip(port: u16, value: u16) -> u16:
+    native.io_out16(port, value)
+    return native.io_in16(port)

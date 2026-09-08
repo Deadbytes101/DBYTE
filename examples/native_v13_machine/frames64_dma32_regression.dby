@@ -1,0 +1,56 @@
+import "boot_info.dby" as boot
+import "frames64.dby" as frames
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+fn seed_high_only() -> bool:
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(0x0000000100000000 as u64, 0x00004000 as u64, 1 as u32) == false:
+        return false
+    return boot.publish_memory_regions()
+
+fn seed_mixed() -> bool:
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(0x04000000 as u64, 0x00004000 as u64, 1 as u32) == false:
+        return false
+    if boot.append_memory_region(0x0000000100000000 as u64, 0x00004000 as u64, 1 as u32) == false:
+        return false
+    return boot.publish_memory_regions()
+
+pub fn kernel_main() -> int:
+    serial.init()
+    if seed_high_only() == false:
+        return 1
+    if frames.initialize() != 0:
+        return 2
+    if frames.allocate_dma32() != (0 as u64):
+        return 3
+    if seed_mixed() == false:
+        return 4
+    if frames.initialize() != 0:
+        return 5
+    let dma: u64 = frames.allocate_dma32()
+    if dma != (0x04000000 as u64):
+        return 6
+    if frames.is_owned(dma) == false:
+        return 7
+    let normal: u64 = frames.allocate()
+    if normal != (0x04001000 as u64):
+        return 8
+    if frames.allocation_count() != (2 as usize):
+        return 9
+    if frames.owned_count() != (2 as usize):
+        return 10
+    if frames.release(dma) != 0:
+        return 11
+    let reclaimed: u64 = frames.allocate_dma32()
+    if reclaimed != dma:
+        return 12
+    if frames.release_count() != (1 as usize):
+        return 13
+    if frames.allocation_count() != (3 as usize):
+        return 14
+    if frames.owned_count() != (2 as usize):
+        return 15
+    serial.write("DMA32 OK", 8 as usize)
+    serial.newline()
+    return 0

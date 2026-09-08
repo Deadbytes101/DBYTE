@@ -1,0 +1,159 @@
+import "boot_info.dby" as boot
+import "acpi.dby" as acpi
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+static mut RSDP: array[u8, 20]
+static mut RSDT: array[u8, 40]
+static mut MADT: array[u8, 46]
+
+fn zero_rsdp() -> int:
+    let index: usize = 0 as usize
+    while index < (20 as usize):
+        RSDP[index] = 0 as u8
+        index = index + (1 as usize)
+    return 0
+
+fn put_rsdp32(offset: usize, value: u32) -> int:
+    RSDP[offset] = (value & (0xff as u32)) as u8
+    RSDP[offset + (1 as usize)] = ((value >> (8 as u32)) & (0xff as u32)) as u8
+    RSDP[offset + (2 as usize)] = ((value >> (16 as u32)) & (0xff as u32)) as u8
+    RSDP[offset + (3 as usize)] = ((value >> (24 as u32)) & (0xff as u32)) as u8
+    return 0
+
+fn finish_rsdp(root: u32) -> int:
+    zero_rsdp()
+    RSDP[0] = 82 as u8
+    RSDP[1] = 83 as u8
+    RSDP[2] = 68 as u8
+    RSDP[3] = 32 as u8
+    RSDP[4] = 80 as u8
+    RSDP[5] = 84 as u8
+    RSDP[6] = 82 as u8
+    RSDP[7] = 32 as u8
+    RSDP[15] = 0 as u8
+    put_rsdp32(16 as usize, root)
+    let sum: u32 = 0 as u32
+    let index: usize = 0 as usize
+    while index < (20 as usize):
+        sum = sum + (RSDP[index] as u32)
+        index = index + (1 as usize)
+    RSDP[8] = (((256 as u32) - (sum & (0xff as u32))) & (0xff as u32)) as u8
+    return 0
+
+fn zero_rsdt() -> int:
+    let index: usize = 0 as usize
+    while index < (40 as usize):
+        RSDT[index] = 0 as u8
+        index = index + (1 as usize)
+    return 0
+
+fn put_rsdt32(offset: usize, value: u32) -> int:
+    RSDT[offset] = (value & (0xff as u32)) as u8
+    RSDT[offset + (1 as usize)] = ((value >> (8 as u32)) & (0xff as u32)) as u8
+    RSDT[offset + (2 as usize)] = ((value >> (16 as u32)) & (0xff as u32)) as u8
+    RSDT[offset + (3 as usize)] = ((value >> (24 as u32)) & (0xff as u32)) as u8
+    return 0
+
+fn finish_rsdt(child: u32) -> int:
+    zero_rsdt()
+    RSDT[0] = 82 as u8
+    RSDT[1] = 83 as u8
+    RSDT[2] = 68 as u8
+    RSDT[3] = 84 as u8
+    put_rsdt32(4 as usize, 40 as u32)
+    RSDT[8] = 1 as u8
+    put_rsdt32(36 as usize, child)
+    let sum: u32 = 0 as u32
+    let index: usize = 0 as usize
+    while index < (40 as usize):
+        sum = sum + (RSDT[index] as u32)
+        index = index + (1 as usize)
+    RSDT[9] = (((256 as u32) - (sum & (0xff as u32))) & (0xff as u32)) as u8
+    return 0
+
+fn zero_madt() -> int:
+    let index: usize = 0 as usize
+    while index < (46 as usize):
+        MADT[index] = 0 as u8
+        index = index + (1 as usize)
+    return 0
+
+fn put_madt32(offset: usize, value: u32) -> int:
+    MADT[offset] = (value & (0xff as u32)) as u8
+    MADT[offset + (1 as usize)] = ((value >> (8 as u32)) & (0xff as u32)) as u8
+    MADT[offset + (2 as usize)] = ((value >> (16 as u32)) & (0xff as u32)) as u8
+    MADT[offset + (3 as usize)] = ((value >> (24 as u32)) & (0xff as u32)) as u8
+    return 0
+
+fn finish_bad_madt() -> int:
+    zero_madt()
+    MADT[0] = 65 as u8
+    MADT[1] = 80 as u8
+    MADT[2] = 73 as u8
+    MADT[3] = 67 as u8
+    put_madt32(4 as usize, 46 as u32)
+    MADT[8] = 1 as u8
+    put_madt32(36 as usize, 0x00100000 as u32)
+    MADT[44] = 0 as u8
+    MADT[45] = 4 as u8
+    let sum: u32 = 0 as u32
+    let index: usize = 0 as usize
+    while index < (46 as usize):
+        sum = sum + (MADT[index] as u32)
+        index = index + (1 as usize)
+    MADT[9] = (((256 as u32) - (sum & (0xff as u32))) & (0xff as u32)) as u8
+    return 0
+
+fn copy_rsdp() -> bool:
+    return boot.set_acpi_rsdp((&RSDP[0]) as usize, 20 as usize)
+
+fn root_crosses_mapping() -> bool:
+    boot.initialize_multiboot2_bios()
+    finish_rsdp(0xfffffff0 as u32)
+    if copy_rsdp() == false:
+        return false
+    return acpi.discover() == 62
+
+fn child_crosses_mapping() -> bool:
+    boot.initialize_multiboot2_bios()
+    finish_rsdt(0xfffffff0 as u32)
+    let root: usize = (&RSDT[0]) as usize
+    if (root >> (32 as usize)) != (0 as usize):
+        return false
+    finish_rsdp(root as u32)
+    if copy_rsdp() == false:
+        return false
+    return acpi.discover() == 51
+
+fn madt_entry_is_bounded() -> bool:
+    boot.initialize_multiboot2_bios()
+    finish_bad_madt()
+    let child: usize = (&MADT[0]) as usize
+    if (child >> (32 as usize)) != (0 as usize):
+        return false
+    finish_rsdt(child as u32)
+    let root: usize = (&RSDT[0]) as usize
+    if (root >> (32 as usize)) != (0 as usize):
+        return false
+    finish_rsdp(root as u32)
+    if copy_rsdp() == false:
+        return false
+    return acpi.discover() == 34
+
+pub fn kernel_main() -> int:
+    serial.init()
+    if root_crosses_mapping() == false:
+        serial.write("ACPI ROOT RANGE FAIL", 20 as usize)
+        serial.newline()
+        return 1
+    if child_crosses_mapping() == false:
+        serial.write("ACPI CHILD RANGE FAIL", 21 as usize)
+        serial.newline()
+        return 2
+    if madt_entry_is_bounded() == false:
+        serial.write("ACPI MADT BOUND FAIL", 20 as usize)
+        serial.newline()
+        return 3
+    serial.write("ACPI RANGE OK", 13 as usize)
+    serial.newline()
+    return 0

@@ -1,0 +1,25 @@
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+fn step[T](p: ptr[T], n: usize) -> ptr[T]:
+    return p + n
+
+fn check[T](forward: usize, backward: usize) -> bool:
+    let p: ptr[T] = (4096 as usize) as ptr[T]
+    let q: ptr[T] = step[T](p, 3 as usize)
+    if (q as usize) != forward:
+        return false
+    return ((q - (2 as usize)) as usize) == backward
+
+pub fn kernel_main() -> int:
+    serial.init()
+    if check[u8](4099 as usize, 4097 as usize) == false:
+        return 1
+    if check[u16](4102 as usize, 4098 as usize) == false:
+        return 2
+    if check[u32](4108 as usize, 4100 as usize) == false:
+        return 3
+    if check[u64](4120 as usize, 4104 as usize) == false:
+        return 4
+    serial.write("POINTER ARITHMETIC OK", 21 as usize)
+    serial.newline()
+    return 0

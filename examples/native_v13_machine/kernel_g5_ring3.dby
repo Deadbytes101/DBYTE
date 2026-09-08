@@ -1,0 +1,35 @@
+import "machine_g3.dby" as machine
+import "boot_info.dby" as boot
+import "user_space64.dby" as user
+import "console.dby" as console
+
+fn fail(label: str, length: usize, status: int) -> int:
+    console.write(label, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = machine.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G5 RING3", 18 as usize)
+    if boot.module_count() != (1 as usize):
+        return fail("G5 ERROR MODULES=", 17 as usize, boot.module_count() as int)
+    status = user.initialize()
+    if status != 0:
+        return fail("G5 ERROR USER INIT=", 19 as usize, status)
+    status = user.load_module(0 as usize)
+    if status != 0:
+        return fail("G5 ERROR ELF LOAD=", 18 as usize, status)
+    if user.ready() == false:
+        return fail("G5 ERROR USER READY=", 20 as usize, 1)
+    console.write("USER64 LOAD entry=", 18 as usize)
+    console.hex64(user.entry() as u64)
+    console.write(" cr3=", 5 as usize)
+    console.hex64(user.cr3() as u64)
+    console.write(" pages=", 7 as usize)
+    console.hex32(user.user_page_count() as u32)
+    console.newline()
+    status = user.enter()
+    return fail("G5 ERROR USER RETURN=", 21 as usize, status)

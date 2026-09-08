@@ -1210,6 +1210,10 @@ impl Interpreter {
                 msg: "native systems casts are unavailable in the hosted interpreter".into(),
                 span: *span,
             }),
+            Expr::Bitcast { span, .. } => Err(RuntimeError {
+                msg: "exact bitcasts require canonical hosted execution".into(),
+                span: *span,
+            }),
         }
     }
 

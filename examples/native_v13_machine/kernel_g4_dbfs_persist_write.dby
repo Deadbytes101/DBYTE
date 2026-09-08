@@ -1,0 +1,100 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "vfs_ro.dby" as vfs
+import "vfs_rw_test.dby" as vfsrw
+import "dbfs_inode_ro.dby" as inode
+import "dbfs_persist_pattern.dby" as pattern
+
+static mut FILE_STAT: vfs.VfsStat
+static mut SOURCE: array[u16, 256]
+static mut READBACK: array[u16, 256]
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+fn require_baseline() -> int:
+    let status: int = vfs.stat("/HELLO.TXT", 10 as usize, &FILE_STAT)
+    if status != 0:
+        return status
+    if FILE_STAT.inode_number != (2 as u32):
+        return 70
+    if FILE_STAT.entry_type != inode.inode_regular_type():
+        return 71
+    if FILE_STAT.size_bytes != (25 as u32):
+        return 72
+    if FILE_STAT.direct_blocks != (1 as u32):
+        return 73
+    let bytes_read: usize = 0 as usize
+    status = vfs.read("/HELLO.TXT", 10 as usize, (&READBACK[0]) as usize as ptr[u8], 128 as usize, &bytes_read)
+    if status != 0:
+        return status
+    if bytes_read != (25 as usize):
+        return 74
+    if pattern.fnv1a((&READBACK[0]) as usize as ptr[u8], bytes_read) != (0x77c07a2b as u32):
+        return 75
+    return 0
+
+fn verify_current() -> int:
+    let status: int = vfs.stat("/HELLO.TXT", 10 as usize, &FILE_STAT)
+    if status != 0:
+        return status
+    if FILE_STAT.size_bytes != (128 as u32):
+        return 76
+    let bytes_read: usize = 0 as usize
+    status = vfs.read("/HELLO.TXT", 10 as usize, (&READBACK[0]) as usize as ptr[u8], 512 as usize, &bytes_read)
+    if status != 0:
+        return status
+    if bytes_read != pattern.payload_bytes():
+        return 77
+    status = pattern.verify_payload((&READBACK[0]) as usize as ptr[u8])
+    if status != 0:
+        return 78
+    return 0
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 DBFS PERSIST WRITE", 31 as usize)
+    status = vfsrw.initialize()
+    if status != 0:
+        return fail("G4DBFSW ERROR mount=", 20 as usize, status)
+    status = require_baseline()
+    if status != 0:
+        return fail("G4DBFSW ERROR baseline=", 23 as usize, status)
+    status = pattern.fill_sector((&SOURCE[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4DBFSW ERROR pattern=", 22 as usize, status)
+    status = vfsrw.replace("/HELLO.TXT", 10 as usize, (&SOURCE[0]) as usize as ptr[u8], pattern.payload_bytes())
+    if status != 0:
+        return fail("G4DBFSW ERROR replace=", 22 as usize, status)
+    if vfsrw.words_written() != (512 as u32):
+        return fail("G4DBFSW ERROR words=", 20 as usize, vfsrw.words_written() as int)
+    if vfsrw.flush_count() != (1 as u32):
+        return fail("G4DBFSW ERROR flush=", 20 as usize, vfsrw.flush_count() as int)
+    status = verify_current()
+    if status != 0:
+        return fail("G4DBFSW ERROR readback=", 23 as usize, status)
+    let hash: u32 = pattern.fnv1a((&READBACK[0]) as usize as ptr[u8], pattern.payload_bytes())
+    console.write("DBFS MUTATE OK inode=", 21 as usize)
+    console.hex32(FILE_STAT.inode_number)
+    console.write(" old=", 5 as usize)
+    console.hex32(25 as u32)
+    console.write(" new=", 5 as usize)
+    console.hex32(FILE_STAT.size_bytes)
+    console.newline()
+    console.write("DBFS WRITE OK words=", 20 as usize)
+    console.hex32(vfsrw.words_written())
+    console.write(" flush=", 7 as usize)
+    console.hex32(vfsrw.flush_count())
+    console.newline()
+    console.write("DBFS READBACK OK bytes=", 23 as usize)
+    console.hex32(pattern.payload_bytes() as u32)
+    console.write(" hash=", 6 as usize)
+    console.hex32(hash)
+    console.newline()
+    console.line("G4 DBFS PERSIST WRITE COMPLETE", 30 as usize)
+    return 0

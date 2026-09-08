@@ -1,0 +1,3 @@
+import "bitcast_core.dby" as bits
+
+print(bits.check())

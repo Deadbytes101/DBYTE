@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "12.4.0",
+    [string]$Version = "13.0.0",
     [string]$ExpectedCommit = "",
     [switch]$DoubleBuild
 )

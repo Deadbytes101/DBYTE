@@ -1,0 +1,22 @@
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+pub fn kernel_main() -> int:
+    serial.init()
+    let literal_pointer: usize = 0x100000000 as usize
+    if literal_pointer != (0 as usize):
+        serial.write("I686 WIDTH FAIL literal", 23 as usize)
+        serial.newline()
+        return 1
+    let wide: u64 = 0x100000000 as u64
+    if (wide >> (32 as u64)) != (1 as u64):
+        serial.write("I686 WIDTH FAIL wide", 20 as usize)
+        serial.newline()
+        return 2
+    let cast_pointer: usize = wide as usize
+    if cast_pointer != (0 as usize):
+        serial.write("I686 WIDTH FAIL cast", 20 as usize)
+        serial.newline()
+        return 3
+    serial.write("I686 WIDTH OK", 13 as usize)
+    serial.newline()
+    return 0

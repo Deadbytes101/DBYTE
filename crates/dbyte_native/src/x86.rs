@@ -1014,12 +1014,20 @@ impl Encoder {
         self.emit_raw(&[0x66, 0xed])
     }
 
+    pub fn in_eax_dx(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xed])
+    }
+
     pub fn out_dx_al(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0xee])
     }
 
     pub fn out_dx_ax(&mut self) -> Result<(), EncoderError> {
         self.emit_raw(&[0x66, 0xef])
+    }
+
+    pub fn out_dx_eax(&mut self) -> Result<(), EncoderError> {
+        self.emit_raw(&[0xef])
     }
 
     pub fn finish(self) -> Result<EncodedCode, EncoderError> {
@@ -1367,14 +1375,17 @@ mod tests {
             .unwrap();
         encoder.in_al_dx().unwrap();
         encoder.in_ax_dx().unwrap();
+        encoder.in_eax_dx().unwrap();
         encoder.out_dx_al().unwrap();
         encoder.out_dx_ax().unwrap();
+        encoder.out_dx_eax().unwrap();
         encoder.cli().unwrap();
         encoder.hlt().unwrap();
         assert_eq!(
             finish(encoder),
             vec![
-                0x0f, 0xb6, 0x04, 0x0b, 0x88, 0x02, 0xec, 0x66, 0xed, 0xee, 0x66, 0xef, 0xfa, 0xf4,
+                0x0f, 0xb6, 0x04, 0x0b, 0x88, 0x02, 0xec, 0x66, 0xed, 0xed, 0xee, 0x66, 0xef, 0xef,
+                0xfa, 0xf4,
             ]
         );
     }

@@ -1,0 +1,37 @@
+import "machine_g3.dby" as g3
+import "console.dby" as console
+import "storage_ide.dby" as ro
+import "durability_pattern.dby" as pattern
+
+static mut READ_BUFFER: array[u16, 256]
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    let status: int = g3.run(magic, info)
+    if status != 0:
+        return status
+    console.line("DBYTE V13 G4 DURABILITY REBOOT", 30 as usize)
+    status = ro.identify()
+    if status != 0:
+        return fail("G4READ ERROR identify=", 22 as usize, status)
+    if ro.sector_count() != (0x00004000 as u32):
+        return fail("G4READ ERROR sectors=", 21 as usize, ro.sector_count() as int)
+    status = ro.read_sector_into(8 as u32, (&READ_BUFFER[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4READ ERROR read=", 18 as usize, status)
+    status = pattern.verify((&READ_BUFFER[0]) as usize as ptr[u8])
+    if status != 0:
+        return fail("G4READ ERROR verify=", 20 as usize, status)
+    let hash: u32 = pattern.checksum((&READ_BUFFER[0]) as usize as ptr[u8])
+    console.write("REBOOT READ OK lba=", 19 as usize)
+    console.hex32(8 as u32)
+    console.write(" hash=", 6 as usize)
+    console.hex32(hash)
+    console.newline()
+    console.line("G4 DURABILITY REBOOT READ COMPLETE", 34 as usize)
+    return 0

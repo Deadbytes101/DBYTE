@@ -1,0 +1,4 @@
+import "bitcast_core.dby" as bits
+
+pub fn main() -> int:
+    return bits.check()

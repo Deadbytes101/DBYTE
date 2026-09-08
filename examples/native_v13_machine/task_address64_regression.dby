@@ -1,0 +1,8 @@
+pub fn continuation() -> int:
+    return 0
+
+pub fn kernel_main() -> int:
+    let address: usize = task_address(continuation)
+    if address == (0 as usize):
+        return 1
+    return 0

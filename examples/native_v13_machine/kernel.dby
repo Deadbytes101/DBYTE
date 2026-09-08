@@ -1,0 +1,57 @@
+import "boot_info.dby" as boot
+import "multiboot2.dby" as mb2
+import "console.dby" as console
+import "acpi.dby" as acpi
+import "pci.dby" as pci
+
+fn fail(prefix: str, length: usize, status: int) -> int:
+    console.write(prefix, length)
+    console.hex32(status as u32)
+    console.newline()
+    return status
+
+pub fn kernel_main(magic: u32, info: usize) -> int:
+    console.init()
+    console.line("DBYTE V13 G1", 12 as usize)
+
+    let status: int = mb2.normalize(magic as u64, info)
+    if status != 0:
+        return fail("G1 ERROR MB2 status=", 20 as usize, status)
+
+    console.write("BOOTINFO OK regions=", 20 as usize)
+    console.hex32(boot.memory_region_count() as u32)
+    console.write(" flags=", 7 as usize)
+    console.hex32(boot.flags())
+    console.newline()
+
+    status = acpi.discover()
+    if status != 0:
+        return fail("G1 ERROR ACPI status=", 21 as usize, status)
+
+    console.write("ACPI OK root=", 13 as usize)
+    console.hex64(acpi.root_address())
+    console.write(" kind=", 6 as usize)
+    console.hex32(acpi.root_kind())
+    console.newline()
+
+    console.write("APIC OK lapic=", 14 as usize)
+    console.hex32(acpi.local_apic_count())
+    console.write(" ioapic=", 8 as usize)
+    console.hex32(acpi.io_apic_count())
+    console.write(" iso=", 5 as usize)
+    console.hex32(acpi.iso_count())
+    console.newline()
+
+    console.write("TIMER OK pm=", 12 as usize)
+    console.hex32(acpi.pm_timer_port())
+    console.newline()
+
+    status = pci.enumerate()
+    if status != 0:
+        return fail("G1 ERROR PCI status=", 20 as usize, status)
+    console.write("PCI OK devices=", 15 as usize)
+    console.hex32(pci.device_count())
+    console.newline()
+
+    console.line("G1 COMPLETE", 11 as usize)
+    return 0

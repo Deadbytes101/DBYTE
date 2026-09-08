@@ -154,6 +154,14 @@ impl Parser {
                     self.advance();
                     TypeAnnotation::Float
                 }
+                "f32" => {
+                    self.advance();
+                    TypeAnnotation::F32
+                }
+                "f64" => {
+                    self.advance();
+                    TypeAnnotation::F64
+                }
                 "bool" => {
                     self.advance();
                     TypeAnnotation::Bool
@@ -487,11 +495,25 @@ impl Parser {
         while matches!(self.peek_kind(), TokenKind::As) {
             let span = self.peek().span;
             self.advance();
+            let exact = if matches!(self.peek_kind(), TokenKind::Bang) {
+                self.advance();
+                true
+            } else {
+                false
+            };
             let ty = self.parse_type_full()?;
-            expr = Expr::Cast {
-                expr: Box::new(expr),
-                ty,
-                span,
+            expr = if exact {
+                Expr::Bitcast {
+                    expr: Box::new(expr),
+                    ty,
+                    span,
+                }
+            } else {
+                Expr::Cast {
+                    expr: Box::new(expr),
+                    ty,
+                    span,
+                }
             };
         }
         Ok(expr)
@@ -1980,6 +2002,19 @@ mod tests {
             ]
         );
         assert_eq!(*ret_ty, TypeAnnotation::I32);
+    }
+
+    #[test]
+    fn parses_exact_bitcast_and_preserves_convert_syntax() {
+        // Bit patterns are integers: parsing must not perform float conversion.
+        for source in [
+            "let bits: u32 = 2147483648 as u32\nlet value: f32 = bits as! f32\nlet restored: u32 = value as! u32\n",
+            "let bits: u64 = 9223372036854775807 as u64\nlet value: f64 = bits as! f64\nlet restored: u64 = value as! u64\n",
+        ] {
+            let tokens = Lexer::new(source).tokenize().unwrap();
+            let result = Parser::new(tokens).parse_program();
+            assert!(result.is_ok(), "exact bitcast syntax rejected: {result:?}");
+        }
     }
 
     #[test]

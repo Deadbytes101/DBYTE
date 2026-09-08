@@ -2551,6 +2551,9 @@ impl<'a> FunctionAnalyzer<'a> {
             } => self.compile_binary(left, op, right, expected, *span),
             Expr::Unary { op, expr, span } => self.compile_unary(op, expr, expected, *span),
             Expr::Cast { expr, ty, span } => self.compile_cast(expr, ty, *span),
+            Expr::Bitcast { span, .. } => {
+                Err(self.unsupported("exact bitcasts require canonical HIR + Native MIR", *span))
+            }
             Expr::Call { name, args, span } => self.compile_call(name, args, *span),
             Expr::MemberCall {
                 object,
@@ -3325,6 +3328,8 @@ impl<'a> FunctionAnalyzer<'a> {
                 | SystemIntrinsic::VolatileStore16
                 | SystemIntrinsic::VolatileLoad32
                 | SystemIntrinsic::VolatileStore32
+                | SystemIntrinsic::VolatileLoad64
+                | SystemIntrinsic::VolatileStore64
         ) {
             return self.compile_volatile_intrinsic(intrinsic, args, span);
         }
@@ -3377,6 +3382,7 @@ impl<'a> FunctionAnalyzer<'a> {
             SystemIntrinsic::VolatileLoad8 | SystemIntrinsic::VolatileStore8 => SystemType::U8,
             SystemIntrinsic::VolatileLoad16 | SystemIntrinsic::VolatileStore16 => SystemType::U16,
             SystemIntrinsic::VolatileLoad32 | SystemIntrinsic::VolatileStore32 => SystemType::U32,
+            SystemIntrinsic::VolatileLoad64 | SystemIntrinsic::VolatileStore64 => SystemType::U64,
             _ => unreachable!(),
         };
         let expected_count = if matches!(
@@ -3384,6 +3390,7 @@ impl<'a> FunctionAnalyzer<'a> {
             SystemIntrinsic::VolatileLoad8
                 | SystemIntrinsic::VolatileLoad16
                 | SystemIntrinsic::VolatileLoad32
+                | SystemIntrinsic::VolatileLoad64
         ) {
             1
         } else {

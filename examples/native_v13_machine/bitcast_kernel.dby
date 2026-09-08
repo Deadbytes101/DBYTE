@@ -1,0 +1,13 @@
+import "../../runtime/v12.1.0/serial.dby" as serial
+import "bitcast_core.dby" as bits
+
+pub fn kernel_main() -> int:
+    serial.init()
+    let result: int = bits.check()
+    if result != 0:
+        serial.write("BITCAST FAIL", 12 as usize)
+        serial.newline()
+        return result
+    serial.write("BITCAST OK", 10 as usize)
+    serial.newline()
+    return 0

@@ -1,0 +1,470 @@
+import "boot_info.dby" as boot
+import "physical.dby" as physical
+
+const MAX_TABLE_BYTES: usize = 1048576 as usize
+const MAX_IO_APICS: usize = 16 as usize
+const MAX_ISO_ENTRIES: usize = 32 as usize
+const MAX_MCFG_ENTRIES: usize = 16 as usize
+
+static mut ROOT_ADDRESS: u64
+static mut ROOT_KIND: u32
+static mut MADT_ADDRESS: u64
+static mut LOCAL_APIC_ADDRESS: u64
+static mut LOCAL_APIC_COUNT: u32
+static mut IO_APIC_COUNT: u32
+static mut IO_APIC_IDS: array[u8, 16]
+static mut IO_APIC_ADDRESSES: array[u32, 16]
+static mut IO_APIC_GSI_BASES: array[u32, 16]
+static mut ISO_COUNT: u32
+static mut ISO_SOURCES: array[u8, 32]
+static mut ISO_GSIS: array[u32, 32]
+static mut ISO_FLAGS: array[u16, 32]
+static mut PM_TIMER_PORT: u32
+static mut PM_TIMER_WIDTH: u32
+static mut MCFG_COUNT: u32
+static mut MCFG_BASES: array[u64, 16]
+static mut MCFG_SEGMENTS: array[u16, 16]
+static mut MCFG_START_BUSES: array[u8, 16]
+static mut MCFG_END_BUSES: array[u8, 16]
+
+fn read8(address: usize) -> u8:
+    return native.volatile_load8(address as ptr[u8])
+
+fn read16(address: usize) -> u16:
+    let low: u16 = read8(address) as u16
+    let high: u16 = read8(address + (1 as usize)) as u16
+    return low | (high << (8 as u16))
+
+fn read32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn read64(address: usize) -> u64:
+    let low: u64 = read32(address) as u64
+    let high: u64 = read32(address + (4 as usize)) as u64
+    return low | (high << (32 as u64))
+
+fn rsdp_u32(offset: usize) -> u32:
+    let value: u32 = boot.acpi_rsdp_byte(offset) as u32
+    value = value | ((boot.acpi_rsdp_byte(offset + (1 as usize)) as u32) << (8 as u32))
+    value = value | ((boot.acpi_rsdp_byte(offset + (2 as usize)) as u32) << (16 as u32))
+    value = value | ((boot.acpi_rsdp_byte(offset + (3 as usize)) as u32) << (24 as u32))
+    return value
+
+fn rsdp_u64(offset: usize) -> u64:
+    let low: u64 = rsdp_u32(offset) as u64
+    let high: u64 = rsdp_u32(offset + (4 as usize)) as u64
+    return low | (high << (32 as u64))
+
+fn rsdp_signature_ok() -> bool:
+    if boot.acpi_rsdp_byte(0 as usize) != (82 as u8):
+        return false
+    if boot.acpi_rsdp_byte(1 as usize) != (83 as u8):
+        return false
+    if boot.acpi_rsdp_byte(2 as usize) != (68 as u8):
+        return false
+    if boot.acpi_rsdp_byte(3 as usize) != (32 as u8):
+        return false
+    if boot.acpi_rsdp_byte(4 as usize) != (80 as u8):
+        return false
+    if boot.acpi_rsdp_byte(5 as usize) != (84 as u8):
+        return false
+    if boot.acpi_rsdp_byte(6 as usize) != (82 as u8):
+        return false
+    if boot.acpi_rsdp_byte(7 as usize) != (32 as u8):
+        return false
+    return true
+
+fn rsdp_checksum(length: usize) -> bool:
+    let sum: u32 = 0 as u32
+    let index: usize = 0 as usize
+    while index < length:
+        sum = sum + (boot.acpi_rsdp_byte(index) as u32)
+        index = index + (1 as usize)
+    return (sum & (0xff as u32)) == (0 as u32)
+
+fn signature4(address: usize, a: u8, b: u8, c: u8, d: u8) -> bool:
+    if read8(address) != a:
+        return false
+    if read8(address + (1 as usize)) != b:
+        return false
+    if read8(address + (2 as usize)) != c:
+        return false
+    if read8(address + (3 as usize)) != d:
+        return false
+    return true
+
+fn table_valid(address: usize) -> bool:
+    if physical.contains(address, 36 as usize) == false:
+        return false
+    let length: usize = read32(address + (4 as usize)) as usize
+    if length < (36 as usize):
+        return false
+    if length > MAX_TABLE_BYTES:
+        return false
+    if physical.contains(address, length) == false:
+        return false
+    let end: usize = address + length
+    if end <= address:
+        return false
+    let sum: u32 = 0 as u32
+    let cursor: usize = address
+    while cursor < end:
+        sum = sum + (read8(cursor) as u32)
+        cursor = cursor + (1 as usize)
+    return (sum & (0xff as u32)) == (0 as u32)
+
+fn iso_flags_valid(flags: u16) -> bool:
+    let polarity: u16 = flags & (3 as u16)
+    let trigger: u16 = (flags >> (2 as u16)) & (3 as u16)
+    if polarity == (2 as u16):
+        return false
+    if trigger == (2 as u16):
+        return false
+    return true
+
+fn inspect_madt(address: usize) -> int:
+    if table_valid(address) == false:
+        return 30
+    let length: usize = read32(address + (4 as usize)) as usize
+    if length < (44 as usize):
+        return 31
+    MADT_ADDRESS = address as u64
+    LOCAL_APIC_ADDRESS = read32(address + (36 as usize)) as u64
+    if LOCAL_APIC_ADDRESS == (0 as u64):
+        return 35
+    if physical.contains(LOCAL_APIC_ADDRESS as usize, 4096 as usize) == false:
+        return 35
+    LOCAL_APIC_COUNT = 0 as u32
+    IO_APIC_COUNT = 0 as u32
+    ISO_COUNT = 0 as u32
+    let cursor: usize = address + (44 as usize)
+    let end: usize = address + length
+    while cursor < end:
+        if (end - cursor) < (2 as usize):
+            return 32
+        let kind: u8 = read8(cursor)
+        let entry_length: usize = read8(cursor + (1 as usize)) as usize
+        if entry_length < (2 as usize):
+            return 33
+        if entry_length > (end - cursor):
+            return 34
+        if kind == (0 as u8):
+            if entry_length < (8 as usize):
+                return 36
+            let flags: u32 = read32(cursor + (4 as usize))
+            if (flags & (3 as u32)) != (0 as u32):
+                LOCAL_APIC_COUNT = LOCAL_APIC_COUNT + (1 as u32)
+        if kind == (1 as u8):
+            if entry_length < (12 as usize):
+                return 37
+            if (IO_APIC_COUNT as usize) >= MAX_IO_APICS:
+                return 38
+            let io_address: u32 = read32(cursor + (4 as usize))
+            if io_address == (0 as u32):
+                return 39
+            if physical.contains(io_address as usize, 32 as usize) == false:
+                return 39
+            let io_index: usize = IO_APIC_COUNT as usize
+            IO_APIC_IDS[io_index] = read8(cursor + (2 as usize))
+            IO_APIC_ADDRESSES[io_index] = io_address
+            IO_APIC_GSI_BASES[io_index] = read32(cursor + (8 as usize))
+            IO_APIC_COUNT = IO_APIC_COUNT + (1 as u32)
+        if kind == (2 as u8):
+            if entry_length < (10 as usize):
+                return 26
+            if (ISO_COUNT as usize) >= MAX_ISO_ENTRIES:
+                return 27
+            if read8(cursor + (2 as usize)) != (0 as u8):
+                return 28
+            let source: u8 = read8(cursor + (3 as usize))
+            if source >= (16 as u8):
+                return 28
+            let flags: u16 = read16(cursor + (8 as usize))
+            if iso_flags_valid(flags) == false:
+                return 28
+            let iso_index: usize = ISO_COUNT as usize
+            ISO_SOURCES[iso_index] = source
+            ISO_GSIS[iso_index] = read32(cursor + (4 as usize))
+            ISO_FLAGS[iso_index] = flags
+            ISO_COUNT = ISO_COUNT + (1 as u32)
+        if kind == (5 as u8):
+            if entry_length < (12 as usize):
+                return 29
+            let override: u64 = read64(cursor + (4 as usize))
+            if override == (0 as u64):
+                return 29
+            if (override >> (32 as u64)) != (0 as u64):
+                return 29
+            if physical.contains(override as usize, 4096 as usize) == false:
+                return 29
+            LOCAL_APIC_ADDRESS = override
+        cursor = cursor + entry_length
+    return 0
+
+fn inspect_fadt(address: usize) -> int:
+    if table_valid(address) == false:
+        return 40
+    let length: usize = read32(address + (4 as usize)) as usize
+    if length < (80 as usize):
+        return 41
+    PM_TIMER_PORT = read32(address + (76 as usize))
+    PM_TIMER_WIDTH = 24 as u32
+    if length >= (92 as usize):
+        let timer_bytes: u8 = read8(address + (91 as usize))
+        if PM_TIMER_PORT != (0 as u32):
+            if timer_bytes < (4 as u8):
+                return 42
+    if length >= (116 as usize):
+        let flags: u32 = read32(address + (112 as usize))
+        if (flags & (0x00000100 as u32)) != (0 as u32):
+            PM_TIMER_WIDTH = 32 as u32
+    if PM_TIMER_PORT == (0 as u32):
+        if length < (220 as usize):
+            return 43
+        let address_space: u8 = read8(address + (208 as usize))
+        let bit_width: u8 = read8(address + (209 as usize))
+        let bit_offset: u8 = read8(address + (210 as usize))
+        let extended_address: u64 = read64(address + (212 as usize))
+        if address_space != (1 as u8):
+            return 44
+        if bit_offset != (0 as u8):
+            return 44
+        if bit_width != (24 as u8):
+            if bit_width != (32 as u8):
+                return 44
+        if extended_address == (0 as u64):
+            return 44
+        if (extended_address >> (16 as u64)) != (0 as u64):
+            return 44
+        PM_TIMER_PORT = extended_address as u32
+        PM_TIMER_WIDTH = bit_width as u32
+    return 0
+
+fn inspect_mcfg(address: usize) -> int:
+    if table_valid(address) == false:
+        return 70
+    let length: usize = read32(address + (4 as usize)) as usize
+    if length < (44 as usize):
+        return 71
+    let payload: usize = length - (44 as usize)
+    if (payload % (16 as usize)) != (0 as usize):
+        return 72
+    let cursor: usize = address + (44 as usize)
+    let end: usize = address + length
+    while cursor < end:
+        if (MCFG_COUNT as usize) >= MAX_MCFG_ENTRIES:
+            return 73
+        let base: u64 = read64(cursor)
+        let segment: u16 = read16(cursor + (8 as usize))
+        let start_bus: u8 = read8(cursor + (10 as usize))
+        let end_bus: u8 = read8(cursor + (11 as usize))
+        if base == (0 as u64):
+            return 74
+        if start_bus > end_bus:
+            return 74
+        let bus_count: u64 = ((end_bus as u64) - (start_bus as u64)) + (1 as u64)
+        let span: u64 = bus_count << (20 as u64)
+        if span == (0 as u64):
+            return 75
+        if base > ((0 as u64) - span):
+            return 75
+        let index: usize = MCFG_COUNT as usize
+        MCFG_BASES[index] = base
+        MCFG_SEGMENTS[index] = segment
+        MCFG_START_BUSES[index] = start_bus
+        MCFG_END_BUSES[index] = end_bus
+        MCFG_COUNT = MCFG_COUNT + (1 as u32)
+        cursor = cursor + (16 as usize)
+    return 0
+
+fn inspect_child(address: u64) -> int:
+    if address == (0 as u64):
+        return 0
+    if (address >> (32 as u64)) != (0 as u64):
+        return 50
+    let physical: usize = address as usize
+    if table_valid(physical) == false:
+        return 51
+    if signature4(physical, 65 as u8, 80 as u8, 73 as u8, 67 as u8):
+        return inspect_madt(physical)
+    if signature4(physical, 70 as u8, 65 as u8, 67 as u8, 80 as u8):
+        return inspect_fadt(physical)
+    if signature4(physical, 77 as u8, 67 as u8, 70 as u8, 71 as u8):
+        return inspect_mcfg(physical)
+    return 0
+
+fn inspect_root(address: u64, entry_bytes: usize) -> int:
+    if address == (0 as u64):
+        return 60
+    if (address >> (32 as u64)) != (0 as u64):
+        return 61
+    let physical: usize = address as usize
+    if table_valid(physical) == false:
+        return 62
+    let length: usize = read32(physical + (4 as usize)) as usize
+    if ((length - (36 as usize)) % entry_bytes) != (0 as usize):
+        return 63
+    let cursor: usize = physical + (36 as usize)
+    let end: usize = physical + length
+    while cursor < end:
+        let child: u64 = 0 as u64
+        if entry_bytes == (4 as usize):
+            child = read32(cursor) as u64
+        else:
+            child = read64(cursor)
+        let status: int = inspect_child(child)
+        if status != 0:
+            return status
+        cursor = cursor + entry_bytes
+    return 0
+
+pub fn discover() -> int:
+    ROOT_ADDRESS = 0 as u64
+    ROOT_KIND = 0 as u32
+    MADT_ADDRESS = 0 as u64
+    LOCAL_APIC_ADDRESS = 0 as u64
+    LOCAL_APIC_COUNT = 0 as u32
+    IO_APIC_COUNT = 0 as u32
+    ISO_COUNT = 0 as u32
+    PM_TIMER_PORT = 0 as u32
+    PM_TIMER_WIDTH = 0 as u32
+    MCFG_COUNT = 0 as u32
+    if boot.has_acpi() == false:
+        return 1
+    let copied: usize = boot.acpi_rsdp_length()
+    if copied < (20 as usize):
+        return 2
+    if rsdp_signature_ok() == false:
+        return 3
+    if rsdp_checksum(20 as usize) == false:
+        return 4
+    let revision: u8 = boot.acpi_rsdp_byte(15 as usize)
+    let rsdt: u64 = rsdp_u32(16 as usize) as u64
+    let root: u64 = rsdt
+    let entry_bytes: usize = 4 as usize
+    ROOT_KIND = 1 as u32
+    if revision >= (2 as u8):
+        if copied < (36 as usize):
+            return 5
+        let rsdp_length: usize = rsdp_u32(20 as usize) as usize
+        if rsdp_length < (36 as usize):
+            return 6
+        if rsdp_length > copied:
+            return 7
+        if rsdp_checksum(rsdp_length) == false:
+            return 8
+        let xsdt: u64 = rsdp_u64(24 as usize)
+        if xsdt != (0 as u64):
+            if (xsdt >> (32 as u64)) == (0 as u64):
+                root = xsdt
+                entry_bytes = 8 as usize
+                ROOT_KIND = 2 as u32
+    ROOT_ADDRESS = root
+    let root_status: int = inspect_root(root, entry_bytes)
+    if root_status != 0:
+        return root_status
+    if MADT_ADDRESS == (0 as u64):
+        return 9
+    if LOCAL_APIC_COUNT == (0 as u32):
+        return 10
+    if IO_APIC_COUNT == (0 as u32):
+        return 11
+    if PM_TIMER_PORT == (0 as u32):
+        return 12
+    return 0
+
+pub fn root_address() -> u64:
+    return ROOT_ADDRESS
+
+pub fn root_kind() -> u32:
+    return ROOT_KIND
+
+pub fn madt_address() -> u64:
+    return MADT_ADDRESS
+
+pub fn local_apic_count() -> u32:
+    return LOCAL_APIC_COUNT
+
+pub fn io_apic_count() -> u32:
+    return IO_APIC_COUNT
+
+pub fn iso_count() -> u32:
+    return ISO_COUNT
+
+pub fn local_apic_address() -> u64:
+    return LOCAL_APIC_ADDRESS
+
+pub fn io_apic_id(index: usize) -> u8:
+    if index >= (IO_APIC_COUNT as usize):
+        return 0 as u8
+    return IO_APIC_IDS[index]
+
+pub fn io_apic_address(index: usize) -> u32:
+    if index >= (IO_APIC_COUNT as usize):
+        return 0 as u32
+    return IO_APIC_ADDRESSES[index]
+
+pub fn io_apic_gsi_base(index: usize) -> u32:
+    if index >= (IO_APIC_COUNT as usize):
+        return 0 as u32
+    return IO_APIC_GSI_BASES[index]
+
+pub fn iso_source(index: usize) -> u8:
+    if index >= (ISO_COUNT as usize):
+        return 0xff as u8
+    return ISO_SOURCES[index]
+
+pub fn iso_gsi(index: usize) -> u32:
+    if index >= (ISO_COUNT as usize):
+        return 0xffffffff as u32
+    return ISO_GSIS[index]
+
+pub fn iso_flags(index: usize) -> u16:
+    if index >= (ISO_COUNT as usize):
+        return 0xffff as u16
+    return ISO_FLAGS[index]
+
+pub fn legacy_irq_gsi(source: u8) -> u32:
+    let index: usize = 0 as usize
+    while index < (ISO_COUNT as usize):
+        if ISO_SOURCES[index] == source:
+            return ISO_GSIS[index]
+        index = index + (1 as usize)
+    return source as u32
+
+pub fn legacy_irq_flags(source: u8) -> u16:
+    let index: usize = 0 as usize
+    while index < (ISO_COUNT as usize):
+        if ISO_SOURCES[index] == source:
+            return ISO_FLAGS[index]
+        index = index + (1 as usize)
+    return 0 as u16
+
+pub fn pm_timer_port() -> u32:
+    return PM_TIMER_PORT
+
+pub fn pm_timer_width() -> u32:
+    return PM_TIMER_WIDTH
+
+pub fn mcfg_count() -> u32:
+    return MCFG_COUNT
+
+pub fn mcfg_base(index: usize) -> u64:
+    if index >= (MCFG_COUNT as usize):
+        return 0 as u64
+    return MCFG_BASES[index]
+
+pub fn mcfg_segment(index: usize) -> u16:
+    if index >= (MCFG_COUNT as usize):
+        return 0xffff as u16
+    return MCFG_SEGMENTS[index]
+
+pub fn mcfg_start_bus(index: usize) -> u8:
+    if index >= (MCFG_COUNT as usize):
+        return 0xff as u8
+    return MCFG_START_BUSES[index]
+
+pub fn mcfg_end_bus(index: usize) -> u8:
+    if index >= (MCFG_COUNT as usize):
+        return 0xff as u8
+    return MCFG_END_BUSES[index]

@@ -1,0 +1,50 @@
+import "boot_info.dby" as boot
+import "frames64.dby" as frames
+import "../../runtime/v12.1.0/serial.dby" as serial
+
+fn seed() -> bool:
+    boot.initialize_multiboot2_bios()
+    if boot.append_memory_region(0 as u64, 0x00080000 as u64, 1 as u32) == false:
+        return false
+    if boot.append_memory_region(0x0000000100000000 as u64, 0x00005000 as u64, 1 as u32) == false:
+        return false
+    if boot.append_memory_region(0x0000000100001000 as u64, 0x00001000 as u64, 2 as u32) == false:
+        return false
+    return boot.publish_memory_regions()
+
+pub fn kernel_main() -> int:
+    serial.init()
+    if seed() == false:
+        serial.write("FRAMES64 SEED FAIL", 18 as usize)
+        serial.newline()
+        return 1
+    if frames.initialize() != 0:
+        serial.write("FRAMES64 INIT FAIL", 18 as usize)
+        serial.newline()
+        return 2
+    let first: u64 = frames.allocate()
+    let second: u64 = frames.allocate()
+    if first != (0x0000000100000000 as u64):
+        serial.write("FRAMES64 FIRST FAIL", 19 as usize)
+        serial.newline()
+        return 3
+    if second != (0x0000000100002000 as u64):
+        serial.write("FRAMES64 SECOND FAIL", 20 as usize)
+        serial.newline()
+        return 4
+    if frames.is_owned(first) == false:
+        return 5
+    if frames.release(first) != 0:
+        return 6
+    if frames.is_owned(first):
+        return 7
+    let recycled: u64 = frames.allocate()
+    if recycled != first:
+        return 8
+    if frames.allocation_count() != (3 as usize):
+        return 9
+    if frames.release_count() != (1 as usize):
+        return 10
+    serial.write("FRAMES64 OK", 11 as usize)
+    serial.newline()
+    return 0
