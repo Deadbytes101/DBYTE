@@ -65,8 +65,8 @@ Tracked line counts are measured from `git ls-files`, so ignored build output, r
 
 - Kernel Rust source: **16,448 lines** across **13** tracked `kernel-lab/src/*.rs` files.
 - Full Kernel Lab: **16,610 lines** across **21** tracked files under `kernel-lab/`.
-- Main tracked source and docs set: **205,661 lines** across **995 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
-- Total tracked files in the repository: **1,345**.
+- Main tracked source and docs set: **205,703 lines** across **996 files** matching `*.rs`, `*.dby`, `*.toml`, `*.md`, `*.ps1`, `*.ld`, and `*.yml`.
+- Total tracked files in the repository: **1,348**.
 
 ## Language Stack
 

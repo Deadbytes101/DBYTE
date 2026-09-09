@@ -49,6 +49,12 @@ class LinuxTests(unittest.TestCase):
         self.raw['board']['board_serial'] = 'BOARD-B'
         self.assertNotEqual(first['sha256'], inventory.normalize(self.raw)['fingerprint']['sha256'])
 
+    def test_legacy_board_serial_can_be_absent_when_system_uuid_is_observed(self):
+        self.raw['board']['board_serial'] = None
+        self.assertTrue(inventory.normalize(self.raw)['fingerprint']['complete'])
+        self.raw['board']['product_uuid'] = None
+        self.assertFalse(inventory.normalize(self.raw)['fingerprint']['complete'])
+
     def test_unknown_graph_and_incomplete_identity_fail_closed(self):
         self.raw['disks'] = []
         self.raw['board'] = {}
@@ -122,6 +128,13 @@ class WindowsTests(unittest.TestCase):
         changed = self.collect(raw)
         self.assertNotEqual(original['fingerprint']['sha256'], changed['fingerprint']['sha256'])
         self.assertEqual(changed['acceptance']['disk_write'], 'NO WRITE')
+
+    def test_legacy_board_serial_can_be_absent_when_system_uuid_is_observed(self):
+        raw = json.loads((ROOT/'tests/machine_inventory/windows.json').read_text())
+        raw['board'][0]['SerialNumber'] = None
+        self.assertTrue(self.collect(raw)['fingerprint']['complete'])
+        raw['product'][0]['UUID'] = None
+        self.assertFalse(self.collect(raw)['fingerprint']['complete'])
 
     def test_usb_parent_and_uefi_observed(self):
         raw = json.loads((ROOT/'tests/machine_inventory/windows.json').read_text())

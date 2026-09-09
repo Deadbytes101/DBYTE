@@ -15,6 +15,14 @@ function Record($Object, [string[]]$Names, [string]$Source) {
     foreach ($name in $Names) { $result[$name] = Fact (Field $Object $name) $Source }
     return $result
 }
+function IdentityValueMeaningful($Value) {
+    if (-not ($Value -is [string]) -or -not $Value.Trim()) { return $false }
+    $normalized = $Value.Trim().ToLowerInvariant()
+    if ($normalized -match '^(unknown|none|default|to be filled)') { return $false }
+    $compact = $normalized.Replace('-','')
+    if ($compact -and ($compact -match '^0+$' -or $compact -match '^f+$')) { return $false }
+    return $true
+}
 $queryErrors = [System.Collections.Generic.List[object]]::new()
 function Query([string]$Class, [string]$Namespace = 'root/cimv2') {
     try {
@@ -98,8 +106,11 @@ $preimage = $identity | ConvertTo-Json -Compress
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $hash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($preimage)))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
 $complete = $true
-foreach ($value in $identity.Values) {
-    if (-not $value -or $value -match '^(To be filled|Default|Unknown|None)' -or ([string]$value).Replace('-','') -match '^(0+|F+)$') { $complete = $false }
+foreach ($name in @('board_model','board_vendor','cpu_model','cpu_vendor')) {
+    if (-not (IdentityValueMeaningful $identity[$name])) { $complete = $false }
+}
+if (-not ((IdentityValueMeaningful $identity['board_serial']) -or (IdentityValueMeaningful $identity['system_uuid']))) {
+    $complete = $false
 }
 $diskRows = @(
     foreach ($disk in @($raw.disks | Sort-Object DeviceID)) {

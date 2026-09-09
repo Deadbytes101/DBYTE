@@ -19950,6 +19950,10 @@ if (-not $qemuExe) {
     Write-Host "[OK] QEMU virtualized boot smoke test passed successfully!" -ForegroundColor Green
 }
 
+Write-Host "Running read-only machine inventory tooling tests..."
+& .\scripts\verify_machine_inventory.ps1
+if ($LASTEXITCODE -ne 0) { throw "machine inventory tooling verification failed" }
+
 Write-Host "Running benchmark smoke tests..."
 & $releaseExe bench --engine tree
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine tree failed" }

@@ -59,12 +59,15 @@ substitute for the spare PC.
   observations do not prove controller absence.
 - GPU data is OS adapter evidence, not a GOP framebuffer handoff receipt.
 
-Fingerprint is SHA-256 of the included UTF-8 preimage. Identity fields include CPU
-vendor/model, board vendor/model/serial and system UUID. Timestamps and disk numbering
-are excluded. Missing/placeholders mark completeness false. Reordering devices does
-not change identity. Windows/Linux serialization and OS model strings may differ;
-cross-OS comparisons inspect identity fields, not just hashes. Disk identity is
-recorded separately and must be revalidated even if the machine fingerprint matches.
+Fingerprint is SHA-256 of the included UTF-8 preimage. Core identity requires CPU
+vendor/model and board vendor/model plus at least one independently observed stable
+discriminator: baseboard serial or system UUID. Legacy boards that genuinely expose
+no baseboard serial may therefore remain complete when a meaningful system UUID is
+observed; if both discriminators are missing or placeholder values, completeness is
+false. Timestamps and disk numbering are excluded. Reordering devices does not change
+identity. Windows/Linux serialization and OS model strings may differ; cross-OS
+comparisons inspect identity fields, not just hashes. Disk identity is recorded
+separately and must be revalidated even if the machine fingerprint matches.
 
 Every receipt starts with all selections UNSELECTED, disk_write NO WRITE and real
 hardware/full OS PENDING. It cannot grant write permission. Fixture receipts contain
@@ -73,8 +76,16 @@ hardware/full OS PENDING. It cannot grant write permission. Fixture receipts con
 ## Tests and next action
 
 ```powershell
-python -B scripts/test_machine_inventory.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\verify_machine_inventory.ps1
 ```
+
+The wrapper runs both the collector fixture suite and the receipt-validation suite. A returned target receipt can then be checked without echoing its serial/UUID identity fields:
+
+```powershell
+python -B scripts\verify_machine_inventory_receipt.py <target-receipt.json>
+```
+
+Exit 0 means the receipt is structurally valid, non-fixture, fingerprint/identity-consistent, still carries the collector's fail-closed `NO WRITE` acceptance state, and has observed long mode, PCI topology, a storage-class controller, an input transport, and disk identity needed for target-selection review. Exit 2 means structurally valid but incomplete; inspect `blockers` and obtain more read-only evidence. Exit 1 means malformed, fingerprint-mismatched, unsupported, or acceptance state was altered. The verifier never selects hardware and always reports `write_authorized: false`.
 
 Saved fixtures are synthetic OS observation extracts, not receipts from the spare
 PC. Tests cover missing tools/permission failure, legacy ambiguity, unknown input,

@@ -175,14 +175,25 @@ def mounted_roles(raw):
     return results
 
 
+def identity_value_is_meaningful(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+    normalized = value.strip().lower()
+    if normalized.startswith(('unknown', 'none', 'default', 'to be filled')):
+        return False
+    compact = normalized.replace('-', '')
+    return not (compact and set(compact) in ({'0'}, {'f'}))
+
+
 def normalize(raw, fixture=False):
     cpu, board = raw.get('cpu', {}), raw.get('board', {})
     identity = {"board_vendor": board.get('board_vendor'), "board_model": board.get('board_name'),
                 "board_serial": board.get('board_serial'), "system_uuid": board.get('product_uuid'),
                 "cpu_vendor": cpu.get('vendor_id'), "cpu_model": cpu.get('model name')}
     identity = {k: v.strip() if isinstance(v, str) else v for k, v in identity.items()}
-    complete = all(v and str(v).lower() not in ('unknown', 'none', 'default string', 'to be filled by o.e.m.')
-                   and set(str(v).replace('-', '').lower()) not in ({'0'}, {'f'}) for v in identity.values())
+    complete = all(identity_value_is_meaningful(identity[name]) for name in
+                   ('board_vendor', 'board_model', 'cpu_vendor', 'cpu_model')) and any(
+                       identity_value_is_meaningful(identity[name]) for name in ('board_serial', 'system_uuid'))
     # Canonical JSON preimage is included for independent recomputation.
     preimage = json.dumps(identity, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
     flags = cpu.get('flags')
