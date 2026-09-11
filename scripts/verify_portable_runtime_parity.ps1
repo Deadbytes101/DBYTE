@@ -124,7 +124,7 @@ try {
 
     Assert-True ($cells.Count -eq 7) "expected seven runtime cells, observed $($cells.Count)"
     Assert-True ($negative.Count -eq 8) "expected eight negative contract probes, observed $($negative.Count)"
-    $statusText = (Run 'git.exe' @('status','--porcelain=v1','--untracked-files=all') 'git-status')
+    $statusText = (Run 'git.exe' @('status','--porcelain=v1','--untracked-files=all','--','.',':(exclude)examples/smoke.dby',':(exclude)examples/.cube-state.bin') 'git-status')
     $receipt = [ordered]@{
         schema = 1
         contract = 'DByte strict portable same-source runtime parity'

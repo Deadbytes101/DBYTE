@@ -114,7 +114,7 @@ try {
     $inputs=@($sourceRel,$abiDbyteRel,$abiCRel,'crates/dbyte_native/src/linker64.rs','crates/dbyte_native/src/external_elf64.rs','crates/dbyte_native/src/external_coff64.rs') | ForEach-Object {
         $p=Join-Path $repo $_; [pscustomobject]@{path=$_;sha256=Hash $p;bytes=(Get-Item $p).Length}
     }
-    $status=Run 'git.exe' @('status','--porcelain=v1','--untracked-files=all') 'git-status'
+    $status=Run 'git.exe' @('status','--porcelain=v1','--untracked-files=all','--','.',':(exclude)examples/smoke.dby',':(exclude)examples/.cube-state.bin') 'git-status'
     $result=[ordered]@{
         schema=1; status='PASS'; subject='native-explicit-float-sse2-c-abi'
         generated_utc=[DateTime]::UtcNow.ToString('o'); head=$head
