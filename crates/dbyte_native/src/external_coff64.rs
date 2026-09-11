@@ -29,6 +29,7 @@ impl std::error::Error for ExternalCoff64Error {}
 #[derive(Clone)]
 struct RawSection {
     mapped: Option<Section>,
+    merged_offset: u64,
     raw_offset: usize,
     raw_size: usize,
     relocation_offset: usize,
@@ -127,25 +128,21 @@ pub fn parse_external_amd64_object(bytes: &[u8]) -> Result<ObjectImage, External
         {
             return Err(error("external COFF relocations are truncated"));
         }
-        if let Some(section) = mapped {
+        let merged_offset = if let Some(section) = mapped {
             let alignment = section_alignment(characteristics)?;
-            let contents = if section == Section::Bss {
-                Contents::Uninitialized(raw_size as u64)
-            } else {
-                Contents::Bytes(bytes[raw_offset..raw_offset + raw_size].to_vec())
-            };
-            if raw_size != 0 {
-                image.sections.insert(
-                    section,
-                    SectionData {
-                        contents,
-                        alignment,
-                    },
-                );
-            }
-        }
+            merge_mapped_section(
+                &mut image,
+                section,
+                alignment,
+                &bytes[raw_offset..raw_offset + raw_size],
+                raw_size as u64,
+            )?
+        } else {
+            0
+        };
         sections.push(RawSection {
             mapped,
+            merged_offset,
             raw_offset,
             raw_size,
             relocation_offset,
@@ -171,10 +168,14 @@ pub fn parse_external_amd64_object(bytes: &[u8]) -> Result<ObjectImage, External
         }
         if storage == 2 || storage == 3 {
             if section_number > 0 {
-                if let Some(section) = sections
-                    .get(section_number as usize - 1)
-                    .and_then(|raw| raw.mapped)
-                {
+                if let Some(raw) = sections.get(section_number as usize - 1) {
+                    let Some(section) = raw.mapped else {
+                        index += auxiliary + 1;
+                        continue;
+                    };
+                    let value = raw.merged_offset.checked_add(value).ok_or_else(|| {
+                        error("external COFF symbol value overflows merged section")
+                    })?;
                     let canonical_name = if name.starts_with('.') && storage == 3 {
                         format!("__coff_section_{index}")
                     } else {
@@ -239,7 +240,9 @@ pub fn parse_external_amd64_object(bytes: &[u8]) -> Result<ObjectImage, External
             };
             image.relocations.push(Relocation {
                 section,
-                offset: patch as u64,
+                offset: raw.merged_offset.checked_add(patch as u64).ok_or_else(|| {
+                    error("external COFF relocation offset overflows merged section")
+                })?,
                 symbol: symbol_map
                     .get(symbol_index)
                     .and_then(Clone::clone)
@@ -256,6 +259,61 @@ pub fn parse_external_amd64_object(bytes: &[u8]) -> Result<ObjectImage, External
     Ok(image)
 }
 
+fn merge_mapped_section(
+    image: &mut ObjectImage,
+    section: Section,
+    alignment: u64,
+    raw: &[u8],
+    logical_size: u64,
+) -> Result<u64, ExternalCoff64Error> {
+    match image.sections.get_mut(&section) {
+        None => {
+            if logical_size == 0 {
+                return Ok(0);
+            }
+            image.sections.insert(
+                section,
+                SectionData {
+                    contents: if section == Section::Bss {
+                        Contents::Uninitialized(logical_size)
+                    } else {
+                        Contents::Bytes(raw.to_vec())
+                    },
+                    alignment,
+                },
+            );
+            Ok(0)
+        }
+        Some(existing) => {
+            existing.alignment = existing.alignment.max(alignment);
+            match &mut existing.contents {
+                Contents::Bytes(output) if section != Section::Bss => {
+                    let base = align_up(output.len() as u64, alignment)?;
+                    let base_usize = usize::try_from(base)
+                        .map_err(|_| error("external COFF merged section exceeds host bounds"))?;
+                    output.resize(base_usize, 0);
+                    output.extend_from_slice(raw);
+                    Ok(base)
+                }
+                Contents::Uninitialized(size) if section == Section::Bss => {
+                    let base = align_up(*size, alignment)?;
+                    *size = base
+                        .checked_add(logical_size)
+                        .ok_or_else(|| error("external COFF merged BSS size overflows"))?;
+                    Ok(base)
+                }
+                _ => Err(error("external COFF mapped section changes storage kind")),
+            }
+        }
+    }
+}
+
+fn align_up(value: u64, alignment: u64) -> Result<u64, ExternalCoff64Error> {
+    value
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+        .ok_or_else(|| error("external COFF section merge alignment overflows"))
+}
 fn section_alignment(characteristics: u32) -> Result<u64, ExternalCoff64Error> {
     let encoded = (characteristics >> 20) & 0xf;
     if !(1..=13).contains(&encoded) {

@@ -10,7 +10,7 @@ use crate::native_mir::{
     NativeTerminator, NativeUnaryOp, NativeValue, PhysicalRegister, RegisterAllocation,
     RegisterLocation, RegisterPolicy, VirtualRegister,
 };
-use crate::x86_64::{Condition, EncodeError, Encoder, Register, ShiftKind, Width};
+use crate::x86_64::{Condition, EncodeError, Encoder, Register, ShiftKind, Width, XmmRegister};
 use std::collections::{BTreeMap, BTreeSet};
 
 const SCRATCH_VALUE: Register = Register::Rax;
@@ -18,6 +18,13 @@ const SCRATCH_OTHER: Register = Register::R11;
 const AGGREGATE_TEMP: Register = Register::R10;
 const SHIFT_COUNT: Register = Register::Rcx;
 const MAX_FUNCTION_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy)]
+enum CFloatLocation {
+    Gpr(usize),
+    Xmm(usize),
+    Stack(usize),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeRelocation {
@@ -627,7 +634,8 @@ impl<'a> Selector<'a> {
                         right,
                         ty,
                     } if destination == condition
-                        && self.function.register_use_count(*destination) == 1 =>
+                        && self.function.register_use_count(*destination) == 1
+                        && !matches!(ty, MachineType::F32 | MachineType::F64) =>
                     {
                         Some((*op, *left, *right, *ty, *then_block, *else_block))
                     }
@@ -805,6 +813,16 @@ impl<'a> Selector<'a> {
         {
             return Err(unsupported("aggregate by-value C parameter"));
         }
+        if self.function.convention == dbyte_ast::CallConvention::C
+            && self.function.parameters.iter().any(|parameter| {
+                matches!(
+                    self.function.register_types[parameter.0 as usize],
+                    MachineType::F32 | MachineType::F64
+                )
+            })
+        {
+            return self.move_c_float_parameters();
+        }
         let mut scalar_index = usize::from(self.function.aggregate_result.is_some());
         let mut stack_offset = 0u32;
         if let Some(displacement) = self.sret_displacement {
@@ -932,6 +950,120 @@ impl<'a> Selector<'a> {
         Ok(())
     }
 
+    fn move_c_float_parameters(&mut self) -> Result<(), NativeMirError> {
+        let win64 = self.target.c_abi == Some(crate::target::CAbi::Win64);
+        let gprs = if win64 {
+            &[Register::Rcx, Register::Rdx, Register::R8, Register::R9][..]
+        } else {
+            &[
+                Register::Rdi,
+                Register::Rsi,
+                Register::Rdx,
+                Register::Rcx,
+                Register::R8,
+                Register::R9,
+            ][..]
+        };
+        let mut integer_index = 0usize;
+        let mut float_index = 0usize;
+        let mut stack_index = 0usize;
+        let mut placements = Vec::with_capacity(self.function.parameters.len());
+        for (index, parameter) in self.function.parameters.iter().copied().enumerate() {
+            let ty = self.function.register_types[parameter.0 as usize];
+            let is_float = matches!(ty, MachineType::F32 | MachineType::F64);
+            let location = if win64 {
+                if index < 4 {
+                    if is_float {
+                        CFloatLocation::Xmm(index)
+                    } else {
+                        CFloatLocation::Gpr(index)
+                    }
+                } else {
+                    let slot = stack_index;
+                    stack_index += 1;
+                    CFloatLocation::Stack(slot)
+                }
+            } else if is_float && float_index < 8 {
+                let slot = float_index;
+                float_index += 1;
+                CFloatLocation::Xmm(slot)
+            } else if !is_float && integer_index < 6 {
+                let slot = integer_index;
+                integer_index += 1;
+                CFloatLocation::Gpr(slot)
+            } else {
+                let slot = stack_index;
+                stack_index += 1;
+                CFloatLocation::Stack(slot)
+            };
+            placements.push((parameter, ty, location));
+        }
+        let register_count = placements
+            .iter()
+            .filter(|(_, _, location)| !matches!(location, CFloatLocation::Stack(_)))
+            .count();
+        for (_, ty, location) in &placements {
+            match *location {
+                CFloatLocation::Gpr(slot) => self.emit(|encoder| encoder.push(gprs[slot]))?,
+                CFloatLocation::Xmm(slot) => {
+                    let source = xmm_register(slot)?;
+                    let source_width = width(*ty);
+                    self.emit(|encoder| {
+                        encoder.mov_gpr_from_xmm(SCRATCH_VALUE, source, source_width)
+                    })?;
+                    self.emit(|encoder| encoder.push(SCRATCH_VALUE))?;
+                }
+                CFloatLocation::Stack(_) => {}
+            }
+        }
+        let mut snapshot_index = 0usize;
+        for (parameter, ty, location) in placements {
+            match location {
+                CFloatLocation::Gpr(_) | CFloatLocation::Xmm(_) => {
+                    let displacement = i32::try_from((register_count - snapshot_index - 1) * 8)
+                        .map_err(|_| {
+                            codegen_error("C ABI parameter snapshot offset exceeds i32")
+                        })?;
+                    self.emit(|encoder| {
+                        encoder.mov_reg_from_base_disp32(
+                            SCRATCH_VALUE,
+                            Register::Rsp,
+                            displacement,
+                            Width::Qword,
+                        )
+                    })?;
+                    snapshot_index += 1;
+                }
+                CFloatLocation::Stack(slot) => {
+                    let base = if win64 { 48 } else { 16 };
+                    let displacement = base
+                        + i32::try_from(slot * 8).map_err(|_| {
+                            codegen_error("C ABI stack parameter offset exceeds i32")
+                        })?;
+                    self.emit(|encoder| {
+                        encoder.mov_reg_from_base_disp32(
+                            SCRATCH_VALUE,
+                            Register::Rbp,
+                            displacement,
+                            Width::Qword,
+                        )
+                    })?;
+                }
+            }
+            self.normalize(SCRATCH_VALUE, ty)?;
+            self.store_register(parameter, SCRATCH_VALUE)?;
+            self.statistics.loads += 1;
+        }
+        if register_count != 0 {
+            let snapshot_bytes = u32::try_from(register_count)
+                .map_err(|_| codegen_error("C ABI snapshot count exceeds u32"))?
+                .checked_mul(8)
+                .ok_or_else(|| codegen_error("C ABI snapshot bytes overflow"))?;
+            self.emit(|encoder| encoder.add_imm32(Register::Rsp, snapshot_bytes))?;
+        }
+        Ok(())
+    }
+
     fn select_unsigned_load_widening_cast(
         &mut self,
         address: VirtualRegister,
@@ -1016,7 +1148,20 @@ impl<'a> Selector<'a> {
                 self.load_value(*value, SCRATCH_VALUE)?;
                 match op {
                     NativeUnaryOp::Negate => {
-                        self.emit(|encoder| encoder.neg_reg(SCRATCH_VALUE, width(*ty)))?
+                        if *ty == MachineType::F32 {
+                            self.emit(|encoder| {
+                                encoder.xor_reg_imm(SCRATCH_VALUE, 0x8000_0000, Width::Dword)
+                            })?;
+                        } else if *ty == MachineType::F64 {
+                            self.emit(|encoder| {
+                                encoder.mov_imm64(SCRATCH_OTHER, 0x8000_0000_0000_0000)
+                            })?;
+                            self.emit(|encoder| {
+                                encoder.xor_reg(SCRATCH_VALUE, SCRATCH_OTHER, Width::Qword)
+                            })?;
+                        } else {
+                            self.emit(|encoder| encoder.neg_reg(SCRATCH_VALUE, width(*ty)))?;
+                        }
                     }
                     NativeUnaryOp::BitNot => {
                         self.emit(|encoder| encoder.not_reg(SCRATCH_VALUE, width(*ty)))?
@@ -1054,6 +1199,9 @@ impl<'a> Selector<'a> {
                 right,
                 ty,
             } => {
+                if matches!(ty, MachineType::F32 | MachineType::F64) {
+                    return self.select_float_compare(*destination, *op, *left, *right, *ty);
+                }
                 self.load_value(*left, SCRATCH_VALUE)?;
                 if let NativeValue::Immediate(value) = right {
                     if let Some(immediate) = immediate_u32(*value, *ty) {
@@ -1248,6 +1396,9 @@ impl<'a> Selector<'a> {
         right: NativeValue,
         ty: MachineType,
     ) -> Result<(), NativeMirError> {
+        if matches!(ty, MachineType::F32 | MachineType::F64) {
+            return self.select_float_binary(destination, op, left, right, ty);
+        }
         let in_place = if matches!(ty, MachineType::I64 | MachineType::Pointer)
             && !matches!(
                 op,
@@ -1374,6 +1525,94 @@ impl<'a> Selector<'a> {
         self.store_register(destination, accumulator)
     }
 
+    fn select_float_binary(
+        &mut self,
+        destination: VirtualRegister,
+        op: NativeBinaryOp,
+        left: NativeValue,
+        right: NativeValue,
+        ty: MachineType,
+    ) -> Result<(), NativeMirError> {
+        let operation_width = width(ty);
+        self.load_value(left, SCRATCH_VALUE)?;
+        self.load_value(right, SCRATCH_OTHER)?;
+        self.emit(|encoder| {
+            encoder.mov_xmm_from_gpr(XmmRegister::Xmm0, SCRATCH_VALUE, operation_width)
+        })?;
+        self.emit(|encoder| {
+            encoder.mov_xmm_from_gpr(XmmRegister::Xmm1, SCRATCH_OTHER, operation_width)
+        })?;
+        let opcode = match op {
+            NativeBinaryOp::Add => 0x58,
+            NativeBinaryOp::Sub => 0x5c,
+            NativeBinaryOp::Mul => 0x59,
+            NativeBinaryOp::SignedDiv | NativeBinaryOp::UnsignedDiv => 0x5e,
+            _ => return Err(codegen_error("unsupported scalar SSE arithmetic operation")),
+        };
+        self.emit(|encoder| {
+            encoder.scalar_float_binary(
+                XmmRegister::Xmm0,
+                XmmRegister::Xmm1,
+                operation_width,
+                opcode,
+            )
+        })?;
+        self.emit(|encoder| {
+            encoder.mov_gpr_from_xmm(SCRATCH_VALUE, XmmRegister::Xmm0, operation_width)
+        })?;
+        self.normalize(SCRATCH_VALUE, ty)?;
+        self.store_register(destination, SCRATCH_VALUE)
+    }
+
+    fn select_float_compare(
+        &mut self,
+        destination: VirtualRegister,
+        op: NativeCompareOp,
+        left: NativeValue,
+        right: NativeValue,
+        ty: MachineType,
+    ) -> Result<(), NativeMirError> {
+        let operation_width = width(ty);
+        self.load_value(left, SCRATCH_VALUE)?;
+        self.load_value(right, SCRATCH_OTHER)?;
+        self.emit(|encoder| {
+            encoder.mov_xmm_from_gpr(XmmRegister::Xmm0, SCRATCH_VALUE, operation_width)
+        })?;
+        self.emit(|encoder| {
+            encoder.mov_xmm_from_gpr(XmmRegister::Xmm1, SCRATCH_OTHER, operation_width)
+        })?;
+        self.emit(|encoder| encoder.ucomis(XmmRegister::Xmm0, XmmRegister::Xmm1, operation_width))?;
+        let (condition, ordered) = match op {
+            NativeCompareOp::Equal => (Condition::Equal, Some(Condition::NotParity)),
+            NativeCompareOp::NotEqual => (Condition::NotEqual, Some(Condition::Parity)),
+            NativeCompareOp::UnsignedLess | NativeCompareOp::SignedLess => {
+                (Condition::Below, Some(Condition::NotParity))
+            }
+            NativeCompareOp::UnsignedLessEqual | NativeCompareOp::SignedLessEqual => {
+                (Condition::BelowOrEqual, Some(Condition::NotParity))
+            }
+            NativeCompareOp::UnsignedGreater | NativeCompareOp::SignedGreater => {
+                (Condition::Above, None)
+            }
+            NativeCompareOp::UnsignedGreaterEqual | NativeCompareOp::SignedGreaterEqual => {
+                (Condition::AboveOrEqual, None)
+            }
+        };
+        self.emit(|encoder| encoder.set_condition(condition, SCRATCH_VALUE))?;
+        if let Some(ordered) = ordered {
+            self.emit(|encoder| encoder.set_condition(ordered, SHIFT_COUNT))?;
+            self.emit(|encoder| {
+                if op == NativeCompareOp::NotEqual {
+                    encoder.or_reg(SCRATCH_VALUE, SHIFT_COUNT, Width::Byte)
+                } else {
+                    encoder.and_reg(SCRATCH_VALUE, SHIFT_COUNT, Width::Byte)
+                }
+            })?;
+        }
+        self.emit(|encoder| encoder.movzx_byte_to_qword(SCRATCH_VALUE, SCRATCH_VALUE))?;
+        self.store_register(destination, SCRATCH_VALUE)
+    }
+
     fn select_compare_branch(
         &mut self,
         comparison: (NativeCompareOp, NativeValue, NativeValue, MachineType),
@@ -1494,7 +1733,15 @@ impl<'a> Selector<'a> {
             self.load_register(target, SCRATCH_OTHER)?;
             self.emit(|encoder| encoder.push(SCRATCH_OTHER))?;
         }
-        let scalar_call_area = if win64 {
+        let has_float = hidden_and_scalars.iter().any(|argument| {
+            matches!(
+                self.function.register_types[argument.0 as usize],
+                MachineType::F32 | MachineType::F64
+            )
+        });
+        let scalar_call_area = if (win64 || sysv64) && has_float {
+            self.prepare_c_float_arguments(&hidden_and_scalars, win64)?
+        } else if win64 {
             self.prepare_win64_arguments(&hidden_and_scalars, parameters)?
         } else if sysv64 {
             self.prepare_sysv64_arguments(&hidden_and_scalars, parameters)?
@@ -1534,6 +1781,20 @@ impl<'a> Selector<'a> {
             self.emit(|encoder| encoder.add_imm32(Register::Rsp, call_area))?;
         }
         if let Some(destination) = destination.filter(|_| aggregate_result.is_none()) {
+            if convention == dbyte_ast::CallConvention::C
+                && matches!(
+                    self.function.register_types[destination.0 as usize],
+                    MachineType::F32 | MachineType::F64
+                )
+            {
+                self.emit(|encoder| {
+                    encoder.mov_gpr_from_xmm(
+                        Register::Rax,
+                        XmmRegister::Xmm0,
+                        width(self.function.register_types[destination.0 as usize]),
+                    )
+                })?;
+            }
             self.store_register(destination, Register::Rax)?;
         }
         Ok(())
@@ -2063,6 +2324,118 @@ impl<'a> Selector<'a> {
             .ok_or_else(|| codegen_error("Win64 call cleanup overflows"))
     }
 
+    fn prepare_c_float_arguments(
+        &mut self,
+        arguments: &[VirtualRegister],
+        win64: bool,
+    ) -> Result<u32, NativeMirError> {
+        let snapshot_bytes = self.snapshot_arguments(arguments)?;
+        let mut integer_index = 0usize;
+        let mut float_index = 0usize;
+        let mut stack_index = 0usize;
+        let mut placements = Vec::with_capacity(arguments.len());
+        for (index, argument) in arguments.iter().copied().enumerate() {
+            let ty = self.function.register_types[argument.0 as usize];
+            let is_float = matches!(ty, MachineType::F32 | MachineType::F64);
+            let placement = if win64 {
+                if index < 4 {
+                    if is_float {
+                        CFloatLocation::Xmm(index)
+                    } else {
+                        CFloatLocation::Gpr(index)
+                    }
+                } else {
+                    let slot = stack_index;
+                    stack_index += 1;
+                    CFloatLocation::Stack(slot)
+                }
+            } else if is_float && float_index < 8 {
+                let slot = float_index;
+                float_index += 1;
+                CFloatLocation::Xmm(slot)
+            } else if !is_float && integer_index < 6 {
+                let slot = integer_index;
+                integer_index += 1;
+                CFloatLocation::Gpr(slot)
+            } else {
+                let slot = stack_index;
+                stack_index += 1;
+                CFloatLocation::Stack(slot)
+            };
+            placements.push((placement, ty));
+        }
+        let base = if win64 { 32 } else { 0 };
+        let required = base
+            + u32::try_from(stack_index)
+                .map_err(|_| codegen_error("C ABI stack argument count exceeds u32"))?
+                * 8;
+        let padding = (16 - ((snapshot_bytes + required) % 16)) % 16;
+        let call_area = required
+            .checked_add(padding)
+            .ok_or_else(|| codegen_error("C ABI call area overflows"))?;
+        if call_area != 0 {
+            self.emit(|encoder| encoder.sub_imm32(Register::Rsp, call_area))?;
+        }
+        let gprs = if win64 {
+            &[Register::Rcx, Register::Rdx, Register::R8, Register::R9][..]
+        } else {
+            &[
+                Register::Rdi,
+                Register::Rsi,
+                Register::Rdx,
+                Register::Rcx,
+                Register::R8,
+                Register::R9,
+            ][..]
+        };
+        for (index, (placement, ty)) in placements.into_iter().enumerate() {
+            let staged = call_area
+                .checked_add(
+                    u32::try_from((arguments.len() - index - 1) * 8)
+                        .map_err(|_| codegen_error("C ABI snapshot offset exceeds u32"))?,
+                )
+                .ok_or_else(|| codegen_error("C ABI snapshot offset overflows"))?;
+            let staged = i32::try_from(staged)
+                .map_err(|_| codegen_error("C ABI snapshot offset exceeds i32"))?;
+            self.emit(|encoder| {
+                encoder.mov_reg_from_base_disp32(SCRATCH_OTHER, Register::Rsp, staged, Width::Qword)
+            })?;
+            match placement {
+                CFloatLocation::Gpr(slot) => {
+                    self.emit(|encoder| encoder.mov_reg(gprs[slot], SCRATCH_OTHER, Width::Qword))?
+                }
+                CFloatLocation::Xmm(slot) => {
+                    let destination = xmm_register(slot)?;
+                    let destination_width = width(ty);
+                    self.emit(|encoder| {
+                        encoder.mov_xmm_from_gpr(destination, SCRATCH_OTHER, destination_width)
+                    })?;
+                }
+                CFloatLocation::Stack(slot) => {
+                    let displacement = base
+                        + u32::try_from(slot)
+                            .map_err(|_| codegen_error("C ABI stack slot exceeds u32"))?
+                            * 8;
+                    let displacement = i32::try_from(displacement)
+                        .map_err(|_| codegen_error("C ABI stack offset exceeds i32"))?;
+                    self.emit(|encoder| {
+                        encoder.mov_base_disp32_from_reg(
+                            Register::Rsp,
+                            displacement,
+                            SCRATCH_OTHER,
+                            Width::Qword,
+                        )
+                    })?;
+                    self.statistics.stores += 1;
+                }
+            }
+            self.statistics.loads += 1;
+        }
+        call_area
+            .checked_add(snapshot_bytes)
+            .ok_or_else(|| codegen_error("C ABI call cleanup overflows"))
+    }
+
     fn select_windows_import(
         &mut self,
         destination: Option<VirtualRegister>,
@@ -2208,6 +2581,14 @@ impl<'a> Selector<'a> {
             NativeTerminator::Return(value) => {
                 if let Some(value) = value {
                     self.load_register(*value, Register::Rax)?;
+                    let ty = self.function.register_types[value.0 as usize];
+                    if self.function.convention == dbyte_ast::CallConvention::C
+                        && matches!(ty, MachineType::F32 | MachineType::F64)
+                    {
+                        self.emit(|encoder| {
+                            encoder.mov_xmm_from_gpr(XmmRegister::Xmm0, Register::Rax, width(ty))
+                        })?;
+                    }
                 }
                 let patch = self
                     .encoder
@@ -2420,10 +2801,10 @@ impl<'a> Selector<'a> {
             MachineType::I16 => {
                 self.shift_pair(register, 48, ShiftKind::Left, ShiftKind::LogicalRight)?;
             }
-            MachineType::I32 => {
+            MachineType::I32 | MachineType::F32 => {
                 self.emit(|encoder| encoder.mov_reg(register, register, Width::Dword))?;
             }
-            MachineType::I64 | MachineType::Pointer => {}
+            MachineType::I64 | MachineType::F64 | MachineType::Pointer => {}
         }
         Ok(())
     }
@@ -2568,8 +2949,8 @@ fn width(ty: MachineType) -> Width {
     match ty {
         MachineType::Bool | MachineType::I8 => Width::Byte,
         MachineType::I16 => Width::Word,
-        MachineType::I32 => Width::Dword,
-        MachineType::I64 | MachineType::Pointer => Width::Qword,
+        MachineType::I32 | MachineType::F32 => Width::Dword,
+        MachineType::I64 | MachineType::F64 | MachineType::Pointer => Width::Qword,
     }
 }
 
@@ -2577,8 +2958,8 @@ fn immediate_u32(value: u64, ty: MachineType) -> Option<u32> {
     match ty {
         MachineType::Bool | MachineType::I8 => Some(value as u8 as u32),
         MachineType::I16 => Some(value as u16 as u32),
-        MachineType::I32 => Some(value as u32),
-        MachineType::I64 | MachineType::Pointer => {
+        MachineType::I32 | MachineType::F32 => Some(value as u32),
+        MachineType::I64 | MachineType::F64 | MachineType::Pointer => {
             let immediate = value as u32;
             ((immediate as i32 as i64) as u64 == value).then_some(immediate)
         }
@@ -2612,6 +2993,22 @@ fn invert_condition(condition: Condition) -> Condition {
         Condition::LessOrEqual => Condition::Greater,
         Condition::Greater => Condition::LessOrEqual,
         Condition::GreaterOrEqual => Condition::Less,
+        Condition::Parity => Condition::NotParity,
+        Condition::NotParity => Condition::Parity,
+    }
+}
+
+fn xmm_register(index: usize) -> Result<XmmRegister, NativeMirError> {
+    match index {
+        0 => Ok(XmmRegister::Xmm0),
+        1 => Ok(XmmRegister::Xmm1),
+        2 => Ok(XmmRegister::Xmm2),
+        3 => Ok(XmmRegister::Xmm3),
+        4 => Ok(XmmRegister::Xmm4),
+        5 => Ok(XmmRegister::Xmm5),
+        6 => Ok(XmmRegister::Xmm6),
+        7 => Ok(XmmRegister::Xmm7),
+        _ => Err(codegen_error("x86_64 C ABI XMM slot exceeds XMM7")),
     }
 }
 

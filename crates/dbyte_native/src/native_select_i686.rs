@@ -2205,6 +2205,9 @@ impl<'a> Selector<'a> {
             }),
             MachineType::I32 | MachineType::Pointer => Ok(()),
             MachineType::I64 => Err(unsupported("wide normalization in one i686 register")),
+            MachineType::F32 | MachineType::F64 => Err(unsupported(
+                "explicit float requires the x86_64 SSE2 selector",
+            )),
         }
     }
 
@@ -2277,14 +2280,21 @@ fn operand_width(ty: MachineType) -> OperandWidth {
     match ty {
         MachineType::Bool | MachineType::I8 => OperandWidth::Byte,
         MachineType::I16 => OperandWidth::Word,
-        MachineType::I32 | MachineType::Pointer | MachineType::I64 => OperandWidth::Dword,
+        MachineType::I32 | MachineType::Pointer | MachineType::I64 | MachineType::F32 => {
+            OperandWidth::Dword
+        }
+        MachineType::F64 => OperandWidth::Dword,
     }
 }
 
 fn load_extension(ty: MachineType) -> Option<Extension> {
     match ty {
         MachineType::Bool | MachineType::I8 | MachineType::I16 => Some(Extension::Zero),
-        MachineType::I32 | MachineType::Pointer | MachineType::I64 => None,
+        MachineType::I32
+        | MachineType::Pointer
+        | MachineType::I64
+        | MachineType::F32
+        | MachineType::F64 => None,
     }
 }
 

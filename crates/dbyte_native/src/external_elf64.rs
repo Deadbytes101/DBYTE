@@ -122,35 +122,20 @@ pub fn parse_external_x86_64_object(
         symbols: Vec::new(),
         relocations: Vec::new(),
     };
-    let mut section_map = BTreeMap::<usize, Section>::new();
+    let mut section_map = BTreeMap::<usize, (Section, u64)>::new();
     for (index, section) in sections.iter().enumerate().skip(1) {
         let mapped = match section.name.as_str() {
             ".text" => Some(Section::Text),
             ".rodata" => Some(Section::Rodata),
+            name if name.starts_with(".rodata.") => Some(Section::Rodata),
             ".data" => Some(Section::Data),
             ".bss" => Some(Section::Bss),
             _ => None,
         };
         if let Some(mapped) = mapped {
             validate_alignment(section.align)?;
-            let contents = match section.kind {
-                1 => Contents::Bytes(section_bytes(bytes, section)?.to_vec()),
-                8 => Contents::Uninitialized(section.size),
-                other => {
-                    return Err(error(format!(
-                        "external section '{}' has unsupported type {other}",
-                        section.name
-                    )))
-                }
-            };
-            image.sections.insert(
-                mapped,
-                SectionData {
-                    contents,
-                    alignment: section.align.max(1),
-                },
-            );
-            section_map.insert(index, mapped);
+            let base = merge_mapped_section(&mut image, mapped, section, bytes)?;
+            section_map.insert(index, (mapped, base));
         } else if section.flags & 0x2 != 0 && section.name != ".eh_frame" {
             return Err(error(format!(
                 "unsupported allocatable external section '{}'",
@@ -205,7 +190,10 @@ pub fn parse_external_x86_64_object(
         let size = u64_at(entry, 16)?;
         let definition = if section_index == 0 {
             Definition::Undefined
-        } else if let Some(section) = section_map.get(&section_index).copied() {
+        } else if let Some((section, base)) = section_map.get(&section_index).copied() {
+            let value = base
+                .checked_add(value)
+                .ok_or_else(|| error("external ELF64 symbol value overflows merged section"))?;
             Definition::Defined { section, value }
         } else if binding == Binding::Local {
             continue;
@@ -228,7 +216,9 @@ pub fn parse_external_x86_64_object(
     }
 
     for section in sections.iter().filter(|section| section.kind == 4) {
-        let Some(target_section) = section_map.get(&(section.info as usize)).copied() else {
+        let Some((target_section, target_base)) =
+            section_map.get(&(section.info as usize)).copied()
+        else {
             if sections
                 .get(section.info as usize)
                 .is_some_and(|target| target.name == ".eh_frame")
@@ -249,7 +239,9 @@ pub fn parse_external_x86_64_object(
             if image.relocations.len() >= MAX_RELOCATIONS {
                 return Err(error("external ELF64 relocation count exceeds bound"));
             }
-            let offset = u64_at(rela, 0)?;
+            let offset = target_base.checked_add(u64_at(rela, 0)?).ok_or_else(|| {
+                error("external ELF64 relocation offset overflows merged section")
+            })?;
             let info = u64_at(rela, 8)?;
             let symbol_index = usize::try_from(info >> 32)
                 .map_err(|_| error("external ELF64 relocation symbol index overflows"))?;
@@ -277,6 +269,67 @@ pub fn parse_external_x86_64_object(
     Ok(image)
 }
 
+fn merge_mapped_section(
+    image: &mut ObjectImage,
+    mapped: Section,
+    section: &RawSection,
+    bytes: &[u8],
+) -> Result<u64, ExternalElf64Error> {
+    let alignment = section.align.max(1);
+    match image.sections.get_mut(&mapped) {
+        None => {
+            let contents = match section.kind {
+                1 => Contents::Bytes(section_bytes(bytes, section)?.to_vec()),
+                8 => Contents::Uninitialized(section.size),
+                other => {
+                    return Err(error(format!(
+                        "external section '{}' has unsupported type {other}",
+                        section.name
+                    )))
+                }
+            };
+            image.sections.insert(
+                mapped,
+                SectionData {
+                    contents,
+                    alignment,
+                },
+            );
+            Ok(0)
+        }
+        Some(existing) => {
+            existing.alignment = existing.alignment.max(alignment);
+            match (&mut existing.contents, section.kind) {
+                (Contents::Bytes(output), 1) => {
+                    let base = align_up(output.len() as u64, alignment)?;
+                    let base_usize = usize::try_from(base)
+                        .map_err(|_| error("external merged section exceeds host bounds"))?;
+                    output.resize(base_usize, 0);
+                    output.extend_from_slice(section_bytes(bytes, section)?);
+                    Ok(base)
+                }
+                (Contents::Uninitialized(size), 8) => {
+                    let base = align_up(*size, alignment)?;
+                    *size = base
+                        .checked_add(section.size)
+                        .ok_or_else(|| error("external merged BSS size overflows"))?;
+                    Ok(base)
+                }
+                _ => Err(error(format!(
+                    "external section '{}' changes canonical section storage kind",
+                    section.name
+                ))),
+            }
+        }
+    }
+}
+
+fn align_up(value: u64, alignment: u64) -> Result<u64, ExternalElf64Error> {
+    value
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+        .ok_or_else(|| error("external section merge alignment overflows"))
+}
 type RawHeader = (u32, u32, u64, u64, u64, u64, u32, u32, u64, u64);
 
 fn read_section(bytes: &[u8], offset: usize) -> Result<RawHeader, ExternalElf64Error> {

@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec check-portable <source.dby>\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -155,9 +155,35 @@ struct BuildProduct {
 pub fn run_args(args: &[String]) -> Result<(), CliError> {
     match args.first().map(String::as_str) {
         Some("link") => run_link_args(args),
+        Some("check-portable") => run_check_portable_args(args),
         Some("pack-user") => run_pack_user_args(args),
         _ => run_build_args(args),
     }
+}
+
+pub fn run_check_portable_args(args: &[String]) -> Result<(), CliError> {
+    if args.len() != 2 {
+        return Err(CliError::argument(
+            "check-portable requires exactly one source path",
+        ));
+    }
+    let source = PathBuf::from(&args[1]);
+    fs::read_to_string(&source).map_err(|error| CliError::Input {
+        path: source.clone(),
+        kind: error.kind(),
+    })?;
+    let project = dbyte_hir::load_source_project(&source)
+        .map_err(|diagnostics| CliError::compile(&source, render_hir_diagnostics(diagnostics)))?;
+    let report = dbyte_hir::validate_portable_project(&project)
+        .map_err(|diagnostics| CliError::compile(&source, render_hir_diagnostics(diagnostics)))?;
+    writeln!(
+        io::stdout().lock(),
+        "DBYTE STRICT PORTABLE: PASS profiles={} interface={:016x}",
+        report.profile_count,
+        report.interface_fingerprint
+    )
+    .map_err(|error| CliError::Stdout(error.kind()))?;
+    Ok(())
 }
 
 pub fn run_pack_user_args(args: &[String]) -> Result<(), CliError> {
@@ -1818,6 +1844,81 @@ mod tests {
         assert!(error.to_string().contains("DuplicateSymbol"));
         assert_eq!(fs::read(&output).expect("read output"), known_good);
         assert_no_temporary_files(&test_dir.path);
+    }
+
+    #[test]
+    fn check_portable_accepts_fixed_width_target_independent_source() {
+        let test_dir = TestDirectory::new("portable-fixed-width");
+        let source = test_dir.path.join("portable.dby");
+        fs::write(
+            &source,
+            "pub fn add(left: i32, right: i32) -> i32:\n    return left + right\n",
+        )
+        .expect("write portable source");
+
+        run_args(&[
+            "check-portable".to_owned(),
+            source.to_string_lossy().into_owned(),
+        ])
+        .expect("fixed-width source should satisfy strict portable contract");
+    }
+
+    fn portable_error(label: &str, source_text: &str) -> String {
+        let test_dir = TestDirectory::new(label);
+        let source = test_dir.path.join("portable.dby");
+        fs::write(&source, source_text).expect("write portable negative fixture");
+        run_args(&[
+            "check-portable".to_owned(),
+            source.to_string_lossy().into_owned(),
+        ])
+        .expect_err("fixture must violate strict portable contract")
+        .to_string()
+    }
+
+    #[test]
+    fn check_portable_rejects_target_width_target_capability_c_abi_and_indexing() {
+        let width = portable_error(
+            "portable-usize",
+            "pub fn width(value: usize) -> usize:\n    return value\n",
+        );
+        assert!(width.contains("E_PORTABLE_TARGET_WIDTH"));
+
+        let target = portable_error("portable-linux", "fn raw(fd: i32, text: str, length: usize) -> i64:\n    return linux.write(fd, text, length)\n");
+        assert!(target.contains("E_PORTABLE_TARGET_CAPABILITY"));
+
+        let c_abi = portable_error(
+            "portable-c-abi",
+            "extern \"C\" fn c_add(left: i32, right: i32) -> i32\n",
+        );
+        assert!(c_abi.contains("E_PORTABLE_C_ABI"));
+
+        let indexing = portable_error(
+            "portable-index",
+            "pub fn first(values: array[u32, 2]) -> u32:\n    return values[0]\n",
+        );
+        assert!(indexing.contains("E_PORTABLE_INDEX_SEMANTICS"));
+    }
+
+    #[test]
+    fn check_portable_accepts_explicit_float_bits_but_not_legacy_float_literals() {
+        let test_dir = TestDirectory::new("portable-f32-bits");
+        let source = test_dir.path.join("portable.dby");
+        fs::write(
+            &source,
+            "pub fn bits(value: u32) -> f32:\n    return value as! f32\n",
+        )
+        .unwrap();
+        run_args(&[
+            "check-portable".to_owned(),
+            source.to_string_lossy().into_owned(),
+        ])
+        .expect("exact f32 representation is portable before arithmetic is enabled");
+
+        let legacy = portable_error(
+            "portable-legacy-float",
+            "pub fn bad() -> float:\n    return 1.5\n",
+        );
+        assert!(legacy.contains("E_PORTABLE_LEGACY_FLOAT"));
     }
 
     #[test]

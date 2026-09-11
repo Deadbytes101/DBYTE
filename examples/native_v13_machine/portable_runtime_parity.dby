@@ -1,0 +1,18 @@
+fn mix(value: u32) -> u32:
+    let x: u32 = value * (3 as u32)
+    x = x + (7 as u32)
+    if x > (100 as u32):
+        x = x - (11 as u32)
+    return x
+
+pub fn main() -> i32:
+    let left: u32 = mix(40 as u32)
+    let right: u32 = mix(10 as u32)
+    let total: u32 = left + right
+    if total == (153 as u32):
+        return 42 as i32
+    return 1 as i32
+
+let status: i32 = main()
+if status != (42 as i32):
+    let crash: i32 = (1 as i32) / (0 as i32)

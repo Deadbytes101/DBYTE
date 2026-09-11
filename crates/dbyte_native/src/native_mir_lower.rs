@@ -633,20 +633,6 @@ pub fn lower_program_to_native_mir_with_link_names(
     program: &ConcreteHirProgram,
     link_names: Option<&BTreeMap<dbyte_hir::SymbolId, String>>,
 ) -> Result<NativeMirProject, NativeMirError> {
-    for function in &program.functions {
-        if function.convention == dbyte_ast::CallConvention::C
-            && (function
-                .parameters
-                .iter()
-                .any(|parameter| is_explicit_float(program, parameter.ty))
-                || is_explicit_float(program, function.result))
-        {
-            return Err(NativeMirError::new(
-                "E_NATIVE_MIR_C_FLOAT_ABI",
-                "explicit f32/f64 in extern C signatures require the native float ABI slice",
-            ));
-        }
-    }
     let symbols: BTreeMap<_, _> = program
         .functions
         .iter()
@@ -1609,14 +1595,6 @@ impl<'a> FunctionLowerer<'a> {
                 convention,
                 arguments,
             } => {
-                if *convention == dbyte_ast::CallConvention::C
-                    && is_explicit_float(self.program, expression.ty)
-                {
-                    return Err(NativeMirError::new(
-                        "E_NATIVE_MIR_C_FLOAT_ABI",
-                        "explicit f32/f64 C-call results require the native float ABI slice",
-                    ));
-                }
                 let symbol = self.symbols.get(callee).cloned().ok_or_else(|| {
                     NativeMirError::new(
                         "E_NATIVE_MIR_CALL",
@@ -1653,14 +1631,6 @@ impl<'a> FunctionLowerer<'a> {
                 convention,
                 arguments,
             } => {
-                if *convention == dbyte_ast::CallConvention::C
-                    && is_explicit_float(self.program, expression.ty)
-                {
-                    return Err(NativeMirError::new(
-                        "E_NATIVE_MIR_C_FLOAT_ABI",
-                        "explicit f32/f64 C-call results require the native float ABI slice",
-                    ));
-                }
                 let callee = self.lower_native_callee(callee)?;
                 let (arguments, argument_aggregates) =
                     self.lower_call_arguments(arguments, *convention)?;
@@ -1919,14 +1889,6 @@ impl<'a> FunctionLowerer<'a> {
         let mut values = Vec::with_capacity(arguments.len());
         let mut aggregates = Vec::with_capacity(arguments.len());
         for argument in arguments {
-            if convention == dbyte_ast::CallConvention::C
-                && is_explicit_float(self.program, argument.ty)
-            {
-                return Err(NativeMirError::new(
-                    "E_NATIVE_MIR_C_FLOAT_ABI",
-                    "explicit f32/f64 C-call arguments require the native float ABI slice",
-                ));
-            }
             let aggregate = aggregate_layout(self.program, argument.ty, argument.span)?;
             let mut value = self.lower_expr(argument)?;
             if aggregate.is_none() && convention == dbyte_ast::CallConvention::C {
@@ -3343,13 +3305,6 @@ fn is_zero_sized(program: &ConcreteHirProgram, ty: TypeId) -> Result<bool, Nativ
     Ok(layout.size == 0)
 }
 
-fn is_explicit_float(program: &ConcreteHirProgram, ty: TypeId) -> bool {
-    matches!(
-        program.semantic.type_of(ty),
-        CanonicalType::F32 | CanonicalType::F64
-    )
-}
-
 fn machine_type(
     program: &ConcreteHirProgram,
     ty: TypeId,
@@ -3363,10 +3318,9 @@ fn machine_type(
         CanonicalType::Integer(IntegerType::I32 | IntegerType::U32 | IntegerType::LegacyInt) => {
             MachineType::I32
         }
-        CanonicalType::Integer(IntegerType::I64 | IntegerType::U64) | CanonicalType::F64 => {
-            MachineType::I64
-        }
-        CanonicalType::F32 => MachineType::I32,
+        CanonicalType::Integer(IntegerType::I64 | IntegerType::U64) => MachineType::I64,
+        CanonicalType::F32 => MachineType::F32,
+        CanonicalType::F64 => MachineType::F64,
         CanonicalType::Integer(IntegerType::Usize)
         | CanonicalType::Pointer { .. }
         | CanonicalType::Borrow { .. }
@@ -3910,19 +3864,36 @@ mod tests {
     }
 
     #[test]
-    fn explicit_float_c_abi_fails_closed_until_float_register_abi_exists() {
-        // Canonical HIR already rejects explicit float C ABI at source analysis.
-        // Mutate a validated DByte-call program only to prove Native MIR also
-        // fails closed if a future caller bypasses that earlier gate.
-        let mut concrete = concrete(
-            "pub fn foreign32(value: f32) -> f32:\n    return value\n\npub fn callback64(value: f64) -> f64:\n    return value\n",
+    fn explicit_float_c_abi_preserves_float_machine_types() {
+        let concrete = concrete(
+            "pub extern \"C\" fn foreign32(value: f32) -> f32:\n    return value\n\npub extern \"C\" fn callback64(value: f64) -> f64:\n    return value\n",
         );
-        for function in &mut concrete.functions {
-            function.convention = dbyte_ast::CallConvention::C;
-        }
-        let failure = lower_program_to_native_mir(&concrete)
-            .expect_err("explicit f32/f64 C ABI must not be represented as integer-register ABI");
-        assert_eq!(failure.code, "E_NATIVE_MIR_C_FLOAT_ABI");
+        let project = lower_program_to_native_mir(&concrete)
+            .expect("explicit f32/f64 C ABI must reach Native MIR as float machine types");
+        let foreign32 = project
+            .functions
+            .iter()
+            .find(|function| function.symbol == "foreign32")
+            .unwrap();
+        assert_eq!(foreign32.convention, dbyte_ast::CallConvention::C);
+        assert_eq!(foreign32.parameters.len(), 1);
+        assert_eq!(
+            foreign32.register_types[foreign32.parameters[0].0 as usize],
+            MachineType::F32
+        );
+        assert_eq!(foreign32.result, Some(MachineType::F32));
+        let callback64 = project
+            .functions
+            .iter()
+            .find(|function| function.symbol == "callback64")
+            .unwrap();
+        assert_eq!(callback64.convention, dbyte_ast::CallConvention::C);
+        assert_eq!(callback64.parameters.len(), 1);
+        assert_eq!(
+            callback64.register_types[callback64.parameters[0].0 as usize],
+            MachineType::F64
+        );
+        assert_eq!(callback64.result, Some(MachineType::F64));
     }
 
     #[test]

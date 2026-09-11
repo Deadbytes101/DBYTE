@@ -149,7 +149,7 @@ try {
     Run 'cargo.exe' @('test','-q','-p','dbyte_hir','explicit_float_fields_follow_target_native_layout','--','--nocapture') 'HIR explicit-float layout regression' | Out-Null
     Run 'cargo.exe' @('test','-q','-p','dbyte_hir','exact_bitcasts_admit_only_equal_width_integer_and_explicit_float_representations','--','--nocapture') 'HIR exact-bitcast legality regression' | Out-Null
     Run 'cargo.exe' @('test','-q','-p','dbyte_native','exact_bitcast_is_a_same_width_copy_not_a_numeric_cast','--','--nocapture') 'Native MIR exact-bitcast copy regression' | Out-Null
-    Run 'cargo.exe' @('test','-q','-p','dbyte_native','explicit_float_c_abi_fails_closed_until_float_register_abi_exists','--','--nocapture') 'Native C float ABI fail-closed regression' | Out-Null
+    Run 'cargo.exe' @('test','-q','-p','dbyte_native','explicit_float_c_abi_preserves_float_machine_types','--','--nocapture') 'Native C float ABI machine-type regression' | Out-Null
     $hosted = Run $runner @('run','examples/native_v13_machine/bitcast_hosted.dby') 'hosted bitcast corpus'
     Assert-True ($hosted.Trim() -ceq '0') "hosted bitcast corpus expected 0, got '$hosted'"
     $vm = Run $runner @('run','examples/native_v13_machine/bitcast_hosted.dby','--vm') 'VM bitcast corpus'

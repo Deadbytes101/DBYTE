@@ -27,6 +27,19 @@ pub enum Register {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum XmmRegister {
+    Xmm0 = 0,
+    Xmm1 = 1,
+    Xmm2 = 2,
+    Xmm3 = 3,
+    Xmm4 = 4,
+    Xmm5 = 5,
+    Xmm6 = 6,
+    Xmm7 = 7,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Width {
     Byte,
     Word,
@@ -46,6 +59,8 @@ pub enum Condition {
     LessOrEqual,
     Greater,
     GreaterOrEqual,
+    Parity,
+    NotParity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +83,8 @@ impl Condition {
             Self::LessOrEqual => 0xe,
             Self::Greater => 0xf,
             Self::GreaterOrEqual => 0xd,
+            Self::Parity => 0xa,
+            Self::NotParity => 0xb,
         }
     }
 }
@@ -168,6 +185,84 @@ impl Encoder {
             Width::Word | Width::Dword | Width::Qword => 0x89,
         });
         instruction.push(modrm(0b11, low(src), low(dst)));
+        self.commit(&instruction)
+    }
+
+    pub fn mov_xmm_from_gpr(
+        &mut self,
+        destination: XmmRegister,
+        source: Register,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        if !matches!(width, Width::Dword | Width::Qword) {
+            return Err(EncodeError::InvalidOperand(
+                "MOVD/MOVQ requires dword or qword",
+            ));
+        }
+        let mut instruction = vec![0x66];
+        if width == Width::Qword || high(source) {
+            instruction.push(rex(width == Width::Qword, false, false, high(source)));
+        }
+        instruction.extend_from_slice(&[0x0f, 0x6e, modrm(0b11, destination as u8, low(source))]);
+        self.commit(&instruction)
+    }
+
+    pub fn mov_gpr_from_xmm(
+        &mut self,
+        destination: Register,
+        source: XmmRegister,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        if !matches!(width, Width::Dword | Width::Qword) {
+            return Err(EncodeError::InvalidOperand(
+                "MOVD/MOVQ requires dword or qword",
+            ));
+        }
+        let mut instruction = vec![0x66];
+        if width == Width::Qword || high(destination) {
+            instruction.push(rex(width == Width::Qword, false, false, high(destination)));
+        }
+        instruction.extend_from_slice(&[0x0f, 0x7e, modrm(0b11, source as u8, low(destination))]);
+        self.commit(&instruction)
+    }
+
+    pub fn scalar_float_binary(
+        &mut self,
+        destination: XmmRegister,
+        source: XmmRegister,
+        width: Width,
+        opcode: u8,
+    ) -> Result<(), EncodeError> {
+        let prefix = match width {
+            Width::Dword => 0xf3,
+            Width::Qword => 0xf2,
+            _ => {
+                return Err(EncodeError::InvalidOperand(
+                    "scalar SSE requires f32 or f64",
+                ))
+            }
+        };
+        self.commit(&[
+            prefix,
+            0x0f,
+            opcode,
+            modrm(0b11, destination as u8, source as u8),
+        ])
+    }
+
+    pub fn ucomis(
+        &mut self,
+        left: XmmRegister,
+        right: XmmRegister,
+        width: Width,
+    ) -> Result<(), EncodeError> {
+        let mut instruction = Vec::with_capacity(4);
+        match width {
+            Width::Dword => {}
+            Width::Qword => instruction.push(0x66),
+            _ => return Err(EncodeError::InvalidOperand("UCOMIS requires f32 or f64")),
+        }
+        instruction.extend_from_slice(&[0x0f, 0x2e, modrm(0b11, left as u8, right as u8)]);
         self.commit(&instruction)
     }
 
@@ -1158,6 +1253,44 @@ mod tests {
         let mut encoder = Encoder::new(8);
         encoder.software_interrupt(0x80).unwrap();
         assert_eq!(encoder.bytes(), &[0xcd, 0x80]);
+    }
+
+    #[test]
+    fn scalar_sse2_encodings_are_exact_and_transactional() {
+        let mut encoder = Encoder::new(64);
+        encoder
+            .mov_xmm_from_gpr(XmmRegister::Xmm0, Register::Rax, Width::Dword)
+            .unwrap();
+        encoder
+            .mov_xmm_from_gpr(XmmRegister::Xmm1, Register::R11, Width::Qword)
+            .unwrap();
+        encoder
+            .scalar_float_binary(XmmRegister::Xmm0, XmmRegister::Xmm1, Width::Dword, 0x58)
+            .unwrap();
+        encoder
+            .scalar_float_binary(XmmRegister::Xmm0, XmmRegister::Xmm1, Width::Qword, 0x5e)
+            .unwrap();
+        encoder
+            .ucomis(XmmRegister::Xmm0, XmmRegister::Xmm1, Width::Dword)
+            .unwrap();
+        encoder
+            .mov_gpr_from_xmm(Register::Rax, XmmRegister::Xmm0, Width::Qword)
+            .unwrap();
+        assert_eq!(
+            encoder.bytes(),
+            &[
+                0x66, 0x0f, 0x6e, 0xc0, 0x66, 0x49, 0x0f, 0x6e, 0xcb, 0xf3, 0x0f, 0x58, 0xc1, 0xf2,
+                0x0f, 0x5e, 0xc1, 0x0f, 0x2e, 0xc1, 0x66, 0x48, 0x0f, 0x7e, 0xc0,
+            ]
+        );
+
+        let mut bounded = Encoder::new(3);
+        let before = bounded.bytes().to_vec();
+        assert!(matches!(
+            bounded.scalar_float_binary(XmmRegister::Xmm0, XmmRegister::Xmm1, Width::Dword, 0x58),
+            Err(EncodeError::Capacity { .. })
+        ));
+        assert_eq!(bounded.bytes(), before);
     }
 
     #[test]

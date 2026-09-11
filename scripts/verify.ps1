@@ -1,4 +1,8 @@
 $ErrorActionPreference = "Stop"
+Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
+if (-not (Get-Command Get-FileHash -ErrorAction SilentlyContinue)) {
+    throw "Get-FileHash is unavailable after loading Microsoft.PowerShell.Utility"
+}
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptDir "..")
@@ -6,6 +10,10 @@ $initialQemuIds = @(Get-Process -Name "qemu-system-i386" -ErrorAction SilentlyCo
 $initialQemu64Ids = @(Get-Process -Name "qemu-system-x86_64" -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
 
 Set-Location $repoRoot
+. (Join-Path $scriptDir "verify_git_boundary.ps1")
+
+& (Join-Path $scriptDir "test_verify_git_boundary.ps1")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $cargo = "$env:USERPROFILE\.cargo\bin\cargo.exe"
 
@@ -36,8 +44,8 @@ $cli = Join-Path $repoRoot "target\debug\dbyte.exe"
 
 # Version check
 $versionOutput = .\target\debug\dbyte.exe --version
-if ($versionOutput -ne 'DByte 13.0.0') {
-    throw "Version mismatch: expected 'DByte 13.0.0', got '$versionOutput'"
+if ($versionOutput -ne 'DByte 13.1.0') {
+    throw "Version mismatch: expected 'DByte 13.1.0', got '$versionOutput'"
 }
 
 function Normalize-Output($value) {
@@ -14496,7 +14504,7 @@ Write-Host "[OK] v10.55.1 DByte Graphics Shell IRQ0 Runtime Bridge Hardening ver
 Assert-Contains $shellBasic.Text "DByte shell commands" "shell help"
 Assert-Contains $shellBasic.Text "alias <name> = <command>" "shell registry alias help"
 Assert-Contains $shellBasic.Text "which <name>" "shell registry which help"
-Assert-Contains $shellBasic.Text "DByte 13.0.0" "shell version"
+Assert-Contains $shellBasic.Text "DByte 13.1.0" "shell version"
 Assert-Contains $shellBasic.Text "ShellError: failed to cd" "shell invalid cd"
 Assert-Contains $shellBasic.Text "hello.dby" "shell ls"
 Assert-Contains $shellBasic.Text "shell file ok" "shell run file"
@@ -16755,7 +16763,7 @@ Backup: Present
     $promptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
     $dbyteosPromptDefault = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptDefault.Code -ne 0) { throw "dbyteos shell prompt default failed: $($dbyteosPromptDefault.Text)" }
-    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 13.0.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
+    Assert-Equal $dbyteosPromptDefault.Text "dbyte-shell> DByte 13.1.0`ndbyte-shell>" "dbyteos shell prompt default snapshot"
 
     $dbyteosPromptNoRc = Invoke-DbyteInput -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptNoRc.Code -ne 0) { throw "dbyteos shell prompt no-rc failed: $($dbyteosPromptNoRc.Text)" }
@@ -16763,7 +16771,7 @@ Backup: Present
 
     $dbyteosPromptChange = Invoke-DbyteInput -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $dbyteosRoot -Environment $promptEnv
     if ($dbyteosPromptChange.Code -ne 0) { throw "dbyteos shell prompt change failed: $($dbyteosPromptChange.Text)" }
-    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 13.0.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 13.0.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 13.0.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
+    Assert-Equal $dbyteosPromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 13.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 13.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 13.1.0`ndbyte-shell>" "dbyteos shell prompt preference snapshots"
 
     $prefsFileForPrompt = Join-Path $dbyteosRoot "home\deadbyte\preferences.dby"
     $originalPrefsForPrompt = [System.IO.File]::ReadAllBytes($prefsFileForPrompt)
@@ -18295,7 +18303,7 @@ finally {
     Pop-Location
 }
 
-$EXPECTED_VERSION = "13.0.0"
+$EXPECTED_VERSION = "13.1.0"
 
 $DBYTE_BIN = "target/release/dbyte.exe"
 $releaseExe = Join-Path $repoRoot "target\release\dbyte.exe"
@@ -19962,7 +19970,7 @@ if ($LASTEXITCODE -ne 0) { throw "dbyte bench --engine vm failed" }
 & $releaseExe bench --compare-python
 if ($LASTEXITCODE -ne 0) { throw "dbyte bench --compare-python failed" }
 
-Write-Host "Running DByteOS Alpha in the v13.0.0 package smoke tests..."
+Write-Host "Running DByteOS Alpha in the v13.1.0 package smoke tests..."
 $packageSmokeStatus = Git-Status-Short
 Remove-Item -Recurse -Force $dbyteosProjectsPath -ErrorAction SilentlyContinue
 Remove-Item -Force (Join-Path $repoRoot "examples\dbyteos\home\deadbyte\notes.txt") -ErrorAction SilentlyContinue
@@ -19971,17 +19979,17 @@ $smokeRoot = Join-Path $repoRoot ("tmp\package_smoke-" + [guid]::NewGuid().ToStr
 $packageOutputRoot = Join-Path $repoRoot ("tmp\package_output-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 New-Item -ItemType Directory -Path $packageOutputRoot | Out-Null
-$rootPackageZip = Join-Path $repoRoot "dbyte-v13.0.0-windows-x64.zip"
-$rootPackageReceipt = Join-Path $repoRoot "dbyte-v13.0.0-windows-x64.manifest.json"
+$rootPackageZip = Join-Path $repoRoot "dbyte-v13.1.0-windows-x64.zip"
+$rootPackageReceipt = Join-Path $repoRoot "dbyte-v13.1.0-windows-x64.manifest.json"
 $rootPackageZipBefore = if (Test-Path $rootPackageZip) { (Get-FileHash $rootPackageZip -Algorithm SHA256).Hash } else { "MISSING" }
 $rootPackageReceiptBefore = if (Test-Path $rootPackageReceipt) { (Get-FileHash $rootPackageReceipt -Algorithm SHA256).Hash } else { "MISSING" }
 
 Write-Host "  Building and packaging..."
-& .\scripts\package_release.ps1 -Version "13.0.0" -SkipBundle -OutputRoot $packageOutputRoot
-$zipFile = Join-Path $packageOutputRoot "dbyte-v13.0.0-windows-x64.zip"
+& .\scripts\package_release.ps1 -Version "13.1.0" -SkipBundle -OutputRoot $packageOutputRoot
+$zipFile = Join-Path $packageOutputRoot "dbyte-v13.1.0-windows-x64.zip"
 if (-not (Test-Path $zipFile)) { throw "Package zip not found: $zipFile" }
-$packageReceipt = Join-Path $packageOutputRoot "dbyte-v13.0.0-windows-x64.manifest.json"
-& .\scripts\verify_windows_package.ps1 -ZipPath $zipFile -ReceiptPath $packageReceipt -SourceRoot $repoRoot -Version "13.0.0"
+$packageReceipt = Join-Path $packageOutputRoot "dbyte-v13.1.0-windows-x64.manifest.json"
+& .\scripts\verify_windows_package.ps1 -ZipPath $zipFile -ReceiptPath $packageReceipt -SourceRoot $repoRoot -Version "13.1.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "  Extracting package..."
@@ -20005,7 +20013,7 @@ if ($packagedNativeHeader.Length -lt 20 -or $packagedNativeHeader[0] -ne 0x7f -o
 
 Write-Host "  Verifying version..."
 $vOut = & $extractedExe --version
-if ($vOut -ne "DByte 13.0.0") { throw "Package version mismatch: $vOut" }
+if ($vOut -ne "DByte 13.1.0") { throw "Package version mismatch: $vOut" }
 
 Write-Host "  Verifying direct OS commands..."
 $expectedPackageBoot = $expectedDbyteosBoot.Replace("Home:        home/deadbyte", "Home:        examples/dbyteos/home/deadbyte")
@@ -20401,11 +20409,11 @@ Assert-Contains (Normalize-Output $shellOut) "DByteOS Permission Command" "Packa
 $packagePromptEnv = @{ "DBYTE_SHELL_FORCE_PROMPT" = "1" }
 $packagePromptDefault = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "version`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptDefault.Code -ne 0) { throw "Package shell prompt default failed: $($packagePromptDefault.Text)" }
-Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 13.0.0`ndbyte-shell>" "Package shell prompt default snapshot"
+Assert-Equal $packagePromptDefault.Text "dbyte-shell> DByte 13.1.0`ndbyte-shell>" "Package shell prompt default snapshot"
 
 $packagePromptChange = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--rc", ".dbyterc") -InputText "prefs set system.prompt dbyteos>`nversion`nprefs set system.prompt deadbyte>`nversion`nprefs reset-demo`nversion`nquit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptChange.Code -ne 0) { throw "Package shell prompt change failed: $($packagePromptChange.Text)" }
-Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 13.0.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 13.0.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 13.0.0`ndbyte-shell>" "Package shell prompt preference snapshots"
+Assert-Equal $packagePromptChange.Text "dbyte-shell> preference 'system.prompt' updated successfully.`ndbyteos> DByte 13.1.0`ndbyteos> preference 'system.prompt' updated successfully.`ndeadbyte> DByte 13.1.0`ndeadbyte> preferences reset to default seed state.`ndbyte-shell> DByte 13.1.0`ndbyte-shell>" "Package shell prompt preference snapshots"
 
 $packagePromptNoRc = Invoke-DbyteInput -Executable $extractedExe -Arguments @("shell", "--no-rc") -InputText "quit`n" -WorkingDirectory $extractedOsRoot -Environment $packagePromptEnv
 if ($packagePromptNoRc.Code -ne 0) { throw "Package shell prompt no-rc failed: $($packagePromptNoRc.Text)" }
@@ -20659,7 +20667,7 @@ Journal: 0 entries recorded
 Open Tasks:
   demo: 2 open
 dbyteos> preferences reset to default seed state.
-dbyte-shell> DByte 13.0.0
+dbyte-shell> DByte 13.1.0
 dbyte-shell>
 "@
 Assert-NormalizedEqual $packageJourney.Text $expectedPackageJourney "Package Personal Workspace Beta Foundation journey exact snapshot"
@@ -20674,7 +20682,7 @@ Remove-Item -Recurse -Force $packageOutputRoot -ErrorAction SilentlyContinue
 Assert-GitStatus-Unchanged $packageSmokeStatus "package smoke cleanliness"
 Write-Host "Package smoke tests passed."
 
-& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "13.0.0"
+& .\scripts\verify_native.ps1 -MilestoneVersion "11.1.0" -WorkspaceVersion "13.1.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\scripts\verify_native_kernel_core.ps1 -MilestoneVersion "11.2.0"
@@ -20728,7 +20736,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\scripts\verify_v122_frozen_compiler_compat.ps1
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& .\scripts\verify_windows_runtime_packaging.ps1 -Version "13.0.0"
+& .\scripts\verify_windows_runtime_packaging.ps1 -Version "13.1.0"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\scripts\verify_vm_architecture.ps1
@@ -20744,6 +20752,15 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\scripts\verify_vm_collections.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& .\scripts\test_native_perf_receipts.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& .\scripts\verify_portable_runtime_parity.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& .\scripts\verify_native_explicit_float.ps1
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\scripts\verify_native_machine_code_performance.ps1

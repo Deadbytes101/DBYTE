@@ -1,0 +1,20 @@
+extern "C" fn c_float_contract(tag: i32, a: f32, b: f64, tail: i64) -> f64
+
+pub extern "C" fn dbyte_float_callback(tag: i32, a: f32, b: f64, tail: i64) -> f64:
+    if tag != (11 as i32):
+        return (0 as u64) as! f64
+    if (a as! u32) != (0x40600000 as u32):
+        return (0 as u64) as! f64
+    if (b as! u64) != (0x4011000000000000 as u64):
+        return (0 as u64) as! f64
+    if tail != (13 as i64):
+        return (0 as u64) as! f64
+    return (0x401a000000000000 as u64) as! f64
+
+pub fn main() -> i32:
+    let a: f32 = (0x3fc00000 as u32) as! f32
+    let b: f64 = (0x4002000000000000 as u64) as! f64
+    let result: f64 = c_float_contract(7 as i32, a, b, 9 as i64)
+    if (result as! u64) != (0x4029000000000000 as u64):
+        return 1
+    return 42

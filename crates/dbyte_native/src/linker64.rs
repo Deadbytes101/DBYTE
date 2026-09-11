@@ -161,10 +161,10 @@ pub fn link_objects(
             }
         }
     }
-    let synthetic_symbols = kernel_synthetic_symbols(requested, addresses, bss_size)?;
+    let reserved_synthetic_symbols = kernel_synthetic_symbols(requested, addresses, bss_size)?;
     for object in &objects {
         for symbol in &object.image.symbols {
-            if synthetic_symbols.contains_key(&symbol.name)
+            if reserved_synthetic_symbols.contains_key(&symbol.name)
                 && symbol.definition != Definition::Undefined
             {
                 return Err(error(
@@ -173,6 +173,30 @@ pub fn link_objects(
                 ));
             }
         }
+    }
+    let mut synthetic_symbols = reserved_synthetic_symbols;
+    if requested == crate::target::X86_64_WINDOWS
+        && !global_definitions.contains_key("_fltused")
+        && objects
+            .iter()
+            .flat_map(|object| &object.image.symbols)
+            .any(|symbol| {
+                symbol.binding == Binding::Global
+                    && symbol.name == "_fltused"
+                    && symbol.definition == Definition::Undefined
+            })
+    {
+        let data = merged.entry(Section::Data).or_default();
+        let offset = align_up(data.len() as u64, 4)?;
+        let offset = usize::try_from(offset)
+            .map_err(|_| error("E_LINK64_SIZE", "synthetic Win64 data exceeds host"))?;
+        data.resize(offset, 0);
+        let address = addresses
+            .data
+            .checked_add(offset as u64)
+            .ok_or_else(|| error("E_LINK64_OVERFLOW", "synthetic _fltused address overflows"))?;
+        data.extend_from_slice(&1i32.to_le_bytes());
+        synthetic_symbols.insert("_fltused".to_owned(), address);
     }
     let mut public_symbols = synthetic_symbols.clone();
     for (name, (object_index, section, value)) in &global_definitions {
@@ -591,7 +615,7 @@ mod tests {
         write_relocatable, Binding, Contents, Definition, ObjectImage, Relocation, SectionData,
         Symbol, SymbolKind,
     };
-    use crate::target::{X86_64_LINUX, X86_64_NONE};
+    use crate::target::{X86_64_LINUX, X86_64_NONE, X86_64_WINDOWS};
 
     fn object(
         target: TargetSpec,
@@ -904,6 +928,53 @@ mod tests {
         assert_eq!(linked.symbols["__dbyte_image_end"], addresses.bss);
     }
 
+    #[test]
+    fn win64_synthesizes_fltused_for_freestanding_float_objects() {
+        let image = ObjectImage {
+            target: X86_64_WINDOWS,
+            entry_abi: None,
+            sections: BTreeMap::from([(
+                Section::Text,
+                SectionData {
+                    contents: Contents::Bytes(vec![0xc3]),
+                    alignment: 16,
+                },
+            )]),
+            symbols: vec![
+                Symbol {
+                    name: "main".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 1,
+                },
+                Symbol {
+                    name: "_fltused".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Object,
+                    definition: Definition::Undefined,
+                    size: 0,
+                },
+            ],
+            relocations: vec![],
+        };
+        let input = LinkInput::new(
+            "float.obj",
+            crate::coff64::write_object(&image).unwrap().bytes,
+        );
+        let addresses = SectionAddresses {
+            text: 0x140001000,
+            rodata: 0x140002000,
+            data: 0x140003000,
+            bss: 0x140004000,
+        };
+        let linked = link_objects(&[input], X86_64_WINDOWS, addresses, "main").unwrap();
+        assert_eq!(linked.symbols["_fltused"], addresses.data);
+        assert_eq!(linked.data, 1i32.to_le_bytes());
+    }
     #[test]
     fn archive_extraction_is_symbol_driven_and_fixed_point() {
         let caller = object(

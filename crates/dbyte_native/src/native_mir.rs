@@ -89,6 +89,8 @@ pub enum MachineType {
     I16,
     I32,
     I64,
+    F32,
+    F64,
     Pointer,
 }
 
@@ -98,7 +100,8 @@ impl MachineType {
             Self::Bool | Self::I8 => 1,
             Self::I16 => 2,
             Self::I32 => 4,
-            Self::I64 => 8,
+            Self::I64 | Self::F64 => 8,
+            Self::F32 => 4,
             Self::Pointer => pointer_bytes,
         }
     }
@@ -1203,6 +1206,13 @@ fn fold_block_constants(
 }
 
 fn fold_unary(op: NativeUnaryOp, value: u64, ty: MachineType) -> u64 {
+    if op == NativeUnaryOp::Negate {
+        match ty {
+            MachineType::F32 => return normalize_bits(value ^ 0x8000_0000, ty),
+            MachineType::F64 => return value ^ 0x8000_0000_0000_0000,
+            _ => {}
+        }
+    }
     normalize_bits(
         match op {
             NativeUnaryOp::Negate => 0u64.wrapping_sub(value),
@@ -1304,8 +1314,8 @@ fn normalize_bits(value: u64, ty: MachineType) -> u64 {
         MachineType::Bool => u64::from(value != 0),
         MachineType::I8 => value & 0xff,
         MachineType::I16 => value & 0xffff,
-        MachineType::I32 => value & 0xffff_ffff,
-        MachineType::I64 | MachineType::Pointer => value,
+        MachineType::I32 | MachineType::F32 => value & 0xffff_ffff,
+        MachineType::I64 | MachineType::F64 | MachineType::Pointer => value,
     }
 }
 
@@ -1315,16 +1325,43 @@ fn signed_bits(value: u64, ty: MachineType) -> i64 {
         MachineType::I16 => (value as u16 as i16) as i64,
         MachineType::I32 => (value as u32 as i32) as i64,
         MachineType::I64 => value as i64,
-        MachineType::Bool | MachineType::Pointer => value as i64,
+        MachineType::Bool | MachineType::F32 | MachineType::F64 | MachineType::Pointer => {
+            value as i64
+        }
     }
 }
 
 fn fold_binary(op: NativeBinaryOp, left: u64, right: u64, ty: MachineType) -> Option<u64> {
+    match ty {
+        MachineType::F32 => {
+            let left = f32::from_bits(left as u32);
+            let right = f32::from_bits(right as u32);
+            return Some(u64::from(match op {
+                NativeBinaryOp::Add => (left + right).to_bits(),
+                NativeBinaryOp::Sub => (left - right).to_bits(),
+                NativeBinaryOp::Mul => (left * right).to_bits(),
+                NativeBinaryOp::SignedDiv | NativeBinaryOp::UnsignedDiv => (left / right).to_bits(),
+                _ => return None,
+            }));
+        }
+        MachineType::F64 => {
+            let left = f64::from_bits(left);
+            let right = f64::from_bits(right);
+            return Some(match op {
+                NativeBinaryOp::Add => (left + right).to_bits(),
+                NativeBinaryOp::Sub => (left - right).to_bits(),
+                NativeBinaryOp::Mul => (left * right).to_bits(),
+                NativeBinaryOp::SignedDiv | NativeBinaryOp::UnsignedDiv => (left / right).to_bits(),
+                _ => return None,
+            });
+        }
+        _ => {}
+    }
     let width: u32 = match ty {
         MachineType::Bool | MachineType::I8 => 8,
         MachineType::I16 => 16,
-        MachineType::I32 => 32,
-        MachineType::I64 | MachineType::Pointer => 64,
+        MachineType::I32 | MachineType::F32 => 32,
+        MachineType::I64 | MachineType::F64 | MachineType::Pointer => 64,
     };
     let shift = (right & u64::from(width - 1)) as u32;
     let value = match op {
@@ -1362,11 +1399,21 @@ fn signed_minimum(ty: MachineType) -> i64 {
         MachineType::I16 => i16::MIN as i64,
         MachineType::I32 => i32::MIN as i64,
         MachineType::I64 => i64::MIN,
-        MachineType::Bool | MachineType::Pointer => i64::MIN,
+        MachineType::Bool | MachineType::F32 | MachineType::F64 | MachineType::Pointer => i64::MIN,
     }
 }
 
 fn fold_compare(op: NativeCompareOp, left: u64, right: u64, ty: MachineType) -> bool {
+    if ty == MachineType::F32 {
+        let left = f32::from_bits(left as u32);
+        let right = f32::from_bits(right as u32);
+        return float_compare(op, left, right);
+    }
+    if ty == MachineType::F64 {
+        let left = f64::from_bits(left);
+        let right = f64::from_bits(right);
+        return float_compare(op, left, right);
+    }
     match op {
         NativeCompareOp::Equal => normalize_bits(left, ty) == normalize_bits(right, ty),
         NativeCompareOp::NotEqual => normalize_bits(left, ty) != normalize_bits(right, ty),
@@ -1379,6 +1426,19 @@ fn fold_compare(op: NativeCompareOp, left: u64, right: u64, ty: MachineType) -> 
         NativeCompareOp::UnsignedGreater => normalize_bits(left, ty) > normalize_bits(right, ty),
         NativeCompareOp::UnsignedGreaterEqual => {
             normalize_bits(left, ty) >= normalize_bits(right, ty)
+        }
+    }
+}
+
+fn float_compare<T: PartialOrd + PartialEq>(op: NativeCompareOp, left: T, right: T) -> bool {
+    match op {
+        NativeCompareOp::Equal => left == right,
+        NativeCompareOp::NotEqual => left != right,
+        NativeCompareOp::SignedLess | NativeCompareOp::UnsignedLess => left < right,
+        NativeCompareOp::SignedLessEqual | NativeCompareOp::UnsignedLessEqual => left <= right,
+        NativeCompareOp::SignedGreater | NativeCompareOp::UnsignedGreater => left > right,
+        NativeCompareOp::SignedGreaterEqual | NativeCompareOp::UnsignedGreaterEqual => {
+            left >= right
         }
     }
 }

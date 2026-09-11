@@ -53,9 +53,10 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v13.0.0**
-- Software release classification: **VIRTUAL_QUALIFIED_SOFTWARE_FINAL** at commit `3b68536dc280dade3afde1620eeffbeb0309ec97`.
-- Physical qualification: **REAL_BIOSTAR=PENDING**; **REAL_STORAGE=DISARMED**.
+- Snapshot version: **v13.1.0**
+- Frozen parent: **v13.0.0 VIRTUAL_QUALIFIED_SOFTWARE_FINAL** at commit `3b68536dc280dade3afde1620eeffbeb0309ec97`.
+- Release scope: strict portable-source validation, cross-runtime portability proof, explicit `f32`/`f64` transport and exact native SSE2 arithmetic/C ABI support.
+- Physical hardware qualification is outside the v13.1.0 software-release gate; **REAL_STORAGE=DISARMED**.
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.

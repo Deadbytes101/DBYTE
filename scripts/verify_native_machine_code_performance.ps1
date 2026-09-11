@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $manifestPath = Join-Path $repoRoot "benchmarks\native\manifest.json"
 $measureScript = Join-Path $repoRoot "scripts\native_perf_measure.py"
-$proofRoot = Join-Path $repoRoot "tmp\native_v12.4.0\performance"
+$proofRoot = Join-Path $repoRoot ("tmp\native_v12.4.0\performance-" + [guid]::NewGuid().ToString('N'))
 $cargo = "$env:USERPROFILE\.cargo\bin\cargo.exe"
 
 function Assert-True($value, [string]$message) {
@@ -122,6 +122,22 @@ function Assert-Windows-VariantParity([string]$linuxPath, [string]$windowsPath, 
     Assert-True ($linux -ceq $windows) "$name Windows source differs beyond allocator import"
 }
 
+function Save-MeasurementReceipt([string]$platform, [string[]]$arguments, [string]$json) {
+    # Preserve raw attempts before parsing or asserting stability. A RED is evidence too.
+    $directory = Join-Path $proofRoot 'measurements'
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $path = Join-Path $directory ($platform + '-' + [guid]::NewGuid().ToString('N') + '.json')
+    $receipt = [ordered]@{
+        platform = $platform
+        recorded_utc = [DateTime]::UtcNow.ToString('o')
+        arguments = $arguments
+        exit_code = 0
+        stdout = $json
+    }
+    [IO.File]::WriteAllText($path, ($receipt | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+    Write-Host "Native measurement receipt: $path"
+}
+
 function Measure-LinuxPair([string]$baseline, [string]$candidate, [int]$expected, $manifest) {
     $script = Wsl-Path $measureScript
     $base = Wsl-Path $baseline
@@ -136,6 +152,7 @@ function Measure-LinuxPair([string]$baseline, [string]$candidate, [int]$expected
         "--sample-repetitions", "$($manifest.sample_repetitions)"
     )
     $json = Invoke-Checked "wsl.exe" $arguments "measure Linux pair"
+    Save-MeasurementReceipt 'linux' $arguments $json
     return ($json | ConvertFrom-Json)
 }
 
@@ -150,6 +167,7 @@ function Measure-WindowsPair([string]$baseline, [string]$candidate, [int]$expect
         "--sample-repetitions", "$($manifest.sample_repetitions)"
     )
     $json = Invoke-Checked "python.exe" $arguments "measure Windows pair"
+    Save-MeasurementReceipt 'windows' $arguments $json
     return ($json | ConvertFrom-Json)
 }
 
@@ -195,8 +213,9 @@ foreach ($workload in $manifest.workloads) {
     }
 }
 [void]$corpusFiles.Add("startup_calibration.dby")
-if (Test-Path -LiteralPath $proofRoot) { Remove-Item -LiteralPath $proofRoot -Recurse -Force }
+Assert-True (-not (Test-Path -LiteralPath $proofRoot)) "measurement evidence root already exists"
 New-Item -ItemType Directory -Path $proofRoot -Force | Out-Null
+Write-Host "Native performance evidence root: $proofRoot"
 
 $baselineCommit = (Invoke-Checked "git.exe" @("rev-parse", "$($manifest.baseline_tag)^{commit}") "resolve baseline tag").Trim()
 $candidateHead = (Invoke-Checked "git.exe" @("rev-parse", "HEAD") "resolve candidate HEAD").Trim()

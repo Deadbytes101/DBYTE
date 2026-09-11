@@ -12,8 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 mod executable;
 pub use executable::*;
 pub mod integer_semantics;
+mod portable;
 mod project;
 mod source;
+pub use portable::{validate_portable_project, PortableValidation, PORTABLE_PROFILE_COUNT};
 pub use source::{
     load_source_project, load_source_project_from_program, load_source_project_paths,
 };
@@ -1760,6 +1762,8 @@ impl Analyzer {
         match self.types.values[ty.0 as usize].clone() {
             CanonicalType::Unit
             | CanonicalType::Integer(_)
+            | CanonicalType::F32
+            | CanonicalType::F64
             | CanonicalType::Pointer { .. }
             | CanonicalType::Function {
                 convention: CallConvention::C,
@@ -3024,6 +3028,30 @@ impl Analyzer {
                     );
                 }
                 if let Some(ty) = left {
+                    if matches!(
+                        self.types.values[ty.0 as usize],
+                        CanonicalType::F32 | CanonicalType::F64
+                    ) && !matches!(
+                        op,
+                        BinOp::Add
+                            | BinOp::Sub
+                            | BinOp::Mul
+                            | BinOp::Div
+                            | BinOp::EqEq
+                            | BinOp::NotEq
+                            | BinOp::Lt
+                            | BinOp::LtEq
+                            | BinOp::Gt
+                            | BinOp::GtEq
+                    ) {
+                        self.diagnostic(
+                            "E_FLOAT_OPERATION_UNSUPPORTED",
+                            "explicit f32/f64 supports arithmetic and ordered comparisons only",
+                            expression.span(),
+                        );
+                    }
+                }
+                if let Some(ty) = left {
                     if let CanonicalType::GenericParam { owner, index } =
                         self.types.values[ty.0 as usize]
                     {
@@ -3080,7 +3108,10 @@ impl Analyzer {
                     UnaryOp::Neg => {
                         if !matches!(
                             self.types.values[operand.0 as usize],
-                            CanonicalType::Integer(_) | CanonicalType::Float
+                            CanonicalType::Integer(_)
+                                | CanonicalType::Float
+                                | CanonicalType::F32
+                                | CanonicalType::F64
                         ) {
                             self.diagnostic(
                                 "E_UNARY_TYPE",
@@ -4787,7 +4818,10 @@ impl Analyzer {
                         BuiltinCapability::Copy => self.is_copy(argument),
                         BuiltinCapability::Numeric => matches!(
                             self.types.values[argument.0 as usize],
-                            CanonicalType::Integer(_) | CanonicalType::Float
+                            CanonicalType::Integer(_)
+                                | CanonicalType::Float
+                                | CanonicalType::F32
+                                | CanonicalType::F64
                         ),
                         BuiltinCapability::Equality => !matches!(
                             self.types.values[argument.0 as usize],
@@ -4797,7 +4831,10 @@ impl Analyzer {
                         ),
                         BuiltinCapability::Ordering => matches!(
                             self.types.values[argument.0 as usize],
-                            CanonicalType::Integer(_) | CanonicalType::Float
+                            CanonicalType::Integer(_)
+                                | CanonicalType::Float
+                                | CanonicalType::F32
+                                | CanonicalType::F64
                         ),
                     };
                     if !satisfied {
@@ -6739,6 +6776,20 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "E_BITCAST_SIZE_MISMATCH"));
+    }
+
+    #[test]
+    fn explicit_float_arithmetic_is_canonical_and_rejects_integer_only_operators() {
+        let valid = "fn add32(left: f32, right: f32) -> f32:\n    return left + right\n\nfn compare64(left: f64, right: f64) -> bool:\n    return -left <= right\n";
+        analyze(&parse(valid), Profile::Hosted, TargetDataLayout::X86_64)
+            .expect("explicit float arithmetic and ordered comparisons must analyze");
+
+        let invalid = "fn bad(left: f32, right: f32) -> f32:\n    return left % right\n";
+        let diagnostics = analyze(&parse(invalid), Profile::Hosted, TargetDataLayout::X86_64)
+            .expect_err("integer-only operators must reject explicit floats");
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_FLOAT_OPERATION_UNSUPPORTED"));
     }
 
     #[test]

@@ -266,6 +266,8 @@ fn opcode_name(op: &CanonicalOpcode) -> &'static str {
             CanonicalOperandType::Integer(IntegerType::LegacyInt) => "BINARY_LEGACY_INT",
             CanonicalOperandType::Bool => "BINARY_BOOL",
             CanonicalOperandType::Float => "BINARY_F64",
+            CanonicalOperandType::F32 => "BINARY_F32",
+            CanonicalOperandType::F64 => "BINARY_F64_EXPLICIT",
             CanonicalOperandType::Pointer => "BINARY_PTR",
             CanonicalOperandType::String => "BINARY_STRING",
             CanonicalOperandType::Other(_) => "BINARY_AGGREGATE",
@@ -1834,6 +1836,10 @@ fn unary(op: &UnaryOp, value: VmValue, span: Span) -> Result<VmValue, VmError> {
             .checked_neg()
             .map(VmValue::Integer)
             .ok_or_else(|| error("integer overflow", span)),
+        (UnaryOp::Neg, VmValue::F32Bits(value)) => Ok(VmValue::F32Bits(value ^ 0x8000_0000)),
+        (UnaryOp::Neg, VmValue::F64Bits(value)) => {
+            Ok(VmValue::F64Bits(value ^ 0x8000_0000_0000_0000))
+        }
         (UnaryOp::Neg, VmValue::Float(v)) => Ok(VmValue::Float(-v)),
         (UnaryOp::Not, v) => Ok(VmValue::Bool(!v.truthy(span)?)),
         (UnaryOp::BitNot, VmValue::Integer(v)) => Ok(VmValue::Integer(!v)),
@@ -1944,6 +1950,40 @@ fn binary(
                             )
                         })
                 }
+            }
+        }
+        (VmValue::F32Bits(left), VmValue::F32Bits(right)) => {
+            let left = f32::from_bits(left);
+            let right = f32::from_bits(right);
+            match op {
+                Add => Ok(VmValue::F32Bits((left + right).to_bits())),
+                Sub => Ok(VmValue::F32Bits((left - right).to_bits())),
+                Mul => Ok(VmValue::F32Bits((left * right).to_bits())),
+                Div => Ok(VmValue::F32Bits((left / right).to_bits())),
+                EqEq => Ok(VmValue::Bool(left == right)),
+                NotEq => Ok(VmValue::Bool(left != right)),
+                Lt => Ok(VmValue::Bool(left < right)),
+                LtEq => Ok(VmValue::Bool(left <= right)),
+                Gt => Ok(VmValue::Bool(left > right)),
+                GtEq => Ok(VmValue::Bool(left >= right)),
+                _ => Err(error("invalid f32 operation", span)),
+            }
+        }
+        (VmValue::F64Bits(left), VmValue::F64Bits(right)) => {
+            let left = f64::from_bits(left);
+            let right = f64::from_bits(right);
+            match op {
+                Add => Ok(VmValue::F64Bits((left + right).to_bits())),
+                Sub => Ok(VmValue::F64Bits((left - right).to_bits())),
+                Mul => Ok(VmValue::F64Bits((left * right).to_bits())),
+                Div => Ok(VmValue::F64Bits((left / right).to_bits())),
+                EqEq => Ok(VmValue::Bool(left == right)),
+                NotEq => Ok(VmValue::Bool(left != right)),
+                Lt => Ok(VmValue::Bool(left < right)),
+                LtEq => Ok(VmValue::Bool(left <= right)),
+                Gt => Ok(VmValue::Bool(left > right)),
+                GtEq => Ok(VmValue::Bool(left >= right)),
+                _ => Err(error("invalid f64 operation", span)),
             }
         }
         (VmValue::String(mut a), VmValue::String(b)) => match op {
@@ -2267,6 +2307,27 @@ mod tests {
     }
 
     #[test]
+    fn strict_portable_same_source_executes_at_o0_and_o1() {
+        let source =
+            include_str!("../../../examples/native_v13_machine/portable_runtime_parity.dby");
+        for (label, level) in [
+            ("O0", VmOptimizationLevel::O0),
+            ("O1", VmOptimizationLevel::O1),
+        ] {
+            let execution = execute_canonical_bytecode(&bytecode_at(source, level)).unwrap();
+            assert_eq!(
+                execution.output, "",
+                "strict portable {label} output drifted"
+            );
+            assert_eq!(
+                execution.live_allocations, 0,
+                "strict portable {label} leaked"
+            );
+            println!("PORTABLE_VM_{label}=PASS");
+        }
+    }
+
+    #[test]
     fn exact_bitcast_preserves_explicit_float_payload_bits_at_o0_and_o1() {
         let source = "fn round32(bits: u32) -> u32:\n    let value: f32 = bits as! f32\n    return value as! u32\n\nfn round64(bits: u64) -> u64:\n    let value: f64 = bits as! f64\n    return value as! u64\n\nlet negzero32: u32 = 2147483648 as u32\nlet qnan32: u32 = 2143289345 as u32\nlet qnan64: u64 = ((1 as u64) << 63) | ((2047 as u64) << 52) | ((1 as u64) << 51) | 74565 as u64\nprint(round32(negzero32) == negzero32)\nprint(round32(qnan32) == qnan32)\nprint(round64(qnan64) == qnan64)\n";
         for layout in [TargetDataLayout::I686, TargetDataLayout::X86_64] {
@@ -2296,6 +2357,15 @@ mod tests {
                     "{layout:?} {level:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn explicit_float_arithmetic_matches_ieee_bits_at_o0_and_o1() {
+        let source = "let one: f32 = (1065353216 as u32) as! f32\nlet two: f32 = (1073741824 as u32) as! f32\nlet three: f32 = one + two\nprint((three as! u32) == (1077936128 as u32))\nlet zero: f32 = (0 as u32) as! f32\nprint(((-zero) as! u32) == (2147483648 as u32))\nlet inf: f32 = one / zero\nprint((inf as! u32) == (2139095040 as u32))\nlet nan: f32 = (2143289345 as u32) as! f32\nprint(nan != nan)\nprint(nan == nan)\nlet one64: f64 = (4607182418800017408 as u64) as! f64\nlet two64: f64 = (4611686018427387904 as u64) as! f64\nprint(((one64 + two64) as! u64) == (4613937818241073152 as u64))\n";
+        for optimization in [VmOptimizationLevel::O0, VmOptimizationLevel::O1] {
+            let execution = execute_canonical_bytecode(&bytecode_at(source, optimization)).unwrap();
+            assert_eq!(execution.output, "true\ntrue\ntrue\ntrue\nfalse\ntrue\n");
         }
     }
 

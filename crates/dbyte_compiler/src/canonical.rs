@@ -76,6 +76,8 @@ impl LoweringContext<'_> {
             CanonicalType::Integer(kind) => CanonicalOperandType::Integer(*kind),
             CanonicalType::Bool => CanonicalOperandType::Bool,
             CanonicalType::Float => CanonicalOperandType::Float,
+            CanonicalType::F32 => CanonicalOperandType::F32,
+            CanonicalType::F64 => CanonicalOperandType::F64,
             CanonicalType::Pointer { .. } | CanonicalType::Borrow { .. } => {
                 CanonicalOperandType::Pointer
             }

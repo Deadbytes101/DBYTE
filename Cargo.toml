@@ -20,7 +20,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "13.0.0"
+version = "13.1.0"
 edition = "2021"
 authors = ["Deadbyte"]
 license = "GPL-2.0-only"

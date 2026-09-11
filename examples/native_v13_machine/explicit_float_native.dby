@@ -1,0 +1,31 @@
+fn add32(left: f32, right: f32) -> f32:
+    return left + right
+
+fn add64(left: f64, right: f64) -> f64:
+    return left + right
+
+pub fn main() -> i32:
+    let one32: f32 = (1065353216 as u32) as! f32
+    let two32: f32 = (1073741824 as u32) as! f32
+    let three32: f32 = add32(one32, two32)
+    if (three32 as! u32) != (1077936128 as u32):
+        return 1
+
+    let zero32: f32 = (0 as u32) as! f32
+    let negative_zero32: f32 = -zero32
+    if (negative_zero32 as! u32) != (2147483648 as u32):
+        return 2
+    let infinity32: f32 = one32 / zero32
+    if (infinity32 as! u32) != (2139095040 as u32):
+        return 3
+
+    let nan32: f32 = (2143289345 as u32) as! f32
+    if nan32 == nan32:
+        return 4
+    let one64: f64 = (4607182418800017408 as u64) as! f64
+    let two64: f64 = (4611686018427387904 as u64) as! f64
+    let three64: f64 = add64(one64, two64)
+    if (three64 as! u64) != (4613937818241073152 as u64):
+        return 6
+
+    return 42

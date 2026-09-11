@@ -1760,6 +1760,12 @@ fn unary(op: &UnaryOp, value: ConcreteValue, span: Span) -> Result<ConcreteValue
             .checked_neg()
             .map(ConcreteValue::Integer)
             .ok_or_else(|| runtime_error("integer overflow", span)),
+        (UnaryOp::Neg, ConcreteValue::F32Bits(value)) => {
+            Ok(ConcreteValue::F32Bits(value ^ 0x8000_0000))
+        }
+        (UnaryOp::Neg, ConcreteValue::F64Bits(value)) => {
+            Ok(ConcreteValue::F64Bits(value ^ 0x8000_0000_0000_0000))
+        }
         (UnaryOp::Neg, ConcreteValue::Float(value)) => Ok(ConcreteValue::Float(-value)),
         (UnaryOp::Not, value) => Ok(ConcreteValue::Bool(!value.truthy(span)?)),
         (UnaryOp::BitNot, ConcreteValue::Integer(value)) => Ok(ConcreteValue::Integer(!value)),
@@ -1893,6 +1899,40 @@ fn binary(
             GtEq => Ok(ConcreteValue::Bool(left >= right)),
             _ => Err(runtime_error("invalid float operation", span)),
         },
+        (ConcreteValue::F32Bits(left), ConcreteValue::F32Bits(right)) => {
+            let left = f32::from_bits(left);
+            let right = f32::from_bits(right);
+            match op {
+                Add => Ok(ConcreteValue::F32Bits((left + right).to_bits())),
+                Sub => Ok(ConcreteValue::F32Bits((left - right).to_bits())),
+                Mul => Ok(ConcreteValue::F32Bits((left * right).to_bits())),
+                Div => Ok(ConcreteValue::F32Bits((left / right).to_bits())),
+                EqEq => Ok(ConcreteValue::Bool(left == right)),
+                NotEq => Ok(ConcreteValue::Bool(left != right)),
+                Lt => Ok(ConcreteValue::Bool(left < right)),
+                LtEq => Ok(ConcreteValue::Bool(left <= right)),
+                Gt => Ok(ConcreteValue::Bool(left > right)),
+                GtEq => Ok(ConcreteValue::Bool(left >= right)),
+                _ => Err(runtime_error("invalid f32 operation", span)),
+            }
+        }
+        (ConcreteValue::F64Bits(left), ConcreteValue::F64Bits(right)) => {
+            let left = f64::from_bits(left);
+            let right = f64::from_bits(right);
+            match op {
+                Add => Ok(ConcreteValue::F64Bits((left + right).to_bits())),
+                Sub => Ok(ConcreteValue::F64Bits((left - right).to_bits())),
+                Mul => Ok(ConcreteValue::F64Bits((left * right).to_bits())),
+                Div => Ok(ConcreteValue::F64Bits((left / right).to_bits())),
+                EqEq => Ok(ConcreteValue::Bool(left == right)),
+                NotEq => Ok(ConcreteValue::Bool(left != right)),
+                Lt => Ok(ConcreteValue::Bool(left < right)),
+                LtEq => Ok(ConcreteValue::Bool(left <= right)),
+                Gt => Ok(ConcreteValue::Bool(left > right)),
+                GtEq => Ok(ConcreteValue::Bool(left >= right)),
+                _ => Err(runtime_error("invalid f64 operation", span)),
+            }
+        }
         (ConcreteValue::String(mut left), ConcreteValue::String(right)) => match op {
             Add => {
                 left.extend_from_slice(&right);
@@ -2169,6 +2209,13 @@ mod tests {
         let source = "let qnan32: u32 = 2143289345 as u32\nlet value32: f32 = qnan32 as! f32\nlet round32: u32 = value32 as! u32\nprint(round32 == qnan32)\nlet qnan64: u64 = ((1 as u64) << 63) | ((2047 as u64) << 52) | ((1 as u64) << 51) | 74565 as u64\nlet value64: f64 = qnan64 as! f64\nlet round64: u64 = value64 as! u64\nprint(round64 == qnan64)\n";
         let execution = execute_concrete_project(&concrete(source)).unwrap();
         assert_eq!(execution.output, "true\ntrue\n");
+    }
+
+    #[test]
+    fn hosted_explicit_float_arithmetic_preserves_ieee_results() {
+        let source = "let one: f32 = (1065353216 as u32) as! f32\nlet two: f32 = (1073741824 as u32) as! f32\nlet three: f32 = one + two\nprint((three as! u32) == (1077936128 as u32))\nlet zero: f32 = (0 as u32) as! f32\nprint(((-zero) as! u32) == (2147483648 as u32))\nlet inf: f32 = one / zero\nprint((inf as! u32) == (2139095040 as u32))\nlet nan: f32 = (2143289345 as u32) as! f32\nprint(nan != nan)\nprint(nan == nan)\nlet one64: f64 = (4607182418800017408 as u64) as! f64\nlet two64: f64 = (4611686018427387904 as u64) as! f64\nprint(((one64 + two64) as! u64) == (4613937818241073152 as u64))\n";
+        let execution = execute_concrete_project(&concrete(source)).unwrap();
+        assert_eq!(execution.output, "true\ntrue\ntrue\ntrue\nfalse\ntrue\n");
     }
 
     #[test]
