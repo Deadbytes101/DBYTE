@@ -1,0 +1,105 @@
+{
+    "schema":  "hoppysos-x64-frozen-authority-v1",
+    "checkpoint_rel":  "checkpoints/pre-irq-dispatch-20260913-030442/kernel.asm",
+    "checkpoint_sha256":  "E03FFADF91B7E14689F1757758F522B846FFE6D077F56B145B2FA6DF6978F778",
+    "canonical_kernel_sha256":  "D175C49350F584C197818C5CE72E19FBFC63E10B2ABC19B9E3BC6A128EC78CFB",
+    "canonical_kernel_bytes":  120592,
+    "boot":  {
+                 "path":  "src64/boot/boot.asm",
+                 "sha256":  "DF24D0AC18B335ECBD3387C53A5431A42EA68150FC3A23387E6661B0561CFB01"
+             },
+    "stage2":  {
+                   "path":  "src64/boot/stage2.asm",
+                   "sha256":  "E9888D3000F63D28EA316D42C14713FE62A2A350B35FF0CC12DECF6C83D0CD40"
+               },
+    "includes":  [
+                     {
+                         "path":  "src64/kernel/hopfs1_ro.inc",
+                         "sha256":  "57465433CF4BB932F63C0EB7CFDFFE8C2731A06DBB868423AE3183C0C600A4DA"
+                     },
+                     {
+                         "path":  "src64/kernel/ata_write64.inc",
+                         "sha256":  "2207FB0A024C2CCB98F10666A01D5AE6C59E75F6B3EB4E03367223705A3207A3"
+                     },
+                     {
+                         "path":  "src64/kernel/hopfs1_rw.inc",
+                         "sha256":  "92A88BEE1AE5E1DEA53DD24CE22AB76AD33656ECA6FCA48E02E68E69021ADE83"
+                     },
+                     {
+                         "path":  "src64/kernel/net64.inc",
+                         "sha256":  "A71BF085CEF1B1DD76A3AD27DEFCA0B5A4812868E766457A4FA865AC21068799"
+                     },
+                     {
+                         "path":  "src64/kernel/http64.inc",
+                         "sha256":  "0DF7D95A50DF65C13CF1E4875892C1DC3F6D5F817CFB776CF8EEA30F204EF4DC"
+                     },
+                     {
+                         "path":  "src64/kernel/dns64.inc",
+                         "sha256":  "29F36BFAC4806E294236660C740310EF716702765BF21F8927CF1B92AEB42EC4"
+                     },
+                     {
+                         "path":  "src64/kernel/tls_crypto64.inc",
+                         "sha256":  "08C863F43DC0410F714556C22B28476C0366D582A9E68733FC09AA3485900ADA"
+                     },
+                     {
+                         "path":  "src64/kernel/x509_64.inc",
+                         "sha256":  "6282ACF01840AB933D3CB93F942D2ABFF4108742760C7E302178C935E2237B2B"
+                     },
+                     {
+                         "path":  "src64/kernel/x509_fixture64.inc",
+                         "sha256":  "DA216AB5B9F7A274BDE82BF5DE0719A94B954336CDA459212AC895054670FD19"
+                     },
+                     {
+                         "path":  "src64/kernel/tls12_64.inc",
+                         "sha256":  "9A2FC4869FD73CB5106B278C5B437DABD7FB801A16B0875DFACEC32852795695"
+                     },
+                     {
+                         "path":  "src64/kernel/browser64.inc",
+                         "sha256":  "521C52B177B9A1487686C781446E6FD80A3D012F9D761E0FA5B8EF58ED3816E4"
+                     },
+                     {
+                         "path":  "src64/kernel/html64.inc",
+                         "sha256":  "946BEC8F44714124461497065A10DD13E5D99BD06922C9B0EF128C0FD3CB8097"
+                     },
+                     {
+                         "path":  "src64/kernel/layout64.inc",
+                         "sha256":  "DDABC11396623762B05695D0AE7F530C770288278E5F4F655A0748417311179C"
+                     },
+                     {
+                         "path":  "src64/kernel/vga64.inc",
+                         "sha256":  "402DB052C89C2EF3109349A6B220D7354AFA0F05473D19FAA44DCBC79352D18E"
+                     },
+                     {
+                         "path":  "src64/kernel/gui64.inc",
+                         "sha256":  "1379005C26117DB99E03C0268CD8DED60B4A5001D45E1380522F24DBE7798B9E"
+                     },
+                     {
+                         "path":  "src64/kernel/theme64.inc",
+                         "sha256":  "8FACA90C017B8B2302AC1E441AA42D9FEBCC9F94C4894A2ABC043C16DB7C8C47"
+                     },
+                     {
+                         "path":  "src64/kernel/icons64.inc",
+                         "sha256":  "99E1FBCD6529A82367E00915BB5AAC1DE3B218D4ABA7CF0A6E3A341B58EC67F1"
+                     },
+                     {
+                         "path":  "src64/kernel/browser_ui64.inc",
+                         "sha256":  "399CDC395C35085E6BC9FB098CAD3772C647CC7A0EA15B966F3164C028D36EAD"
+                     },
+                     {
+                         "path":  "src64/kernel/event64.inc",
+                         "sha256":  "0063380C4F94D4F891BEC10B5473A284FD6503E87A1753CF8660A2EC526BEBFD"
+                     },
+                     {
+                         "path":  "src64/kernel/mouse64.inc",
+                         "sha256":  "95E11598FAF1313899F7038566139158FDF7DADFC225DF7A89A6C7B130CFA017"
+                     },
+                     {
+                         "path":  "src64/kernel/wm64.inc",
+                         "sha256":  "BE4308EF53F8F3AFAB073961FEBB3F6750D84EE300330485381CA7A67E922E28"
+                     },
+                     {
+                         "path":  "src64/kernel/apps64.inc",
+                         "sha256":  "6A87B365DF4289045AD96FFAF9267B2387B888A5F78E3B8E17C61D415AED6AA2"
+                     }
+                 ]
+}

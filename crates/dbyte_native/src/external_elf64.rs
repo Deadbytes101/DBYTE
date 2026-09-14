@@ -1,4 +1,5 @@
-//! Fail-closed importer for the documented x86-64 C fixture object subset.
+//! Fail-closed importer for the documented x86-64 machine-boundary object subset.
+//! Linux imports may carry validated informational GNU x86 USED property notes.
 
 use crate::object64::{
     Binding, Contents, Definition, ObjectImage, Relocation, RelocationKind, Section, SectionData,
@@ -136,6 +137,8 @@ pub fn parse_external_x86_64_object(
             validate_alignment(section.align)?;
             let base = merge_mapped_section(&mut image, mapped, section, bytes)?;
             section_map.insert(index, (mapped, base));
+        } else if section.name == ".note.gnu.property" && target == crate::target::X86_64_LINUX {
+            validate_ignorable_gnu_property_note(section, bytes)?;
         } else if section.flags & 0x2 != 0 && section.name != ".eh_frame" {
             return Err(error(format!(
                 "unsupported allocatable external section '{}'",
@@ -167,7 +170,7 @@ pub fn parse_external_x86_64_object(
     let mut symbol_map = vec![None; count];
     for index in 1..count {
         let entry = &symbols[index * SYMBOL_SIZE..(index + 1) * SYMBOL_SIZE];
-        let name = string_at(strings, u32_at(entry, 0)?)?;
+        let mut name = string_at(strings, u32_at(entry, 0)?)?;
         let info = entry[4];
         let binding = match info >> 4 {
             0 => Binding::Local,
@@ -178,7 +181,8 @@ pub fn parse_external_x86_64_object(
                 ))
             }
         };
-        let kind = match info & 0xf {
+        let symbol_type = info & 0xf;
+        let kind = match symbol_type {
             0 | 2 => SymbolKind::Function,
             1 => SymbolKind::Object,
             3 if binding == Binding::Local => SymbolKind::Object,
@@ -186,6 +190,9 @@ pub fn parse_external_x86_64_object(
             _ => return Err(error("unsupported external ELF64 symbol type")),
         };
         let section_index = u16_at(entry, 6)? as usize;
+        if symbol_type == 3 && binding == Binding::Local {
+            name = format!("\0external-section:{section_index}");
+        }
         let value = u64_at(entry, 8)?;
         let size = u64_at(entry, 16)?;
         let definition = if section_index == 0 {
@@ -202,7 +209,7 @@ pub fn parse_external_x86_64_object(
                 "global external symbol '{name}' is defined in an unsupported section"
             )));
         };
-        if name.is_empty() && (info & 0xf) != 3 {
+        if name.is_empty() && symbol_type != 3 {
             return Err(error("external ELF64 non-section symbol has no name"));
         }
         symbol_map[index] = Some(name.clone());
@@ -235,7 +242,7 @@ pub fn parse_external_x86_64_object(
         {
             return Err(error("external ELF64 RELA section is malformed"));
         }
-        for rela in section_bytes(bytes, section)?.chunks_exact(RELA_SIZE) {
+        for rela in section_bytes(bytes, section)?.as_chunks::<RELA_SIZE>().0 {
             if image.relocations.len() >= MAX_RELOCATIONS {
                 return Err(error("external ELF64 relocation count exceeds bound"));
             }
@@ -267,6 +274,101 @@ pub fn parse_external_x86_64_object(
         }
     }
     Ok(image)
+}
+
+const NT_GNU_PROPERTY_TYPE_0: u32 = 5;
+const GNU_PROPERTY_X86_FEATURE_2_USED: u32 = 0xc001_0001;
+const GNU_PROPERTY_X86_ISA_1_USED: u32 = 0xc001_0002;
+
+fn validate_ignorable_gnu_property_note(
+    section: &RawSection,
+    bytes: &[u8],
+) -> Result<(), ExternalElf64Error> {
+    if section.kind != 7 || section.flags != 0x2 {
+        return Err(error(
+            "external .note.gnu.property must be an allocatable SHT_NOTE section",
+        ));
+    }
+    validate_alignment(section.align)?;
+    let note = section_bytes(bytes, section)?;
+    if note.len() < 16 {
+        return Err(error("external GNU property note is truncated"));
+    }
+
+    let name_size = u32_at(note, 0)? as usize;
+    let desc_size = u32_at(note, 4)? as usize;
+    let note_type = u32_at(note, 8)?;
+    if name_size != 4 || note_type != NT_GNU_PROPERTY_TYPE_0 {
+        return Err(error("unsupported external GNU property note header"));
+    }
+    let name_end = 12usize
+        .checked_add(name_size)
+        .ok_or_else(|| error("external GNU property name range overflows"))?;
+    if note.get(12..name_end) != Some(b"GNU\0") {
+        return Err(error("external GNU property note owner is not GNU"));
+    }
+    let desc_start = align_usize(name_end, 4)?;
+    let desc_end = desc_start
+        .checked_add(desc_size)
+        .ok_or_else(|| error("external GNU property descriptor range overflows"))?;
+    let note_end = align_usize(desc_end, 4)?;
+    if note_end != note.len() || desc_end > note.len() {
+        return Err(error("external GNU property note size is malformed"));
+    }
+    if note[desc_end..note_end].iter().any(|byte| *byte != 0) {
+        return Err(error("external GNU property note padding is nonzero"));
+    }
+
+    let descriptor = &note[desc_start..desc_end];
+    let mut cursor = 0usize;
+    let mut seen_isa_used = false;
+    let mut seen_feature_used = false;
+    if descriptor.is_empty() {
+        return Err(error("external GNU property descriptor is empty"));
+    }
+    while cursor < descriptor.len() {
+        if descriptor.len() - cursor < 8 {
+            return Err(error("external GNU property entry is truncated"));
+        }
+        let property_type = u32_at(descriptor, cursor)?;
+        let data_size = u32_at(descriptor, cursor + 4)? as usize;
+        if data_size != 4 {
+            return Err(error("external GNU property data size is unsupported"));
+        }
+        let data_start = cursor + 8;
+        let data_end = data_start
+            .checked_add(data_size)
+            .ok_or_else(|| error("external GNU property data range overflows"))?;
+        let next = align_usize(data_end, 8)?;
+        if next > descriptor.len() {
+            return Err(error("external GNU property entry exceeds descriptor"));
+        }
+        if descriptor[data_end..next].iter().any(|byte| *byte != 0) {
+            return Err(error("external GNU property padding is nonzero"));
+        }
+        let _value = u32_at(descriptor, data_start)?;
+        match property_type {
+            GNU_PROPERTY_X86_ISA_1_USED if !seen_isa_used => seen_isa_used = true,
+            GNU_PROPERTY_X86_FEATURE_2_USED if !seen_feature_used => seen_feature_used = true,
+            GNU_PROPERTY_X86_ISA_1_USED | GNU_PROPERTY_X86_FEATURE_2_USED => {
+                return Err(error("duplicate external GNU property type"));
+            }
+            other => {
+                return Err(error(format!(
+                    "unsupported GNU property type 0x{other:08x}"
+                )));
+            }
+        }
+        cursor = next;
+    }
+    Ok(())
+}
+
+fn align_usize(value: usize, alignment: usize) -> Result<usize, ExternalElf64Error> {
+    value
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+        .ok_or_else(|| error("external GNU property alignment overflows"))
 }
 
 fn merge_mapped_section(
@@ -426,6 +528,56 @@ fn error(message: impl Into<String>) -> ExternalElf64Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn gcc16_used_property_note() -> Vec<u8> {
+        vec![
+            0x04, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, b'G', b'N',
+            b'U', 0x00, 0x02, 0x00, 0x01, 0xc0, 0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x04, 0x00, 0x00, 0x00, 0x09, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]
+    }
+
+    fn property_note_section(size: usize) -> RawSection {
+        RawSection {
+            name: ".note.gnu.property".to_owned(),
+            kind: 7,
+            flags: 0x2,
+            offset: 0,
+            size: size as u64,
+            link: 0,
+            info: 0,
+            align: 8,
+            entsize: 0,
+        }
+    }
+
+    #[test]
+    fn gcc16_used_gnu_properties_are_accepted_as_informational() {
+        let bytes = gcc16_used_property_note();
+        validate_ignorable_gnu_property_note(&property_note_section(bytes.len()), &bytes)
+            .expect("GCC 16 used-only GNU properties must be accepted");
+    }
+
+    #[test]
+    fn required_or_unknown_gnu_properties_remain_fail_closed() {
+        let mut bytes = gcc16_used_property_note();
+        bytes[16..20].copy_from_slice(&0xc000_8000u32.to_le_bytes());
+        let failure =
+            validate_ignorable_gnu_property_note(&property_note_section(bytes.len()), &bytes)
+                .expect_err("NEEDED GNU property must remain unsupported");
+        assert!(failure.0.contains("unsupported GNU property type"));
+    }
+
+    #[test]
+    fn malformed_gnu_property_note_is_rejected() {
+        let mut bytes = gcc16_used_property_note();
+        bytes[4..8].copy_from_slice(&31u32.to_le_bytes());
+        assert!(
+            validate_ignorable_gnu_property_note(&property_note_section(bytes.len()), &bytes,)
+                .is_err()
+        );
+    }
 
     #[test]
     fn canonical_target_metadata_cannot_enter_through_external_importer() {

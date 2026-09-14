@@ -11,6 +11,7 @@ mod block_device_contract;
 mod blocking_contract;
 pub mod cli;
 pub mod coff64;
+pub mod dbtasm64;
 pub mod dbup;
 pub mod diagnostics;
 pub mod elf32;

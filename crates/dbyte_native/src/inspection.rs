@@ -198,7 +198,7 @@ fn inspect_symbols(
         .get(section.link as usize)
         .ok_or_else(|| invalid("invalid symbol string table"))?;
     let strings = data(bytes, strings)?;
-    for (index, symbol) in data(bytes, section)?.chunks_exact(16).enumerate() {
+    for (index, symbol) in data(bytes, section)?.as_chunks::<16>().0.iter().enumerate() {
         let name = string(
             strings,
             u32::from_le_bytes(symbol[..4].try_into().unwrap()) as usize,
@@ -222,7 +222,7 @@ fn inspect_relocations(
     if section.entry_size != 8 || !section.size.is_multiple_of(8) {
         return Err(invalid("invalid ELF32 REL table"));
     }
-    for relocation in data(bytes, section)?.chunks_exact(8) {
+    for relocation in data(bytes, section)?.as_chunks::<8>().0 {
         let offset = u32::from_le_bytes(relocation[..4].try_into().unwrap());
         let info = u32::from_le_bytes(relocation[4..8].try_into().unwrap());
         let _ = writeln!(

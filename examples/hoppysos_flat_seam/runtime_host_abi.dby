@@ -1,0 +1,8 @@
+pub struct HostServicesV2:
+    abi_version: u32
+    table_bytes: u32
+    alloc_page: fn() -> u64
+    free_page: fn(u64) -> bool
+    read_file: fn(ptr[u8], ptr[u8], usize, ptr[usize]) -> bool
+    enter_user: fn(usize, usize, usize, usize) -> i32
+    abort_user: fn(u32, usize, u64) -> int

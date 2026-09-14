@@ -53,6 +53,24 @@ pub struct LinkedSections {
     pub relocation_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlatImageLayout {
+    pub load_address: u64,
+    pub entry: u64,
+    pub text_offset: u64,
+    pub rodata_offset: u64,
+    pub data_offset: u64,
+    pub bss_offset: u64,
+    pub file_size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlatImage {
+    pub bytes: Vec<u8>,
+    pub layout: FlatImageLayout,
+    pub relocation_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkError(pub String);
 
@@ -63,6 +81,112 @@ impl std::fmt::Display for LinkError {
 }
 
 impl std::error::Error for LinkError {}
+
+pub fn write_flat_image(
+    linked: &LinkedSections,
+    addresses: SectionAddresses,
+    load_address: u64,
+    maximum_size: u64,
+) -> Result<FlatImage, LinkError> {
+    if linked.target != crate::target::X86_64_NONE {
+        return Err(error(
+            "E_FLAT64_TARGET",
+            "flat machine payloads require x86_64-dbyte-none",
+        ));
+    }
+    if linked.text.is_empty() {
+        return Err(error("E_FLAT64_TEXT", "flat payload text cannot be empty"));
+    }
+    if maximum_size == 0 {
+        return Err(error(
+            "E_FLAT64_SIZE",
+            "flat payload maximum size must be nonzero",
+        ));
+    }
+    if addresses.text != load_address {
+        return Err(error(
+            "E_FLAT64_LAYOUT",
+            "flat payload text must begin at the load address",
+        ));
+    }
+    let text_end = addresses
+        .text
+        .checked_add(linked.text.len() as u64)
+        .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat text range overflows"))?;
+    let rodata_end = addresses
+        .rodata
+        .checked_add(linked.rodata.len() as u64)
+        .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat rodata range overflows"))?;
+    let data_end = addresses
+        .data
+        .checked_add(linked.data.len() as u64)
+        .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat data range overflows"))?;
+    let bss_end = addresses
+        .bss
+        .checked_add(linked.bss_size)
+        .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat BSS range overflows"))?;
+    if addresses.rodata < text_end || addresses.data < rodata_end || addresses.bss < data_end {
+        return Err(error(
+            "E_FLAT64_OVERLAP",
+            "flat payload sections overlap or are out of order",
+        ));
+    }
+    if linked.entry < addresses.text || linked.entry >= text_end {
+        return Err(error(
+            "E_FLAT64_ENTRY",
+            "flat payload entry must be inside text",
+        ));
+    }
+    let file_size = bss_end
+        .checked_sub(load_address)
+        .ok_or_else(|| error("E_FLAT64_LAYOUT", "flat payload precedes load address"))?;
+    if file_size > maximum_size {
+        return Err(error(
+            "E_FLAT64_SIZE",
+            "flat payload exceeds the configured maximum size",
+        ));
+    }
+    let file_len = usize::try_from(file_size)
+        .map_err(|_| error("E_FLAT64_SIZE", "flat payload exceeds host addressability"))?;
+    let mut bytes = vec![0; file_len];
+    copy_flat_section(&mut bytes, load_address, addresses.text, &linked.text)?;
+    copy_flat_section(&mut bytes, load_address, addresses.rodata, &linked.rodata)?;
+    copy_flat_section(&mut bytes, load_address, addresses.data, &linked.data)?;
+    Ok(FlatImage {
+        bytes,
+        layout: FlatImageLayout {
+            load_address,
+            entry: linked.entry,
+            text_offset: addresses.text - load_address,
+            rodata_offset: addresses.rodata - load_address,
+            data_offset: addresses.data - load_address,
+            bss_offset: addresses.bss - load_address,
+            file_size,
+        },
+        relocation_count: linked.relocation_count,
+    })
+}
+
+fn copy_flat_section(
+    output: &mut [u8],
+    load_address: u64,
+    address: u64,
+    section: &[u8],
+) -> Result<(), LinkError> {
+    let offset = address
+        .checked_sub(load_address)
+        .ok_or_else(|| error("E_FLAT64_LAYOUT", "flat section precedes load address"))?;
+    let start = usize::try_from(offset)
+        .map_err(|_| error("E_FLAT64_SIZE", "flat section offset exceeds host"))?;
+    let end = start
+        .checked_add(section.len())
+        .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat section range overflows"))?;
+    let target = output
+        .get_mut(start..end)
+        .ok_or_else(|| error("E_FLAT64_RANGE", "flat section exceeds output image"))?;
+    target.copy_from_slice(section);
+    Ok(())
+}
 
 #[derive(Debug, Clone)]
 struct InputObject {
@@ -75,6 +199,16 @@ pub fn link_objects(
     requested: TargetSpec,
     addresses: SectionAddresses,
     entry_symbol: &str,
+) -> Result<LinkedSections, LinkError> {
+    link_objects_with_image_start(inputs, requested, addresses, entry_symbol, None)
+}
+
+fn link_objects_with_image_start(
+    inputs: &[LinkInput],
+    requested: TargetSpec,
+    addresses: SectionAddresses,
+    entry_symbol: &str,
+    image_start: Option<u64>,
 ) -> Result<LinkedSections, LinkError> {
     if inputs.is_empty() {
         return Err(error("E_LINK64_INPUT", "link requires at least one object"));
@@ -161,7 +295,8 @@ pub fn link_objects(
             }
         }
     }
-    let reserved_synthetic_symbols = kernel_synthetic_symbols(requested, addresses, bss_size)?;
+    let reserved_synthetic_symbols =
+        kernel_synthetic_symbols(requested, addresses, bss_size, image_start)?;
     for object in &objects {
         for symbol in &object.image.symbols {
             if reserved_synthetic_symbols.contains_key(&symbol.name)
@@ -277,6 +412,64 @@ pub fn link_objects(
     })
 }
 
+pub fn link_flat_objects(
+    inputs: &[LinkInput],
+    entry_symbol: &str,
+    load_address: u64,
+    section_alignment: u64,
+    maximum_size: u64,
+) -> Result<FlatImage, LinkError> {
+    if section_alignment == 0 || !section_alignment.is_power_of_two() || section_alignment > 4096 {
+        return Err(error(
+            "E_FLAT64_ALIGNMENT",
+            "flat section alignment must be a power of two no greater than 4096",
+        ));
+    }
+    let sizing = link_objects_with_image_start(
+        inputs,
+        crate::target::X86_64_NONE,
+        SectionAddresses {
+            text: 0,
+            rodata: 0,
+            data: 0,
+            bss: 0,
+        },
+        entry_symbol,
+        Some(0),
+    )?;
+    let rodata = align_up(
+        load_address
+            .checked_add(sizing.text.len() as u64)
+            .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat text end overflows"))?,
+        section_alignment,
+    )?;
+    let data = align_up(
+        rodata
+            .checked_add(sizing.rodata.len() as u64)
+            .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat rodata end overflows"))?,
+        section_alignment,
+    )?;
+    let bss = align_up(
+        data.checked_add(sizing.data.len() as u64)
+            .ok_or_else(|| error("E_FLAT64_OVERFLOW", "flat data end overflows"))?,
+        section_alignment,
+    )?;
+    let addresses = SectionAddresses {
+        text: load_address,
+        rodata,
+        data,
+        bss,
+    };
+    let linked = link_objects_with_image_start(
+        inputs,
+        crate::target::X86_64_NONE,
+        addresses,
+        entry_symbol,
+        Some(load_address),
+    )?;
+    write_flat_image(&linked, addresses, load_address, maximum_size)
+}
+
 fn parse_inputs_and_archives(
     inputs: &[&LinkInput],
     requested: TargetSpec,
@@ -367,10 +560,12 @@ fn parse_input_object(bytes: &[u8], requested: TargetSpec) -> Result<ObjectImage
     match parse_relocatable(bytes) {
         Ok(image) => Ok(image),
         Err(_canonical)
-            if requested == crate::target::X86_64_LINUX
-                && !bytes
-                    .windows(b".dbyte.".len())
-                    .any(|window| window == b".dbyte.") =>
+            if matches!(
+                requested,
+                crate::target::X86_64_LINUX | crate::target::X86_64_NONE
+            ) && !bytes
+                .windows(b".dbyte.".len())
+                .any(|window| window == b".dbyte.") =>
         {
             crate::external_elf64::parse_external_x86_64_object(bytes, requested)
                 .map_err(|failure| error("E_LINK64_EXTERNAL_OBJECT", &failure.to_string()))
@@ -482,6 +677,7 @@ fn kernel_synthetic_symbols(
     requested: TargetSpec,
     addresses: SectionAddresses,
     bss_size: u64,
+    image_start: Option<u64>,
 ) -> Result<BTreeMap<String, u64>, LinkError> {
     let mut symbols = BTreeMap::new();
     if requested.executable_format != crate::target::ExecutableFormat::Multiboot2Elf64 {
@@ -493,7 +689,7 @@ fn kernel_synthetic_symbols(
         .ok_or_else(|| error("E_LINK64_OVERFLOW", "kernel image end overflows"))?;
     symbols.insert(
         "__dbyte_image_start".to_owned(),
-        u64::from(crate::multiboot2::IMAGE_BASE),
+        image_start.unwrap_or_else(|| u64::from(crate::multiboot2::IMAGE_BASE)),
     );
     symbols.insert("__dbyte_image_end".to_owned(), image_end);
     Ok(symbols)
@@ -638,6 +834,226 @@ mod tests {
             relocations,
         };
         LinkInput::new(name, write_relocatable(&image).unwrap().bytes)
+    }
+
+    fn externalize(mut input: LinkInput) -> LinkInput {
+        for index in 0..input.bytes.len().saturating_sub(b".dbyte.".len()) {
+            if &input.bytes[index..index + b".dbyte.".len()] == b".dbyte." {
+                input.bytes[index..index + b".dbyte.".len()].copy_from_slice(b".xbyte.");
+            }
+        }
+        input.bytes.extend_from_slice(&[0; 64]);
+        input.bytes[60..62].copy_from_slice(&14u16.to_le_bytes());
+        input
+    }
+
+    #[test]
+    fn explicit_none_target_accepts_machine_boundary_external_elf64() {
+        let external = externalize(object(
+            X86_64_LINUX,
+            "boundary.o",
+            vec![0xb8, 0x17, 0x5a, 0, 0, 0xc3],
+            vec![Symbol {
+                name: "kernel_main".into(),
+                binding: Binding::Global,
+                kind: SymbolKind::Function,
+                definition: Definition::Defined {
+                    section: Section::Text,
+                    value: 0,
+                },
+                size: 6,
+            }],
+            vec![],
+        ));
+        let addresses = SectionAddresses {
+            text: 0x1_0000,
+            rodata: 0x1_1000,
+            data: 0x1_2000,
+            bss: 0x1_3000,
+        };
+        let linked = link_objects(&[external], X86_64_NONE, addresses, "kernel_main")
+            .expect("an explicit none target should bind a metadata-free ELF64 boundary object");
+        assert_eq!(linked.entry, addresses.text);
+        assert_eq!(linked.text, vec![0xb8, 0x17, 0x5a, 0, 0, 0xc3]);
+    }
+
+    #[test]
+    fn external_elf64_remains_rejected_for_user_profile() {
+        let external = externalize(object(
+            X86_64_LINUX,
+            "boundary.o",
+            vec![0xc3],
+            vec![Symbol {
+                name: "user_main".into(),
+                binding: Binding::Global,
+                kind: SymbolKind::Function,
+                definition: Definition::Defined {
+                    section: Section::Text,
+                    value: 0,
+                },
+                size: 1,
+            }],
+            vec![],
+        ));
+        let failure = link_objects(
+            &[external],
+            crate::target::X86_64_USER,
+            SectionAddresses {
+                text: 0x40_0000,
+                rodata: 0x41_0000,
+                data: 0x42_0000,
+                bss: 0x43_0000,
+            },
+            "user_main",
+        )
+        .expect_err("the user profile must reject untyped machine-boundary objects");
+        assert!(failure.0.contains("E_LINK64_OBJECT"), "{}", failure.0);
+    }
+
+    #[test]
+    fn flat_none_image_materializes_layout_gaps_and_bss_deterministically() {
+        let linked = LinkedSections {
+            target: X86_64_NONE,
+            entry_abi: None,
+            text: vec![0x90, 0xc3],
+            rodata: vec![0xaa, 0xbb],
+            data: vec![0x11],
+            bss_size: 3,
+            entry: 0x1_0001,
+            symbols: BTreeMap::from([("kernel_main".into(), 0x1_0001)]),
+            relocation_count: 7,
+        };
+        let addresses = SectionAddresses {
+            text: 0x1_0000,
+            rodata: 0x1_0004,
+            data: 0x1_0008,
+            bss: 0x1_000c,
+        };
+        let first = write_flat_image(&linked, addresses, 0x1_0000, 0x100).unwrap();
+        let second = write_flat_image(&linked, addresses, 0x1_0000, 0x100).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.bytes.len(), 15);
+        assert_eq!(&first.bytes[0..2], &[0x90, 0xc3]);
+        assert_eq!(&first.bytes[4..6], &[0xaa, 0xbb]);
+        assert_eq!(first.bytes[8], 0x11);
+        assert_eq!(&first.bytes[12..15], &[0, 0, 0]);
+        assert_eq!(first.layout.entry, 0x1_0001);
+        assert_eq!(first.layout.bss_offset, 12);
+        assert_eq!(first.relocation_count, 7);
+    }
+
+    #[test]
+    fn flat_none_image_rejects_overlap_size_and_entry_violations() {
+        let linked = LinkedSections {
+            target: X86_64_NONE,
+            entry_abi: None,
+            text: vec![0x90, 0xc3],
+            rodata: vec![0xaa],
+            data: vec![],
+            bss_size: 0,
+            entry: 0x1_0010,
+            symbols: BTreeMap::new(),
+            relocation_count: 0,
+        };
+        let overlap = SectionAddresses {
+            text: 0x1_0000,
+            rodata: 0x1_0001,
+            data: 0x1_0002,
+            bss: 0x1_0002,
+        };
+        assert!(write_flat_image(&linked, overlap, 0x1_0000, 0x100)
+            .unwrap_err()
+            .0
+            .contains("E_FLAT64_OVERLAP"));
+        let valid = SectionAddresses {
+            text: 0x1_0000,
+            rodata: 0x1_0002,
+            data: 0x1_0003,
+            bss: 0x1_0003,
+        };
+        assert!(write_flat_image(&linked, valid, 0x1_0000, 0x100)
+            .unwrap_err()
+            .0
+            .contains("E_FLAT64_ENTRY"));
+        let mut entry_valid = linked;
+        entry_valid.entry = 0x1_0000;
+        assert!(write_flat_image(&entry_valid, valid, 0x1_0000, 2)
+            .unwrap_err()
+            .0
+            .contains("E_FLAT64_SIZE"));
+    }
+
+    #[test]
+    fn flat_link_seam_resolves_external_calls_and_uses_requested_image_base() {
+        let external = externalize(object(
+            X86_64_LINUX,
+            "boundary.o",
+            vec![0xe8, 0, 0, 0, 0, 0xc3],
+            vec![
+                Symbol {
+                    name: "kernel_main".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 6,
+                },
+                Symbol {
+                    name: "dbyte_body".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Undefined,
+                    size: 0,
+                },
+            ],
+            vec![Relocation {
+                section: Section::Text,
+                offset: 1,
+                symbol: "dbyte_body".into(),
+                kind: RelocationKind::Plt32,
+                addend: -4,
+            }],
+        ));
+        let dbyte = object(
+            X86_64_NONE,
+            "body.o",
+            vec![0x48, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0xc3],
+            vec![
+                Symbol {
+                    name: "dbyte_body".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Function,
+                    definition: Definition::Defined {
+                        section: Section::Text,
+                        value: 0,
+                    },
+                    size: 11,
+                },
+                Symbol {
+                    name: "__dbyte_image_start".into(),
+                    binding: Binding::Global,
+                    kind: SymbolKind::Object,
+                    definition: Definition::Undefined,
+                    size: 0,
+                },
+            ],
+            vec![Relocation {
+                section: Section::Text,
+                offset: 2,
+                symbol: "__dbyte_image_start".into(),
+                kind: RelocationKind::Absolute64,
+                addend: 0,
+            }],
+        );
+        let image =
+            link_flat_objects(&[dbyte, external], "kernel_main", 0x1_0000, 16, 252 * 512).unwrap();
+        assert_eq!(image.layout.load_address, 0x1_0000);
+        assert_eq!(image.layout.entry, 0x1_0010);
+        assert_eq!(&image.bytes[2..10], &0x1_0000u64.to_le_bytes());
+        assert_eq!(&image.bytes[17..21], &(-21i32).to_le_bytes());
+        assert_eq!(image.relocation_count, 2);
     }
 
     #[test]

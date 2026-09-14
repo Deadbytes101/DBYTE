@@ -53,10 +53,11 @@ DBYTE is not trying to be a web framework or a general productivity language. It
 
 ## Current Snapshot
 
-- Snapshot version: **v13.1.0**
-- Frozen parent: **v13.0.0 VIRTUAL_QUALIFIED_SOFTWARE_FINAL** at commit `3b68536dc280dade3afde1620eeffbeb0309ec97`.
-- Release scope: strict portable-source validation, cross-runtime portability proof, explicit `f32`/`f64` transport and exact native SSE2 arithmetic/C ABI support.
-- Physical hardware qualification is outside the v13.1.0 software-release gate; **REAL_STORAGE=DISARMED**.
+- Snapshot version: **v13.2.0 Linux-native final-qualification line**.
+- Frozen parent: **v13.1.0 portable-native-float release** at commit `867bebea05d796855590099d2340de09f2ced4d5`.
+- Release scope: the v13.1 portable/native-float baseline plus GNU/Linux-native `dbyte`, `dbytec`, and `dbtasm` host portability.
+- Final status is receipt-bound: a candidate is FINAL only when deterministic source/package gates and native BIOSTAR host/package verification bind to the same candidate identity. Any source mutation creates a new candidate and invalidates prior final evidence.
+- Safety boundary: **REAL_STORAGE=DISARMED**. `FULL_OS` remains a separate milestone and is not claimed by v13.2.0.
 - Default branch: **main**
 - Repository visibility: **public**
 - Language identity: **DBYTE**.

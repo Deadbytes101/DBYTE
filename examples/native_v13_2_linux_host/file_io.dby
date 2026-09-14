@@ -1,0 +1,36 @@
+import "../../runtime/v13.2.0/linux_io.dby" as io
+
+static mut READBACK: array[u8, 20]
+static mut MONOTONIC_TIME: array[u8, 16]
+
+fn bytes_match() -> bool:
+    let expected: str = "DBYTE LINUX FILE IO\n"
+    let index: usize = 0 as usize
+    while index < (20 as usize):
+        if READBACK[index] != (expected[index] as u8):
+            return false
+        index = index + (1 as usize)
+    return true
+
+pub fn main() -> i32:
+    let path: StringView = "dbyte-v132-file-io.tmp"
+    let output: i64 = io.open_create_truncate(path)
+    if output < (0 as i64):
+        return 1 as i32
+    if io.write(output as i32, "DBYTE LINUX FILE IO\n", 20 as usize) != (20 as i64):
+        return 2 as i32
+    if io.close(output as i32) != (0 as i64):
+        return 3 as i32
+
+    let input: i64 = io.open_read(path)
+    if input < (0 as i64):
+        return 4 as i32
+    if io.read(input as i32, (&READBACK[0]) as usize as ptr[u8], 20 as usize) != (20 as i64):
+        return 5 as i32
+    if io.close(input as i32) != (0 as i64):
+        return 6 as i32
+    if bytes_match() == false:
+        return 7 as i32
+    if io.clock_gettime(1 as i32, (&MONOTONIC_TIME[0]) as usize as ptr[u8]) != (0 as i64):
+        return 8 as i32
+    return 42 as i32

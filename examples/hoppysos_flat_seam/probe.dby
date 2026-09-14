@@ -1,0 +1,12 @@
+import "pmm.dby" as pmm
+
+pub fn kernel_main() -> int:
+    if pmm.initialize() != 0:
+        return 1
+    if pmm.usable_regions() == (0 as u64):
+        return 2
+    if pmm.free_pages() == (0 as u64):
+        return 3
+    if pmm.selftest() == false:
+        return 4
+    return 23063

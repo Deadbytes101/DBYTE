@@ -1,0 +1,8 @@
+fn answer() -> i32:
+    return 42 as i32
+
+pub fn main() -> i32:
+    return answer()
+
+pub fn kernel_main() -> int:
+    return answer() as int

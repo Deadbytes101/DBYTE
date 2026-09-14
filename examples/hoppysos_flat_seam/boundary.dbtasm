@@ -1,0 +1,17 @@
+global hoppys_entry
+extern kernel_main
+
+hoppys_entry:
+    call kernel_main
+    cmp eax, 0x5a17
+    jne failed
+    debug "DBYTE HOPPYSOS FLAT SEAM PASS\n"
+    debug "DBYTE HOPPYSOS PMM MIGRATION PASS\n"
+halt:
+    cli
+    hlt
+    jmp halt
+
+failed:
+    debug "DBYTE HOPPYSOS FLAT SEAM FAIL\n"
+    jmp halt

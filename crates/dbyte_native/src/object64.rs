@@ -316,7 +316,7 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, ObjectError> {
                 "malformed RELA section size",
             ));
         }
-        for entry in entries.chunks_exact(RELA_SIZE as usize) {
+        for entry in entries.as_chunks::<{ RELA_SIZE as usize }>().0 {
             let offset = u64::from_le_bytes(entry[0..8].try_into().unwrap());
             let info = u64::from_le_bytes(entry[8..16].try_into().unwrap());
             let symbol_index = usize::try_from(info >> 32)

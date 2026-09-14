@@ -1,0 +1,164 @@
+const BOOTINFO: usize = 0x5000 as usize
+const BOOTINFO_MAGIC: u32 = 0x36504f48 as u32
+const ENTRY_BYTES: u32 = 24 as u32
+const MAX_ENTRIES: usize = 32 as usize
+const ALLOCATED_BITMAP: usize = 0x7000 as usize
+const MANAGED_BITMAP: usize = 0xa000 as usize
+const BITMAP_WORDS: usize = 256 as usize
+const PAGE_BYTES: u64 = 4096 as u64
+const MINIMUM: u64 = 0x00100000 as u64
+const LIMIT: u64 = 0x04000000 as u64
+const FIRST_PAGE: u64 = 256 as u64
+const PAGE_LIMIT: u64 = 16384 as u64
+
+static mut FREE_PAGES: u64
+static mut USABLE_REGIONS: u64
+
+fn maximum_u64() -> u64:
+    return (0 as u64) - (1 as u64)
+
+fn load32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn load64(address: usize) -> u64:
+    return native.volatile_load64(address as ptr[u64])
+
+fn store64(address: usize, value: u64) -> unit:
+    native.volatile_store64(address as ptr[u64], value)
+
+fn bitmap_address(base: usize, page: u64) -> usize:
+    return base + (((page >> (6 as u64)) as usize) * (8 as usize))
+
+fn bitmap_mask(page: u64) -> u64:
+    return (1 as u64) << (page & (63 as u64))
+
+fn is_set(base: usize, page: u64) -> bool:
+    return (load64(bitmap_address(base, page)) & bitmap_mask(page)) != (0 as u64)
+
+fn set_bit(base: usize, page: u64) -> unit:
+    let address: usize = bitmap_address(base, page)
+    store64(address, load64(address) | bitmap_mask(page))
+
+fn clear_bit(base: usize, page: u64) -> unit:
+    let address: usize = bitmap_address(base, page)
+    store64(address, load64(address) & (maximum_u64() ^ bitmap_mask(page)))
+
+fn align_up_page(value: u64) -> u64:
+    if value > (maximum_u64() - (PAGE_BYTES - (1 as u64))):
+        return 0 as u64
+    return (value + (PAGE_BYTES - (1 as u64))) & (maximum_u64() ^ (PAGE_BYTES - (1 as u64)))
+
+pub fn initialize() -> int:
+    if load32(BOOTINFO) != BOOTINFO_MAGIC:
+        return 1
+    if load32(BOOTINFO + (12 as usize)) != ENTRY_BYTES:
+        return 2
+    let count: usize = load32(BOOTINFO + (8 as usize)) as usize
+    if count == (0 as usize):
+        return 3
+    if count > MAX_ENTRIES:
+        return 4
+    let word: usize = 0 as usize
+    while word < BITMAP_WORDS:
+        store64(ALLOCATED_BITMAP + (word * (8 as usize)), maximum_u64())
+        store64(MANAGED_BITMAP + (word * (8 as usize)), 0 as u64)
+        word = word + (1 as usize)
+    FREE_PAGES = 0 as u64
+    USABLE_REGIONS = 0 as u64
+    let index: usize = 0 as usize
+    while index < count:
+        let entry: usize = BOOTINFO + (16 as usize) + (index * (24 as usize))
+        let base: u64 = load64(entry)
+        let length: u64 = load64(entry + (8 as usize))
+        let kind: u32 = load32(entry + (16 as usize))
+        if kind == (1 as u32):
+            if length != (0 as u64):
+                if length <= (maximum_u64() - base):
+                    let end: u64 = base + length
+                    let start: u64 = align_up_page(base)
+                    if start < MINIMUM:
+                        start = MINIMUM
+                    if end > LIMIT:
+                        end = LIMIT
+                    end = end & (maximum_u64() ^ (PAGE_BYTES - (1 as u64)))
+                    if start < end:
+                        USABLE_REGIONS = USABLE_REGIONS + (1 as u64)
+                        let address: u64 = start
+                        while address < end:
+                            let page: u64 = address >> (12 as u64)
+                            set_bit(MANAGED_BITMAP, page)
+                            if is_set(ALLOCATED_BITMAP, page):
+                                clear_bit(ALLOCATED_BITMAP, page)
+                                FREE_PAGES = FREE_PAGES + (1 as u64)
+                            address = address + PAGE_BYTES
+        index = index + (1 as usize)
+    if USABLE_REGIONS == (0 as u64):
+        return 5
+    if FREE_PAGES == (0 as u64):
+        return 6
+    return 0
+
+pub fn allocate() -> u64:
+    let page: u64 = FIRST_PAGE
+    while page < PAGE_LIMIT:
+        if is_set(MANAGED_BITMAP, page):
+            if is_set(ALLOCATED_BITMAP, page) == false:
+                set_bit(ALLOCATED_BITMAP, page)
+                FREE_PAGES = FREE_PAGES - (1 as u64)
+                let address: u64 = page << (12 as u64)
+                let offset: usize = 0 as usize
+                while offset < (4096 as usize):
+                    store64((address as usize) + offset, 0 as u64)
+                    offset = offset + (8 as usize)
+                return address
+        page = page + (1 as u64)
+    return 0 as u64
+
+pub fn release(address: u64) -> bool:
+    if (address & (PAGE_BYTES - (1 as u64))) != (0 as u64):
+        return false
+    if address < MINIMUM:
+        return false
+    if address >= LIMIT:
+        return false
+    let page: u64 = address >> (12 as u64)
+    if is_set(MANAGED_BITMAP, page) == false:
+        return false
+    if is_set(ALLOCATED_BITMAP, page) == false:
+        return false
+    clear_bit(ALLOCATED_BITMAP, page)
+    FREE_PAGES = FREE_PAGES + (1 as u64)
+    return true
+
+pub fn selftest() -> bool:
+    let before: u64 = FREE_PAGES
+    let first: u64 = allocate()
+    let second: u64 = allocate()
+    if first == (0 as u64):
+        return false
+    if second == (0 as u64):
+        return false
+    if first == second:
+        return false
+    native.volatile_store64((first as usize) as ptr[u64], 0x1122334455667788 as u64)
+    native.volatile_store64((second as usize) as ptr[u64], ((0x88776655 as u64) << (32 as u64)) | (0x44332211 as u64))
+    if release(first) == false:
+        return false
+    let reused: u64 = allocate()
+    if reused != first:
+        return false
+    if native.volatile_load64((reused as usize) as ptr[u64]) != (0 as u64):
+        return false
+    if release(reused) == false:
+        return false
+    if release(second) == false:
+        return false
+    if release(second):
+        return false
+    return FREE_PAGES == before
+
+pub fn free_pages() -> u64:
+    return FREE_PAGES
+
+pub fn usable_regions() -> u64:
+    return USABLE_REGIONS

@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec check-portable <source.dby>\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>";
+pub const USAGE: &str = "usage:\n  dbytec build <source.dby> --target i686-dbyte-none --emit elf|bin|obj|staticlib -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target i686-dbyte-user --emit elf|obj -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-none --emit obj|staticlib|elf|bin -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-linux --emit obj|staticlib|elf -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec build <source.dby> --target x86_64-dbyte-windows --emit obj|staticlib|exe -o <output> [--opt-level 0|1] [--dump-ir] [--dump-native-mir] [--dump-machine-code]\n  dbytec assemble <source.dbtasm> --target x86_64-dbyte-none -o <object.o>\n  dbytec check-portable <source.dby>\n  dbytec pack-user NAME=ELF... -o <programs.dbup>\n  dbytec link --target <triple> <object.o|archive.a>... -o <output>\n  dbytec link --target x86_64-dbyte-none --flat-load-address <address> --flat-max-size <bytes> [--flat-section-alignment <bytes>] [--entry <symbol>] <object.o|archive.a>... -o <output>";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -134,12 +134,23 @@ struct LinkOptions {
     inputs: Vec<PathBuf>,
     output: PathBuf,
     target: Option<crate::target::TargetSpec>,
+    flat_load_address: Option<u64>,
+    flat_max_size: Option<u64>,
+    flat_section_alignment: Option<u64>,
+    entry: Option<String>,
 }
 
 #[derive(Debug)]
 struct PackUserOptions {
     inputs: Vec<(String, PathBuf)>,
     output: PathBuf,
+}
+
+#[derive(Debug)]
+struct AssembleOptions {
+    source: PathBuf,
+    output: PathBuf,
+    target: crate::target::TargetSpec,
 }
 
 #[derive(Debug)]
@@ -155,10 +166,23 @@ struct BuildProduct {
 pub fn run_args(args: &[String]) -> Result<(), CliError> {
     match args.first().map(String::as_str) {
         Some("link") => run_link_args(args),
+        Some("assemble") => run_assemble_args(args),
         Some("check-portable") => run_check_portable_args(args),
         Some("pack-user") => run_pack_user_args(args),
         _ => run_build_args(args),
     }
+}
+
+pub fn run_assemble_args(args: &[String]) -> Result<(), CliError> {
+    let options = parse_assemble_args(args)?;
+    reject_source_as_output(&options.source, &options.output)?;
+    let source = fs::read_to_string(&options.source).map_err(|error| CliError::Input {
+        path: options.source.clone(),
+        kind: error.kind(),
+    })?;
+    let object = crate::dbtasm64::assemble(&source, options.target)
+        .map_err(|failure| CliError::compile(&options.source, failure.0))?;
+    replace_output_transactionally(&options.output, &object.bytes)
 }
 
 pub fn run_check_portable_args(args: &[String]) -> Result<(), CliError> {
@@ -229,11 +253,24 @@ pub fn run_build_args(args: &[String]) -> Result<(), CliError> {
     )?;
 
     write_requested_dumps(&product, &options)?;
-    replace_output_transactionally(&options.output, &product.bytes)
+    if options.target == BuildTarget::X86_64Linux && options.emit == EmitKind::Elf {
+        replace_executable_output_transactionally(&options.output, &product.bytes)
+    } else {
+        replace_output_transactionally(&options.output, &product.bytes)
+    }
 }
 
 pub fn run_link_args(args: &[String]) -> Result<(), CliError> {
     let options = parse_link_args(args)?;
+    if options.flat_load_address.is_none()
+        && (options.flat_max_size.is_some()
+            || options.flat_section_alignment.is_some()
+            || options.entry.is_some())
+    {
+        return Err(CliError::argument(
+            "flat-link options require --flat-load-address",
+        ));
+    }
     let mut raw_inputs = Vec::with_capacity(options.inputs.len());
     for path in &options.inputs {
         reject_source_as_output(path, &options.output)?;
@@ -250,6 +287,30 @@ pub fn run_link_args(args: &[String]) -> Result<(), CliError> {
                 .into_iter()
                 .map(|(name, bytes)| crate::linker64::LinkInput::new(name, bytes))
                 .collect();
+            if let Some(load_address) = options.flat_load_address {
+                if target != crate::target::X86_64_NONE {
+                    return Err(CliError::argument(
+                        "flat linking requires --target x86_64-dbyte-none",
+                    ));
+                }
+                let maximum_size = options
+                    .flat_max_size
+                    .ok_or_else(|| CliError::argument("flat linking requires --flat-max-size"))?;
+                let image = crate::linker64::link_flat_objects(
+                    &inputs,
+                    options.entry.as_deref().unwrap_or("kernel_main"),
+                    load_address,
+                    options.flat_section_alignment.unwrap_or(16),
+                    maximum_size,
+                )
+                .map_err(|error| CliError::link(error.0))?;
+                return replace_output_transactionally(&options.output, &image.bytes);
+            }
+            if options.flat_max_size.is_some() {
+                return Err(CliError::argument(
+                    "--flat-max-size requires --flat-load-address",
+                ));
+            }
             if target == crate::target::X86_64_WINDOWS {
                 let image = crate::modern_native::link_windows_object_bytes(&inputs)
                     .map_err(|error| CliError::link(error.0))?;
@@ -259,6 +320,9 @@ pub fn run_link_args(args: &[String]) -> Result<(), CliError> {
             let image = crate::modern_native::link_object_bytes(&inputs, target)
                 .map_err(|error| CliError::link(error.0))?;
             crate::elf64::inspect(&image.bytes).map_err(|error| CliError::link(error.0))?;
+            if target == crate::target::X86_64_LINUX {
+                return replace_executable_output_transactionally(&options.output, &image.bytes);
+            }
             return replace_output_transactionally(&options.output, &image.bytes);
         }
     }
@@ -691,6 +755,10 @@ fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
     let mut inputs = Vec::new();
     let mut output: Option<PathBuf> = None;
     let mut target = None;
+    let mut flat_load_address = None;
+    let mut flat_max_size = None;
+    let mut flat_section_alignment = None;
+    let mut entry = None;
     let mut index = 0;
     while index < args.len() {
         let argument = args[index].as_str();
@@ -708,6 +776,31 @@ fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
                 target = Some(crate::target::parse_target(value).ok_or_else(|| {
                     CliError::argument(format!("unsupported link target '{value}'"))
                 })?);
+            }
+            "--flat-load-address" => {
+                reject_duplicate(flat_load_address.is_some(), "--flat-load-address")?;
+                flat_load_address = Some(parse_u64_option(
+                    take_option_value(args, &mut index, "--flat-load-address")?,
+                    "--flat-load-address",
+                )?);
+            }
+            "--flat-max-size" => {
+                reject_duplicate(flat_max_size.is_some(), "--flat-max-size")?;
+                flat_max_size = Some(parse_u64_option(
+                    take_option_value(args, &mut index, "--flat-max-size")?,
+                    "--flat-max-size",
+                )?);
+            }
+            "--flat-section-alignment" => {
+                reject_duplicate(flat_section_alignment.is_some(), "--flat-section-alignment")?;
+                flat_section_alignment = Some(parse_u64_option(
+                    take_option_value(args, &mut index, "--flat-section-alignment")?,
+                    "--flat-section-alignment",
+                )?);
+            }
+            "--entry" => {
+                reject_duplicate(entry.is_some(), "--entry")?;
+                entry = Some(take_option_value(args, &mut index, "--entry")?.to_owned());
             }
             "-o" | "--output" => {
                 reject_duplicate(output.is_some(), "-o/--output")?;
@@ -733,7 +826,76 @@ fn parse_link_args(args: &[String]) -> Result<LinkOptions, CliError> {
         inputs,
         output,
         target,
+        flat_load_address,
+        flat_max_size,
+        flat_section_alignment,
+        entry,
     })
+}
+
+fn parse_assemble_args(args: &[String]) -> Result<AssembleOptions, CliError> {
+    let args = match args.first().map(String::as_str) {
+        Some("assemble") => &args[1..],
+        _ => args,
+    };
+    let mut source = None;
+    let mut output = None;
+    let mut target = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_str();
+        match argument {
+            "--target" => {
+                reject_duplicate(target.is_some(), "--target")?;
+                let value = take_option_value(args, &mut index, "--target")?;
+                target = Some(crate::target::parse_target(value).ok_or_else(|| {
+                    CliError::argument(format!("unsupported assemble target '{value}'"))
+                })?);
+            }
+            "-o" | "--output" => {
+                reject_duplicate(output.is_some(), "-o/--output")?;
+                output = Some(PathBuf::from(take_option_value(
+                    args, &mut index, argument,
+                )?));
+            }
+            _ if argument.starts_with('-') => {
+                return Err(CliError::argument(format!("unknown option '{argument}'")));
+            }
+            _ => {
+                if source.replace(PathBuf::from(argument)).is_some() {
+                    return Err(CliError::argument(
+                        "assemble accepts exactly one source input",
+                    ));
+                }
+            }
+        }
+        index += 1;
+    }
+    let source = source.ok_or_else(|| CliError::argument("assemble requires a source input"))?;
+    let output = output.ok_or_else(|| CliError::argument("missing required -o/--output"))?;
+    let target = target.ok_or_else(|| CliError::argument("assemble requires --target"))?;
+    if target != crate::target::X86_64_NONE {
+        return Err(CliError::argument(
+            "assemble currently supports only x86_64-dbyte-none",
+        ));
+    }
+    Ok(AssembleOptions {
+        source,
+        output,
+        target,
+    })
+}
+
+fn parse_u64_option(value: &str, option: &str) -> Result<u64, CliError> {
+    let parsed = if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        u64::from_str_radix(hex, 16)
+    } else {
+        value.parse()
+    };
+    parsed.map_err(|_| CliError::argument(format!("{option} requires a u64 value")))
 }
 
 fn parse_pack_user_args(args: &[String]) -> Result<PackUserOptions, CliError> {
@@ -1064,8 +1226,30 @@ fn write_dump(output: &mut impl Write, dump: &str) -> Result<(), CliError> {
 }
 
 fn replace_output_transactionally(output: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    replace_output_transactionally_with_mode(output, bytes, false)
+}
+
+fn replace_executable_output_transactionally(output: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    replace_output_transactionally_with_mode(output, bytes, true)
+}
+
+fn replace_output_transactionally_with_mode(
+    output: &Path,
+    bytes: &[u8],
+    executable: bool,
+) -> Result<(), CliError> {
     let (mut file, mut temporary) = create_temporary_sibling(output)?;
-    let write_result = file.write_all(bytes).and_then(|()| file.sync_all());
+    let write_result = (|| -> io::Result<()> {
+        file.write_all(bytes)?;
+        #[cfg(unix)]
+        if executable {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o755))?;
+        }
+        #[cfg(not(unix))]
+        let _ = executable;
+        file.sync_all()
+    })();
     drop(file);
     if let Err(error) = write_result {
         return Err(CliError::output(
@@ -1515,6 +1699,60 @@ mod tests {
     }
 
     #[test]
+    fn parses_explicit_flat_machine_payload_contract() {
+        let parsed = parse_link_args(&args(&[
+            "link",
+            "boundary.o",
+            "body.o",
+            "--target",
+            "x86_64-dbyte-none",
+            "--flat-load-address",
+            "0x10000",
+            "--flat-max-size",
+            "129024",
+            "--flat-section-alignment",
+            "16",
+            "--entry",
+            "hoppys_entry",
+            "-o",
+            "kernel.bin",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.target, Some(crate::target::X86_64_NONE));
+        assert_eq!(parsed.flat_load_address, Some(0x1_0000));
+        assert_eq!(parsed.flat_max_size, Some(252 * 512));
+        assert_eq!(parsed.flat_section_alignment, Some(16));
+        assert_eq!(parsed.entry.as_deref(), Some("hoppys_entry"));
+    }
+
+    #[test]
+    fn parses_constrained_dbtasm64_command() {
+        let parsed = parse_assemble_args(&args(&[
+            "assemble",
+            "entry.dbtasm",
+            "--target",
+            "x86_64-dbyte-none",
+            "-o",
+            "entry.o",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.source, PathBuf::from("entry.dbtasm"));
+        assert_eq!(parsed.output, PathBuf::from("entry.o"));
+        assert_eq!(parsed.target, crate::target::X86_64_NONE);
+        assert!(parse_assemble_args(&args(&[
+            "assemble",
+            "entry.dbtasm",
+            "--target",
+            "x86_64-dbyte-linux",
+            "-o",
+            "entry.o",
+        ]))
+        .unwrap_err()
+        .to_string()
+        .contains("only x86_64-dbyte-none"));
+    }
+
+    #[test]
     fn rejects_invalid_target() {
         let error = parse_build_args(&args(&[
             "kernel.dby",
@@ -1919,6 +2157,75 @@ mod tests {
             "pub fn bad() -> float:\n    return 1.5\n",
         );
         assert!(legacy.contains("E_PORTABLE_LEGACY_FLOAT"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_elf_build_output_is_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_dir = TestDirectory::new("linux-elf-executable");
+        let source = test_dir.path.join("main.dby");
+        let output = test_dir.path.join("main.elf");
+        fs::write(&source, "pub fn main() -> i32:\n    return 42\n")
+            .expect("write Linux executable fixture");
+
+        run_build_args(&[
+            source.to_string_lossy().into_owned(),
+            "--target".to_owned(),
+            "x86_64-dbyte-linux".to_owned(),
+            "--emit".to_owned(),
+            "elf".to_owned(),
+            "-o".to_owned(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect("build Linux ELF");
+
+        let mode = fs::metadata(&output)
+            .expect("read Linux ELF metadata")
+            .permissions()
+            .mode();
+        assert_ne!(mode & 0o111, 0, "Linux ELF output must be executable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_link_output_is_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let test_dir = TestDirectory::new("linux-link-executable");
+        let source = test_dir.path.join("main.dby");
+        let object = test_dir.path.join("main.o");
+        let output = test_dir.path.join("main.elf");
+        fs::write(&source, "pub fn main() -> i32:\n    return 42\n").expect("write fixture");
+        run_build_args(&[
+            source.to_string_lossy().into_owned(),
+            "--target".into(),
+            "x86_64-dbyte-linux".into(),
+            "--emit".into(),
+            "obj".into(),
+            "-o".into(),
+            object.to_string_lossy().into_owned(),
+        ])
+        .expect("emit Linux object");
+        run_link_args(&[
+            "link".into(),
+            "--target".into(),
+            "x86_64-dbyte-linux".into(),
+            object.to_string_lossy().into_owned(),
+            "-o".into(),
+            output.to_string_lossy().into_owned(),
+        ])
+        .expect("link Linux ELF");
+        let mode = fs::metadata(&output)
+            .expect("read linked ELF metadata")
+            .permissions()
+            .mode();
+        assert_ne!(
+            mode & 0o111,
+            0,
+            "linked Linux ELF output must be executable"
+        );
     }
 
     #[test]

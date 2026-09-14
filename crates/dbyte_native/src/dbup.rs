@@ -131,9 +131,9 @@ pub fn sha256(input: &[u8]) -> [u8; 32] {
     }
     padded.extend_from_slice(&bit_len.to_be_bytes());
     let mut state = INITIAL;
-    for chunk in padded.chunks_exact(64) {
+    for chunk in padded.as_chunks::<64>().0 {
         let mut w = [0u32; 64];
-        for (index, word) in chunk.chunks_exact(4).enumerate() {
+        for (index, word) in chunk.as_chunks::<4>().0.iter().enumerate() {
             w[index] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
         }
         for index in 16..64 {
@@ -174,7 +174,7 @@ pub fn sha256(input: &[u8]) -> [u8; 32] {
         }
     }
     let mut output = [0u8; 32];
-    for (chunk, word) in output.chunks_exact_mut(4).zip(state) {
+    for (chunk, word) in output.as_chunks_mut::<4>().0.iter_mut().zip(state) {
         chunk.copy_from_slice(&word.to_be_bytes());
     }
     output

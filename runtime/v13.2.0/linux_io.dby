@@ -1,0 +1,64 @@
+const PATH_CAPACITY: usize = 4096 as usize
+
+fn linux_mmap_raw(size: usize) -> i64:
+    return linux.mmap(0 as usize, size, 3 as i32, 0x22 as i32, -1 as i32, 0 as usize)
+
+fn linux_munmap_raw(address: usize, size: usize) -> i64:
+    return linux.munmap(address, size)
+
+fn linux_openat_raw(directory: i32, path: ptr[u8], flags: i32, mode: u32) -> i64:
+    return linux.openat(directory, path, flags, mode)
+
+fn linux_read_raw(fd: i32, destination: ptr[u8], length: usize) -> i64:
+    return linux.read(fd, destination, length)
+
+fn linux_write_raw(fd: i32, source: str, length: usize) -> i64:
+    return linux.write(fd, source, length)
+
+fn linux_close_raw(fd: i32) -> i64:
+    return linux.close(fd)
+
+fn linux_clock_gettime_raw(clock: i32, destination: ptr[u8]) -> i64:
+    return linux.clock_gettime(clock, destination)
+
+fn open_path(path: StringView, flags: i32, mode: u32) -> i64:
+    let length: usize = len(path) as usize
+    if length >= PATH_CAPACITY:
+        return -36 as i64
+    let address: i64 = linux_mmap_raw(PATH_CAPACITY)
+    if address < (0 as i64):
+        return address
+    let buffer: ptr[u8] = address as usize as ptr[u8]
+    let index: usize = 0 as usize
+    while index < length:
+        let value: u8 = path[index] as u8
+        if value == (0 as u8):
+            linux_munmap_raw(address as usize, PATH_CAPACITY)
+            return -22 as i64
+        buffer[index] = value
+        index = index + (1 as usize)
+    buffer[length] = 0 as u8
+    let result: i64 = linux_openat_raw(-100 as i32, buffer, flags, mode)
+    if linux_munmap_raw(address as usize, PATH_CAPACITY) != (0 as i64):
+        if result >= (0 as i64):
+            linux_close_raw(result as i32)
+        return -5 as i64
+    return result
+
+pub fn open_read(path: StringView) -> i64:
+    return open_path(path, 0 as i32, 0 as u32)
+
+pub fn open_create_truncate(path: StringView) -> i64:
+    return open_path(path, 578 as i32, 384 as u32)
+
+pub fn read(fd: i32, destination: ptr[u8], length: usize) -> i64:
+    return linux_read_raw(fd, destination, length)
+
+pub fn write(fd: i32, source: str, length: usize) -> i64:
+    return linux_write_raw(fd, source, length)
+
+pub fn close(fd: i32) -> i64:
+    return linux_close_raw(fd)
+
+pub fn clock_gettime(clock: i32, destination: ptr[u8]) -> i64:
+    return linux_clock_gettime_raw(clock, destination)

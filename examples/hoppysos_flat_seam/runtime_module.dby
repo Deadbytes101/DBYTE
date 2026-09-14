@@ -1,0 +1,410 @@
+import "runtime_host_abi.dby" as host_abi
+
+const ENTRY_RESULT: u64 = 0x444259525436344f as u64
+const PAGE_PATTERN: u64 = 0x3154534f48425444 as u64
+const USER_BUFFER: usize = 0x01020000 as usize
+const USER_CAPACITY: usize = 4096 as usize
+const USER_TEXT: usize = 0x00400000 as usize
+const USER_IMAGE_END: usize = 0x00600000 as usize
+const PAGE: usize = 4096 as usize
+const ADDRESS_MASK: u64 = 0x000ffffffffff000 as u64
+const PRESENT: u64 = 1 as u64
+const WRITE: u64 = 2 as u64
+const USER: u64 = 4 as u64
+const IDT_BASE: usize = 0x00006000 as usize
+const KERNEL_CODE_SELECTOR: u16 = 0x18 as u16
+
+pub struct InterruptFrame64:
+    rip: u64
+    cs: u64
+    rflags: u64
+    rsp: u64
+    ss: u64
+
+static mut USER_NAME: array[u8, 8]
+static mut USER_BYTES: usize
+static mut USER_ENTRY: usize
+static mut SPACE_FRAMES: array[u64, 8]
+static mut SPACE_FRAME_COUNT: usize
+static mut ACTIVE_HOST: usize
+
+fn read16(address: usize) -> u16:
+    return native.volatile_load16(address as ptr[u16])
+
+fn read32(address: usize) -> u32:
+    return native.volatile_load32(address as ptr[u32])
+
+fn read64(address: usize) -> u64:
+    return native.volatile_load64(address as ptr[u64])
+
+fn range_within(offset: usize, length: usize, total: usize) -> bool:
+    if offset > total:
+        return false
+    return length <= (total - offset)
+
+fn validate_user_elf(base: usize, length: usize) -> bool:
+    if length < (64 as usize):
+        return false
+    if read32(base) != (0x464c457f as u32):
+        return false
+    if native.volatile_load8((base + (4 as usize)) as ptr[u8]) != (2 as u8):
+        return false
+    if native.volatile_load8((base + (5 as usize)) as ptr[u8]) != (1 as u8):
+        return false
+    if native.volatile_load8((base + (6 as usize)) as ptr[u8]) != (1 as u8):
+        return false
+    if read16(base + (16 as usize)) != (2 as u16):
+        return false
+    if read16(base + (18 as usize)) != (62 as u16):
+        return false
+    if read32(base + (20 as usize)) != (1 as u32):
+        return false
+    if read16(base + (52 as usize)) != (64 as u16):
+        return false
+    if read16(base + (54 as usize)) != (56 as u16):
+        return false
+    let entry: usize = read64(base + (24 as usize)) as usize
+    if entry < USER_TEXT:
+        return false
+    if entry >= USER_IMAGE_END:
+        return false
+    let phoff: usize = read64(base + (32 as usize)) as usize
+    let phnum: usize = read16(base + (56 as usize)) as usize
+    if phnum == (0 as usize):
+        return false
+    if phnum > (16 as usize):
+        return false
+    let phbytes: usize = phnum * (56 as usize)
+    if range_within(phoff, phbytes, length) == false:
+        return false
+    let executable_entry: bool = false
+    let index: usize = 0 as usize
+    while index < phnum:
+        let header: usize = base + phoff + (index * (56 as usize))
+        if read32(header) == (1 as u32):
+            let flags: u32 = read32(header + (4 as usize))
+            if (flags & (3 as u32)) == (3 as u32):
+                return false
+            let file_offset: usize = read64(header + (8 as usize)) as usize
+            let virtual_address: usize = read64(header + (16 as usize)) as usize
+            let file_size: usize = read64(header + (32 as usize)) as usize
+            let memory_size: usize = read64(header + (40 as usize)) as usize
+            let alignment: usize = read64(header + (48 as usize)) as usize
+            if file_size > memory_size:
+                return false
+            if range_within(file_offset, file_size, length) == false:
+                return false
+            if alignment != (4096 as usize):
+                return false
+            if (file_offset & (4095 as usize)) != (virtual_address & (4095 as usize)):
+                return false
+            if virtual_address < USER_TEXT:
+                return false
+            if memory_size > (USER_IMAGE_END - virtual_address):
+                return false
+            if (flags & (1 as u32)) != (0 as u32):
+                if entry >= virtual_address:
+                    if entry < (virtual_address + memory_size):
+                        executable_entry = true
+        index = index + (1 as usize)
+    return executable_entry
+
+fn load_user_elf(host: ptr[host_abi.HostServicesV2]) -> bool:
+    USER_NAME[0] = 0x55 as u8
+    USER_NAME[1] = 0x53 as u8
+    USER_NAME[2] = 0x45 as u8
+    USER_NAME[3] = 0x52 as u8
+    USER_NAME[4] = 0x2e as u8
+    USER_NAME[5] = 0x45 as u8
+    USER_NAME[6] = 0x4c as u8
+    USER_NAME[7] = 0x46 as u8
+    USER_BYTES = 0 as usize
+    let read_file = (*host).read_file
+    if read_file(&USER_NAME[0], USER_BUFFER as ptr[u8], USER_CAPACITY, &USER_BYTES) == false:
+        return false
+    return validate_user_elf(USER_BUFFER, USER_BYTES)
+
+fn clear_page(address: u64) -> unit:
+    let offset: usize = 0 as usize
+    while offset < PAGE:
+        native.volatile_store64(((address as usize) + offset) as ptr[u64], 0 as u64)
+        offset = offset + (8 as usize)
+    return unit
+
+fn release_space(host: ptr[host_abi.HostServicesV2]) -> bool:
+    let release = (*host).free_page
+    let ok: bool = true
+    while SPACE_FRAME_COUNT > (0 as usize):
+        SPACE_FRAME_COUNT = SPACE_FRAME_COUNT - (1 as usize)
+        let frame: u64 = SPACE_FRAMES[SPACE_FRAME_COUNT]
+        SPACE_FRAMES[SPACE_FRAME_COUNT] = 0 as u64
+        if frame != (0 as u64):
+            if release(frame) == false:
+                ok = false
+    return ok
+
+fn allocate_space_frame(host: ptr[host_abi.HostServicesV2]) -> u64:
+    if SPACE_FRAME_COUNT >= (8 as usize):
+        return 0 as u64
+    let allocate = (*host).alloc_page
+    let frame: u64 = allocate()
+    if frame == (0 as u64):
+        return 0 as u64
+    clear_page(frame)
+    SPACE_FRAMES[SPACE_FRAME_COUNT] = frame
+    SPACE_FRAME_COUNT = SPACE_FRAME_COUNT + (1 as usize)
+    return frame
+
+fn copy_page(destination: u64, source: u64) -> unit:
+    let index: usize = 0 as usize
+    while index < (512 as usize):
+        let value: u64 = native.volatile_load64(((source as usize) + (index * (8 as usize))) as ptr[u64])
+        native.volatile_store64(((destination as usize) + (index * (8 as usize))) as ptr[u64], value)
+        index = index + (1 as usize)
+    return unit
+
+fn set_fault_gate(vector: usize, address: usize) -> bool:
+    if address == (0 as usize):
+        return false
+    let gate: usize = IDT_BASE + (vector * (16 as usize))
+    let offset: u64 = address as u64
+    native.volatile_store16(gate as ptr[u16], (offset & (0xffff as u64)) as u16)
+    native.volatile_store16((gate + (2 as usize)) as ptr[u16], KERNEL_CODE_SELECTOR)
+    native.volatile_store8((gate + (4 as usize)) as ptr[u8], 0 as u8)
+    native.volatile_store8((gate + (5 as usize)) as ptr[u8], 0x8e as u8)
+    native.volatile_store16((gate + (6 as usize)) as ptr[u16], ((offset >> (16 as u64)) & (0xffff as u64)) as u16)
+    native.volatile_store32((gate + (8 as usize)) as ptr[u32], ((offset >> (32 as u64)) & (0xffffffff as u64)) as u32)
+    native.volatile_store32((gate + (12 as usize)) as ptr[u32], 0 as u32)
+    return true
+
+fn install_fault_gates() -> bool:
+    native.cpu_cli()
+    if set_fault_gate(6 as usize, interrupt_address(6, user_invalid_opcode)) == false:
+        return false
+    if set_fault_gate(13 as usize, interrupt_address(13, user_general_protection)) == false:
+        return false
+    if set_fault_gate(14 as usize, interrupt_address(14, user_page_fault)) == false:
+        return false
+    return true
+
+fn abort_fault(reason: u32, address: usize, error_code: u64) -> unit:
+    if ACTIVE_HOST == (0 as usize):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    let host: ptr[host_abi.HostServicesV2] = ACTIVE_HOST as ptr[host_abi.HostServicesV2]
+    let abort_user = (*host).abort_user
+    abort_user(reason, address, error_code)
+    native.cpu_cli()
+    while true:
+        native.cpu_hlt()
+    return unit
+
+pub interrupt(no_error_code, cpl3_transition) fn user_invalid_opcode(frame: ptr[InterruptFrame64]):
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    abort_fault(6 as u32, (*frame).rip as usize, 0 as u64)
+    return
+
+pub interrupt(error_code, cpl3_transition) fn user_general_protection(frame: ptr[InterruptFrame64], error_code: u64):
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    abort_fault(13 as u32, (*frame).rip as usize, error_code)
+    return
+
+pub interrupt(error_code, cpl3_transition) fn user_page_fault(frame: ptr[InterruptFrame64], error_code: u64):
+    if (((*frame).cs as u64) & (3 as u64)) != (3 as u64):
+        native.cpu_cli()
+        while true:
+            native.cpu_hlt()
+    abort_fault(14 as u32, native.cpu_read_cr2(), error_code)
+    return
+
+fn write_probe(code_page: u64, mode: u32) -> bool:
+    let index: usize = 0 as usize
+    while index < (16 as usize):
+        native.volatile_store8(((code_page as usize) + index) as ptr[u8], 0x90 as u8)
+        index = index + (1 as usize)
+    if mode == (6 as u32):
+        native.volatile_store8((code_page as usize) as ptr[u8], 0x0f as u8)
+        native.volatile_store8(((code_page as usize) + (1 as usize)) as ptr[u8], 0x0b as u8)
+        return true
+    if mode == (13 as u32):
+        native.volatile_store8((code_page as usize) as ptr[u8], 0xfa as u8)
+        native.volatile_store8(((code_page as usize) + (1 as usize)) as ptr[u8], 0x0f as u8)
+        native.volatile_store8(((code_page as usize) + (2 as usize)) as ptr[u8], 0x0b as u8)
+        return true
+    if mode == (14 as u32):
+        native.volatile_store8((code_page as usize) as ptr[u8], 0x48 as u8)
+        native.volatile_store8(((code_page as usize) + (1 as usize)) as ptr[u8], 0xb8 as u8)
+        native.volatile_store64(((code_page as usize) + (2 as usize)) as ptr[u64], 0x0000000000900000 as u64)
+        native.volatile_store8(((code_page as usize) + (10 as usize)) as ptr[u8], 0x48 as u8)
+        native.volatile_store8(((code_page as usize) + (11 as usize)) as ptr[u8], 0x8b as u8)
+        native.volatile_store8(((code_page as usize) + (12 as usize)) as ptr[u8], 0x00 as u8)
+        native.volatile_store8(((code_page as usize) + (13 as usize)) as ptr[u8], 0x0f as u8)
+        native.volatile_store8(((code_page as usize) + (14 as usize)) as ptr[u8], 0x0b as u8)
+        return true
+    return false
+
+fn debug_line(text: str, length: usize) -> unit:
+    let index: usize = 0 as usize
+    while index < length:
+        native.io_out8(0x00e9 as u16, text[index] as u8)
+        index = index + (1 as usize)
+    native.io_out8(0x00e9 as u16, 10 as u8)
+    return unit
+
+fn private_space_case(host: ptr[host_abi.HostServicesV2], mode: u32) -> bool:
+    SPACE_FRAME_COUNT = 0 as usize
+    let original_cr3: usize = native.cpu_read_cr3() & ((0 as usize) - PAGE)
+    if original_cr3 == (0 as usize):
+        return false
+    let source_pdpt: u64 = native.volatile_load64(original_cr3 as ptr[u64]) & ADDRESS_MASK
+    if source_pdpt == (0 as u64):
+        return false
+    let source_pd: u64 = native.volatile_load64((source_pdpt as usize) as ptr[u64]) & ADDRESS_MASK
+    if source_pd == (0 as u64):
+        return false
+    let pml4: u64 = allocate_space_frame(host)
+    let pdpt: u64 = allocate_space_frame(host)
+    let pd: u64 = allocate_space_frame(host)
+    let image_pt: u64 = allocate_space_frame(host)
+    let stack_pt: u64 = allocate_space_frame(host)
+    let code_page: u64 = allocate_space_frame(host)
+    let data_page: u64 = allocate_space_frame(host)
+    let stack_page: u64 = allocate_space_frame(host)
+    if SPACE_FRAME_COUNT != (8 as usize):
+        release_space(host)
+        return false
+    copy_page(pml4, original_cr3 as u64)
+    copy_page(pdpt, source_pdpt)
+    copy_page(pd, source_pd)
+    native.volatile_store64((pml4 as usize) as ptr[u64], pdpt | PRESENT | WRITE | USER)
+    native.volatile_store64((pdpt as usize) as ptr[u64], pd | PRESENT | WRITE | USER)
+    native.volatile_store64(((pd as usize) + (2 as usize) * (8 as usize)) as ptr[u64], image_pt | PRESENT | WRITE | USER)
+    native.volatile_store64(((pd as usize) + (3 as usize) * (8 as usize)) as ptr[u64], stack_pt | PRESENT | WRITE | USER)
+    native.volatile_store64(((pd as usize) + (4 as usize) * (8 as usize)) as ptr[u64], 0 as u64)
+    native.volatile_store64((image_pt as usize) as ptr[u64], code_page | PRESENT | USER)
+    native.volatile_store64(((image_pt as usize) + (8 as usize)) as ptr[u64], data_page | PRESENT | WRITE | USER)
+    native.volatile_store64(((stack_pt as usize) + (511 as usize) * (8 as usize)) as ptr[u64], stack_page | PRESENT | WRITE | USER)
+    USER_ENTRY = USER_TEXT
+    if mode == (0 as u32):
+        USER_ENTRY = read64(USER_BUFFER + (24 as usize)) as usize
+        let phoff: usize = read64(USER_BUFFER + (32 as usize)) as usize
+        let phnum: usize = read16(USER_BUFFER + (56 as usize)) as usize
+        let loaded_executable: bool = false
+        let header_index: usize = 0 as usize
+        while header_index < phnum:
+            let header: usize = USER_BUFFER + phoff + (header_index * (56 as usize))
+            if read32(header) == (1 as u32):
+                let flags: u32 = read32(header + (4 as usize))
+                if (flags & (1 as u32)) != (0 as u32):
+                    let file_offset: usize = read64(header + (8 as usize)) as usize
+                    let virtual_address: usize = read64(header + (16 as usize)) as usize
+                    let file_size: usize = read64(header + (32 as usize)) as usize
+                    let memory_size: usize = read64(header + (40 as usize)) as usize
+                    if virtual_address < USER_TEXT:
+                        release_space(host)
+                        return false
+                    let image_offset: usize = virtual_address - USER_TEXT
+                    let page_index: usize = image_offset / PAGE
+                    let page_offset: usize = image_offset & (PAGE - (1 as usize))
+                    if page_index > (1 as usize):
+                        release_space(host)
+                        return false
+                    if memory_size > (PAGE - page_offset):
+                        release_space(host)
+                        return false
+                    let destination: u64 = code_page
+                    if page_index == (1 as usize):
+                        destination = data_page
+                    let byte: usize = 0 as usize
+                    while byte < file_size:
+                        let value: u8 = native.volatile_load8((USER_BUFFER + file_offset + byte) as ptr[u8])
+                        native.volatile_store8(((destination as usize) + page_offset + byte) as ptr[u8], value)
+                        byte = byte + (1 as usize)
+                    loaded_executable = true
+            header_index = header_index + (1 as usize)
+        if loaded_executable == false:
+            release_space(host)
+            return false
+    else:
+        if write_probe(code_page, mode) == false:
+            release_space(host)
+            return false
+    if (native.volatile_load64((pml4 as usize) as ptr[u64]) & ADDRESS_MASK) != pdpt:
+        release_space(host)
+        return false
+    if (native.volatile_load64((image_pt as usize) as ptr[u64]) & ADDRESS_MASK) != code_page:
+        release_space(host)
+        return false
+    let entry_offset: usize = USER_ENTRY - USER_TEXT
+    if entry_offset >= PAGE:
+        release_space(host)
+        return false
+    let enter_user = (*host).enter_user
+    let exit_code: i32 = enter_user(pml4 as usize, USER_ENTRY, 0x00800000 as usize, 1 as usize)
+    if exit_code != (mode as i32):
+        release_space(host)
+        return false
+    if (native.cpu_read_cr3() & ((0 as usize) - PAGE)) != original_cr3:
+        release_space(host)
+        return false
+    if release_space(host) == false:
+        return false
+    return SPACE_FRAME_COUNT == (0 as usize)
+
+fn private_space_selftest(host: ptr[host_abi.HostServicesV2]) -> bool:
+    ACTIVE_HOST = host as usize
+    if install_fault_gates() == false:
+        ACTIVE_HOST = 0 as usize
+        return false
+    if private_space_case(host, 0 as u32) == false:
+        ACTIVE_HOST = 0 as usize
+        return false
+    if private_space_case(host, 6 as u32) == false:
+        ACTIVE_HOST = 0 as usize
+        return false
+    debug_line("HOPPYSOS64:DBYRT64_FAULT_UD_OK", 30 as usize)
+    if private_space_case(host, 13 as u32) == false:
+        ACTIVE_HOST = 0 as usize
+        return false
+    debug_line("HOPPYSOS64:DBYRT64_FAULT_GP_OK", 30 as usize)
+    if private_space_case(host, 14 as u32) == false:
+        ACTIVE_HOST = 0 as usize
+        return false
+    debug_line("HOPPYSOS64:DBYRT64_FAULT_PF_OK", 30 as usize)
+    ACTIVE_HOST = 0 as usize
+    return true
+
+pub fn dbyrt64_entry(host_address: usize) -> u64:
+    if host_address == (0 as usize):
+        return 0 as u64
+    let host: ptr[host_abi.HostServicesV2] = host_address as ptr[host_abi.HostServicesV2]
+    if (*host).abi_version != (2 as u32):
+        return 0 as u64
+    if (*host).table_bytes < (48 as u32):
+        return 0 as u64
+    let allocate = (*host).alloc_page
+    let release = (*host).free_page
+    let page: u64 = allocate()
+    if page == (0 as u64):
+        return 0 as u64
+    native.volatile_store64((page as usize) as ptr[u64], PAGE_PATTERN)
+    if native.volatile_load64((page as usize) as ptr[u64]) != PAGE_PATTERN:
+        release(page)
+        return 0 as u64
+    if release(page) == false:
+        return 0 as u64
+    if load_user_elf(host) == false:
+        return 0 as u64
+    if private_space_selftest(host) == false:
+        return 0 as u64
+    return ENTRY_RESULT
+
+pub fn dbyrt64_abi_version() -> u32:
+    return 2 as u32

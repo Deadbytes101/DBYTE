@@ -960,7 +960,7 @@ pub fn parse_relocatable(bytes: &[u8]) -> Result<ObjectImage, Diagnostic> {
             SectionContents::Bytes(value) => value,
             SectionContents::Uninitialized(_) => unreachable!(),
         };
-        for entry in table.chunks_exact(REL_SIZE as usize) {
+        for entry in table.as_chunks::<{ REL_SIZE as usize }>().0 {
             if relocations.len() >= MAX_OBJECT_RELOCATIONS {
                 return Err(invalid_relocation("object relocation count exceeds bound"));
             }

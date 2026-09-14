@@ -234,7 +234,7 @@ pub fn parse_external_i386_object(bytes: &[u8]) -> Result<ObjectImage, Diagnosti
             ));
         }
         let rels = section_bytes(bytes, section)?;
-        for rel in rels.chunks_exact(REL_SIZE) {
+        for rel in rels.as_chunks::<REL_SIZE>().0 {
             if image.relocations.len() >= MAX_OBJECT_RELOCATIONS {
                 return Err(error("external relocation count exceeds supported bound"));
             }

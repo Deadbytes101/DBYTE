@@ -1,0 +1,4 @@
+import "import_value.dby" as imported
+
+pub fn main() -> i32:
+    return imported.answer()

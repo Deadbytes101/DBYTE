@@ -1,0 +1,51 @@
+{
+  "schema": "dbyte-v13.2-linux-host-corpus-v1",
+  "cases": [
+    {
+      "name": "portable-import",
+      "source": "examples/native_v13_2_linux_host/import_main.dby",
+      "kind": "linux-exit",
+      "expected_exit": 42
+    },
+    {
+      "name": "entry-args",
+      "source": "examples/native_v12_2_linux/entry_args.dby",
+      "kind": "linux-args",
+      "arguments": ["alpha", "beta"],
+      "expected_exit": 3
+    },
+    {
+      "name": "runtime-foundation",
+      "source": "examples/native_v12_2_linux/runtime_foundation.dby",
+      "kind": "linux-output",
+      "expected_exit": 0,
+      "expected_stdout": "DBYTE X86_64 LINUX\nELF64 ONLINE\nLINUX SYSCALL ONLINE\nALLOCATOR ONLINE\nDROP ONLINE\nARRAY ONLINE\nSTRING ONLINE\nC ABI ONLINE\nLINUX CHECK OK\n"
+    },
+    {
+      "name": "collections",
+      "source": "examples/native_v12_3_collections/linux.dby",
+      "kind": "linux-output",
+      "expected_exit": 0,
+      "expected_stdout": "DBYTE COLLECTIONS V12.3\nHASHMAP ONLINE\nHASHSET ONLINE\nDEQUE ONLINE\nQUEUE ONLINE\nBUFFER ONLINE\n6502 ARRAY BUFFER MATCH\nCOLLECTIONS CHECK OK\n"
+    },
+    {
+      "name": "explicit-float",
+      "source": "examples/native_v13_machine/explicit_float_native.dby",
+      "kind": "linux-exit",
+      "expected_exit": 42
+    },
+    {
+      "name": "file-io",
+      "source": "examples/native_v13_2_linux_host/file_io.dby",
+      "kind": "linux-file",
+      "expected_exit": 42,
+      "expected_file": "DBYTE LINUX FILE IO\n"
+    }
+  ],
+  "c_fixture": {
+    "dbyte": "examples/native_v13_machine/explicit_float_c_abi.dby",
+    "c": "examples/native_v13_machine/explicit_float_c_abi.c",
+    "expected_exit": 42
+  },
+  "dbtasm": "examples/native_v13_2_linux_host/dbtasm_probe.dbtasm"
+}

@@ -27,3 +27,14 @@ I686 `i64`/`u64` layout is eight bytes with four-byte alignment. Values are a
 little-endian low/high pair, return in `EDX:EAX`, and use deterministic
 compiler-owned helpers where a single i686 instruction cannot express the
 operation. No compiler-rt or host runtime is linked.
+
+## Current additive amendment (v13.1)
+
+The rejection of C floating-point classes above is the frozen v12.2 boundary,
+not the current toolchain boundary. Since v13.1, explicit `f32` and `f64`
+arguments and results use the target C ABI directly: SysV64 uses its XMM
+classification and Win64 uses positional `XMM0` through `XMM3`; scalar float
+results use `XMM0`. The canonical HIR retains `CallConvention::C`, and target
+legalization selects the ABI. No integer-register substitution, host runtime,
+LLVM, or backend fallback is permitted. Varargs and aggregate-by-value C calls
+remain unsupported.

@@ -1,0 +1,113 @@
+static mut TASK_A_PROGRESS: u32
+static mut TASK_B_PROGRESS: u32
+static mut TASK_SWITCHES: usize
+static mut TASK_TRACE: u32
+static mut SCHEDULER_RUNS: usize
+static mut NEXT_TASK: u32
+static mut SCHEDULER_READY: bool
+static mut IRQ0_TICKS: u64
+static mut PRIV_SYSCALL_COUNT: u64
+static mut PRIV_LAST_SYSCALL: u64
+
+pub fn dbyte_privilege_init64() -> unit:
+    PRIV_SYSCALL_COUNT = 0 as u64
+    PRIV_LAST_SYSCALL = 0 as u64
+    return unit
+
+pub fn dbyte_syscall_enter64(number: u64) -> bool:
+    PRIV_LAST_SYSCALL = number
+    PRIV_SYSCALL_COUNT = PRIV_SYSCALL_COUNT + (1 as u64)
+    if number != (1 as u64):
+        return false
+    return true
+
+pub fn dbyte_syscall_count64() -> u64:
+    return PRIV_SYSCALL_COUNT
+
+pub fn dbyte_syscall_last64() -> u64:
+    return PRIV_LAST_SYSCALL
+
+pub fn dbyte_irq0_init64() -> unit:
+    IRQ0_TICKS = 0 as u64
+    return unit
+
+pub fn dbyte_irq0_tick64() -> unit:
+    IRQ0_TICKS = IRQ0_TICKS + (1 as u64)
+    return unit
+
+pub fn dbyte_irq0_count64() -> u64:
+    return IRQ0_TICKS
+
+fn reset_state() -> unit:
+    TASK_A_PROGRESS = 0 as u32
+    TASK_B_PROGRESS = 0 as u32
+    TASK_SWITCHES = 0 as usize
+    TASK_TRACE = 0 as u32
+    SCHEDULER_RUNS = 0 as usize
+    NEXT_TASK = 0 as u32
+    return unit
+
+fn task_a_step() -> unit:
+    TASK_A_PROGRESS = TASK_A_PROGRESS + (1 as u32)
+    TASK_SWITCHES = TASK_SWITCHES + (1 as usize)
+    TASK_TRACE = (TASK_TRACE * (10 as u32)) + (1 as u32)
+    return unit
+
+fn task_b_step() -> unit:
+    TASK_B_PROGRESS = TASK_B_PROGRESS + (1 as u32)
+    TASK_SWITCHES = TASK_SWITCHES + (1 as usize)
+    TASK_TRACE = (TASK_TRACE * (10 as u32)) + (2 as u32)
+    return unit
+
+pub fn dbyte_scheduler_init64() -> bool:
+    reset_state()
+    SCHEDULER_READY = true
+    return true
+
+pub fn dbyte_scheduler_run_once64() -> bool:
+    if SCHEDULER_READY == false:
+        return false
+    SCHEDULER_RUNS = SCHEDULER_RUNS + (1 as usize)
+    let attempts: u32 = 0 as u32
+    while attempts < (2 as u32):
+        if NEXT_TASK == (0 as u32):
+            NEXT_TASK = 1 as u32
+            if TASK_A_PROGRESS < (3 as u32):
+                task_a_step()
+                return true
+        else:
+            NEXT_TASK = 0 as u32
+            if TASK_B_PROGRESS < (2 as u32):
+                task_b_step()
+                return true
+        attempts = attempts + (1 as u32)
+    return true
+
+pub fn dbyte_scheduler_run_count64() -> usize:
+    return SCHEDULER_RUNS
+
+pub fn dbyte_scheduler_switch_count64() -> usize:
+    return TASK_SWITCHES
+
+pub fn dbyte_scheduler_trace64() -> u32:
+    return TASK_TRACE
+
+pub fn dbyte_task_selftest64() -> bool:
+    if dbyte_scheduler_init64() == false:
+        return false
+    let run: usize = 0 as usize
+    while run < (5 as usize):
+        if dbyte_scheduler_run_once64() == false:
+            return false
+        run = run + (1 as usize)
+    if TASK_A_PROGRESS != (3 as u32):
+        return false
+    if TASK_B_PROGRESS != (2 as u32):
+        return false
+    if TASK_SWITCHES != (5 as usize):
+        return false
+    if SCHEDULER_RUNS != (5 as usize):
+        return false
+    if TASK_TRACE != (12121 as u32):
+        return false
+    return dbyte_scheduler_init64()

@@ -445,8 +445,10 @@ mod tests {
         );
         let header = &first.elf[MULTIBOOT_HEADER_OFFSET..MULTIBOOT_HEADER_OFFSET + 64];
         let checksum = header[..16]
-            .chunks_exact(4)
-            .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|word| u32::from_le_bytes(*word))
             .fold(0u32, u32::wrapping_add);
         assert_eq!(checksum, 0);
         assert_eq!(
