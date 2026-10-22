@@ -343,8 +343,8 @@ This repo includes the core GitHub community surface:
 - [Issue Templates](.github/ISSUE_TEMPLATE/)
 
 ## License
-DBYTE is released under the [GNU General Public License version 2](LICENSE).
-The license applies to the tracked source and documentation in this repository. Generated build output, local scratch files, release bundles, VM logs, and ignored artifacts are not part of the source distribution.
+DBYTE is released under the [public domain through CC0-1.0](LICENSE).
+the original DBYTE code Use it, study it, fork it, sell what you build with it. I am writing this compiler to make things, not to count how many times someone asks me for permission.
 
 ## Project Warning
 
