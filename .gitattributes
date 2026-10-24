@@ -4,5 +4,6 @@
 *.py linguist-vendored
 *.c linguist-vendored
 *.zig linguist-vendored
+*.sh linguist-vendored
 Cargo.lock linguist-vendored
 kernel-lab/boot/linker.ld linguist-vendored
